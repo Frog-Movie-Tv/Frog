@@ -5,7 +5,7 @@ What changed in each release of Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — Lily Pad — unreleased
+## Upcoming — Lily Pad —
 
 In progress.
 
