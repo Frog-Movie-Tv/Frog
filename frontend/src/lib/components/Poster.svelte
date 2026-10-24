@@ -17,6 +17,8 @@
 		total?: number;
 		/** Enables the shared-element morph into the title page. */
 		morph?: boolean;
+		/** Show a Film / Show badge, for mixed result lists. */
+		kindBadge?: boolean;
 		size?: string;
 	}
 
@@ -31,12 +33,14 @@
 		watched = 0,
 		total = 0,
 		morph = false,
+		kindBadge = false,
 		size = 'w342'
 	}: Props = $props();
 
 	const src = $derived(img(posterPath, size));
 	const progress = $derived(total > 0 ? Math.min(100, (watched / total) * 100) : 0);
 	const scored = $derived(rating === null ? null : formatScore(rating, settings.current.scoreFormat));
+	const show = $derived(settings.current);
 </script>
 
 <a
@@ -52,22 +56,28 @@
 			<div class="placeholder"><span>{name.slice(0, 2).toUpperCase()}</span></div>
 		{/if}
 
-		{#if status}
+		{#if status && show.showBadge}
 			<span class="badge" data-status={status}>{STATUS_LABEL[status]}</span>
+		{:else if kindBadge}
+			<span class="badge kind">{kind === 'tv' ? 'Show' : 'Film'}</span>
 		{/if}
 
-		{#if scored}
+		{#if kindBadge && status && show.showBadge}
+			<span class="badge kind right">{kind === 'tv' ? 'Show' : 'Film'}</span>
+		{/if}
+
+		{#if scored && show.showRating}
 			<span class="score">{scored}</span>
 		{/if}
 
-		{#if progress > 0 && progress < 100}
+		{#if progress > 0 && progress < 100 && show.showProgress}
 			<div class="progress"><i style:width="{progress}%"></i></div>
 		{/if}
 	</div>
 
 	<div class="meta">
 		<span class="name">{name}</span>
-		{#if year}<span class="year">{year}</span>{/if}
+		{#if year && show.showYear}<span class="year">{year}</span>{/if}
 	</div>
 </a>
 
@@ -140,6 +150,16 @@
 	}
 	.badge[data-status='dropped'] {
 		background: color-mix(in srgb, var(--bad) 70%, black);
+	}
+
+	.badge.kind {
+		background: rgba(10, 10, 14, 0.72);
+		font-weight: 650;
+	}
+
+	.badge.kind.right {
+		left: auto;
+		right: 7px;
 	}
 
 	.score {

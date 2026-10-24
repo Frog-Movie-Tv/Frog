@@ -2,8 +2,11 @@
 	import '../app.css';
 	import { goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
+	import CommandPalette from '#lib/components/CommandPalette.svelte';
+	import Logo from '#lib/components/Logo.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import Toasts from '#lib/components/Toasts.svelte';
+	import UpdateBanner from '#lib/components/UpdateBanner.svelte';
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import type { Snippet } from 'svelte';
@@ -13,6 +16,7 @@
 	const PUBLIC = ['/login'];
 
 	let checked = $state(false);
+	let palette: CommandPalette | undefined = $state();
 
 	$effect(() => {
 		settings.apply();
@@ -23,7 +27,12 @@
 		void session.refresh().then(() => (checked = true));
 	});
 
-	// Route guard. Runs on every navigation because `page.url` is reactive.
+	// Preferences live on the server, so they load once there is a session.
+	$effect(() => {
+		if (session.authenticated && !settings.loaded) void settings.load();
+	});
+
+	// Route guard. Re-runs on every navigation because `page.url` is reactive.
 	$effect(() => {
 		if (!session.ready) return;
 		const path = page.url.pathname;
@@ -32,59 +41,78 @@
 		if (!session.authenticated && !isPublic) {
 			void goto(`/login?next=${encodeURIComponent(path)}`, { replaceState: true });
 		} else if (session.authenticated && isPublic) {
-			void goto('/', { replaceState: true });
+			void goto(settings.current.landingPage || '/', { replaceState: true });
 		}
 	});
 
-	// Cross-document style animation between routes, with the shared-element
-	// morph from a poster into the title page it opens.
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;
+		if (settings.current.animations === 'off') return;
+
 		return new Promise((resolve) => {
-			document.startViewTransition(async () => {
+			try {
+				const transition = document.startViewTransition(async () => {
+					resolve();
+					await navigation.complete;
+				});
+				// Interrupting one navigation with another rejects these; that is
+				// normal and must not surface as an uncaught error.
+				transition.finished.catch(() => {});
+				transition.ready.catch(() => {});
+			} catch {
 				resolve();
-				await navigation.complete;
-			});
+			}
 		});
 	});
 
 	const nav = [
-		{ href: '/', label: 'Library', icon: '▦' },
+		{ href: '/', label: 'Home', icon: '⌂' },
+		{ href: '/library', label: 'Library', icon: '▦' },
 		{ href: '/search', label: 'Search', icon: '⌕' },
 		{ href: '/stats', label: 'Stats', icon: '◴' },
 		{ href: '/settings', label: 'Settings', icon: '⚙' }
 	];
 
+	const tabs = $derived(nav.filter((n) => n.href !== '/stats'));
+
 	const current = $derived(page.url.pathname);
 	const isActive = (href: string) => (href === '/' ? current === '/' : current.startsWith(href));
 	const showChrome = $derived(session.authenticated && !current.startsWith('/login'));
-</script>
 
-<svelte:head>
-	<title>Frog</title>
-</svelte:head>
+	const version = $derived(session.status?.version ?? '');
+	const updated = $derived(
+		!!version && settings.loaded && settings.current.lastSeenVersion !== version
+	);
+</script>
 
 {#if !checked}
 	<div class="boot"><Spinner label="Starting Frog" /></div>
 {:else}
 	{#if showChrome}
 		<header class="bar">
-			<a class="brand" href="/">
-				<span class="mark" aria-hidden="true"></span>
-				<span class="word">Frog</span>
+			<a class="brand" href="/" aria-label="Frog, home">
+				<Logo size={24} word />
 			</a>
 
 			<nav class="links">
 				{#each nav as link (link.href)}
-					<a href={link.href} class:active={isActive(link.href)}>{link.label}</a>
+					<a href={link.href} class:active={isActive(link.href)}>
+						{link.label}
+						{#if link.href === '/settings' && updated}<i class="dot" aria-label="Updated"></i>{/if}
+					</a>
 				{/each}
 			</nav>
 
 			<div class="right">
 				{#if session.status && !session.status.tmdb_configured}
-					<span class="pill warn" title="Set TMDB_API_KEY in .env and restart">No TMDB key</span>
+					<a class="pill warn" href="/settings" title="Set TMDB_API_KEY in .env and restart">
+						No TMDB key
+					</a>
 				{/if}
-				<a class="btn ghost small" href="/search" aria-label="Search">⌕</a>
+				<button class="cmdk" onclick={() => palette?.show()} aria-label="Open the command palette">
+					<span aria-hidden="true">⌕</span>
+					<kbd>Ctrl</kbd><kbd>K</kbd>
+				</button>
 			</div>
 		</header>
 	{/if}
@@ -95,10 +123,11 @@
 
 	{#if showChrome}
 		<nav class="tabs" aria-label="Sections">
-			{#each nav as link (link.href)}
+			{#each tabs as link (link.href)}
 				<a href={link.href} class:active={isActive(link.href)}>
 					<span aria-hidden="true">{link.icon}</span>
 					<small>{link.label}</small>
+					{#if link.href === '/settings' && updated}<i class="dot" aria-hidden="true"></i>{/if}
 				</a>
 			{/each}
 		</nav>
@@ -111,6 +140,11 @@
 			</p>
 		</footer>
 	{/if}
+{/if}
+
+{#if session.authenticated}
+	<CommandPalette bind:this={palette} />
+	<UpdateBanner />
 {/if}
 
 <Toasts />
@@ -132,24 +166,24 @@
 		gap: 22px;
 		padding: 0 var(--page-pad);
 		background: var(--scrim);
-		backdrop-filter: saturate(160%) blur(18px);
+		backdrop-filter: saturate(160%) blur(var(--blur));
 		border-bottom: 1px solid var(--line);
+		/* Keep the blurred bar on its own compositor layer so it stops
+		   invalidating the content scrolling underneath it. */
+		isolation: isolate;
+		backface-visibility: hidden;
+		transform: translateZ(0);
+		contain: layout style;
+	}
+
+	:global(:root[data-blur='0']) .bar,
+	:global(:root[data-blur='0']) .tabs {
+		backdrop-filter: none;
+		background: var(--bg-elev);
 	}
 
 	.brand {
-		display: flex;
-		align-items: center;
-		gap: 9px;
-		font-weight: 700;
-		letter-spacing: -0.02em;
-	}
-
-	.mark {
-		width: 16px;
-		height: 16px;
-		border-radius: 5px;
-		background: linear-gradient(140deg, var(--accent), color-mix(in oklab, var(--accent), #28e1a0));
-		box-shadow: 0 0 18px -4px var(--accent);
+		flex: none;
 	}
 
 	.links {
@@ -158,6 +192,7 @@
 	}
 
 	.links a {
+		position: relative;
 		padding: 7px 14px;
 		border-radius: var(--radius-pill);
 		font-size: 0.88rem;
@@ -168,14 +203,20 @@
 			color var(--fast) var(--ease);
 	}
 
-	.links a:hover {
+	.links a:hover,
+	.links a.active {
 		color: var(--text);
 		background: var(--bg-elev-2);
 	}
 
-	.links a.active {
-		color: var(--text);
-		background: var(--bg-elev-2);
+	.dot {
+		position: absolute;
+		top: 5px;
+		right: 7px;
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--accent);
 	}
 
 	.right {
@@ -185,9 +226,31 @@
 		gap: 10px;
 	}
 
-	.btn.small {
-		padding: 7px 13px;
-		font-size: 0.95rem;
+	.cmdk {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		padding: 6px 11px;
+		border-radius: var(--radius-pill);
+		border: 1px solid var(--line-strong);
+		background: var(--bg-elev-2);
+		color: var(--text-dim);
+		font-size: 0.85rem;
+		cursor: pointer;
+		transition: color var(--fast) var(--ease);
+	}
+
+	.cmdk:hover {
+		color: var(--text);
+	}
+
+	kbd {
+		padding: 1px 5px;
+		border-radius: 4px;
+		border: 1px solid var(--line-strong);
+		background: var(--bg-elev);
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
 	}
 
 	.pill.warn {
@@ -214,9 +277,9 @@
 		text-decoration: underline;
 	}
 
-	@media (max-width: 720px) {
+	@media (max-width: 760px) {
 		.links,
-		.right .btn {
+		.right .cmdk kbd {
 			display: none;
 		}
 
@@ -232,12 +295,16 @@
 			grid-auto-flow: column;
 			grid-auto-columns: 1fr;
 			background: var(--scrim);
-			backdrop-filter: saturate(160%) blur(18px);
+			backdrop-filter: saturate(160%) blur(var(--blur));
 			border-top: 1px solid var(--line);
 			padding-bottom: env(safe-area-inset-bottom);
+			backface-visibility: hidden;
+			transform: translateZ(0);
+			contain: layout style;
 		}
 
 		.tabs a {
+			position: relative;
 			display: flex;
 			flex-direction: column;
 			align-items: center;
@@ -254,6 +321,11 @@
 		.tabs small {
 			font-size: 0.64rem;
 			font-weight: 600;
+		}
+
+		.tabs .dot {
+			top: 6px;
+			right: calc(50% - 18px);
 		}
 
 		.attribution {

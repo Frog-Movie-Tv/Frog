@@ -1,5 +1,6 @@
 use sqlx::SqlitePool;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use crate::config::Config;
 use crate::tmdb::Tmdb;
@@ -9,6 +10,9 @@ pub struct AppState {
     pub pool: SqlitePool,
     pub tmdb: Tmdb,
     pub config: Arc<Config>,
+    /// Timestamps of recent failed sign-ins. In memory is the right place for
+    /// this: one process, one user, and a restart clearing it is harmless.
+    pub login_failures: Arc<Mutex<Vec<Instant>>>,
 }
 
 impl AppState {
@@ -23,6 +27,7 @@ impl AppState {
             pool,
             tmdb,
             config: Arc::new(config),
+            login_failures: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }

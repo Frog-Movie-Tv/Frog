@@ -1,4 +1,6 @@
-# Running Frog
+# Installing Frog
+
+[← back to the README](../README.md)
 
 Target setup: Frog runs in Docker on your laptop, and your phone reaches it
 over Tailscale. Nothing is exposed to the internet, nothing costs money, and no
@@ -165,6 +167,60 @@ phone to reach it at any hour.
 
 ---
 
+## Updating
+
+Frog tells you when there is a newer release: **Settings → Check for updates**
+asks GitHub, which is the only request the app ever makes to anywhere but TMDB,
+and only when you press the button. A dot appears next to Settings after you
+update, and the **What's new** page explains what changed in plain language.
+
+### One command
+
+Running without Docker:
+
+```powershell
+git pull; .\scriptsun-local.ps1 -Rebuild
+```
+
+With Docker:
+
+```bash
+git pull && docker compose up -d --build
+```
+
+Your library is untouched either way: it lives in `data/frog.db` or in the
+`frog-data` volume, neither of which the update goes near.
+
+### Letting it update itself
+
+[Watchtower](https://containrrr.dev/watchtower/) watches a running container and
+replaces it when a new image appears. It is free and it is one more container.
+
+It only helps if Frog is pulled from a registry rather than built from this
+folder, so first publish the image somewhere free — the GitHub Container
+Registry is free for public images — then point `docker-compose.yml` at it
+instead of `build: .`:
+
+```yaml
+services:
+  frog:
+    image: ghcr.io/mihcons/frog:latest
+    # ...everything else stays the same
+
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --cleanup --interval 86400 frog
+```
+
+That checks once a day and restarts Frog when there is something newer.
+
+> Honestly: for a single-user app on your own laptop, `git pull` once in a
+> while is less machinery and tells you what changed. Watchtower earns its keep
+> when you have stopped thinking about the thing at all.
+
 ## Backups
 
 Everything lives in one Docker volume: your library, the TMDB cache and every
@@ -255,7 +311,8 @@ Sources: [Fly.io vs Railway vs Render 2026](https://speedtesthq.com/compare/fly-
 
 **`docker: The term 'docker' is not recognized`.** Docker Desktop is not
 installed, or the terminal was open before you installed it. Either install it
-(step 2) or use `.\scriptsun-local.ps1`, which needs no Docker at all.
+(step 2) or use `.\scripts
+un-local.ps1`, which needs no Docker at all.
 
 **"No TMDB key" badge in the header.** `TMDB_API_KEY` is empty or did not reach
 the process. Check `.env`; under Docker, `docker compose up -d` recreates the

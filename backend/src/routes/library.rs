@@ -135,8 +135,10 @@ pub async fn stats(_: Auth, State(state): State<AppState>) -> AppResult<Json<Val
 
     // Runtime is per-episode for shows, so this is a decent estimate rather
     // than a precise figure, and the UI says so.
+    // SQLite types SUM() by its operands, so summing INTEGER runtimes yields
+    // an INTEGER and decoding it as f64 fails. CAST pins the type.
     let (minutes,): (Option<f64>,) = sqlx::query_as(
-        "SELECT SUM(COALESCE(e.runtime, t.runtime, 0))
+        "SELECT CAST(SUM(COALESCE(e.runtime, t.runtime, 0)) AS REAL)
            FROM watch_event w
            JOIN title t ON t.id = w.title_id
            LEFT JOIN episode e ON e.id = w.episode_id",

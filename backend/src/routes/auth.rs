@@ -6,6 +6,7 @@ use axum_extra::extract::cookie::CookieJar;
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::json;
+use std::time::{Duration, Instant};
 
 use crate::auth as session;
 use crate::error::{AppError, AppResult};
@@ -15,6 +16,43 @@ use crate::state::AppState;
 pub struct Credentials {
     pub username: String,
     pub password: String,
+    /// Keep me signed in on this device. Off means a cookie that dies with
+    /// the browser and a session the server forgets within a day.
+    #[serde(default)]
+    pub remember: bool,
+}
+
+/// Failed sign-ins allowed before the door shuts for a while.
+const MAX_FAILURES: usize = 8;
+const FAILURE_WINDOW: Duration = Duration::from_secs(10 * 60);
+
+/// Returns the seconds to wait when the caller has failed too often.
+fn throttled_for(state: &AppState) -> Option<u64> {
+    let mut failures = state.login_failures.lock().ok()?;
+    let now = Instant::now();
+    failures.retain(|t| now.duration_since(*t) < FAILURE_WINDOW);
+
+    if failures.len() < MAX_FAILURES {
+        return None;
+    }
+    let oldest = failures.first().copied()?;
+    Some(
+        (FAILURE_WINDOW - now.duration_since(oldest))
+            .as_secs()
+            .max(1),
+    )
+}
+
+fn record_failure(state: &AppState) {
+    if let Ok(mut failures) = state.login_failures.lock() {
+        failures.push(Instant::now());
+    }
+}
+
+fn clear_failures(state: &AppState) {
+    if let Ok(mut failures) = state.login_failures.lock() {
+        failures.clear();
+    }
 }
 
 async fn account_exists(state: &AppState) -> AppResult<Option<String>> {
@@ -63,7 +101,7 @@ pub async fn setup(
     validate(&body)?;
 
     create_account(&state, &body.username, &body.password).await?;
-    issue(state, jar, headers).await
+    issue(state, jar, headers, true).await
 }
 
 pub async fn login(
@@ -83,14 +121,23 @@ pub async fn login(
         ));
     };
 
+    if let Some(seconds) = throttled_for(&state) {
+        return Err(AppError::TooManyRequests(format!(
+            "too many failed sign-ins; try again in {} minutes",
+            seconds.div_ceil(60)
+        )));
+    }
+
     // Same message either way: do not leak whether the username was right.
     if !username.eq_ignore_ascii_case(body.username.trim())
         || !session::verify_password(&body.password, &hash)
     {
+        record_failure(&state);
         return Err(AppError::Unauthorised);
     }
 
-    issue(state, jar, headers).await
+    clear_failures(&state);
+    issue(state, jar, headers, body.remember).await
 }
 
 pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> AppResult<impl IntoResponse> {
@@ -105,16 +152,23 @@ async fn issue(
     state: AppState,
     jar: CookieJar,
     headers: HeaderMap,
+    remember: bool,
 ) -> AppResult<(CookieJar, Json<serde_json::Value>)> {
     let ua = headers
         .get(axum::http::header::USER_AGENT)
         .and_then(|v| v.to_str().ok());
 
-    let token = session::create_session(&state.pool, state.config.session_days, ua).await?;
+    let days = if remember {
+        state.config.session_days
+    } else {
+        1
+    };
+
+    let token = session::create_session(&state.pool, days, ua).await?;
     let jar = jar.add(session::session_cookie(
         token,
         state.config.secure_cookies,
-        state.config.session_days,
+        remember.then_some(days),
     ));
     Ok((jar, Json(json!({ "ok": true }))))
 }

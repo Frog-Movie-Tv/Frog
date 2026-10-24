@@ -143,6 +143,8 @@ export interface HeatmapCell {
 	s: number;
 	e: number;
 	rating: number | null;
+	/** TMDB's own episode score, rescaled to 0..100. */
+	tmdb: number | null;
 	watched: boolean;
 }
 
@@ -214,4 +216,36 @@ export interface Stats {
 	episodes_watched: number;
 	minutes_watched: number;
 	mean_rating: number | null;
+}
+
+export interface NextEpisode {
+	season_number: number;
+	episode_number: number;
+	name: string | null;
+	still_path: string | null;
+	air_date: string | null;
+	aired: boolean;
+}
+
+export interface UpNextEntry {
+	item: LibraryItem;
+	next: NextEpisode | null;
+}
+
+export interface AiringEntry {
+	item: LibraryItem;
+	episode: {
+		season_number: number;
+		episode_number: number;
+		name: string | null;
+		air_date: string | null;
+	};
+}
+
+export interface HomeData {
+	hero: LibraryItem | null;
+	continue: UpNextEntry[];
+	this_week: AiringEntry[];
+	recent: LibraryItem[];
+	favourites: LibraryItem[];
 }

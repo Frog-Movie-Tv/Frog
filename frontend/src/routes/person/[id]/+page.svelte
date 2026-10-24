@@ -47,7 +47,7 @@
 </script>
 
 <svelte:head>
-	<title>{person?.name ?? 'Frog'}</title>
+	<title>{person?.name ? `${person.name} · Frog` : 'Frog'}</title>
 </svelte:head>
 
 <div class="page">

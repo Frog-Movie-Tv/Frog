@@ -103,7 +103,7 @@
 </script>
 
 <svelte:head>
-	<title>{item?.name ?? 'Frog'}</title>
+	<title>{item ? `${item.name} · Frog` : 'Frog'}</title>
 </svelte:head>
 
 {#if loading && !detail}
@@ -214,13 +214,21 @@
 									<span class="eyebrow">{label}</span>
 									<div class="logos">
 										{#each list as p (p.id)}
-											<span class="plogo" title={p.name}>
+											<!-- TMDB gives one watch link per region, not per provider, so
+											     every logo opens the same official page for this title. -->
+											<a
+												class="plogo"
+												href={providers?.link ?? `https://www.themoviedb.org/search?query=${encodeURIComponent(item.name)}`}
+												target="_blank"
+												rel="noreferrer noopener"
+												title="{p.name} — open watch options"
+											>
 												{#if p.logo_path}
 													<img src={img(p.logo_path, 'w92')} alt={p.name} loading="lazy" />
 												{:else}
 													{p.name}
 												{/if}
-											</span>
+											</a>
 										{/each}
 									</div>
 								</div>
@@ -545,6 +553,19 @@
 		display: flex;
 		gap: 8px;
 		flex-wrap: wrap;
+	}
+
+	.plogo {
+		display: inline-flex;
+		border-radius: 11px;
+		transition:
+			transform var(--fast) var(--ease),
+			box-shadow var(--fast) var(--ease);
+	}
+
+	.plogo:hover {
+		transform: translateY(-2px);
+		box-shadow: var(--shadow-2);
 	}
 
 	.plogo img {

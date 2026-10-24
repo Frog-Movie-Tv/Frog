@@ -1,15 +1,17 @@
 {
   "name": "frog-web",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "node scripts/changelog.mjs && vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test:e2e": "playwright test",
-    "icons": "node scripts/make-icons.mjs"
+    "icons": "node scripts/make-icons.mjs",
+    "changelog": "node scripts/changelog.mjs",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",

@@ -1,289 +1,336 @@
 <script lang="ts">
-	import { api, type LibraryQuery } from '#lib/api';
+	import { api, img } from '#lib/api';
+	import ContinueCard from '#lib/components/ContinueCard.svelte';
 	import Empty from '#lib/components/Empty.svelte';
-	import Grid from '#lib/components/Grid.svelte';
 	import Poster from '#lib/components/Poster.svelte';
 	import Rail from '#lib/components/Rail.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
+	import { episodeCode, prettyDate, relativeDate, runtime, year } from '#lib/format';
 	import { session } from '#lib/session.svelte';
-	import { year } from '#lib/format';
+	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
-	import type { Kind, LibraryItem, Status } from '#lib/types';
-	import { STATUS_LABEL, STATUSES } from '#lib/types';
+	import type { HomeData } from '#lib/types';
 
-	let items = $state<LibraryItem[]>([]);
-	let continuing = $state<LibraryItem[]>([]);
+	let data = $state<HomeData | null>(null);
 	let loading = $state(true);
-	let failed = $state(false);
 
-	let status = $state<Status | 'all'>('all');
-	let kind = $state<Kind | 'all'>('all');
-	let genre = $state('');
-	let term = $state('');
-	let favourite = $state(false);
-	let sort = $state<NonNullable<LibraryQuery['sort']>>('added');
-	let order = $state<'asc' | 'desc'>('desc');
-
-	const filtered = $derived(
-		status !== 'all' || kind !== 'all' || genre !== '' || term !== '' || favourite
-	);
-
-	/** Genres present in the library, so the filter only offers real options. */
-	const genres = $derived(
-		[...new Set(items.flatMap((i) => i.genres))].sort((a, b) => a.localeCompare(b))
-	);
-
-	const counts = $derived.by(() => {
-		const out: Partial<Record<Status, number>> = {};
-		for (const i of items) {
-			if (i.entry) out[i.entry.status] = (out[i.entry.status] ?? 0) + 1;
-		}
-		return out;
-	});
-
-	// Re-query whenever any control changes. The backend does the filtering so
-	// this stays correct past the page size.
 	$effect(() => {
 		if (!session.authenticated) return;
-		const query: LibraryQuery = {
-			status: status === 'all' ? undefined : status,
-			kind: kind === 'all' ? undefined : kind,
-			genre: genre || undefined,
-			q: term || undefined,
-			favourite: favourite || undefined,
-			sort,
-			order
-		};
-		void load(query);
+		void api
+			.home()
+			.then((d) => (data = d))
+			.catch((e) => toasts.error(e))
+			.finally(() => (loading = false));
 	});
 
-	let token = 0;
+	const hero = $derived(data?.hero ?? null);
+	const heroNext = $derived(data?.continue.find((c) => c.item.id === hero?.id)?.next ?? null);
+	const heroStyle = $derived(settings.current.heroStyle);
 
-	async function load(query: LibraryQuery) {
-		const mine = ++token;
-		loading = true;
-		try {
-			const [all, watching] = await Promise.all([
-				api.library(query),
-				api.library({ status: 'watching', sort: 'last_watched', limit: 20 })
-			]);
-			if (mine !== token) return;
-			items = all.items;
-			continuing = watching.items;
-			failed = false;
-		} catch (e) {
-			if (mine !== token) return;
-			failed = true;
-			toasts.error(e);
-		} finally {
-			if (mine === token) loading = false;
-		}
-	}
+	const isEmpty = $derived(
+		!!data &&
+			!data.hero &&
+			!data.continue.length &&
+			!data.recent.length &&
+			!data.favourites.length
+	);
 
-	function reset() {
-		status = 'all';
-		kind = 'all';
-		genre = '';
-		term = '';
-		favourite = false;
-	}
+	/** Rows in the order chosen in Settings, skipping any that have nothing. */
+	const rows = $derived.by(() => {
+		if (!data) return [];
+		const available: Record<string, boolean> = {
+			continue: data.continue.length > 0,
+			upnext: data.continue.some((c) => c.next?.aired),
+			thisweek: data.this_week.length > 0,
+			recent: data.recent.length > 0,
+			favourites: data.favourites.length > 0
+		};
+		return settings.current.homeRows.filter((id) => available[id]);
+	});
 </script>
 
-<div class="page">
-	{#if continuing.length && !filtered}
-		<Rail title="Continue watching">
-			{#each continuing as item (item.id)}
-				<Poster
-					kind={item.kind}
-					tmdbId={item.tmdb_id}
-					name={item.name}
-					posterPath={item.poster_path}
-					year={year(item.release_date)}
-					rating={item.entry?.rating ?? null}
-					watched={item.watched_episodes}
-					total={item.total_episodes}
-				/>
-			{/each}
-		</Rail>
-	{/if}
+<svelte:head>
+	<title>Frog</title>
+</svelte:head>
 
-	<div class="section-head">
-		<h1>Library</h1>
-		<span class="faint">{items.length} {items.length === 1 ? 'title' : 'titles'}</span>
-	</div>
-
-	<div class="controls">
-		<div class="chips" role="group" aria-label="Status filter">
-			<button class="chip" class:on={status === 'all'} onclick={() => (status = 'all')}>
-				All
-			</button>
-			{#each STATUSES as s (s)}
-				<button class="chip" class:on={status === s} onclick={() => (status = s)}>
-					{STATUS_LABEL[s]}
-					{#if counts[s]}<span class="n">{counts[s]}</span>{/if}
-				</button>
-			{/each}
-		</div>
-
-		<div class="row">
-			<input class="input search" placeholder="Filter by name" bind:value={term} />
-
-			<select class="input" bind:value={kind} aria-label="Type">
-				<option value="all">Films &amp; shows</option>
-				<option value="movie">Films</option>
-				<option value="tv">Shows</option>
-			</select>
-
-			<select class="input" bind:value={genre} aria-label="Genre">
-				<option value="">Any genre</option>
-				{#each genres as g (g)}
-					<option value={g}>{g}</option>
-				{/each}
-			</select>
-
-			<select class="input" bind:value={sort} aria-label="Sort by">
-				<option value="added">Recently added</option>
-				<option value="updated">Recently updated</option>
-				<option value="last_watched">Last watched</option>
-				<option value="name">Name</option>
-				<option value="rating">My rating</option>
-				<option value="release">Release date</option>
-			</select>
-
-			<button
-				class="btn ghost"
-				aria-label="Reverse order"
-				title="Reverse order"
-				onclick={() => (order = order === 'desc' ? 'asc' : 'desc')}
-			>
-				{order === 'desc' ? '↓' : '↑'}
-			</button>
-
-			<button
-				class="btn ghost"
-				class:on={favourite}
-				aria-pressed={favourite}
-				title="Favourites only"
-				onclick={() => (favourite = !favourite)}
-			>
-				{favourite ? '♥' : '♡'}
-			</button>
-		</div>
-	</div>
-
-	{#if loading && !items.length}
-		<Spinner label="Loading your library" />
-	{:else if failed && !items.length}
-		<Empty title="Could not load your library" hint="The server did not answer. Try again." />
-	{:else if !items.length}
+{#if loading && !data}
+	<div class="page"><Spinner label="Warming up" /></div>
+{:else if isEmpty}
+	<div class="page">
 		<Empty
-			title={filtered ? 'Nothing matches those filters' : 'Your library is empty'}
-			hint={filtered
-				? 'Loosen a filter and it will come back.'
-				: 'Search for a film or show and add it. Everything you track lives here.'}
+			title="Your pond is empty"
+			hint="Find a film or show and add it. Once something is in your library, this page fills with what to watch next."
 		>
-			{#if filtered}
-				<button class="btn" onclick={reset}>Clear filters</button>
-			{:else}
-				<a class="btn primary" href="/search">Find something to watch</a>
-			{/if}
+			<a class="btn primary" href="/search">Find something to watch</a>
 		</Empty>
-	{:else}
-		<Grid>
-			{#each items as item (item.id)}
-				<Poster
-					morph
-					kind={item.kind}
-					tmdbId={item.tmdb_id}
-					name={item.name}
-					posterPath={item.poster_path}
-					year={year(item.release_date)}
-					status={item.entry?.status ?? null}
-					rating={item.entry?.rating ?? null}
-					watched={item.watched_episodes}
-					total={item.total_episodes}
-				/>
+	</div>
+{:else if data}
+	<div class="home">
+		{#if hero && heroStyle !== 'off'}
+			<header
+				class="hero"
+				class:poster-mode={heroStyle === 'poster'}
+				style:--tint={hero.accent.shade}
+			>
+				{#if heroStyle === 'backdrop' && hero.backdrop_path}
+					<img class="backdrop" src={img(hero.backdrop_path, 'w1280')} alt="" fetchpriority="high" />
+				{:else if heroStyle === 'poster' && hero.poster_path}
+					<img class="backdrop poster" src={img(hero.poster_path, 'w780')} alt="" fetchpriority="high" />
+				{/if}
+				<div class="veil" aria-hidden="true"></div>
+
+				<div class="hero-body">
+					<span class="eyebrow">Continue watching</span>
+
+					{#if hero.logo_path}
+						<img class="logo" src={img(hero.logo_path, 'w500')} alt={hero.name} />
+					{:else}
+						<h1>{hero.name}</h1>
+					{/if}
+
+					<p class="facts">
+						{#if year(hero.release_date)}<span>{year(hero.release_date)}</span>{/if}
+						{#if hero.kind === 'movie' && hero.runtime}<span>{runtime(hero.runtime)}</span>{/if}
+						{#if hero.genres.length}<span>{hero.genres.slice(0, 3).join(' · ')}</span>{/if}
+					</p>
+
+					{#if heroNext}
+						<p class="upnext">
+							<strong>{episodeCode(heroNext.season_number, heroNext.episode_number)}</strong>
+							{heroNext.name ?? ''}
+							{#if !heroNext.aired && heroNext.air_date}
+								<span class="faint">· airs {prettyDate(heroNext.air_date)}</span>
+							{/if}
+						</p>
+					{/if}
+
+					<div class="hero-actions">
+						<a class="btn primary" href="/title/{hero.kind}/{hero.tmdb_id}">Open</a>
+						<a class="btn ghost" href="/library">Library</a>
+					</div>
+				</div>
+			</header>
+		{/if}
+
+		<div class="page rows">
+			{#each rows as row (row)}
+				{#if row === 'continue'}
+					<Rail title="Continue watching" wide>
+						{#each data.continue as entry (entry.item.id)}
+							<ContinueCard {entry} />
+						{/each}
+					</Rail>
+				{:else if row === 'thisweek'}
+					<section class="week">
+						<div class="section-head"><h2>Airing this week</h2></div>
+						<ul>
+							{#each data.this_week as airing (`${airing.item.id}-${airing.episode.season_number}-${airing.episode.episode_number}`)}
+								<li>
+									<a href="/title/{airing.item.kind}/{airing.item.tmdb_id}">
+										{#if airing.item.poster_path}
+											<img src={img(airing.item.poster_path, 'w92')} alt="" loading="lazy" />
+										{/if}
+										<span class="who">
+											<strong>{airing.item.name}</strong>
+											<span class="faint">
+												{episodeCode(airing.episode.season_number, airing.episode.episode_number)}
+												{#if airing.episode.name}· {airing.episode.name}{/if}
+											</span>
+										</span>
+										<span class="when">{relativeDate(airing.episode.air_date)}</span>
+									</a>
+								</li>
+							{/each}
+						</ul>
+					</section>
+				{:else if row === 'recent'}
+					<Rail title="Recently added">
+						{#each data.recent as item (item.id)}
+							<Poster
+								kind={item.kind}
+								tmdbId={item.tmdb_id}
+								name={item.name}
+								posterPath={item.poster_path}
+								year={year(item.release_date)}
+								status={item.entry?.status ?? null}
+								rating={item.entry?.rating ?? null}
+								watched={item.watched_episodes}
+								total={item.total_episodes}
+							/>
+						{/each}
+					</Rail>
+				{:else if row === 'favourites'}
+					<Rail title="Favourites">
+						{#each data.favourites as item (item.id)}
+							<Poster
+								kind={item.kind}
+								tmdbId={item.tmdb_id}
+								name={item.name}
+								posterPath={item.poster_path}
+								year={year(item.release_date)}
+								status={item.entry?.status ?? null}
+								rating={item.entry?.rating ?? null}
+								watched={item.watched_episodes}
+								total={item.total_episodes}
+							/>
+						{/each}
+					</Rail>
+				{/if}
 			{/each}
-		</Grid>
-	{/if}
-</div>
+		</div>
+	</div>
+{/if}
 
 <style>
-	.controls {
+	.hero {
+		position: relative;
+		isolation: isolate;
+		min-height: min(62vh, 520px);
+		display: flex;
+		align-items: flex-end;
+		padding: calc(var(--header-h) + 40px) var(--page-pad) 34px;
+		background: var(--tint, var(--bg-elev));
+		overflow: hidden;
+	}
+
+	.backdrop {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		object-position: center 20%;
+		z-index: -2;
+	}
+
+	.backdrop.poster {
+		object-position: center 12%;
+	}
+
+	.veil {
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		background:
+			linear-gradient(to top, var(--bg) 1%, color-mix(in srgb, var(--bg) 40%, transparent) 50%, transparent),
+			linear-gradient(to right, color-mix(in srgb, var(--tint) 78%, transparent), transparent 65%);
+	}
+
+	.hero-body {
+		max-width: 1500px;
+		margin: 0 auto;
+		width: 100%;
 		display: flex;
 		flex-direction: column;
+		align-items: flex-start;
 		gap: 12px;
-		margin-bottom: 26px;
 	}
 
-	.chips {
-		display: flex;
-		gap: 7px;
-		overflow-x: auto;
-		scrollbar-width: none;
-		padding-bottom: 2px;
+	.logo {
+		max-width: min(460px, 76vw);
+		max-height: 140px;
+		object-fit: contain;
+		object-position: left bottom;
+		filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.65));
 	}
 
-	.chips::-webkit-scrollbar {
-		display: none;
-	}
-
-	.chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 7px;
-		padding: 7px 14px;
-		border-radius: var(--radius-pill);
-		border: 1px solid var(--line);
-		background: var(--bg-elev);
-		color: var(--text-dim);
-		font-size: 0.84rem;
-		font-weight: 600;
-		cursor: pointer;
-		white-space: nowrap;
-		transition:
-			background var(--fast) var(--ease),
-			color var(--fast) var(--ease),
-			border-color var(--fast) var(--ease);
-	}
-
-	.chip:hover {
-		color: var(--text);
-		background: var(--bg-elev-2);
-	}
-
-	.chip.on {
-		background: var(--accent);
-		border-color: transparent;
-		color: var(--accent-ink);
-	}
-
-	.chip .n {
-		font-size: 0.74rem;
-		opacity: 0.75;
-		font-variant-numeric: tabular-nums;
-	}
-
-	.row {
+	.facts {
 		display: flex;
 		flex-wrap: wrap;
+		gap: 14px;
+		font-size: 0.88rem;
+		color: var(--text-dim);
+	}
+
+	.upnext {
+		font-size: 0.95rem;
+	}
+
+	.upnext strong {
+		color: var(--accent);
+		font-variant-numeric: tabular-nums;
+		margin-right: 6px;
+	}
+
+	.hero-actions {
+		display: flex;
 		gap: 10px;
+		margin-top: 6px;
+	}
+
+	.rows {
+		padding-top: 30px;
+	}
+
+	.week ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.week a {
+		display: flex;
 		align-items: center;
-	}
-
-	.row .input {
-		width: auto;
+		gap: 14px;
 		padding: 9px 12px;
-		font-size: 0.86rem;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--line);
+		background: var(--bg-elev);
+		transition: border-color var(--fast) var(--ease);
 	}
 
-	.search {
+	.week a:hover {
+		border-color: var(--line-strong);
+	}
+
+	.week img {
+		width: 34px;
+		border-radius: 5px;
+		display: block;
+	}
+
+	.who {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		gap: 2px;
 		flex: 1;
-		min-width: 190px;
 	}
 
-	.btn.on {
-		color: var(--bad);
-		border-color: color-mix(in srgb, var(--bad) 50%, transparent);
+	.who strong {
+		font-size: 0.9rem;
+		font-weight: 600;
+	}
+
+	.who .faint {
+		font-size: 0.76rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.when {
+		font-size: 0.8rem;
+		color: var(--accent);
+		font-weight: 600;
+		flex: none;
+	}
+
+	.week {
+		margin-bottom: 40px;
+	}
+
+	@media (max-width: 720px) {
+		.hero {
+			min-height: 48vh;
+			padding-top: calc(var(--header-h) + 24px);
+		}
+
+		.logo {
+			max-height: 96px;
+		}
 	}
 </style>

@@ -26,6 +26,11 @@
 	);
 </script>
 
+<svelte:head>
+	<title>Stats · Frog</title>
+</svelte:head>
+
+
 <div class="page">
 	<h1 class="title">Stats</h1>
 

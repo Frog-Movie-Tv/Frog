@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { api, img } from '#lib/api';
-	import { episodeCode, prettyDate, runtime } from '#lib/format';
+	import { episodeCode, prettyDate, relativeDate, runtime } from '#lib/format';
+	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import type { EpisodeView, Kind, LibraryItem, SeasonDetail, SeasonSummary } from '#lib/types';
-	import ScoreInput from './ScoreInput.svelte';
+	import Rating from './Rating.svelte';
 	import Spinner from './Spinner.svelte';
 
 	interface Props {
@@ -42,6 +43,11 @@
 		} finally {
 			loading = null;
 		}
+	}
+
+	/** Hide what happens next, when spoiler protection is on. */
+	function blurStill(ep: EpisodeView): boolean {
+		return settings.current.spoilerProtection && !ep.watched;
 	}
 
 	function patch(season: number, episode: number, changes: Partial<EpisodeView>) {
@@ -129,6 +135,13 @@
 		}
 	}
 
+	const today = new Date().toISOString().slice(0, 10);
+
+	/** TMDB gives an air date; anything later than today has not happened. */
+	function unaired(ep: EpisodeView): boolean {
+		return !!ep.air_date && ep.air_date > today;
+	}
+
 	function seasonWatched(season: number): boolean {
 		const detail = loaded[season];
 		return !!detail?.episodes.length && detail.episodes.every((e) => e.watched);
@@ -173,13 +186,16 @@
 					<ul class="episodes">
 						{#each detail.episodes as ep (ep.episode_number)}
 							{@const key = `${ep.season_number}-${ep.episode_number}`}
-							<li class="episode" class:watched={ep.watched}>
+							<li class="episode" class:watched={ep.watched} class:future={unaired(ep)}>
 								<button
 									class="check"
 									class:on={ep.watched}
-									disabled={busy === key}
+									disabled={busy === key || unaired(ep)}
 									aria-pressed={ep.watched}
-									aria-label="Mark {episodeCode(ep.season_number, ep.episode_number)} watched"
+									aria-label={unaired(ep)
+										? `${episodeCode(ep.season_number, ep.episode_number)} has not aired yet`
+										: `Mark ${episodeCode(ep.season_number, ep.episode_number)} watched`}
+									title={unaired(ep) ? 'Not out yet' : 'Mark watched'}
 									onclick={() => toggle(ep)}
 								>
 									<svg viewBox="0 0 24 24" aria-hidden="true">
@@ -194,9 +210,15 @@
 									</svg>
 								</button>
 
-								{#if ep.still_path}
-									<img class="still" src={img(ep.still_path, 'w300')} alt="" loading="lazy" />
-								{/if}
+								<div class="still" class:blurred={blurStill(ep)}>
+									{#if ep.still_path}
+										<img src={img(ep.still_path, 'w300')} alt="" loading="lazy" />
+									{:else}
+										<span class="no-still" aria-hidden="true">
+											{episodeCode(ep.season_number, ep.episode_number)}
+										</span>
+									{/if}
+								</div>
 
 								<div class="body">
 									<div class="line">
@@ -209,9 +231,15 @@
 										{/if}
 									</div>
 									<div class="sub faint">
-										{#if ep.air_date}<span>{prettyDate(ep.air_date)}</span>{/if}
-										{#if ep.runtime}<span>{runtime(ep.runtime)}</span>{/if}
-										{#if ep.notes}<span class="has-note">note</span>{/if}
+										{#if unaired(ep)}
+											<span class="soon">
+												Airs {relativeDate(ep.air_date)} · {prettyDate(ep.air_date)}
+											</span>
+										{:else}
+											{#if ep.air_date}<span>{prettyDate(ep.air_date)}</span>{/if}
+											{#if ep.runtime}<span>{runtime(ep.runtime)}</span>{/if}
+											{#if ep.notes}<span class="has-note">note</span>{/if}
+										{/if}
 									</div>
 									{#if noteFor === key}
 										<textarea
@@ -225,15 +253,17 @@
 								</div>
 
 								<div class="controls">
-									<ScoreInput compact value={ep.rating} onchange={(v) => rate(ep, v)} />
-									<button
-										class="note-btn"
-										aria-label="Episode note"
-										title="Episode note"
-										onclick={() => (noteFor = noteFor === key ? null : key)}
-									>
-										✎
-									</button>
+									{#if !unaired(ep)}
+										<Rating compact value={ep.rating} onchange={(v) => rate(ep, v)} />
+										<button
+											class="note-btn"
+											aria-label="Episode note"
+											title="Episode note"
+											onclick={() => (noteFor = noteFor === key ? null : key)}
+										>
+											✎
+										</button>
+									{/if}
 								</div>
 							</li>
 						{/each}
@@ -321,7 +351,7 @@
 
 	.episode {
 		display: grid;
-		grid-template-columns: auto auto 1fr auto;
+		grid-template-columns: 26px 96px minmax(0, 1fr) auto;
 		align-items: center;
 		gap: 12px;
 		padding: 8px 10px;
@@ -374,12 +404,50 @@
 		height: 15px;
 	}
 
+	/* Always present, even without artwork: a collapsing column was letting
+	   the rating control stretch across the whole row. */
 	.still {
 		width: 96px;
+		flex: none;
 		aspect-ratio: 16 / 9;
-		object-fit: cover;
 		border-radius: 6px;
+		overflow: hidden;
 		background: var(--bg-elev-2);
+		display: grid;
+		place-items: center;
+	}
+
+	.still img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+
+	.still.blurred img {
+		filter: blur(10px);
+		transform: scale(1.1);
+	}
+
+	.no-still {
+		font-size: 0.66rem;
+		font-weight: 650;
+		letter-spacing: 0.04em;
+		color: var(--text-faint);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.episode.future {
+		opacity: 0.68;
+	}
+
+	.episode.future .check {
+		cursor: not-allowed;
+		border-style: dashed;
+	}
+
+	.soon {
+		color: var(--warn);
 	}
 
 	.body {
@@ -455,7 +523,7 @@
 		}
 
 		.episode {
-			grid-template-columns: auto 1fr;
+			grid-template-columns: 26px minmax(0, 1fr);
 			grid-template-areas:
 				'check body'
 				'. controls';

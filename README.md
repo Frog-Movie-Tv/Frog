@@ -1,116 +1,222 @@
 <div align="center">
 
+<img src="frontend/static/mascots/classic.svg" width="96" height="96" alt="">
+
 # Frog
 
-**A self-hosted personal cinema.** Your watch history, in something that feels
-like a streaming app rather than a database.
+### Your own little cinema, on your own little computer.
 
-Rust · axum · SQLite · SvelteKit · installable PWA · one Docker image · zero cost
+Frog remembers every film and show you watch, and gives them a beautiful place
+to live. It runs on your laptop, your phone reaches it privately, and it costs
+nothing at all.
+
+[**Get started →**](docs/INSTALL.md)
+&nbsp;·&nbsp;
+[What's new](CHANGELOG.md)
+&nbsp;·&nbsp;
+[How it works](ARCHITECTURE.md)
+
+<br>
+
+<img src="docs/screenshots/home-desktop-pond.png" alt="Frog's home screen: a full-width still from Arcane with its logo, the next episode named, and a row of shows to continue" width="920">
 
 </div>
 
 ---
 
-Frog tracks the films and shows you watch. It pulls everything it knows from
-TMDB — posters, backdrops, logo art, cast, seasons, episodes, trailers,
-collections, and where to stream in Belgium — caches all of it locally, and
-builds a library you own.
+## What it looks like
 
-It is built for exactly one person: you. No accounts to manage, no sharing, no
-public pages, nothing leaves your machine except cached requests to TMDB.
+<table>
+<tr>
+<td width="50%">
+<img src="docs/screenshots/library-desktop-pond.png" alt="A wall of posters with status filters along the top">
+<p align="center"><b>Your library</b><br><sub>Every poster, filtered and sorted however you like</sub></p>
+</td>
+<td width="50%">
+<img src="docs/screenshots/title-desktop-pond.png" alt="A show page tinted with colours taken from its own poster">
+<p align="center"><b>A title page</b><br><sub>Coloured by its own poster, down to the buttons</sub></p>
+</td>
+</tr>
+<tr>
+<td>
+<img src="docs/screenshots/settings-desktop-pond.png" alt="The settings page with theme tiles and mascot choices">
+<p align="center"><b>Make it yours</b><br><sub>Themes, fonts, shapes, cards and rows — all live</sub></p>
+</td>
+<td>
+<img src="docs/screenshots/stats-desktop-pond.png" alt="Counts of titles tracked, films, episodes and time watched">
+<p align="center"><b>Your numbers</b><br><sub>How much of your life this has quietly taken</sub></p>
+</td>
+</tr>
+</table>
 
-## Status — phase 1 (alpha)
+<div align="center">
 
-What works today:
+### On a phone
 
-- **First-run setup and sign-in.** Single account, Argon2 hashing, session
-  cookies. Every route is behind it.
-- **Search all of TMDB**, with quick-add straight from the results grid.
-- **Track anything** — watching, completed, watchlist, on hold, dropped — with
-  a rating, a favourite flag and notes.
-- **Episode checkmarks** per episode, or a whole season at once, with
-  per-episode ratings and notes. Status follows what you watch: start a show
-  and it moves to watching, finish the last episode and it completes.
-- **Library poster wall** with status chips, genre and type filters, text
-  search, six sorts, and a continue-watching rail on top.
-- **Title pages** with page colours extracted from the poster, logo-art hero,
-  cast and crew linked to person pages, seasons with checkmarks, an episode
-  rating heatmap, trailers, franchise watch order, and Belgian watch providers.
-- **Person pages** with a filmography that highlights what you have seen.
-- **Score formats** — 100 point, 10 point decimal, 10 point, 5 stars, 3
-  smileys. Ratings are stored 0–100, so switching never loses precision.
-- **Themes** — dark, AMOLED, light — plus poster density and follow-the-poster
-  accent.
-- **Installable PWA** with an offline shell and cached posters.
+<img src="docs/screenshots/home-phone-pond.png" alt="Frog's home screen on a phone" width="230">
+&nbsp;&nbsp;
+<img src="docs/screenshots/library-phone-pond.png" alt="The library on a phone" width="230">
+&nbsp;&nbsp;
+<img src="docs/screenshots/title-phone-pond.png" alt="A title page on a phone" width="230">
 
-Phases 2–4 (home screen, calendar, push notifications, imports, theme editor,
-smart shelves, command palette, recommendations, scrobbling, Wrapped) are
-planned in [ARCHITECTURE.md](ARCHITECTURE.md).
+<sub>Add it to your home screen and it behaves like any other app.</sub>
 
-## Quick start
+<br><br>
 
-```powershell
-Copy-Item .env.example .env   # then put your free TMDB key in it
-.\scriptsun-local.ps1       # no Docker needed
-```
+### Four themes, or build your own
 
-Or, with Docker Desktop installed and running:
+<img src="docs/screenshots/home-desktop-dark.png" alt="Frog in the dark theme" width="420">
+&nbsp;
+<img src="docs/screenshots/library-desktop-light.png" alt="Frog in the light Pond theme" width="420">
 
-```bash
-docker compose up -d --build
-```
+<sub>Pond, Pond Light, Dark and AMOLED — or pick every colour yourself.</sub>
 
-Either way, open <http://127.0.0.1:8080> and create your account.
-Full instructions, including reaching it from your phone over Tailscale, are in
-[DEPLOY.md](DEPLOY.md).
+</div>
 
-## Zero cost, kept honest
+---
 
-Every dependency and service here is free, with no card required: Rust, SQLite,
-SvelteKit, Docker Desktop (personal use), GitHub Actions on a public repo,
-Tailscale Personal, and TMDB's free API key.
+## A quick tour
 
-Two things were left out because they would have cost money, as you asked me to
-flag:
+**Find anything.** Search every film and show on TMDB and add it with one tap.
+Results lead with the thing you actually meant, rather than obscure shorts that
+happen to share a word.
 
-- **Plex webhook scrobbling needs Plex Pass.** Phase 4 will support Jellyfin's
-  free webhook plugin and a generic endpoint instead; Tautulli covers Plex for
-  free through the same endpoint.
-- **No cloud host is recommended.** Checked October 2026: Fly.io, Koyeb,
-  Railway and Render no longer offer an always-on container tier that is both
-  free and card-free. Reasoning and sources in [DEPLOY.md](DEPLOY.md).
+**Tick episodes off.** There is a circle beside every episode. Tap it and the
+show moves itself to Watching; tick the last one and it completes itself. Rate
+episodes one by one, leave notes on them, and see a whole series at a glance as
+a grid of coloured squares.
 
-There is no AI or LLM anywhere in this app. Recommendations are built from
-TMDB's own recommendation and similar endpoints, weighted by your ratings.
+**Know what is next.** Home opens on whatever you are in the middle of, names
+the exact next episode, and lists what airs in the coming week.
 
-## Layout
+**Press Ctrl+K.** Jump to any title, page or setting without reaching for the
+mouse.
 
-```
-backend/     Rust: axum API, SQLite, TMDB client, image proxy, worker
-frontend/    SvelteKit SPA, PWA, design tokens
-Dockerfile   one image: frontend built, then baked in next to the binary
-```
+**Rate it your way.** Out of 100, out of 10, out of 10 with a decimal, five
+stars, or three smileys. Switch whenever you like: the number underneath never
+changes, so nothing is ever rounded away.
 
-## Development
+**Make it look how you want.** Four themes plus a colour editor, six fonts, text
+size, corner radius, how much glass blur, how much animation, four card styles,
+poster size, what appears on a card, which rows show on Home and in what order,
+and a box for your own CSS if none of that is enough. Export the lot as a file.
 
-```bash
-cd backend  && cargo run                   # API on :8080
-cd frontend && npm install && npm run dev   # web on :5173, proxied to the API
-```
+**Keep spoilers out.** Blur the still for anything you have not watched yet.
 
-Tests:
+**Take it with you.** Install it on your phone. Anything you have already opened
+keeps working when you have no signal.
 
-```bash
-cd backend  && cargo test        # 22 tests, no network
-cd frontend && npm run check     # types
-cd frontend && npm run test:e2e  # Playwright, desktop + mobile
-```
+---
 
-## Attribution
+## Why Frog?
 
-This product uses the TMDB API but is not endorsed or certified by TMDB. Data
-and images are from [The Movie Database](https://www.themoviedb.org).
+- **It is yours.** The whole database is one file on your own disk. No account
+  on someone else's computer, nothing that can be discontinued.
+- **It is free, genuinely.** No subscription, no paid tier, no API that starts
+  charging later. The only thing it needs is a free TMDB key.
+- **It is quiet.** No ads, no tracking, no analytics, no telemetry, no emails.
+- **It is fast.** Everything you have looked at once is cached locally, so most
+  pages never touch the network at all.
+- **It is one thing.** One small program, one file of data, one page of
+  instructions.
 
-## Licence
+## Privacy
 
-MIT.
+Frog is built for exactly one person, and assumes that person wants to be left
+alone.
+
+- Everything sits behind a password. There is no sign-up page: the account is
+  created once on first run, and that screen closes for good afterwards.
+- Nothing is public. The app asks search engines not to index it and serves a
+  `robots.txt` that refuses everything.
+- Nothing leaves your machine except requests to TMDB for artwork, and those
+  are cached so they mostly happen once.
+- Your phone reaches it over Tailscale, a private link between your own
+  devices. No port is opened to the internet.
+- There is no analytics of any kind, and no "anonymous usage data".
+
+## Questions
+
+<details>
+<summary><b>Do I need to know how to program?</b></summary>
+
+<br>
+
+No, but you do need to be comfortable pasting a few commands into a terminal
+once. [The install guide](docs/INSTALL.md) spells out every step, including
+getting the free key and reaching it from your phone.
+
+</details>
+
+<details>
+<summary><b>Does my computer have to stay on?</b></summary>
+
+<br>
+
+While you want to reach it from your phone, yes. Frog runs on your laptop, so a
+sleeping laptop means a phone that cannot reach it. The install guide covers
+keeping it awake.
+
+</details>
+
+<details>
+<summary><b>What if I already track things somewhere else?</b></summary>
+
+<br>
+
+Importing from IMDb and syncing with AniList are next on the list. Letterboxd
+and Trakt are not planned.
+
+</details>
+
+<details>
+<summary><b>Can other people see my library?</b></summary>
+
+<br>
+
+No. There is no public page and no sharing. If that ever changes, it will be a
+setting that starts switched off.
+
+</details>
+
+<details>
+<summary><b>Where does the artwork come from?</b></summary>
+
+<br>
+
+[TMDB](https://www.themoviedb.org), a community-built film and television
+database. Frog uses their free API and caches whatever it fetches.
+
+</details>
+
+<details>
+<summary><b>What happens to my data if I stop using it?</b></summary>
+
+<br>
+
+It is a single SQLite file. Copy it somewhere and it will still open in ten
+years in anything that reads a database.
+
+</details>
+
+<details>
+<summary><b>Why a frog?</b></summary>
+
+<br>
+
+It needed a name, and then the name needed a face.
+
+</details>
+
+---
+
+<div align="center">
+
+### [Get started →](docs/INSTALL.md)
+
+<sub>
+This product uses the TMDB API but is not endorsed or certified by TMDB.<br>
+MIT licensed.
+</sub>
+
+</div>

@@ -1,0 +1,44 @@
+{
+	"name": "Frog — personal cinema",
+	"short_name": "Frog",
+	"description": "Your self-hosted film and TV diary.",
+	"id": "/",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"orientation": "portrait-primary",
+	"background_color": "#07120e",
+	"theme_color": "#07120e",
+	"categories": [
+		"entertainment",
+		"utilities"
+	],
+	"icons": [
+		{
+			"src": "/mascots/cinema-192.png",
+			"sizes": "192x192",
+			"type": "image/png"
+		},
+		{
+			"src": "/mascots/cinema-512.png",
+			"sizes": "512x512",
+			"type": "image/png"
+		},
+		{
+			"src": "/mascots/cinema-maskable-512.png",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "maskable"
+		}
+	],
+	"shortcuts": [
+		{
+			"name": "Search",
+			"url": "/search"
+		},
+		{
+			"name": "Library",
+			"url": "/library"
+		}
+	]
+}

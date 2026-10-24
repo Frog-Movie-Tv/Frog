@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatScore, episodeCode } from '#lib/format';
+	import { episodeCode, formatScore } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import type { HeatmapCell } from '#lib/types';
 
@@ -23,20 +23,32 @@
 	});
 
 	const widest = $derived(Math.max(1, ...seasons.map((s) => s.eps.length)));
-	const rated = $derived(cells.filter((c) => c.rating !== null).length);
+	const mine = $derived(cells.filter((c) => c.rating !== null).length);
+	const theirs = $derived(cells.filter((c) => c.tmdb !== null).length);
 
-	function tint(cell: HeatmapCell): string {
-		if (cell.rating === null) {
+	/**
+	 * Every episode is filled with TMDB's score, so a season has a shape from
+	 * the moment the show is added. Your own rating paints over the top at
+	 * full strength and gets a ring, so yours always wins the eye.
+	 */
+	function fill(cell: HeatmapCell): string {
+		const score = cell.rating ?? cell.tmdb;
+		if (score === null || score === undefined) {
 			return cell.watched ? 'var(--line-strong)' : 'var(--bg-elev-2)';
 		}
-		// Red through amber to green across the rating range.
-		return `color-mix(in oklab, var(--bad), var(--good) ${Math.round(cell.rating)}%)`;
+		const base = `color-mix(in oklab, var(--bad), var(--good) ${Math.round(score)}%)`;
+		return cell.rating === null ? `color-mix(in oklab, ${base} 55%, var(--bg-elev))` : base;
 	}
 
 	function label(cell: HeatmapCell): string {
-		const score =
-			cell.rating === null ? 'not rated' : formatScore(cell.rating, settings.current.scoreFormat);
-		return `${episodeCode(cell.s, cell.e)} — ${score}${cell.watched ? '' : ', unwatched'}`;
+		const fmt = settings.current.scoreFormat;
+		const parts = [episodeCode(cell.s, cell.e)];
+		if (cell.rating !== null) parts.push(`you: ${formatScore(cell.rating, fmt)}`);
+		if (cell.tmdb !== null && cell.tmdb !== undefined) {
+			parts.push(`TMDB: ${(cell.tmdb / 10).toFixed(1)}`);
+		}
+		if (!cell.watched) parts.push('unwatched');
+		return parts.join(' · ');
 	}
 </script>
 
@@ -49,8 +61,9 @@
 					{#each row.eps as cell (cell.e)}
 						<span
 							class="cell"
+							class:mine={cell.rating !== null}
 							class:unwatched={!cell.watched}
-							style:background={tint(cell)}
+							style:background={fill(cell)}
 							title={label(cell)}
 							aria-label={label(cell)}
 						></span>
@@ -61,7 +74,8 @@
 	</div>
 
 	<p class="legend faint">
-		{rated} of {cells.length} episodes rated
+		<span class="key"><i class="sample mine"></i> your rating ({mine})</span>
+		<span class="key"><i class="sample"></i> TMDB ({theirs})</span>
 		<span class="scale" aria-hidden="true">
 			<i style:background="var(--bad)"></i>
 			<i style:background="color-mix(in oklab, var(--bad), var(--good) 50%)"></i>
@@ -74,7 +88,7 @@
 	.heatmap {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: 5px;
 		overflow-x: auto;
 		padding-bottom: 6px;
 	}
@@ -82,12 +96,12 @@
 	.row {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: 12px;
 	}
 
 	.label {
-		width: 2.6ch;
-		font-size: 0.7rem;
+		width: 2.8ch;
+		font-size: 0.76rem;
 		font-variant-numeric: tabular-nums;
 		text-align: right;
 		flex: none;
@@ -95,37 +109,65 @@
 
 	.cells {
 		display: grid;
-		grid-template-columns: repeat(var(--cols), minmax(9px, 15px));
-		gap: 3px;
+		grid-template-columns: repeat(var(--cols), minmax(16px, 26px));
+		gap: 5px;
 	}
 
 	.cell {
 		aspect-ratio: 1;
-		border-radius: 3px;
-		border: 1px solid transparent;
+		border-radius: 5px;
+		border: 1.5px solid transparent;
+	}
+
+	.cell.mine {
+		border-color: color-mix(in srgb, var(--text) 45%, transparent);
 	}
 
 	.cell.unwatched {
-		border-color: var(--line);
-		opacity: 0.55;
+		opacity: 0.6;
 	}
 
 	.legend {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		margin-top: 10px;
-		font-size: 0.74rem;
+		flex-wrap: wrap;
+		gap: 16px;
+		margin-top: 12px;
+		font-size: 0.76rem;
+	}
+
+	.key {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.sample {
+		width: 13px;
+		height: 13px;
+		border-radius: 4px;
+		border: 1.5px solid transparent;
+		background: color-mix(
+			in oklab,
+			color-mix(in oklab, var(--bad), var(--good) 70%) 55%,
+			var(--bg-elev)
+		);
+	}
+
+	.sample.mine {
+		background: color-mix(in oklab, var(--bad), var(--good) 70%);
+		border-color: color-mix(in srgb, var(--text) 45%, transparent);
 	}
 
 	.scale {
 		display: inline-flex;
-		gap: 2px;
+		gap: 3px;
+		margin-left: auto;
 	}
 
 	.scale i {
-		width: 14px;
-		height: 8px;
-		border-radius: 2px;
+		width: 16px;
+		height: 9px;
+		border-radius: 3px;
 	}
 </style>

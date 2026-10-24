@@ -8,11 +8,17 @@ use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::tmdb::models::SearchItem;
 
+/// TMDB's genre id for Animation, shared by films and shows.
+const ANIMATION_GENRE: i64 = 16;
+
 #[derive(Deserialize)]
 pub struct SearchQuery {
     pub q: String,
     #[serde(default = "first_page")]
     pub page: u32,
+    /// Leave animation out of the results.
+    #[serde(default)]
+    pub hide_animation: bool,
 }
 
 fn first_page() -> u32 {
@@ -33,6 +39,7 @@ pub async fn search(
 
     let raw = state.tmdb.search_multi(term, q.page.clamp(1, 500)).await?;
     let mut items = collect(&raw, None);
+    rank(&mut items, term, q.hide_animation);
     annotate_library(&state, &mut items).await?;
 
     Ok(Json(serde_json::json!({
@@ -47,6 +54,35 @@ pub async fn trending(_: Auth, State(state): State<AppState>) -> AppResult<Json<
     let mut items = collect(&raw, None);
     annotate_library(&state, &mut items).await?;
     Ok(Json(serde_json::json!({ "results": items })))
+}
+
+/// Put the thing you almost certainly meant at the top.
+///
+/// TMDB's own relevance ordering surfaces a lot of one-minute shorts and
+/// unreleased fan projects that happen to share a word with the query. An
+/// exact title match wins outright; after that it is popularity, damped by how
+/// few people have rated it so obscure entries sink.
+fn rank(items: &mut Vec<SearchItem>, term: &str, hide_animation: bool) {
+    if hide_animation {
+        items.retain(|i| !i.genre_ids.contains(&ANIMATION_GENRE));
+    }
+
+    let needle = term.trim().to_lowercase();
+
+    items.sort_by(|a, b| score(b, &needle).total_cmp(&score(a, &needle)));
+}
+
+fn score(item: &SearchItem, needle: &str) -> f64 {
+    let name = item.name.to_lowercase();
+    let exact = if name == needle { 1000.0 } else { 0.0 };
+    let starts = if name.starts_with(needle) { 250.0 } else { 0.0 };
+
+    let votes = item.vote_count.unwrap_or(0) as f64;
+    // Fifty ratings is roughly where a title stops being a curiosity.
+    let confidence = (votes / (votes + 50.0)).clamp(0.05, 1.0);
+    let popularity = item.popularity.unwrap_or(0.0).min(500.0);
+
+    exact + starts + popularity * confidence
 }
 
 fn collect(raw: &Value, force_kind: Option<&str>) -> Vec<SearchItem> {

@@ -3,7 +3,7 @@
 	import { toasts } from '#lib/toast.svelte';
 	import type { Kind, LibraryItem, Status } from '#lib/types';
 	import { STATUSES, STATUS_LABEL } from '#lib/types';
-	import ScoreInput from './ScoreInput.svelte';
+	import Rating from './Rating.svelte';
 
 	interface Props {
 		item: LibraryItem;
@@ -69,9 +69,7 @@
 			</select>
 		</label>
 
-		<div class="rating">
-			<ScoreInput value={item.entry?.rating ?? null} onchange={(v) => save({ rating: v })} />
-		</div>
+		<Rating value={item.entry?.rating ?? null} onchange={(v) => save({ rating: v })} />
 
 		<button
 			class="btn icon"
@@ -105,14 +103,6 @@
 		font-weight: 600;
 		font-size: 0.9rem;
 		cursor: pointer;
-	}
-
-	.rating {
-		min-width: 190px;
-		padding: 6px 14px;
-		border-radius: var(--radius-pill);
-		border: 1px solid var(--line);
-		background: color-mix(in srgb, var(--bg-elev-2) 70%, transparent);
 	}
 
 	.btn.icon {

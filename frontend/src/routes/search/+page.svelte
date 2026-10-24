@@ -5,6 +5,7 @@
 	import Poster from '#lib/components/Poster.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { session } from '#lib/session.svelte';
+	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import type { SearchItem, Status } from '#lib/types';
 	import { STATUS_LABEL } from '#lib/types';
@@ -47,7 +48,7 @@
 		const mine = ++token;
 		loading = true;
 		try {
-			const res = await api.search(q);
+			const res = await api.search(q, 1, settings.current.hideAnimation);
 			if (mine !== token) return;
 			results = res.results;
 			searched = true;
@@ -58,7 +59,7 @@
 		}
 	}
 
-	async function add(item: SearchItem, status: Status) {
+	async function add(item: SearchItem, status: Status = settings.current.defaultStatus) {
 		const key = `${item.kind}-${item.tmdb_id}`;
 		adding = key;
 		try {
@@ -80,6 +81,11 @@
 	const shown = $derived(term.trim() ? results : trending);
 	const heading = $derived(term.trim() ? 'Results' : 'Trending this week');
 </script>
+
+<svelte:head>
+	<title>Search · Frog</title>
+</svelte:head>
+
 
 <div class="page">
 	<h1 class="title">Search</h1>
@@ -127,6 +133,7 @@
 				{@const key = `${item.kind}-${item.tmdb_id}`}
 				<div class="result">
 					<Poster
+						kindBadge
 						kind={item.kind}
 						tmdbId={item.tmdb_id}
 						name={item.name}
@@ -140,9 +147,9 @@
 							<button
 								class="q"
 								disabled={adding === key}
-								title="Add to watchlist"
-								aria-label="Add {item.name} to watchlist"
-								onclick={() => add(item, 'planned')}
+								title="Add to your library"
+								aria-label="Add {item.name} to your library"
+								onclick={() => add(item)}
 							>
 								＋
 							</button>
@@ -227,23 +234,21 @@
 
 	/* Quick-add sits over the art and only appears on hover or keyboard focus,
 	   so the grid stays a wall of posters rather than a wall of buttons. */
+	/* Always visible. A hover-only control is invisible on a laptop until you
+	   go hunting for it, and absent on a touchscreen. */
 	.quick {
 		position: absolute;
 		top: 7px;
 		right: 7px;
 		display: flex;
 		gap: 5px;
-		opacity: 0;
-		transform: translateY(-4px);
-		transition:
-			opacity var(--fast) var(--ease),
-			transform var(--fast) var(--ease);
+		opacity: 0.92;
+		transition: opacity var(--fast) var(--ease);
 	}
 
 	.result:hover .quick,
 	.result:focus-within .quick {
 		opacity: 1;
-		transform: none;
 	}
 
 	.q {
@@ -265,10 +270,5 @@
 		border-color: transparent;
 	}
 
-	@media (hover: none) {
-		.quick {
-			opacity: 1;
-			transform: none;
-		}
-	}
+
 </style>

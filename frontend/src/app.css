@@ -11,6 +11,90 @@
 :root {
 	color-scheme: dark;
 
+	/* --- Pond: the default, built from the logo ------------------------
+	   Lily-pad green on a deep pond green-black, cream text, blush pink for
+	   anything negative and soft teal for anything positive. Contrast was
+	   checked against the background: cream 16:1, dim 8:1, faint 4.4:1,
+	   accent 8.6:1. */
+	--bg: #07120e;
+	--bg-elev: #0e1f19;
+	--bg-elev-2: #16302a;
+	--bg-hover: #1e3d34;
+	--scrim: rgba(7, 18, 14, 0.74);
+
+	--text: #f2efe3;
+	--text-dim: #a9bdb0;
+	--text-faint: #6f8a7c;
+	--line: rgba(242, 239, 227, 0.1);
+	--line-strong: rgba(242, 239, 227, 0.19);
+
+	--accent: #6cc46b;
+	--accent-ink: #06130d;
+	--accent-soft: rgba(108, 196, 107, 0.16);
+
+	--good: #5fcf9e;
+	--warn: #e0a458;
+	--bad: #f4738f;
+
+	/* --- shape, type and motion, all adjustable in Settings ----------- */
+	--radius: 16px;
+	--radius-sm: 10px;
+	--radius-lg: 24px;
+	--radius-pill: 999px;
+
+	--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+	--shadow-2: 0 10px 30px -10px rgba(0, 0, 0, 0.7);
+	--shadow-3: 0 30px 60px -20px rgba(0, 0, 0, 0.8);
+
+	--gap: 16px;
+	--page-pad: 20px;
+	--header-h: 60px;
+	--poster-min: 132px;
+
+	/* Glass strength. Settings can drop this to 0, which also switches the
+	   bars to a solid background: the escape hatch for the Chrome compositor
+	   bug where a blurred fixed bar blanks tiles mid-scroll. */
+	--blur: 14px;
+
+	--font: 'Segoe UI Variable Display', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+		Roboto, 'Helvetica Neue', Arial, sans-serif;
+	--font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+
+	--ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+	--fast: 140ms;
+	--slow: 320ms;
+}
+
+:root[data-theme='pond-light'] {
+	color-scheme: light;
+
+	--bg: #f1eee1;
+	--bg-elev: #fbf9f1;
+	--bg-elev-2: #e8e4d4;
+	--bg-hover: #ded9c6;
+	--scrim: rgba(241, 238, 225, 0.8);
+
+	--text: #16261e;
+	--text-dim: #4d6257;
+	--text-faint: #7a8c80;
+	--line: rgba(22, 38, 30, 0.12);
+	--line-strong: rgba(22, 38, 30, 0.22);
+
+	--accent: #2f7d4f;
+	--accent-ink: #ffffff;
+	--accent-soft: rgba(47, 125, 79, 0.14);
+
+	--good: #2f8f6d;
+	--warn: #a86a1f;
+	--bad: #c2415f;
+
+	--shadow-2: 0 10px 30px -14px rgba(16, 40, 28, 0.3);
+	--shadow-3: 0 30px 60px -24px rgba(16, 40, 28, 0.35);
+}
+
+:root[data-theme='dark'] {
+	color-scheme: dark;
+
 	--bg: #08080c;
 	--bg-elev: #111118;
 	--bg-elev-2: #191922;
@@ -30,37 +114,26 @@
 	--good: #3ecf8e;
 	--warn: #f5a524;
 	--bad: #f3506c;
-
-	--radius: 16px;
-	--radius-sm: 10px;
-	--radius-lg: 24px;
-	--radius-pill: 999px;
-
-	--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-	--shadow-2: 0 10px 30px -10px rgba(0, 0, 0, 0.7);
-	--shadow-3: 0 30px 60px -20px rgba(0, 0, 0, 0.8);
-
-	--gap: 16px;
-	--page-pad: 20px;
-	--header-h: 60px;
-
-	/* Poster density: the library grid reads this, the settings page sets it. */
-	--poster-min: 132px;
-
-	--font: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI',
-		Roboto, 'Helvetica Neue', Arial, sans-serif;
-	--font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
-
-	--ease: cubic-bezier(0.22, 0.61, 0.36, 1);
-	--fast: 140ms;
-	--slow: 320ms;
 }
 
 :root[data-theme='amoled'] {
+	color-scheme: dark;
+
 	--bg: #000000;
 	--bg-elev: #0a0a0e;
 	--bg-elev-2: #121217;
-	--scrim: rgba(0, 0, 0, 0.8);
+	--bg-hover: #1b1b22;
+	--scrim: rgba(0, 0, 0, 0.82);
+
+	--text: #f3f2f7;
+	--text-dim: #a9a7b8;
+	--text-faint: #6f6d80;
+	--line: rgba(255, 255, 255, 0.09);
+	--line-strong: rgba(255, 255, 255, 0.16);
+
+	--accent: #7a5cff;
+	--accent-ink: #ffffff;
+	--accent-soft: rgba(122, 92, 255, 0.16);
 }
 
 :root[data-theme='light'] {
@@ -70,7 +143,7 @@
 	--bg-elev: #ffffff;
 	--bg-elev-2: #f0eff4;
 	--bg-hover: #e7e6ed;
-	--scrim: rgba(246, 245, 248, 0.78);
+	--scrim: rgba(246, 245, 248, 0.8);
 
 	--text: #14131a;
 	--text-dim: #5b5968;
@@ -78,9 +151,28 @@
 	--line: rgba(10, 8, 20, 0.1);
 	--line-strong: rgba(10, 8, 20, 0.18);
 
-	--accent-soft: rgba(122, 92, 255, 0.14);
+	--accent: #5b3fd6;
+	--accent-ink: #ffffff;
+	--accent-soft: rgba(91, 63, 214, 0.13);
+
+	--good: #1f8f63;
+	--warn: #9a6512;
+	--bad: #c62f4d;
+
 	--shadow-2: 0 10px 30px -14px rgba(20, 16, 40, 0.3);
 	--shadow-3: 0 30px 60px -24px rgba(20, 16, 40, 0.35);
+}
+
+/* Animation level, set from Settings. */
+:root[data-animations='off'] *,
+:root[data-animations='off'] *::before,
+:root[data-animations='off'] *::after {
+	animation-duration: 0.01ms !important;
+	transition-duration: 0.01ms !important;
+}
+
+:root[data-animations='reduced'] * {
+	transition-duration: 90ms !important;
 }
 
 *,

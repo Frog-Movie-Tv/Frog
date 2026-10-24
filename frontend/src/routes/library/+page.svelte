@@ -1,0 +1,660 @@
+<script lang="ts">
+	import { api, img, type LibraryQuery } from '#lib/api';
+	import Empty from '#lib/components/Empty.svelte';
+	import Grid from '#lib/components/Grid.svelte';
+	import Poster from '#lib/components/Poster.svelte';
+	import Spinner from '#lib/components/Spinner.svelte';
+	import { formatScore, relativeDate, runtime, year } from '#lib/format';
+	import { session } from '#lib/session.svelte';
+	import { settings } from '#lib/settings.svelte';
+	import { toasts } from '#lib/toast.svelte';
+	import type { Kind, LibraryItem, Status } from '#lib/types';
+	import { STATUS_LABEL, STATUSES } from '#lib/types';
+
+	let items = $state<LibraryItem[]>([]);
+	let loading = $state(true);
+	let failed = $state(false);
+	let sheetOpen = $state(false);
+
+	let status = $state<Status | 'all'>('all');
+	let kind = $state<Kind | 'all'>('all');
+	let genre = $state('');
+	let term = $state('');
+	let favourite = $state(false);
+	let sort = $state<NonNullable<LibraryQuery['sort']>>('added');
+	let order = $state<'asc' | 'desc'>('desc');
+
+	const filtered = $derived(
+		status !== 'all' || kind !== 'all' || genre !== '' || term !== '' || favourite
+	);
+
+	/** How many filters are on, for the mobile button's badge. */
+	const activeCount = $derived(
+		[status !== 'all', kind !== 'all', genre !== '', term !== '', favourite].filter(Boolean).length
+	);
+
+	const genres = $derived(
+		[...new Set(items.flatMap((i) => i.genres))].sort((a, b) => a.localeCompare(b))
+	);
+
+	const counts = $derived.by(() => {
+		const out: Partial<Record<Status, number>> = {};
+		for (const i of items) if (i.entry) out[i.entry.status] = (out[i.entry.status] ?? 0) + 1;
+		return out;
+	});
+
+	$effect(() => {
+		if (!session.authenticated) return;
+		const query: LibraryQuery = {
+			status: status === 'all' ? undefined : status,
+			kind: kind === 'all' ? undefined : kind,
+			genre: genre || undefined,
+			q: term || undefined,
+			favourite: favourite || undefined,
+			sort,
+			order
+		};
+		void load(query);
+	});
+
+	let token = 0;
+
+	async function load(query: LibraryQuery) {
+		const mine = ++token;
+		loading = true;
+		try {
+			const all = await api.library(query);
+			if (mine !== token) return;
+			items = all.items;
+			failed = false;
+		} catch (e) {
+			if (mine !== token) return;
+			failed = true;
+			toasts.error(e);
+		} finally {
+			if (mine === token) loading = false;
+		}
+	}
+
+	function reset() {
+		status = 'all';
+		kind = 'all';
+		genre = '';
+		term = '';
+		favourite = false;
+	}
+
+	const style = $derived(settings.current.cardStyle);
+	const fmt = $derived(settings.current.scoreFormat);
+
+	function progressOf(item: LibraryItem): number {
+		return item.total_episodes > 0 ? (item.watched_episodes / item.total_episodes) * 100 : 0;
+	}
+</script>
+
+<svelte:head>
+	<title>Library · Frog</title>
+</svelte:head>
+
+<div class="page">
+	<div class="section-head">
+		<h1>Library</h1>
+		<span class="faint">{items.length} {items.length === 1 ? 'title' : 'titles'}</span>
+	</div>
+
+	<!-- Desktop: everything laid out. Mobile: one button into a sheet. -->
+	<div class="controls" class:open={sheetOpen}>
+		<div class="chips" role="group" aria-label="Status filter">
+			<button class="chip" class:on={status === 'all'} onclick={() => (status = 'all')}>All</button>
+			{#each STATUSES as s (s)}
+				<button class="chip" class:on={status === s} onclick={() => (status = s)}>
+					{STATUS_LABEL[s]}
+					{#if counts[s]}<span class="n">{counts[s]}</span>{/if}
+				</button>
+			{/each}
+		</div>
+
+		<div class="row">
+			<input class="input search" placeholder="Filter by name" bind:value={term} />
+
+			<select class="input" bind:value={kind} aria-label="Type">
+				<option value="all">Films &amp; shows</option>
+				<option value="movie">Films</option>
+				<option value="tv">Shows</option>
+			</select>
+
+			<select class="input" bind:value={genre} aria-label="Genre">
+				<option value="">Any genre</option>
+				{#each genres as g (g)}<option value={g}>{g}</option>{/each}
+			</select>
+
+			<select class="input" bind:value={sort} aria-label="Sort by">
+				<option value="added">Recently added</option>
+				<option value="updated">Recently updated</option>
+				<option value="last_watched">Last watched</option>
+				<option value="name">Name</option>
+				<option value="rating">My rating</option>
+				<option value="release">Release date</option>
+			</select>
+
+			<button
+				class="btn ghost"
+				aria-label="Reverse order"
+				title="Reverse order"
+				onclick={() => (order = order === 'desc' ? 'asc' : 'desc')}
+			>
+				{order === 'desc' ? '↓' : '↑'}
+			</button>
+
+			<button
+				class="btn ghost"
+				class:on={favourite}
+				aria-pressed={favourite}
+				title="Favourites only"
+				onclick={() => (favourite = !favourite)}
+			>
+				{favourite ? '♥' : '♡'}
+			</button>
+		</div>
+	</div>
+
+	<div class="mobile-bar">
+		<button class="btn" onclick={() => (sheetOpen = true)}>
+			Filters
+			{#if activeCount}<span class="count">{activeCount}</span>{/if}
+		</button>
+		{#if filtered}
+			<button class="btn ghost" onclick={reset}>Clear</button>
+		{/if}
+	</div>
+
+	{#if sheetOpen}
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+		<div class="scrim" onclick={() => (sheetOpen = false)}></div>
+		<div class="sheet" role="dialog" aria-modal="true" aria-label="Filters">
+			<div class="handle" aria-hidden="true"></div>
+			<div class="sheet-body">
+				<div class="chips" role="group" aria-label="Status filter">
+					<button class="chip" class:on={status === 'all'} onclick={() => (status = 'all')}>
+						All
+					</button>
+					{#each STATUSES as s (s)}
+						<button class="chip" class:on={status === s} onclick={() => (status = s)}>
+							{STATUS_LABEL[s]}
+							{#if counts[s]}<span class="n">{counts[s]}</span>{/if}
+						</button>
+					{/each}
+				</div>
+
+				<label class="field">
+					<span>Name</span>
+					<input class="input" placeholder="Filter by name" bind:value={term} />
+				</label>
+
+				<label class="field">
+					<span>Type</span>
+					<select class="input" bind:value={kind}>
+						<option value="all">Films &amp; shows</option>
+						<option value="movie">Films</option>
+						<option value="tv">Shows</option>
+					</select>
+				</label>
+
+				<label class="field">
+					<span>Genre</span>
+					<select class="input" bind:value={genre}>
+						<option value="">Any genre</option>
+						{#each genres as g (g)}<option value={g}>{g}</option>{/each}
+					</select>
+				</label>
+
+				<label class="field">
+					<span>Sort</span>
+					<select class="input" bind:value={sort}>
+						<option value="added">Recently added</option>
+						<option value="updated">Recently updated</option>
+						<option value="last_watched">Last watched</option>
+						<option value="name">Name</option>
+						<option value="rating">My rating</option>
+						<option value="release">Release date</option>
+					</select>
+				</label>
+
+				<div class="sheet-row">
+					<button class="btn ghost" onclick={() => (order = order === 'desc' ? 'asc' : 'desc')}>
+						{order === 'desc' ? 'Descending ↓' : 'Ascending ↑'}
+					</button>
+					<button class="btn ghost" class:on={favourite} onclick={() => (favourite = !favourite)}>
+						{favourite ? '♥ Favourites' : '♡ Favourites'}
+					</button>
+				</div>
+
+				<div class="sheet-row">
+					<button class="btn ghost" onclick={reset}>Clear all</button>
+					<button class="btn primary grow" onclick={() => (sheetOpen = false)}>
+						Show {items.length} titles
+					</button>
+				</div>
+			</div>
+		</div>
+	{/if}
+
+	{#if loading && !items.length}
+		<Spinner label="Loading your library" />
+	{:else if failed && !items.length}
+		<Empty title="Could not load your library" hint="The server did not answer. Try again." />
+	{:else if !items.length}
+		<Empty
+			title={filtered ? 'Nothing matches those filters' : 'Your library is empty'}
+			hint={filtered
+				? 'Loosen a filter and it will come back.'
+				: 'Search for a film or show and add it. Everything you track lives here.'}
+		>
+			{#if filtered}
+				<button class="btn" onclick={reset}>Clear filters</button>
+			{:else}
+				<a class="btn primary" href="/search">Find something to watch</a>
+			{/if}
+		</Empty>
+	{:else if style === 'poster'}
+		<Grid>
+			{#each items as item (item.id)}
+				<Poster
+					morph
+					kind={item.kind}
+					tmdbId={item.tmdb_id}
+					name={item.name}
+					posterPath={item.poster_path}
+					year={year(item.release_date)}
+					status={item.entry?.status ?? null}
+					rating={item.entry?.rating ?? null}
+					watched={item.watched_episodes}
+					total={item.total_episodes}
+				/>
+			{/each}
+		</Grid>
+	{:else if style === 'landscape'}
+		<div class="landscape">
+			{#each items as item (item.id)}
+				<a class="land" href="/title/{item.kind}/{item.tmdb_id}">
+					<div class="art">
+						{#if item.backdrop_path || item.poster_path}
+							<img src={img(item.backdrop_path ?? item.poster_path, 'w500')} alt="" loading="lazy" />
+						{/if}
+						{#if item.total_episodes > 0 && settings.current.showProgress}
+							<div class="bar"><i style:width="{progressOf(item)}%"></i></div>
+						{/if}
+					</div>
+					<div class="land-meta">
+						<strong>{item.name}</strong>
+						<span class="faint">
+							{year(item.release_date)}
+							{#if item.entry?.status}· {STATUS_LABEL[item.entry.status]}{/if}
+						</span>
+					</div>
+				</a>
+			{/each}
+		</div>
+	{:else if style === 'list'}
+		<ul class="list">
+			{#each items as item (item.id)}
+				<li>
+					<a href="/title/{item.kind}/{item.tmdb_id}">
+						{#if item.poster_path}
+							<img src={img(item.poster_path, 'w92')} alt="" loading="lazy" />
+						{/if}
+						<span class="who">
+							<strong>{item.name}</strong>
+							<span class="faint">
+								{year(item.release_date)} · {item.kind === 'tv' ? 'Show' : 'Film'}
+								{#if item.genres.length}· {item.genres.slice(0, 2).join(', ')}{/if}
+							</span>
+						</span>
+						{#if item.total_episodes > 0}
+							<span class="faint nums">{item.watched_episodes}/{item.total_episodes}</span>
+						{:else if item.runtime}
+							<span class="faint nums">{runtime(item.runtime)}</span>
+						{/if}
+						<span class="score">{formatScore(item.entry?.rating ?? null, fmt)}</span>
+					</a>
+				</li>
+			{/each}
+		</ul>
+	{:else}
+		<div class="table-wrap">
+			<table class="compact">
+				<thead>
+					<tr>
+						<th>Title</th>
+						<th>Year</th>
+						<th>Type</th>
+						<th>Status</th>
+						<th>Progress</th>
+						<th>Rating</th>
+						<th>Last watched</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each items as item (item.id)}
+						<tr>
+							<td><a href="/title/{item.kind}/{item.tmdb_id}">{item.name}</a></td>
+							<td class="num">{year(item.release_date)}</td>
+							<td>{item.kind === 'tv' ? 'Show' : 'Film'}</td>
+							<td>{item.entry ? STATUS_LABEL[item.entry.status] : '—'}</td>
+							<td class="num">
+								{item.total_episodes > 0
+									? `${item.watched_episodes}/${item.total_episodes}`
+									: '—'}
+							</td>
+							<td class="num">{formatScore(item.entry?.rating ?? null, fmt)}</td>
+							<td>{relativeDate(item.last_watched_at) || '—'}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	{/if}
+</div>
+
+<style>
+	.controls {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		margin-bottom: 26px;
+	}
+
+	.chips {
+		display: flex;
+		gap: 7px;
+		overflow-x: auto;
+		scrollbar-width: none;
+		padding-bottom: 2px;
+	}
+
+	.chips::-webkit-scrollbar {
+		display: none;
+	}
+
+	.chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		padding: 7px 14px;
+		border-radius: var(--radius-pill);
+		border: 1px solid var(--line);
+		background: var(--bg-elev);
+		color: var(--text-dim);
+		font-size: 0.84rem;
+		font-weight: 600;
+		cursor: pointer;
+		white-space: nowrap;
+		transition:
+			background var(--fast) var(--ease),
+			color var(--fast) var(--ease);
+	}
+
+	.chip:hover {
+		color: var(--text);
+		background: var(--bg-elev-2);
+	}
+
+	.chip.on {
+		background: var(--accent);
+		border-color: transparent;
+		color: var(--accent-ink);
+	}
+
+	.chip .n {
+		font-size: 0.74rem;
+		opacity: 0.75;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
+		align-items: center;
+	}
+
+	.row .input {
+		width: auto;
+		padding: 9px 12px;
+		font-size: 0.86rem;
+	}
+
+	.search {
+		flex: 1;
+		min-width: 190px;
+	}
+
+	.btn.on {
+		color: var(--bad);
+		border-color: color-mix(in srgb, var(--bad) 50%, transparent);
+	}
+
+	.mobile-bar {
+		display: none;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		margin-bottom: 20px;
+	}
+
+	.count {
+		display: inline-grid;
+		place-items: center;
+		min-width: 19px;
+		height: 19px;
+		margin-left: 6px;
+		padding: 0 5px;
+		border-radius: var(--radius-pill);
+		background: var(--accent);
+		color: var(--accent-ink);
+		font-size: 0.7rem;
+	}
+
+	.scrim {
+		position: fixed;
+		inset: 0;
+		z-index: 70;
+		background: rgba(0, 0, 0, 0.5);
+	}
+
+	.sheet {
+		position: fixed;
+		z-index: 71;
+		inset: auto 0 0 0;
+		max-height: 86dvh;
+		overflow-y: auto;
+		background: var(--bg-elev);
+		border-top: 1px solid var(--line-strong);
+		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+		box-shadow: var(--shadow-3);
+		padding-bottom: calc(14px + env(safe-area-inset-bottom));
+	}
+
+	.handle {
+		width: 42px;
+		height: 4px;
+		border-radius: var(--radius-pill);
+		background: var(--line-strong);
+		margin: 10px auto 4px;
+	}
+
+	.sheet-body {
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+		padding: 10px 18px 6px;
+	}
+
+	.sheet-row {
+		display: flex;
+		gap: 10px;
+	}
+
+	.grow {
+		flex: 1;
+	}
+
+	.landscape {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+		gap: var(--gap);
+	}
+
+	.land .art {
+		position: relative;
+		aspect-ratio: 16 / 9;
+		border-radius: var(--radius-sm);
+		overflow: hidden;
+		background: var(--bg-elev-2);
+	}
+
+	.land img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+
+	.bar {
+		position: absolute;
+		inset: auto 0 0 0;
+		height: 3px;
+		background: rgba(255, 255, 255, 0.2);
+	}
+
+	.bar i {
+		display: block;
+		height: 100%;
+		background: var(--accent);
+	}
+
+	.land-meta {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding-top: 8px;
+		font-size: 0.86rem;
+	}
+
+	.land-meta .faint {
+		font-size: 0.74rem;
+	}
+
+	.list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.list a {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+		padding: 9px 12px;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--line);
+		background: var(--bg-elev);
+	}
+
+	.list a:hover {
+		border-color: var(--line-strong);
+	}
+
+	.list img {
+		width: 38px;
+		border-radius: 5px;
+		display: block;
+	}
+
+	.who {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		flex: 1;
+		min-width: 0;
+	}
+
+	.who strong {
+		font-size: 0.92rem;
+	}
+
+	.who .faint {
+		font-size: 0.76rem;
+	}
+
+	.nums {
+		font-size: 0.8rem;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.score {
+		min-width: 4ch;
+		text-align: right;
+		font-weight: 650;
+		font-size: 0.88rem;
+	}
+
+	.table-wrap {
+		overflow-x: auto;
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+	}
+
+	table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.86rem;
+	}
+
+	th,
+	td {
+		text-align: left;
+		padding: 10px 14px;
+		border-bottom: 1px solid var(--line);
+		white-space: nowrap;
+	}
+
+	th {
+		font-size: 0.74rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-faint);
+		background: var(--bg-elev);
+		position: sticky;
+		top: 0;
+	}
+
+	tbody tr:hover {
+		background: var(--bg-elev);
+	}
+
+	tbody tr:last-child td {
+		border-bottom: none;
+	}
+
+	.num {
+		font-variant-numeric: tabular-nums;
+	}
+
+	@media (max-width: 760px) {
+		.controls {
+			display: none;
+		}
+
+		.controls.open {
+			display: none;
+		}
+
+		.mobile-bar {
+			display: flex;
+		}
+	}
+</style>

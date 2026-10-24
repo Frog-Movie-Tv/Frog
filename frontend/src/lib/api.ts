@@ -1,5 +1,6 @@
 import type {
 	AuthStatus,
+	HomeData,
 	Kind,
 	LibraryItem,
 	PersonDetail,
@@ -103,11 +104,13 @@ export const api = {
 		send<{ ok: true }>('POST', '/api/auth/login', { username, password }),
 	logout: () => send<{ ok: true }>('POST', '/api/auth/logout', {}),
 
-	search: (q: string, page = 1) =>
+	search: (q: string, page = 1, hideAnimation = false) =>
 		get<{ page: number; total_pages: number; results: SearchItem[] }>(
-			`/api/search${qs({ q, page })}`
+			`/api/search${qs({ q, page, hide_animation: hideAnimation || undefined })}`
 		),
 	trending: () => get<{ results: SearchItem[] }>('/api/discover/trending'),
+
+	home: () => get<HomeData>('/api/home'),
 
 	library: (query: LibraryQuery = {}) =>
 		get<{ items: LibraryItem[] }>(`/api/library${qs(query as Record<string, unknown>)}`),

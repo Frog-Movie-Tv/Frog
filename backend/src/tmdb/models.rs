@@ -37,6 +37,10 @@ pub struct SearchItem {
     pub year: Option<i32>,
     pub overview: Option<String>,
     pub vote: Option<f64>,
+    /// TMDB's own popularity score, used to rank results.
+    pub popularity: Option<f64>,
+    pub vote_count: Option<i64>,
+    pub genre_ids: Vec<i64>,
     /// Populated by the route when the title is already in the library.
     pub in_library: Option<String>,
 }
@@ -63,6 +67,13 @@ impl SearchItem {
             year: year_of(date.as_deref()),
             overview: str_at(v, "overview"),
             vote: f64_at(v, "vote_average").filter(|n| *n > 0.0),
+            popularity: f64_at(v, "popularity"),
+            vote_count: i64_at(v, "vote_count"),
+            genre_ids: v
+                .get("genre_ids")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_i64).collect())
+                .unwrap_or_default(),
             in_library: None,
         })
     }

@@ -218,15 +218,16 @@ pub async fn upsert_episodes(
     for e in episodes {
         sqlx::query(
             "INSERT INTO episode (title_id, season_number, episode_number, tmdb_episode_id,
-                                  name, overview, still_path, air_date, runtime)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  name, overview, still_path, air_date, runtime, tmdb_vote)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT (title_id, season_number, episode_number) DO UPDATE SET
                 tmdb_episode_id = excluded.tmdb_episode_id,
                 name = excluded.name,
                 overview = excluded.overview,
                 still_path = excluded.still_path,
                 air_date = excluded.air_date,
-                runtime = excluded.runtime",
+                runtime = excluded.runtime,
+                tmdb_vote = excluded.tmdb_vote",
         )
         .bind(title_id)
         .bind(e.season_number)
@@ -237,6 +238,7 @@ pub async fn upsert_episodes(
         .bind(&e.still_path)
         .bind(&e.air_date)
         .bind(e.runtime)
+        .bind(e.tmdb_vote)
         .execute(&mut *tx)
         .await?;
     }
@@ -397,13 +399,15 @@ pub async fn progress(pool: &SqlitePool, title_id: i64) -> AppResult<Progress> {
 }
 
 pub async fn last_watched_at(pool: &SqlitePool, title_id: i64) -> AppResult<Option<String>> {
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT MAX(watched_at) FROM watch_event WHERE title_id = ? AND watched_at IS NOT NULL",
-    )
-    .bind(title_id)
-    .fetch_optional(pool)
-    .await?;
-    Ok(row.map(|r| r.0))
+    // An aggregate always returns exactly one row, and that row holds NULL
+    // when nothing matched -- so this has to be Option-inside-the-row, not
+    // fetch_optional, or a title with no watches fails to decode.
+    let (last,): (Option<String>,) =
+        sqlx::query_as("SELECT MAX(watched_at) FROM watch_event WHERE title_id = ?")
+            .bind(title_id)
+            .fetch_one(pool)
+            .await?;
+    Ok(last)
 }
 
 pub async fn build_item(pool: &SqlitePool, title: TitleRow) -> AppResult<LibraryItem> {

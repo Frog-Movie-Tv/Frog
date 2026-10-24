@@ -247,6 +247,123 @@ async fn an_empty_library_returns_empty_lists_not_errors() {
     assert_eq!(body["minutes_watched"], json!(0));
 }
 
+/// Regression: SUM() over INTEGER runtimes came back as INTEGER and blew up
+/// decoding into f64, and MAX() over no rows returned a row holding NULL
+/// rather than no row. Both produced a 500 on pages that must always work.
+#[tokio::test]
+async fn library_and_stats_survive_real_rows() {
+    let h = Harness::new().await;
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+
+    // A film that was watched, and a show that never was: the second one is
+    // what made MAX(watched_at) decode a NULL.
+    sqlx::query(
+        "INSERT INTO title (kind, tmdb_id, name, runtime, genres_json)
+         VALUES ('movie', 1, 'Watched Film', 139, '[\"Drama\"]'),
+                ('tv', 2, 'Untouched Show', 42, '[]')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO library_entry (title_id, status, rating, added_at, updated_at)
+         VALUES (1, 'completed', 90.0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+                (2, 'planned', NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO watch_event (title_id, episode_id, watched_at, is_rewatch, source)
+         VALUES (1, NULL, '2026-01-02T20:00:00Z', 0, 'manual')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let (status, body) = h.get("/api/library", Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "library failed: {body}");
+    assert_eq!(body["items"].as_array().unwrap().len(), 2);
+
+    let (status, body) = h.get("/api/library/stats", Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "stats failed: {body}");
+    assert_eq!(body["films_watched"], json!(1));
+    assert_eq!(body["minutes_watched"], json!(139));
+    assert_eq!(body["mean_rating"], json!(90.0));
+}
+
+/// An internal fault must never put a database error on the screen.
+#[tokio::test]
+async fn internal_errors_are_not_shown_verbatim() {
+    use axum::response::IntoResponse;
+    use frog::error::AppError;
+
+    let res = AppError::Other(anyhow::anyhow!("connection pool exploded")).into_response();
+    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let bytes = res.into_body().collect().await.unwrap().to_bytes();
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    let shown = body["error"].as_str().unwrap();
+    assert!(!shown.contains("exploded"), "leaked internals: {shown}");
+    assert!(shown.contains("server log"), "unhelpful message: {shown}");
+}
+
+/// Marking a whole season watched must skip episodes that have not aired.
+#[tokio::test]
+async fn bulk_season_marking_skips_unaired_episodes() {
+    let h = Harness::new().await;
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+
+    sqlx::query("INSERT INTO title (kind, tmdb_id, name) VALUES ('tv', 42, 'Part Aired')")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+
+    sqlx::query(
+        "INSERT INTO episode (title_id, season_number, episode_number, name, air_date)
+         VALUES (1, 1, 1, 'Aired',   '2020-01-01'),
+                (1, 1, 2, 'Aired',   '2020-01-08'),
+                (1, 1, 3, 'Future',  '2099-01-01'),
+                (1, 1, 4, 'Unknown', NULL)",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let (status, body, _) = h
+        .post(
+            "/api/titles/tv/42/episodes/1/watch",
+            json!({ "watched": true }),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (watched,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM watch_event")
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        watched, 3,
+        "two aired plus the undated one, never the future one"
+    );
+}
+
 #[tokio::test]
 async fn bad_filters_are_rejected_rather_than_ignored() {
     let h = Harness::new().await;

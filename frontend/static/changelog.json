@@ -1,0 +1,80 @@
+[
+	{
+		"version": "0.2.0",
+		"date": "2026-10-24",
+		"intro": "The first proper pass over the alpha: Frog has a face, a home screen and a lot of knobs.",
+		"groups": [
+			{
+				"title": "Added",
+				"items": [
+					"**A frog.** Frog finally looks like its name: a round green face with big",
+					"**Four mascots to choose from** in Settings — Classic, Sleepy, Popcorn and",
+					"**The Pond theme**, built from the logo's own colours: lily-pad green on a",
+					"**A Home screen**, separate from the library. It opens on a big image of",
+					"**Continue watching looks right.** Instead of one enormous portrait poster,",
+					"**A command palette.** Press <kbd>Ctrl</kbd>+<kbd>K</kbd> (or <kbd>/</kbd>) to",
+					"**A theme editor.** Change the background, surfaces, accent and text colour",
+					"**A lot more to adjust**: font, text size, corner radius, glass blur,",
+					"**Spoiler protection**, which blurs the still for any episode you have not",
+					"**Settings now follow you.** Preferences are stored on the server, so your",
+					"**A \"What's new\" page**, with a dot on Settings after an update.",
+					"**Private by default**: the app asks search engines not to index it, serves a",
+					"**\"Remember this device\"** on the sign-in screen. Leave it off on a shared",
+					"**Sign-in is rate limited.** Eight wrong passwords and the door closes for ten",
+					"**Four ways to draw the library**: posters, wide landscape cards, a list, or",
+					"**Mobile filters fit in one button** that opens a sheet, instead of three rows",
+					"**The episode heatmap is filled in.** It now shows TMDB's score for every",
+					"**Search results say Film or Show**, lead with the thing you probably meant",
+					"**Discovery can skip animation**, if that is not what you are here for.",
+					"**Streaming logos are links** to where you can actually watch the thing.",
+					"**Rows have arrows** on a wide screen, and no longer hide their first card",
+					"**Settings can check for a newer version**, on request only — Frog does not"
+				]
+			},
+			{
+				"title": "Fixed",
+				"items": [
+					"**The Stats page no longer breaks.** It was showing a raw database error.",
+					"**Errors are human now.** An internal fault says something went wrong and puts",
+					"**The library could fail to load** once it held a title you had never watched.",
+					"**The browser tab title was stuck** on whatever title page you had opened",
+					"**Episodes without a still no longer wreck the row layout**; the slot stays",
+					"**Episodes that have not aired cannot be ticked or rated.** They are dimmed",
+					"**Less flicker while scrolling.** The blurred bars are kept on their own layer,",
+					"**Rating is no longer a row of sliders.** One small control per title or",
+					"**The search button in the corner** opened the search page you were already"
+				]
+			},
+			{
+				"title": "Changed",
+				"items": [
+					"The library moved to its own page at `/library`, leaving `/` for Home.",
+					"**The README is for people now.** A proper front page with screenshots of the",
+					"Preferences changed moments before a reload are no longer lost."
+				]
+			}
+		]
+	},
+	{
+		"version": "0.1.0",
+		"date": "2026-10-24",
+		"intro": "The first version that runs.",
+		"groups": [
+			{
+				"title": "Added",
+				"items": [
+					"Sign in, with a one-time setup screen on a fresh install.",
+					"Search all of TMDB and add anything to your library.",
+					"Five statuses, ratings, favourites and notes.",
+					"Tick episodes one at a time or a whole season at once, with per-episode",
+					"A library wall with filters, sorts and search.",
+					"Title pages with colours taken from the poster, logo artwork, cast and crew,",
+					"Person pages that highlight what you have already seen.",
+					"Five rating formats, from 100 points to three smileys.",
+					"Installable on a phone, with an offline shell.",
+					"Runs as one Docker container, or straight from a script with no Docker."
+				]
+			}
+		]
+	}
+]

@@ -34,6 +34,11 @@
 	}
 </script>
 
+<svelte:head>
+	<title>{setup ? 'Set up' : 'Sign in'} · Frog</title>
+</svelte:head>
+
+
 <div class="screen">
 	<div class="glow" aria-hidden="true"></div>
 

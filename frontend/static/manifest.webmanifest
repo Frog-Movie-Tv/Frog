@@ -1,17 +1,29 @@
 {
 	"name": "Frog — personal cinema",
 	"short_name": "Frog",
-	"description": "Your self-hosted movie and TV tracker.",
+	"description": "Your self-hosted film and TV diary.",
+	"id": "/",
 	"start_url": "/",
 	"scope": "/",
 	"display": "standalone",
 	"orientation": "portrait-primary",
-	"background_color": "#08080c",
-	"theme_color": "#08080c",
-	"categories": ["entertainment", "utilities"],
+	"background_color": "#07120e",
+	"theme_color": "#07120e",
+	"categories": [
+		"entertainment",
+		"utilities"
+	],
 	"icons": [
-		{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-		{ "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+		{
+			"src": "/icon-192.png",
+			"sizes": "192x192",
+			"type": "image/png"
+		},
+		{
+			"src": "/icon-512.png",
+			"sizes": "512x512",
+			"type": "image/png"
+		},
 		{
 			"src": "/icon-maskable-512.png",
 			"sizes": "512x512",
@@ -20,7 +32,13 @@
 		}
 	],
 	"shortcuts": [
-		{ "name": "Search", "url": "/search" },
-		{ "name": "Library", "url": "/" }
+		{
+			"name": "Search",
+			"url": "/search"
+		},
+		{
+			"name": "Library",
+			"url": "/library"
+		}
 	]
 }

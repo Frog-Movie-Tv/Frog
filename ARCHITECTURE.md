@@ -13,7 +13,7 @@ web app. Everything in it is free to build, run and host.
 | Public profile | Not built | You said keep it private. Every route except `/api/health` and the three auth endpoints sits behind a session. |
 | Imports | IMDb CSV + AniList | Phase 2. Letterboxd and Trakt are not built; the importer is written around a common intermediate shape so adding them later is a parser, not a redesign. |
 | Scrobbling | Jellyfin webhook + generic endpoint | Phase 4. **Plex webhooks require Plex Pass, which costs money**, so Plex is out; Tautulli's webhook is free and hits the same endpoint if you ever want it. |
-| Hosting | Your laptop, Docker + Tailscale | Verified October 2026: no mainstream container host still has an always-on free tier that takes no card. Details in [DEPLOY.md](DEPLOY.md). |
+| Hosting | Your laptop, Docker + Tailscale | Verified October 2026: no mainstream container host still has an always-on free tier that takes no card. Details in [docs/INSTALL.md](docs/INSTALL.md). |
 
 ---
 
@@ -216,4 +216,4 @@ you change your mind.
 - **No Plex webhooks.** They need Plex Pass. Tautulli is the free path.
 - **No paid APIs, analytics, error reporting or fonts.** The font stack is the
   system's. TMDB's free key is the only credential.
-- **No cloud host by default.** See [DEPLOY.md](DEPLOY.md).
+- **No cloud host by default.** See [docs/INSTALL.md](docs/INSTALL.md).

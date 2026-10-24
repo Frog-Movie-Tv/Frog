@@ -93,13 +93,17 @@ pub async fn session_is_valid(pool: &SqlitePool, token: &str) -> bool {
     }
 }
 
-pub fn session_cookie(token: String, secure: bool, days: i64) -> Cookie<'static> {
+/// `days` of `None` makes a session cookie: it dies with the browser, which
+/// is what "do not remember this device" has to mean to be worth offering.
+pub fn session_cookie(token: String, secure: bool, days: Option<i64>) -> Cookie<'static> {
     let mut cookie = Cookie::new(COOKIE_NAME, token);
     cookie.set_http_only(true);
     cookie.set_same_site(SameSite::Lax);
     cookie.set_secure(secure);
     cookie.set_path("/");
-    cookie.set_max_age(::time::Duration::days(days.max(1)));
+    if let Some(days) = days {
+        cookie.set_max_age(::time::Duration::days(days.max(1)));
+    }
     cookie
 }
 

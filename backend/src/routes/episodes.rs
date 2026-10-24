@@ -113,6 +113,7 @@ pub async fn set_season_watched(
              SELECT ?, e.id, ?, 0, 'manual'
                FROM episode e
               WHERE e.title_id = ? AND e.season_number = ?
+                AND (e.air_date IS NULL OR e.air_date <= date('now'))
                 AND NOT EXISTS (SELECT 1 FROM watch_event w WHERE w.episode_id = e.id)",
         )
         .bind(title_id)

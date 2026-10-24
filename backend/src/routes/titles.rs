@@ -142,13 +142,19 @@ async fn next_unwatched(state: &AppState, title_id: i64) -> AppResult<Option<Nex
     }))
 }
 
-/// Compact grid data for the per-show episode heatmap. Empty until the show has
-/// been added (that is when every season gets pulled down).
+/// (season, episode, my rating, TMDB score, watch count)
+type HeatRow = (i64, i64, Option<f64>, Option<f64>, i64);
+
+/// Compact grid data for the per-show episode heatmap.
+///
+/// Carries TMDB's own episode score alongside mine, so a show you have just
+/// added already shows the shape of its seasons instead of an empty grid.
 async fn heatmap(state: &AppState, title_id: i64) -> AppResult<Value> {
-    let rows: Vec<(i64, i64, Option<f64>, i64)> = sqlx::query_as(
+    let rows: Vec<HeatRow> = sqlx::query_as(
         "SELECT e.season_number,
                 e.episode_number,
                 s.rating,
+                e.tmdb_vote,
                 (SELECT COUNT(*) FROM watch_event w WHERE w.episode_id = e.id)
            FROM episode e
            LEFT JOIN episode_state s ON s.episode_id = e.id
@@ -161,8 +167,15 @@ async fn heatmap(state: &AppState, title_id: i64) -> AppResult<Value> {
 
     let cells: Vec<Value> = rows
         .into_iter()
-        .map(|(s, e, rating, watches)| {
-            json!({ "s": s, "e": e, "rating": rating, "watched": watches > 0 })
+        .map(|(s, e, rating, tmdb, watches)| {
+            json!({
+                "s": s,
+                "e": e,
+                "rating": rating,
+                // TMDB scores out of ten; everything else here is out of 100.
+                "tmdb": tmdb.map(|v| v * 10.0),
+                "watched": watches > 0,
+            })
         })
         .collect();
 

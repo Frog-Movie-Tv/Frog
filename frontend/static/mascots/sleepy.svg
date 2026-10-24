@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Frog">
+  <ellipse cx="32" cy="38" rx="25" ry="20" fill="#6cc46b"/>
+  <ellipse cx="32" cy="45" rx="15.5" ry="11" fill="#8ad88a" opacity="0.45"/>
+  <circle cx="19" cy="20" r="12" fill="#6cc46b"/>
+  <circle cx="45" cy="20" r="12" fill="#6cc46b"/>
+  <ellipse cx="12.5" cy="40" rx="5" ry="3.3" fill="#f4738f" opacity="0.82"/>
+  <ellipse cx="51.5" cy="40" rx="5" ry="3.3" fill="#f4738f" opacity="0.82"/>
+  <circle cx="19" cy="20" r="8" fill="#fbfaf1"/>
+  <circle cx="45" cy="20" r="8" fill="#fbfaf1"/>
+  <polyline points="13.5,19.5 14.29,20.3 15.07,20.97 15.86,21.52 16.64,21.95 17.43,22.26 18.21,22.44 19,22.5 19.79,22.44 20.57,22.26 21.36,21.95 22.14,21.52 22.93,20.97 23.71,20.3 24.5,19.5" fill="none" stroke="#11231a" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="39.5,19.5 40.29,20.3 41.07,20.97 41.86,21.52 42.64,21.95 43.43,22.26 44.21,22.44 45,22.5 45.79,22.44 46.57,22.26 47.36,21.95 48.14,21.52 48.93,20.97 49.71,20.3 50.5,19.5" fill="none" stroke="#11231a" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="26,44 26.86,44.46 27.71,44.86 28.57,45.18 29.43,45.43 30.29,45.61 31.14,45.71 32,45.75 32.86,45.71 33.71,45.61 34.57,45.43 35.43,45.18 36.29,44.86 37.14,44.46 38,44" fill="none" stroke="#2c6b40" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
