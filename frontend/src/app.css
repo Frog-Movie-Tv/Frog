@@ -1,0 +1,357 @@
+/* ---------------------------------------------------------------------------
+   Frog design tokens.
+
+   Every colour, radius and spacing step the app uses is declared here as a
+   custom property. Phase 3's theme editor is then a matter of writing a few of
+   these onto :root at runtime, with no component changes at all. Title pages
+   additionally override --accent locally from the poster palette, which is why
+   components must never hardcode a colour.
+   --------------------------------------------------------------------------- */
+
+:root {
+	color-scheme: dark;
+
+	--bg: #08080c;
+	--bg-elev: #111118;
+	--bg-elev-2: #191922;
+	--bg-hover: #22222d;
+	--scrim: rgba(8, 8, 12, 0.72);
+
+	--text: #f3f2f7;
+	--text-dim: #a9a7b8;
+	--text-faint: #6f6d80;
+	--line: rgba(255, 255, 255, 0.09);
+	--line-strong: rgba(255, 255, 255, 0.16);
+
+	--accent: #7a5cff;
+	--accent-ink: #ffffff;
+	--accent-soft: rgba(122, 92, 255, 0.16);
+
+	--good: #3ecf8e;
+	--warn: #f5a524;
+	--bad: #f3506c;
+
+	--radius: 16px;
+	--radius-sm: 10px;
+	--radius-lg: 24px;
+	--radius-pill: 999px;
+
+	--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+	--shadow-2: 0 10px 30px -10px rgba(0, 0, 0, 0.7);
+	--shadow-3: 0 30px 60px -20px rgba(0, 0, 0, 0.8);
+
+	--gap: 16px;
+	--page-pad: 20px;
+	--header-h: 60px;
+
+	/* Poster density: the library grid reads this, the settings page sets it. */
+	--poster-min: 132px;
+
+	--font: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI',
+		Roboto, 'Helvetica Neue', Arial, sans-serif;
+	--font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+
+	--ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+	--fast: 140ms;
+	--slow: 320ms;
+}
+
+:root[data-theme='amoled'] {
+	--bg: #000000;
+	--bg-elev: #0a0a0e;
+	--bg-elev-2: #121217;
+	--scrim: rgba(0, 0, 0, 0.8);
+}
+
+:root[data-theme='light'] {
+	color-scheme: light;
+
+	--bg: #f6f5f8;
+	--bg-elev: #ffffff;
+	--bg-elev-2: #f0eff4;
+	--bg-hover: #e7e6ed;
+	--scrim: rgba(246, 245, 248, 0.78);
+
+	--text: #14131a;
+	--text-dim: #5b5968;
+	--text-faint: #8c8a99;
+	--line: rgba(10, 8, 20, 0.1);
+	--line-strong: rgba(10, 8, 20, 0.18);
+
+	--accent-soft: rgba(122, 92, 255, 0.14);
+	--shadow-2: 0 10px 30px -14px rgba(20, 16, 40, 0.3);
+	--shadow-3: 0 30px 60px -24px rgba(20, 16, 40, 0.35);
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font);
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+	overscroll-behavior-y: none;
+}
+
+body {
+	min-height: 100dvh;
+}
+
+h1,
+h2,
+h3,
+h4 {
+	margin: 0;
+	font-weight: 650;
+	letter-spacing: -0.02em;
+	line-height: 1.15;
+}
+
+h1 {
+	font-size: clamp(1.75rem, 4vw, 2.6rem);
+}
+h2 {
+	font-size: 1.15rem;
+}
+
+p {
+	margin: 0;
+	line-height: 1.6;
+}
+
+a {
+	color: inherit;
+	text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+	font: inherit;
+	color: inherit;
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+	border-radius: var(--radius-sm);
+}
+
+::selection {
+	background: var(--accent);
+	color: var(--accent-ink);
+}
+
+/* Scrollbars that do not ruin a dark surface. */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: var(--line-strong) transparent;
+}
+*::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+	background: var(--line-strong);
+	border-radius: var(--radius-pill);
+	border: 3px solid transparent;
+	background-clip: content-box;
+}
+
+/* --- shared primitives ---------------------------------------------------- */
+
+.page {
+	max-width: 1500px;
+	margin: 0 auto;
+	padding: calc(var(--header-h) + 18px) var(--page-pad) 96px;
+}
+
+.muted {
+	color: var(--text-dim);
+}
+.faint {
+	color: var(--text-faint);
+}
+
+.eyebrow {
+	font-size: 0.72rem;
+	font-weight: 650;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--text-faint);
+}
+
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	padding: 10px 16px;
+	border: 1px solid var(--line-strong);
+	border-radius: var(--radius-pill);
+	background: var(--bg-elev-2);
+	color: var(--text);
+	font-weight: 600;
+	font-size: 0.9rem;
+	cursor: pointer;
+	transition:
+		background var(--fast) var(--ease),
+		border-color var(--fast) var(--ease),
+		transform var(--fast) var(--ease);
+	white-space: nowrap;
+}
+
+.btn:hover {
+	background: var(--bg-hover);
+}
+.btn:active {
+	transform: scale(0.97);
+}
+
+.btn.primary {
+	background: var(--accent);
+	border-color: transparent;
+	color: var(--accent-ink);
+}
+.btn.primary:hover {
+	filter: brightness(1.08);
+}
+
+.btn.ghost {
+	background: transparent;
+}
+.btn.ghost:hover {
+	background: var(--bg-elev-2);
+}
+
+.btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.field > span {
+	font-size: 0.8rem;
+	color: var(--text-dim);
+	font-weight: 550;
+}
+
+.input,
+select.input,
+textarea.input {
+	width: 100%;
+	padding: 11px 14px;
+	background: var(--bg-elev-2);
+	border: 1px solid var(--line);
+	border-radius: var(--radius-sm);
+	transition: border-color var(--fast) var(--ease);
+}
+
+.input:focus {
+	border-color: var(--accent);
+	outline: none;
+}
+
+.card {
+	background: var(--bg-elev);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+}
+
+.pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 10px;
+	border-radius: var(--radius-pill);
+	background: var(--bg-elev-2);
+	border: 1px solid var(--line);
+	font-size: 0.78rem;
+	font-weight: 600;
+	color: var(--text-dim);
+}
+
+.section-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 16px;
+	margin-bottom: 14px;
+}
+
+.skeleton {
+	background: linear-gradient(
+		100deg,
+		var(--bg-elev) 30%,
+		var(--bg-elev-2) 50%,
+		var(--bg-elev) 70%
+	);
+	background-size: 220% 100%;
+	animation: shimmer 1.4s infinite linear;
+	border-radius: var(--radius-sm);
+}
+
+@keyframes shimmer {
+	to {
+		background-position: -220% 0;
+	}
+}
+
+/* --- page transitions ----------------------------------------------------- */
+
+@view-transition {
+	navigation: auto;
+}
+
+::view-transition-old(root) {
+	animation: fade-out 120ms var(--ease) both;
+}
+::view-transition-new(root) {
+	animation: fade-in 220ms var(--ease) both;
+}
+
+@keyframes fade-out {
+	to {
+		opacity: 0;
+	}
+}
+@keyframes fade-in {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		transition-duration: 0.01ms !important;
+	}
+	::view-transition-old(root),
+	::view-transition-new(root) {
+		animation: none;
+	}
+}
+
+@media (max-width: 720px) {
+	:root {
+		--page-pad: 14px;
+		--poster-min: 104px;
+	}
+}

@@ -1,0 +1,27 @@
+{
+  "extends": "$app/tsconfig",
+  "include": [
+    "src",
+    "e2e",
+    "*"
+  ],
+  "exclude": [
+    "src/service-worker",
+    "src/service-worker.ts"
+  ],
+  "compilerOptions": {
+    "strict": true,
+    "checkJs": true,
+    "allowJs": true,
+    "skipLibCheck": true,
+    "paths": {
+      "#lib/*": [
+        "./src/lib/*"
+      ]
+    },
+    "types": [
+      "$app/types",
+      "node"
+    ]
+  }
+}

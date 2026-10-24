@@ -1,0 +1,31 @@
+# secrets
+.env
+.env.local
+
+# rust
+/backend/target
+**/*.rs.bk
+
+# node
+node_modules/
+/frontend/.svelte-kit
+/frontend/build
+/frontend/test-results
+/frontend/playwright-report
+/frontend/.vite
+
+# data
+/data
+*.db
+*.db-shm
+*.db-wal
+
+# os / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# local run data
+/.devdata
+/frontend/.e2e-data

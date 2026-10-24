@@ -1,0 +1,35 @@
+services:
+  frog:
+    build: .
+    image: frog:latest
+    container_name: frog
+    restart: unless-stopped
+
+    # Your TMDB key and any overrides. Copy .env.example to .env first.
+    env_file:
+      - .env
+
+    # These win over .env, because inside the container the paths differ from
+    # the ones you would use running the binary directly on the laptop.
+    environment:
+      DATABASE_URL: sqlite:/data/frog.db?mode=rwc
+      FROG_STATIC_DIR: /app/static
+      FROG_BIND: 0.0.0.0:8080
+
+    # Bound to localhost only. Tailscale is what makes it reachable from the
+    # phone; nothing is exposed to the local network or the internet.
+    ports:
+      - '127.0.0.1:8080:8080'
+
+    volumes:
+      - frog-data:/data
+
+    # Nothing here needs to write outside /data.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  frog-data:

@@ -1,0 +1,211 @@
+use axum::extract::{Path, State};
+use axum::Json;
+use chrono::Utc;
+use serde::Deserialize;
+use serde_json::{json, Value};
+use sqlx::SqlitePool;
+
+use crate::auth::Auth;
+use crate::error::{AppError, AppResult};
+use crate::state::AppState;
+use crate::store;
+
+#[derive(Deserialize)]
+pub struct WatchBody {
+    /// false clears every watch of this episode; true adds one.
+    #[serde(default = "yes")]
+    pub watched: bool,
+    /// ISO timestamp. Defaults to now, which is what a checkmark means.
+    pub watched_at: Option<String>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+async fn episode_id(pool: &SqlitePool, title_id: i64, season: i64, episode: i64) -> AppResult<i64> {
+    let row: Option<(i64,)> = sqlx::query_as(
+        "SELECT id FROM episode WHERE title_id = ? AND season_number = ? AND episode_number = ?",
+    )
+    .bind(title_id)
+    .bind(season)
+    .bind(episode)
+    .fetch_optional(pool)
+    .await?;
+
+    row.map(|r| r.0)
+        .ok_or_else(|| AppError::NotFound(format!("no S{season}E{episode} for this show")))
+}
+
+/// Make sure the show exists locally and its seasons are present, so ticking an
+/// episode works even on a title that was never formally added.
+async fn resolve(state: &AppState, kind: &str, tmdb_id: i64) -> AppResult<i64> {
+    if kind != "tv" {
+        return Err(AppError::BadRequest("only shows have episodes".into()));
+    }
+    match store::find_title_id(&state.pool, kind, tmdb_id).await? {
+        Some(id) => Ok(id),
+        None => {
+            let (id, detail) = store::ensure_title(state, kind, tmdb_id).await?;
+            store::sync_all_seasons(state, id, &detail).await?;
+            Ok(id)
+        }
+    }
+}
+
+pub async fn set_watched(
+    _: Auth,
+    State(state): State<AppState>,
+    Path((kind, tmdb_id, season, episode)): Path<(String, i64, i64, i64)>,
+    Json(body): Json<WatchBody>,
+) -> AppResult<Json<Value>> {
+    let title_id = resolve(&state, &kind, tmdb_id).await?;
+    let ep_id = episode_id(&state.pool, title_id, season, episode).await?;
+
+    if body.watched {
+        let when = body.watched_at.unwrap_or_else(|| Utc::now().to_rfc3339());
+        let seen_before: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE episode_id = ?")
+                .bind(ep_id)
+                .fetch_one(&state.pool)
+                .await?;
+
+        sqlx::query(
+            "INSERT INTO watch_event (title_id, episode_id, watched_at, is_rewatch, source)
+             VALUES (?, ?, ?, ?, 'manual')",
+        )
+        .bind(title_id)
+        .bind(ep_id)
+        .bind(&when)
+        .bind(i64::from(seen_before.0 > 0))
+        .execute(&state.pool)
+        .await?;
+    } else {
+        sqlx::query("DELETE FROM watch_event WHERE episode_id = ?")
+            .bind(ep_id)
+            .execute(&state.pool)
+            .await?;
+    }
+
+    after_change(&state, title_id).await
+}
+
+#[derive(Deserialize)]
+pub struct SeasonWatchBody {
+    #[serde(default = "yes")]
+    pub watched: bool,
+}
+
+/// Tick or clear a whole season in one go.
+pub async fn set_season_watched(
+    _: Auth,
+    State(state): State<AppState>,
+    Path((kind, tmdb_id, season)): Path<(String, i64, i64)>,
+    Json(body): Json<SeasonWatchBody>,
+) -> AppResult<Json<Value>> {
+    let title_id = resolve(&state, &kind, tmdb_id).await?;
+
+    if body.watched {
+        let now = Utc::now().to_rfc3339();
+        // Only episodes that have no watch yet, so this never inflates rewatches.
+        sqlx::query(
+            "INSERT INTO watch_event (title_id, episode_id, watched_at, is_rewatch, source)
+             SELECT ?, e.id, ?, 0, 'manual'
+               FROM episode e
+              WHERE e.title_id = ? AND e.season_number = ?
+                AND NOT EXISTS (SELECT 1 FROM watch_event w WHERE w.episode_id = e.id)",
+        )
+        .bind(title_id)
+        .bind(&now)
+        .bind(title_id)
+        .bind(season)
+        .execute(&state.pool)
+        .await?;
+    } else {
+        sqlx::query(
+            "DELETE FROM watch_event
+              WHERE episode_id IN (SELECT id FROM episode WHERE title_id = ? AND season_number = ?)",
+        )
+        .bind(title_id)
+        .bind(season)
+        .execute(&state.pool)
+        .await?;
+    }
+
+    after_change(&state, title_id).await
+}
+
+#[derive(Deserialize)]
+pub struct EpisodeStateBody {
+    /// 0..100, or null to clear.
+    pub rating: Option<f64>,
+    pub notes: Option<String>,
+}
+
+pub async fn set_state(
+    _: Auth,
+    State(state): State<AppState>,
+    Path((kind, tmdb_id, season, episode)): Path<(String, i64, i64, i64)>,
+    Json(body): Json<EpisodeStateBody>,
+) -> AppResult<Json<Value>> {
+    if let Some(r) = body.rating {
+        if !(0.0..=100.0).contains(&r) {
+            return Err(AppError::BadRequest(
+                "rating must be between 0 and 100".into(),
+            ));
+        }
+    }
+
+    let title_id = resolve(&state, &kind, tmdb_id).await?;
+    let ep_id = episode_id(&state.pool, title_id, season, episode).await?;
+
+    sqlx::query(
+        "INSERT INTO episode_state (episode_id, rating, notes, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (episode_id) DO UPDATE SET
+            rating = excluded.rating,
+            notes = excluded.notes,
+            updated_at = excluded.updated_at",
+    )
+    .bind(ep_id)
+    .bind(body.rating)
+    .bind(&body.notes)
+    .bind(Utc::now().to_rfc3339())
+    .execute(&state.pool)
+    .await?;
+
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// After any watch change, nudge the library entry to match reality: a show you
+/// start becomes "watching", and finishing the last episode completes it.
+async fn after_change(state: &AppState, title_id: i64) -> AppResult<Json<Value>> {
+    let progress = store::progress(&state.pool, title_id).await?;
+    let entry = store::get_entry(&state.pool, title_id).await?;
+
+    let desired = if progress.total > 0 && progress.watched >= progress.total {
+        Some("completed")
+    } else if progress.watched > 0 {
+        match entry.as_ref().map(|e| e.status.as_str()) {
+            // Never drag something out of paused or dropped behind your back.
+            Some("paused") | Some("dropped") => None,
+            Some("watching") => None,
+            _ => Some("watching"),
+        }
+    } else {
+        None
+    };
+
+    if let Some(status) = desired {
+        if entry.as_ref().map(|e| e.status.as_str()) != Some(status) {
+            let patch = store::LibraryPatch {
+                status: Some(status.to_string()),
+                ..Default::default()
+            };
+            store::apply_patch(&state.pool, title_id, &patch).await?;
+        }
+    }
+
+    let row = store::get_title(&state.pool, title_id).await?;
+    let item = store::build_item(&state.pool, row).await?;
+    Ok(Json(json!({ "item": item })))
+}
