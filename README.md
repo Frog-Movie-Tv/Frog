@@ -49,12 +49,18 @@ planned in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Quick start
 
+```powershell
+Copy-Item .env.example .env   # then put your free TMDB key in it
+.\scriptsun-local.ps1       # no Docker needed
+```
+
+Or, with Docker Desktop installed and running:
+
 ```bash
-cp .env.example .env     # then put your free TMDB key in it
 docker compose up -d --build
 ```
 
-Open <http://127.0.0.1:8080> and create your account.
+Either way, open <http://127.0.0.1:8080> and create your account.
 Full instructions, including reaching it from your phone over Tailscale, are in
 [DEPLOY.md](DEPLOY.md).
 

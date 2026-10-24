@@ -20,16 +20,34 @@ does in the footer of every page.
 
 ---
 
-## 2. Install Docker Desktop
+## 2. Choose how to run it
 
-<https://www.docker.com/products/docker-desktop/> — free for personal use.
-On Windows let it use the WSL 2 backend when it offers.
+Two options. **A needs nothing but Rust and Node, which you already have if you
+cloned this and ran the tests.** B is the containerised version, and is what
+you want once it is running all the time.
 
-Check it works:
+### Option A — run it directly (no Docker)
+
+Skip to step 3, then use `scripts/run-local.ps1`. Nothing else to install.
+
+### Option B — Docker Desktop
+
+<https://www.docker.com/products/docker-desktop/> — free for personal use. On
+Windows, let it use the WSL 2 backend when it offers. Or from a terminal:
+
+```powershell
+winget install Docker.DockerDesktop
+```
+
+Docker Desktop needs a sign-out or reboot after installing, and it must be
+**running** (whale icon in the tray) before any `docker` command works. Check:
 
 ```bash
 docker run --rm hello-world
 ```
+
+If PowerShell says `The term 'docker' is not recognized`, it is not installed,
+or it is installed but the terminal predates the install — open a new one.
 
 ---
 
@@ -37,8 +55,8 @@ docker run --rm hello-world
 
 From the repository root:
 
-```bash
-cp .env.example .env
+```powershell
+Copy-Item .env.example .env
 ```
 
 Open `.env` and set at least:
@@ -47,12 +65,30 @@ Open `.env` and set at least:
 TMDB_API_KEY=your_key_here
 ```
 
+Leave `TMDB_API_KEY` empty and the app still starts, but search finds nothing
+and no artwork loads — the header shows a **No TMDB key** badge until you set
+it.
+
 If you would rather not type credentials into a browser form, also set
 `FROG_ADMIN_USERNAME` and `FROG_ADMIN_PASSWORD` (8 characters or more) and the
 account is created at first boot. Otherwise leave them blank and the app shows
 a setup screen the first time you open it.
 
-Build and run:
+### Start it — option A, no Docker
+
+```powershell
+.\scripts\run-local.ps1
+```
+
+It builds whatever is missing, then serves on <http://127.0.0.1:8080>. The
+database goes in `./data/frog.db`. `-Port 9000` moves it, `-Rebuild` forces a
+fresh build. Ctrl+C stops it.
+
+This reads your `.env` for the TMDB key and everything else, but overrides
+`DATABASE_URL` and `FROG_STATIC_DIR`, because the values in `.env.example` are
+the paths *inside the container* and do not exist on the host.
+
+### Start it — option B, Docker
 
 ```bash
 docker compose up -d --build
@@ -90,9 +126,9 @@ with no port forwarding and nothing open to the internet.
 tailscale ip -4
 ```
 
-Note that `docker-compose.yml` binds the port to `127.0.0.1` only. To let
-Tailscale reach it, use Tailscale Serve, which is the better option anyway
-because it gives you real HTTPS:
+Both ways of running Frog bind to `127.0.0.1` only. To let Tailscale reach it,
+use Tailscale Serve, which is the better option anyway because it gives you
+real HTTPS:
 
 ```bash
 tailscale serve --bg 8080
@@ -151,9 +187,10 @@ export from inside the app, which is the backup you can actually read.
 
 ---
 
-## Running without Docker
+## Developing
 
-Useful while developing.
+`scripts/run-local.ps1` serves the built app, which is what you want for
+day-to-day use. While changing the frontend you want hot reload instead:
 
 ```bash
 # terminal 1 — API on :8080
@@ -166,12 +203,7 @@ npm install
 npm run dev
 ```
 
-Then open <http://localhost:5173>. For a production-shaped run:
-
-```bash
-cd frontend && npm run build
-cd ../backend && FROG_STATIC_DIR=../frontend/build cargo run --release
-```
+Then open <http://localhost:5173>.
 
 ---
 
@@ -221,8 +253,13 @@ Sources: [Fly.io vs Railway vs Render 2026](https://speedtesthq.com/compare/fly-
 
 ## Troubleshooting
 
+**`docker: The term 'docker' is not recognized`.** Docker Desktop is not
+installed, or the terminal was open before you installed it. Either install it
+(step 2) or use `.\scriptsun-local.ps1`, which needs no Docker at all.
+
 **"No TMDB key" badge in the header.** `TMDB_API_KEY` is empty or did not reach
-the container. Check `.env`, then `docker compose up -d` to recreate it.
+the process. Check `.env`; under Docker, `docker compose up -d` recreates the
+container with the new value, and `run-local.ps1` just needs a restart.
 
 **The setup screen does not appear, it asks me to sign in.** An account already
 exists. Delete the volume to start over: `docker compose down -v`. That erases
