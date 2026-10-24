@@ -47,14 +47,12 @@
 			<span class="mark" aria-hidden="true"></span>
 			<h1>{setup ? 'Set up Frog' : 'Frog'}</h1>
 			<p class="muted">
-				{setup
-					? 'Pick the username and password you will use on this instance. This screen closes for good once the account exists.'
-					: 'Your personal cinema.'}
+				{setup ? 'Choose the account you will sign in with.' : 'Your film and television diary.'}
 			</p>
 		</div>
 
 		{#if session.offline}
-			<p class="notice">Cannot reach the server. Check that it is running and you are on the same Tailnet.</p>
+			<p class="notice">Cannot reach the server.</p>
 		{/if}
 
 		<label class="field">
@@ -89,12 +87,7 @@
 			{busy ? 'Working…' : setup ? 'Create account' : 'Sign in'}
 		</button>
 
-		{#if setup}
-			<p class="faint small">
-				Prefer not to type it here? Set <code>FROG_ADMIN_USERNAME</code> and
-				<code>FROG_ADMIN_PASSWORD</code> in <code>.env</code> and restart.
-			</p>
-		{/if}
+
 	</form>
 </div>
 
@@ -179,16 +172,4 @@
 		background: color-mix(in srgb, var(--bad) 14%, var(--bg-elev-2));
 	}
 
-	.small {
-		font-size: 0.74rem;
-		line-height: 1.5;
-	}
-
-	code {
-		font-family: var(--font-mono);
-		font-size: 0.92em;
-		background: var(--bg-elev-2);
-		padding: 1px 5px;
-		border-radius: 4px;
-	}
 </style>

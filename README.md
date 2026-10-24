@@ -39,12 +39,22 @@ nothing at all.
 </tr>
 <tr>
 <td>
-<img src="docs/screenshots/settings-desktop-pond.png" alt="The settings page with theme tiles and mascot choices">
-<p align="center"><b>Make it yours</b><br><sub>Themes, fonts, shapes, cards and rows — all live</sub></p>
+<img src="docs/screenshots/diary-desktop-pond.png" alt="A diary of watched episodes grouped by month">
+<p align="center"><b>Your diary</b><br><sub>Everything you have watched, newest first</sub></p>
 </td>
 <td>
 <img src="docs/screenshots/stats-desktop-pond.png" alt="Counts of titles tracked, films, episodes and time watched">
 <p align="center"><b>Your numbers</b><br><sub>How much of your life this has quietly taken</sub></p>
+</td>
+</tr>
+<tr>
+<td>
+<img src="docs/screenshots/settings-desktop-pond.png" alt="The settings page with theme tiles and mascot choices">
+<p align="center"><b>Make it yours</b><br><sub>Themes, fonts, shapes, cards and rows — all live</sub></p>
+</td>
+<td>
+<img src="docs/screenshots/import-desktop-pond.png" alt="The import page offering Letterboxd, IMDb, Trakt, TV Time and Frog backups">
+<p align="center"><b>Bring your history</b><br><sub>Letterboxd, Trakt, IMDb and TV Time</sub></p>
 </td>
 </tr>
 </table>
@@ -77,6 +87,10 @@ nothing at all.
 
 ## A quick tour
 
+**Bring your history with you.** Import from Letterboxd, Trakt, IMDb or TV
+Time. Frog reads the export, matches each title, shows you what it found and
+lets you correct anything it got wrong before a single row is written.
+
 **Find anything.** Search every film and show on TMDB and add it with one tap.
 Results lead with the thing you actually meant, rather than obscure shorts that
 happen to share a word.
@@ -86,8 +100,9 @@ show moves itself to Watching; tick the last one and it completes itself. Rate
 episodes one by one, leave notes on them, and see a whole series at a glance as
 a grid of coloured squares.
 
-**Know what is next.** Home opens on whatever you are in the middle of, names
-the exact next episode, and lists what airs in the coming week.
+**Know what is next.** Home opens on whatever you are in the middle of and
+names the exact next episode. The calendar shows the month ahead, and the diary
+reads back everything you have watched.
 
 **Press Ctrl+K.** Jump to any title, page or setting without reaching for the
 mouse.
@@ -164,8 +179,8 @@ keeping it awake.
 
 <br>
 
-Importing from IMDb and syncing with AniList are next on the list. Letterboxd
-and Trakt are not planned.
+Import it. Frog reads exports from Letterboxd, Trakt, IMDb and TV Time, and
+restores its own backups. You see every match before anything is written.
 
 </details>
 

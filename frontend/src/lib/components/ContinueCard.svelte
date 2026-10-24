@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from './Icon.svelte';
 	import { img } from '#lib/api';
 	import { episodeCode, prettyDate } from '#lib/format';
 	import type { UpNextEntry } from '#lib/types';
@@ -30,20 +31,25 @@
 			<span class="name">{item.name}</span>
 		{/if}
 
-		<span class="play" aria-hidden="true">▶</span>
+		{#if next?.aired !== false}
+			<span class="play" aria-hidden="true"><Icon name="play" size={13} filled /></span>
+		{:else}
+			<span class="waiting"><Icon name="clock" size={13} /> Caught up</span>
+		{/if}
 	</div>
 
 	<div class="meta">
-		{#if next}
+		{#if next && next.aired}
 			<span class="next">
 				<strong>{episodeCode(next.season_number, next.episode_number)}</strong>
 				{#if next.name}<span class="ep">{next.name}</span>{/if}
 			</span>
-			{#if !next.aired && next.air_date}
-				<span class="faint">Airs {prettyDate(next.air_date)}</span>
-			{/if}
+		{:else if next}
+			<span class="next muted">
+				Next episode {next.air_date ? prettyDate(next.air_date) : 'to be announced'}
+			</span>
 		{:else}
-			<span class="next"><strong>All caught up</strong></span>
+			<span class="next muted">Finished</span>
 		{/if}
 
 		{#if item.total_episodes > 0}
@@ -120,6 +126,22 @@
 		line-height: 1.2;
 	}
 
+	.waiting {
+		position: absolute;
+		right: 12px;
+		bottom: 12px;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 5px 11px;
+		border-radius: var(--radius-pill);
+		background: rgba(10, 12, 11, 0.74);
+		border: 1px solid rgba(255, 255, 255, 0.16);
+		color: #fff;
+		font-size: 0.72rem;
+		font-weight: 600;
+	}
+
 	.play {
 		position: absolute;
 		right: 12px;
@@ -131,7 +153,6 @@
 		border-radius: 50%;
 		background: var(--accent);
 		color: var(--accent-ink);
-		font-size: 0.8rem;
 		box-shadow: var(--shadow-2);
 	}
 

@@ -1,10 +1,12 @@
 <script lang="ts">
+	import Icon from '#lib/components/Icon.svelte';
 	import { api, img, type LibraryQuery } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Grid from '#lib/components/Grid.svelte';
 	import Poster from '#lib/components/Poster.svelte';
+	import Select from '#lib/components/Select.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
-	import { formatScore, relativeDate, runtime, year } from '#lib/format';
+	import { formatScore, plural, relativeDate, runtime, year } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
@@ -36,6 +38,26 @@
 	const genres = $derived(
 		[...new Set(items.flatMap((i) => i.genres))].sort((a, b) => a.localeCompare(b))
 	);
+
+	const kindOptions = [
+		{ value: 'all', label: 'Films & shows' },
+		{ value: 'movie', label: 'Films' },
+		{ value: 'tv', label: 'Shows' }
+	];
+
+	const genreOptions = $derived([
+		{ value: '', label: 'Any genre' },
+		...genres.map((g) => ({ value: g, label: g }))
+	]);
+
+	const sortOptions = [
+		{ value: 'added', label: 'Recently added' },
+		{ value: 'updated', label: 'Recently updated' },
+		{ value: 'last_watched', label: 'Last watched' },
+		{ value: 'name', label: 'Name' },
+		{ value: 'rating', label: 'My rating' },
+		{ value: 'release', label: 'Release date' }
+	];
 
 	const counts = $derived.by(() => {
 		const out: Partial<Record<Status, number>> = {};
@@ -99,7 +121,7 @@
 <div class="page">
 	<div class="section-head">
 		<h1>Library</h1>
-		<span class="faint">{items.length} {items.length === 1 ? 'title' : 'titles'}</span>
+		<span class="faint">{plural(items.length, 'title')}</span>
 	</div>
 
 	<!-- Desktop: everything laid out. Mobile: one button into a sheet. -->
@@ -117,49 +139,52 @@
 		<div class="row">
 			<input class="input search" placeholder="Filter by name" bind:value={term} />
 
-			<select class="input" bind:value={kind} aria-label="Type">
-				<option value="all">Films &amp; shows</option>
-				<option value="movie">Films</option>
-				<option value="tv">Shows</option>
-			</select>
+			<Select
+				label="Type"
+				value={kind}
+				options={kindOptions}
+				onchange={(v) => (kind = v as Kind | 'all')}
+			/>
 
-			<select class="input" bind:value={genre} aria-label="Genre">
-				<option value="">Any genre</option>
-				{#each genres as g (g)}<option value={g}>{g}</option>{/each}
-			</select>
+			<Select
+				label="Genre"
+				value={genre}
+				options={genreOptions}
+				onchange={(v) => (genre = v)}
+			/>
 
-			<select class="input" bind:value={sort} aria-label="Sort by">
-				<option value="added">Recently added</option>
-				<option value="updated">Recently updated</option>
-				<option value="last_watched">Last watched</option>
-				<option value="name">Name</option>
-				<option value="rating">My rating</option>
-				<option value="release">Release date</option>
-			</select>
+			<Select
+				label="Sort by"
+				value={sort}
+				options={sortOptions}
+				onchange={(v) => (sort = v as NonNullable<LibraryQuery['sort']>)}
+			/>
 
 			<button
-				class="btn ghost"
+				class="btn ghost icon-only"
 				aria-label="Reverse order"
 				title="Reverse order"
 				onclick={() => (order = order === 'desc' ? 'asc' : 'desc')}
 			>
-				{order === 'desc' ? '↓' : '↑'}
+				<Icon name={order === 'desc' ? 'arrow-down' : 'arrow-up'} />
 			</button>
 
 			<button
-				class="btn ghost"
+				class="btn ghost icon-only"
 				class:on={favourite}
 				aria-pressed={favourite}
+				aria-label="Favourites only"
 				title="Favourites only"
 				onclick={() => (favourite = !favourite)}
 			>
-				{favourite ? '♥' : '♡'}
+				<Icon name="heart" filled={favourite} />
 			</button>
 		</div>
 	</div>
 
 	<div class="mobile-bar">
 		<button class="btn" onclick={() => (sheetOpen = true)}>
+			<Icon name="filter" size={16} />
 			Filters
 			{#if activeCount}<span class="count">{activeCount}</span>{/if}
 		</button>
@@ -191,48 +216,39 @@
 					<input class="input" placeholder="Filter by name" bind:value={term} />
 				</label>
 
-				<label class="field">
+				<div class="field">
 					<span>Type</span>
-					<select class="input" bind:value={kind}>
-						<option value="all">Films &amp; shows</option>
-						<option value="movie">Films</option>
-						<option value="tv">Shows</option>
-					</select>
-				</label>
+					<Select full label="Type" value={kind} options={kindOptions}
+						onchange={(v) => (kind = v as Kind | 'all')} />
+				</div>
 
-				<label class="field">
+				<div class="field">
 					<span>Genre</span>
-					<select class="input" bind:value={genre}>
-						<option value="">Any genre</option>
-						{#each genres as g (g)}<option value={g}>{g}</option>{/each}
-					</select>
-				</label>
+					<Select full label="Genre" value={genre} options={genreOptions}
+						onchange={(v) => (genre = v)} />
+				</div>
 
-				<label class="field">
+				<div class="field">
 					<span>Sort</span>
-					<select class="input" bind:value={sort}>
-						<option value="added">Recently added</option>
-						<option value="updated">Recently updated</option>
-						<option value="last_watched">Last watched</option>
-						<option value="name">Name</option>
-						<option value="rating">My rating</option>
-						<option value="release">Release date</option>
-					</select>
-				</label>
+					<Select full label="Sort" value={sort} options={sortOptions}
+						onchange={(v) => (sort = v as NonNullable<LibraryQuery['sort']>)} />
+				</div>
 
 				<div class="sheet-row">
 					<button class="btn ghost" onclick={() => (order = order === 'desc' ? 'asc' : 'desc')}>
-						{order === 'desc' ? 'Descending ↓' : 'Ascending ↑'}
+						<Icon name={order === 'desc' ? 'arrow-down' : 'arrow-up'} />
+						{order === 'desc' ? 'Descending' : 'Ascending'}
 					</button>
 					<button class="btn ghost" class:on={favourite} onclick={() => (favourite = !favourite)}>
-						{favourite ? '♥ Favourites' : '♡ Favourites'}
+						<Icon name="heart" filled={favourite} />
+						Favourites
 					</button>
 				</div>
 
 				<div class="sheet-row">
 					<button class="btn ghost" onclick={reset}>Clear all</button>
 					<button class="btn primary grow" onclick={() => (sheetOpen = false)}>
-						Show {items.length} titles
+						Show {plural(items.length, 'title')}
 					</button>
 				</div>
 			</div>
@@ -245,10 +261,11 @@
 		<Empty title="Could not load your library" hint="The server did not answer. Try again." />
 	{:else if !items.length}
 		<Empty
-			title={filtered ? 'Nothing matches those filters' : 'Your library is empty'}
+			art={filtered ? 'search' : 'rest'}
+			title={filtered ? 'Nothing matches' : 'Your library is empty'}
 			hint={filtered
 				? 'Loosen a filter and it will come back.'
-				: 'Search for a film or show and add it. Everything you track lives here.'}
+				: 'Everything you track will live here.'}
 		>
 			{#if filtered}
 				<button class="btn" onclick={reset}>Clear filters</button>
@@ -432,6 +449,10 @@
 	.btn.on {
 		color: var(--bad);
 		border-color: color-mix(in srgb, var(--bad) 50%, transparent);
+	}
+
+	.icon-only {
+		padding: 9px 11px;
 	}
 
 	.mobile-bar {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from './Icon.svelte';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -45,10 +46,10 @@
 						aria-label="Scroll left"
 						onclick={() => nudge(-1)}
 					>
-						‹
+						<Icon name="chevron-left" size={17} />
 					</button>
 					<button class="arrow" disabled={atEnd} aria-label="Scroll right" onclick={() => nudge(1)}>
-						›
+						<Icon name="chevron-right" size={17} />
 					</button>
 				</div>
 			</div>
@@ -77,6 +78,8 @@
 	}
 
 	.arrow {
+		display: grid;
+		place-items: center;
 		width: 30px;
 		height: 30px;
 		border-radius: 50%;
@@ -106,7 +109,10 @@
 	.track {
 		display: grid;
 		grid-auto-flow: column;
-		grid-auto-columns: minmax(var(--poster-min), 1fr);
+		/* Fixed, never 1fr: a single card in a row would otherwise stretch to
+		   the full width of the page and stand seven hundred pixels tall. */
+		grid-auto-columns: var(--poster-min);
+		justify-content: start;
 		gap: var(--gap);
 		overflow-x: auto;
 		scroll-snap-type: x proximity;
@@ -126,7 +132,7 @@
 
 	@media (min-width: 900px) {
 		.track {
-			grid-auto-columns: minmax(var(--poster-min), 190px);
+			grid-auto-columns: clamp(var(--poster-min), var(--poster-min), 190px);
 		}
 
 		.arrows {
@@ -136,12 +142,12 @@
 
 	/* Wide cards (continue watching) need more room than a poster. */
 	.rail.wide .track {
-		grid-auto-columns: minmax(260px, 86vw);
+		grid-auto-columns: min(86vw, 340px);
 	}
 
 	@media (min-width: 900px) {
 		.rail.wide .track {
-			grid-auto-columns: minmax(300px, 340px);
+			grid-auto-columns: 340px;
 		}
 	}
 </style>

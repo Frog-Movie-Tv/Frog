@@ -34,14 +34,14 @@ test('creating the account signs you straight in', async ({ page }) => {
 	await page.getByRole('button', { name: isSetup ? 'Create account' : 'Sign in' }).click();
 
 	await expect(page).toHaveURL('/');
-	await expect(page.getByText('Your pond is empty')).toBeVisible();
+	await expect(page.getByText('Nothing here yet')).toBeVisible();
 });
 
 test('an empty home and library explain themselves instead of showing blank grids', async ({
 	page
 }) => {
 	await signIn(page);
-	await expect(page.getByText('Your pond is empty')).toBeVisible();
+	await expect(page.getByText('Nothing here yet')).toBeVisible();
 
 	await page.goto('/library');
 	await expect(page.getByRole('heading', { name: 'Library', level: 1 })).toBeVisible();
@@ -56,8 +56,12 @@ test('every page names itself in the browser tab', async ({ page }) => {
 		['/', /^Frog$/],
 		['/library', /^Library · Frog$/],
 		['/search', /^Search · Frog$/],
+		['/calendar', /^Calendar · Frog$/],
+		['/diary', /^Diary · Frog$/],
 		['/stats', /^Stats · Frog$/],
 		['/settings', /^Settings · Frog$/],
+		['/about', /^About · Frog$/],
+		['/import', /^Import · Frog$/],
 		['/whats-new', /^What's new · Frog$/]
 	] as const) {
 		await page.goto(path);
@@ -93,7 +97,50 @@ test("the what's new page lists the current release", async ({ page }) => {
 	await page.goto('/whats-new');
 
 	await expect(page.getByRole('heading', { name: "What's new" })).toBeVisible();
-	await expect(page.getByText('You are here')).toBeVisible();
+	await expect(page.getByText('Installed')).toBeVisible();
+	await expect(page.getByText('Tadpole')).toBeVisible();
+
+	// Release notes must not be cut off at the first line wrap, and <kbd>
+	// must render as a key rather than as literal angle brackets.
+	const bullet = page.locator('li').filter({ hasText: /Import from Letterboxd, Trakt, IMDb/ }).first();
+	await expect(bullet).toContainText('you decide whether the file or your library wins');
+
+	const shortcut = page.locator('li').filter({ hasText: /command palette on/i }).first();
+	await expect(shortcut.locator('kbd').first()).toBeVisible();
+	await expect(page.getByText('<kbd>')).toHaveCount(0);
+});
+
+test('the importer offers every supported source and both exports', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/import');
+
+	for (const source of ['Letterboxd', 'IMDb', 'Trakt', 'TV Time', 'Frog backup']) {
+		await expect(page.getByRole('button', { name: source, exact: true })).toBeVisible();
+	}
+	await expect(page.getByRole('link', { name: 'Download backup' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Download CSV' })).toBeVisible();
+});
+
+test('calendar and diary load and explain themselves when empty', async ({ page }) => {
+	await signIn(page);
+
+	await page.goto('/calendar');
+	await expect(page.getByRole('heading', { name: 'Calendar', level: 1 })).toBeVisible();
+	await expect(page.getByText('Nothing scheduled')).toBeVisible();
+
+	await page.goto('/diary');
+	await expect(page.getByRole('heading', { name: 'Diary', level: 1 })).toBeVisible();
+	await expect(page.getByText('Nothing watched yet')).toBeVisible();
+});
+
+test('the about page credits its sources', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/about');
+
+	await expect(page.getByRole('heading', { name: 'Frog', level: 1 })).toBeVisible();
+	await expect(page.getByText('Tadpole')).toBeVisible();
+	await expect(page.getByRole('link', { name: /TMDB/ }).first()).toBeVisible();
+	await expect(page.getByRole('link', { name: /Lucide/ })).toBeVisible();
 });
 
 test('the instance asks not to be indexed', async ({ request }) => {
@@ -105,11 +152,11 @@ test('the instance asks not to be indexed', async ({ request }) => {
 	expect(page.headers()['x-robots-tag']).toContain('noindex');
 });
 
-test('search says plainly that no TMDB key is configured', async ({ page }) => {
+test('search says plainly when metadata is not connected', async ({ page }) => {
 	await signIn(page);
 	await page.goto('/search');
 	await expect(page.getByPlaceholder('Films, shows, anything on TMDB')).toBeVisible();
-	await expect(page.getByText('No TMDB key is set')).toBeVisible();
+	await expect(page.getByText('Search is unavailable until metadata is connected')).toBeVisible();
 });
 
 test('settings shows the instance facts and switches theme', async ({ page }) => {
@@ -197,7 +244,16 @@ test('the app is installable: manifest and icons are served', async ({ request }
 });
 
 test('images and the API stay behind the auth wall', async ({ request }) => {
-	for (const path of ['/api/library', '/api/library/stats', '/api/home', '/api/settings', '/img/w342/nope.jpg']) {
+	for (const path of [
+		'/api/library',
+		'/api/library/stats',
+		'/api/home',
+		'/api/settings',
+		'/api/calendar',
+		'/api/diary',
+		'/api/export/library.json',
+		'/img/w342/nope.jpg'
+	]) {
 		const res = await request.get(path);
 		expect(res.status(), `${path} should be 401`).toBe(401);
 	}

@@ -1,6 +1,8 @@
 import type {
 	AuthStatus,
 	HomeData,
+	ImportSummary,
+	MatchResult,
 	Kind,
 	LibraryItem,
 	PersonDetail,
@@ -111,6 +113,12 @@ export const api = {
 	trending: () => get<{ results: SearchItem[] }>('/api/discover/trending'),
 
 	home: () => get<HomeData>('/api/home'),
+
+	matchImport: (items: unknown[]) =>
+		send<{ results: MatchResult[] }>('POST', '/api/import/match', { items }),
+
+	applyImport: (items: unknown[], onConflict: 'skip' | 'overwrite') =>
+		send<ImportSummary>('POST', '/api/import/apply', { items, on_conflict: onConflict }),
 
 	library: (query: LibraryQuery = {}) =>
 		get<{ items: LibraryItem[] }>(`/api/library${qs(query as Record<string, unknown>)}`),

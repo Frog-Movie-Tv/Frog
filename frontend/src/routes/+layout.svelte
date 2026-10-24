@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '#lib/components/Icon.svelte';
 	import '../app.css';
 	import { goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -7,6 +8,7 @@
 	import Spinner from '#lib/components/Spinner.svelte';
 	import Toasts from '#lib/components/Toasts.svelte';
 	import UpdateBanner from '#lib/components/UpdateBanner.svelte';
+	import { offline } from '#lib/offline.svelte';
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import type { Snippet } from 'svelte';
@@ -20,6 +22,10 @@
 
 	$effect(() => {
 		settings.apply();
+	});
+
+	$effect(() => {
+		if (session.authenticated) void offline.register();
 	});
 
 	$effect(() => {
@@ -66,14 +72,19 @@
 	});
 
 	const nav = [
-		{ href: '/', label: 'Home', icon: '⌂' },
-		{ href: '/library', label: 'Library', icon: '▦' },
-		{ href: '/search', label: 'Search', icon: '⌕' },
-		{ href: '/stats', label: 'Stats', icon: '◴' },
-		{ href: '/settings', label: 'Settings', icon: '⚙' }
-	];
+		{ href: '/', label: 'Home', icon: 'home' },
+		{ href: '/library', label: 'Library', icon: 'grid' },
+		{ href: '/search', label: 'Search', icon: 'search' },
+		{ href: '/calendar', label: 'Calendar', icon: 'calendar' },
+		{ href: '/diary', label: 'Diary', icon: 'book' },
+		{ href: '/stats', label: 'Stats', icon: 'chart' },
+		{ href: '/settings', label: 'Settings', icon: 'settings' }
+	] as const;
 
-	const tabs = $derived(nav.filter((n) => n.href !== '/stats'));
+	/** The five that fit across a phone. */
+	const tabs = $derived(
+		nav.filter((n) => ['/', '/library', '/search', '/stats', '/settings'].includes(n.href))
+	);
 
 	const current = $derived(page.url.pathname);
 	const isActive = (href: string) => (href === '/' ? current === '/' : current.startsWith(href));
@@ -105,12 +116,10 @@
 
 			<div class="right">
 				{#if session.status && !session.status.tmdb_configured}
-					<a class="pill warn" href="/settings" title="Set TMDB_API_KEY in .env and restart">
-						No TMDB key
-					</a>
+					<a class="pill warn" href="/about">Metadata not connected</a>
 				{/if}
-				<button class="cmdk" onclick={() => palette?.show()} aria-label="Open the command palette">
-					<span aria-hidden="true">⌕</span>
+				<button class="cmdk" onclick={() => palette?.show()} aria-label="Search and commands">
+					<Icon name="search" size={16} />
 					<kbd>Ctrl</kbd><kbd>K</kbd>
 				</button>
 			</div>
@@ -125,7 +134,7 @@
 		<nav class="tabs" aria-label="Sections">
 			{#each tabs as link (link.href)}
 				<a href={link.href} class:active={isActive(link.href)}>
-					<span aria-hidden="true">{link.icon}</span>
+					<Icon name={link.icon} size={20} />
 					<small>{link.label}</small>
 					{#if link.href === '/settings' && updated}<i class="dot" aria-hidden="true"></i>{/if}
 				</a>

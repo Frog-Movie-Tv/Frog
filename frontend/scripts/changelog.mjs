@@ -15,11 +15,26 @@ const releases = [];
 
 let release = null;
 let group = null;
+let bullet = null;
+
+/** A bullet ends when the next one starts, not at the first line wrap. */
+function closeBullet() {
+	if (bullet && group) group.items.push(bullet.trim());
+	bullet = null;
+}
 
 for (const line of text.split(/\r?\n/)) {
 	const version = line.match(/^##\s+\[([^\]]+)\]\s*(?:—|-)?\s*(.*)$/);
 	if (version) {
-		release = { version: version[1], date: version[2].trim(), intro: '', groups: [] };
+		closeBullet();
+		// "0.3.0] — Tadpole — 2026-10-24": codename first, date last.
+		const rest = version[2]
+			.split(/\s+[—-]\s+/)
+			.map((part) => part.trim())
+			.filter(Boolean);
+		const date = rest.length > 1 ? rest[rest.length - 1] : (rest[0] ?? '');
+		const codename = rest.length > 1 ? rest.slice(0, -1).join(' ') : '';
+		release = { version: version[1], codename, date, intro: '', groups: [] };
 		releases.push(release);
 		group = null;
 		continue;
@@ -27,26 +42,48 @@ for (const line of text.split(/\r?\n/)) {
 
 	const heading = line.match(/^###\s+(.+)$/);
 	if (heading && release) {
+		closeBullet();
 		group = { title: heading[1].trim(), items: [] };
 		release.groups.push(group);
 		continue;
 	}
 
+	const shot = line.match(/^!\[[^\]]*\]\(([^)]+)\)\s*$/);
+	if (shot && release) {
+		closeBullet();
+		release.image = shot[1];
+		continue;
+	}
+
 	const item = line.match(/^[-*]\s+(.*)$/);
 	if (item && release) {
+		closeBullet();
 		if (!group) {
 			group = { title: 'Changes', items: [] };
 			release.groups.push(group);
 		}
-		group.items.push(item[1].trim());
+		bullet = item[1].trim();
+		continue;
+	}
+
+	// An indented continuation belongs to the bullet above it.
+	if (bullet !== null && /^\s+\S/.test(line)) {
+		bullet += ' ' + line.trim();
+		continue;
+	}
+
+	if (!line.trim()) {
+		closeBullet();
 		continue;
 	}
 
 	// Prose directly under a version heading is that release's summary.
-	if (release && !group && line.trim() && !line.startsWith('[')) {
+	if (release && !group && !line.startsWith('[')) {
 		release.intro = (release.intro ? release.intro + ' ' : '') + line.trim();
 	}
 }
+
+closeBullet();
 
 const published = releases.filter((r) => r.version.toLowerCase() !== 'unreleased');
 writeFileSync(target, JSON.stringify(published, null, '\t') + '\n');

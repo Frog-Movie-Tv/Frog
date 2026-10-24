@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from './Icon.svelte';
 	import { api, img } from '#lib/api';
 	import { episodeCode, prettyDate, relativeDate, runtime } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
@@ -92,6 +93,14 @@
 		} finally {
 			busy = null;
 		}
+
+		// Unticking is the one that stings, so it is the one that offers undo.
+		if (!next) {
+			toasts.undoable(
+				`Unmarked ${episodeCode(ep.season_number, ep.episode_number)}`,
+				() => toggle({ ...ep, watched: false })
+			);
+		}
 	}
 
 	async function toggleSeason(season: number, watched: boolean) {
@@ -159,7 +168,7 @@
 					aria-expanded={isOpen}
 					onclick={() => (chosen = isOpen ? null : season.season_number)}
 				>
-					<span class="chev" class:turned={isOpen} aria-hidden="true">›</span>
+					<span class="chev" class:turned={isOpen}><Icon name="chevron-right" size={17} /></span>
 					<span class="title">{season.name}</span>
 					<span class="count faint">{season.episode_count} ep</span>
 					{#if season.air_date}
@@ -198,16 +207,7 @@
 									title={unaired(ep) ? 'Not out yet' : 'Mark watched'}
 									onclick={() => toggle(ep)}
 								>
-									<svg viewBox="0 0 24 24" aria-hidden="true">
-										<path
-											d="M20 6 9 17l-5-5"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="2.6"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-										/>
-									</svg>
+									<Icon name="check" size={15} strokeWidth={2.6} />
 								</button>
 
 								<div class="still" class:blurred={blurStill(ep)}>
@@ -261,7 +261,7 @@
 											title="Episode note"
 											onclick={() => (noteFor = noteFor === key ? null : key)}
 										>
-											✎
+											<Icon name="pencil" size={15} />
 										</button>
 									{/if}
 								</div>
@@ -312,7 +312,7 @@
 	}
 
 	.chev {
-		display: inline-block;
+		display: inline-flex;
 		font-size: 1.1rem;
 		color: var(--text-faint);
 		transition: transform var(--fast) var(--ease);
@@ -397,11 +397,6 @@
 
 	.check:active {
 		transform: scale(0.88);
-	}
-
-	.check svg {
-		width: 15px;
-		height: 15px;
 	}
 
 	/* Always present, even without artwork: a collapsing column was letting

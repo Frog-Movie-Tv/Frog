@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '#lib/components/Icon.svelte';
 	import { goto } from '$app/navigation';
 	import Logo from '#lib/components/Logo.svelte';
 	import Rating from '#lib/components/Rating.svelte';
@@ -284,10 +285,7 @@
 	</section>
 
 	<section class="block">
-		<div class="section-head">
-			<h2>Mascot</h2>
-			<span class="faint">Changes the logo and the favicon</span>
-		</div>
+		<div class="section-head"><h2>Mascot</h2></div>
 
 		<div class="tiles mascots">
 			{#each MASCOTS as m (m.id)}
@@ -304,10 +302,7 @@
 				</button>
 			{/each}
 		</div>
-		<p class="faint tiny">
-			An installed app keeps the icon it was installed with, so the home-screen icon changes when
-			you reinstall it.
-		</p>
+		<p class="faint tiny">Reinstall the app to change its home-screen icon.</p>
 	</section>
 
 	<section class="block">
@@ -315,10 +310,7 @@
 
 		<div class="rows">
 			<label class="row card">
-				<span class="label">
-					<strong>Font</strong>
-					<span class="faint">Already on your device, so nothing is downloaded</span>
-				</span>
+				<span class="label"><strong>Font</strong></span>
 				<select
 					class="input auto"
 					value={s.font}
@@ -373,7 +365,7 @@
 
 			<label class="row card">
 				<span class="label">
-					<strong>Animation</strong><span class="faint">Page transitions and hover motion</span>
+					<strong>Animation</strong>
 				</span>
 				<select
 					class="input auto"
@@ -394,7 +386,7 @@
 		<div class="rows">
 			<label class="row card">
 				<span class="label">
-					<strong>Card style</strong><span class="faint">How the library draws each title</span>
+					<strong>Card style</strong>
 				</span>
 				<select
 					class="input auto"
@@ -453,7 +445,7 @@
 		<div class="rows">
 			<label class="row card">
 				<span class="label">
-					<strong>Hero style</strong><span class="faint">The big image at the top of Home</span>
+					<strong>Hero</strong>
 				</span>
 				<select
 					class="input auto"
@@ -469,7 +461,7 @@
 			<label class="row card">
 				<span class="label">
 					<strong>Follow the poster</strong>
-					<span class="faint">Tint each title page with a colour from its poster</span>
+					<span class="faint">Colour each title page from its artwork</span>
 				</span>
 				<input
 					type="checkbox"
@@ -480,7 +472,7 @@
 
 			<label class="row card">
 				<span class="label">
-					<strong>Open Frog on</strong><span class="faint">Where the app lands after sign-in</span>
+					<strong>Open on</strong>
 				</span>
 				<select
 					class="input auto"
@@ -501,20 +493,24 @@
 				{@const row = HOME_ROWS.find((r) => r.id === id)}
 				{#if row}
 					<li>
-						<span class="grip" aria-hidden="true">⠿</span>
+						<span class="grip"><Icon name="grip" size={16} /></span>
 						<span class="label">
 							<strong>{row.label}</strong><span class="faint">{row.hint}</span>
 						</span>
-						<button class="icon-btn" disabled={i === 0} aria-label="Move up" onclick={() => moveRow(id, -1)}>↑</button>
+						<button class="icon-btn" disabled={i === 0} aria-label="Move up" onclick={() => moveRow(id, -1)}>
+							<Icon name="chevron-up" size={15} />
+						</button>
 						<button
 							class="icon-btn"
 							disabled={i === s.homeRows.length - 1}
 							aria-label="Move down"
 							onclick={() => moveRow(id, 1)}
 						>
-							↓
+							<Icon name="chevron-down" size={15} />
 						</button>
-						<button class="icon-btn" aria-label="Remove row" onclick={() => toggleRow(id)}>×</button>
+						<button class="icon-btn" aria-label="Remove row" onclick={() => toggleRow(id)}>
+							<Icon name="x" size={15} />
+						</button>
 					</li>
 				{/if}
 			{/each}
@@ -523,7 +519,10 @@
 		{#if hiddenRows.length}
 			<div class="actions">
 				{#each hiddenRows as row (row.id)}
-					<button class="btn ghost small" onclick={() => toggleRow(row.id)}>＋ {row.label}</button>
+					<button class="btn ghost small" onclick={() => toggleRow(row.id)}>
+						<Icon name="plus" size={14} />
+						{row.label}
+					</button>
 				{/each}
 			</div>
 		{/if}
@@ -550,7 +549,7 @@
 		<div class="rows">
 			<label class="row card">
 				<span class="label">
-					<strong>Half stars</strong><span class="faint">Only affects the 5 star format</span>
+					<strong>Half stars</strong>
 				</span>
 				<input
 					type="checkbox"
@@ -560,12 +559,7 @@
 			</label>
 
 			<div class="row card">
-				<span class="label">
-					<strong>Live preview</strong>
-					<span class="faint">
-						Ratings are stored 0–100, so switching format never rounds anything
-					</span>
-				</span>
+				<span class="label"><strong>Preview</strong></span>
 				<Rating value={preview} onchange={(v) => (preview = v)} />
 			</div>
 		</div>
@@ -577,7 +571,7 @@
 		<div class="rows">
 			<label class="row card">
 				<span class="label">
-					<strong>Default status</strong><span class="faint">Used by the ＋ button</span>
+					<strong>Default status</strong>
 				</span>
 				<select
 					class="input auto"
@@ -591,7 +585,7 @@
 			<label class="row card">
 				<span class="label">
 					<strong>Spoiler protection</strong>
-					<span class="faint">Blur stills for episodes you have not watched</span>
+					<span class="faint">Blur unwatched episode stills</span>
 				</span>
 				<input
 					type="checkbox"
@@ -602,8 +596,8 @@
 
 			<label class="row card">
 				<span class="label">
-					<strong>Hide animation in discovery</strong>
-					<span class="faint">Keeps animated titles out of search results</span>
+					<strong>Hide animation</strong>
+					<span class="faint">Leave animated titles out of search</span>
 				</span>
 				<input
 					type="checkbox"
@@ -615,7 +609,6 @@
 			<label class="row card">
 				<span class="label">
 					<strong>Automatic dates</strong>
-					<span class="faint">Fill started and finished dates as the status changes</span>
 				</span>
 				<input
 					type="checkbox"
@@ -627,7 +620,7 @@
 			<label class="row card">
 				<span class="label">
 					<strong>Complete automatically</strong>
-					<span class="faint">Mark a show completed when the last episode is ticked</span>
+					<span class="faint">When the last episode is ticked</span>
 				</span>
 				<input
 					type="checkbox"
@@ -666,8 +659,7 @@
 		<details class="editor">
 			<summary>Custom CSS</summary>
 			<p class="faint tiny">
-				Applied to every page. Frog's own tokens are the easiest handle, for example
-				<code>:root &#123; --accent: hotpink; &#125;</code>
+				Applied to every page, for example <code>:root &#123; --accent: hotpink; &#125;</code>
 			</p>
 			<textarea
 				class="input code"
@@ -715,7 +707,8 @@
 		</div>
 
 		<div class="actions">
-			<a class="btn" href="/whats-new">What's new</a>
+			<a class="btn" href="/whats-new">Release notes</a>
+			<a class="btn ghost" href="/about">About</a>
 			<button class="btn ghost" onclick={checkForUpdates} disabled={update.state === 'checking'}>
 				{update.state === 'checking' ? 'Checking…' : 'Check for updates'}
 			</button>
@@ -991,6 +984,8 @@
 	}
 
 	.icon-btn {
+		display: grid;
+		place-items: center;
 		width: 28px;
 		height: 28px;
 		border-radius: 7px;

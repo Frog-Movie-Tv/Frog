@@ -313,21 +313,19 @@
 								</div>
 							{:else}
 								<button class="trailer" onclick={() => (trailerOpen = t.key)}>
-									<img
-										src="https://i.ytimg.com/vi/{t.key}/mqdefault.jpg"
-										alt=""
-										loading="lazy"
-										referrerpolicy="no-referrer"
-									/>
-									<span class="play" aria-hidden="true">▶</span>
+									<span class="sheen" aria-hidden="true"></span>
+									<span class="play" aria-hidden="true">
+										<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+											<path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z" />
+										</svg>
+									</span>
 									<span class="tname">{t.name}</span>
+									<span class="tkind">{t.kind}</span>
 								</button>
 							{/if}
 						{/each}
 					</div>
-					<p class="faint tiny">
-						Trailers are embedded from YouTube; opening one contacts youtube-nocookie.com.
-					</p>
+					<p class="faint tiny">Playing a trailer loads it from YouTube.</p>
 				</section>
 			{/if}
 
@@ -657,16 +655,19 @@
 		aspect-ratio: 16 / 9;
 	}
 
-	.trailer img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		opacity: 0.85;
-		transition: opacity var(--fast) var(--ease);
-	}
-
-	.trailer:hover img {
-		opacity: 1;
+	/* Drawn locally rather than pulled from YouTube: a removed video used to
+	   404 in the console, and nothing should reach a third party before you
+	   press play. */
+	.sheen {
+		position: absolute;
+		inset: 0;
+		background:
+			radial-gradient(
+				120% 100% at 50% 0%,
+				color-mix(in srgb, var(--accent) 22%, transparent),
+				transparent 70%
+			),
+			var(--bg-elev-2);
 	}
 
 	.play {
@@ -674,9 +675,24 @@
 		inset: 0;
 		display: grid;
 		place-items: center;
-		font-size: 1.6rem;
-		color: #fff;
-		text-shadow: 0 2px 14px rgba(0, 0, 0, 0.8);
+		color: var(--text);
+		transition: transform var(--fast) var(--ease);
+	}
+
+	.trailer:hover .play {
+		transform: scale(1.12);
+		color: var(--accent);
+	}
+
+	.tkind {
+		position: absolute;
+		top: 8px;
+		left: 10px;
+		font-size: 0.66rem;
+		font-weight: 650;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--text-faint);
 	}
 
 	.tname {
@@ -687,8 +703,8 @@
 		padding: 18px 12px 9px;
 		font-size: 0.78rem;
 		text-align: left;
-		color: #fff;
-		background: linear-gradient(transparent, rgba(0, 0, 0, 0.82));
+		color: var(--text);
+		background: linear-gradient(transparent, color-mix(in srgb, var(--bg) 85%, transparent));
 	}
 
 	.player {

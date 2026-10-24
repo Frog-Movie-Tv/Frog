@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '#lib/components/Icon.svelte';
 	import { api } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Grid from '#lib/components/Grid.svelte';
@@ -91,7 +92,7 @@
 	<h1 class="title">Search</h1>
 
 	<div class="searchbar">
-		<span class="icon" aria-hidden="true">⌕</span>
+		<Icon name="search" size={19} />
 		<input
 			bind:this={input}
 			bind:value={term}
@@ -103,14 +104,16 @@
 			aria-label="Search TMDB"
 		/>
 		{#if term}
-			<button class="clear" aria-label="Clear search" onclick={() => (term = '')}>×</button>
+			<button class="clear" aria-label="Clear search" onclick={() => (term = '')}>
+				<Icon name="x" size={17} />
+			</button>
 		{/if}
 	</div>
 
 	{#if session.status && !session.status.tmdb_configured}
 		<p class="notice">
-			No TMDB key is set, so search cannot reach TMDB. Put <code>TMDB_API_KEY</code> in
-			<code>.env</code> and restart the container.
+			Search is unavailable until metadata is connected.
+			<a href="/about">More</a>
 		</p>
 	{/if}
 
@@ -118,9 +121,9 @@
 		<Spinner label="Searching" />
 	{:else if !shown.length}
 		{#if searched}
-			<Empty title="Nothing found" hint="Try a shorter query, or the original-language title." />
+			<Empty art="search" title="Nothing found" hint="Try a shorter title, or the original language." />
 		{:else}
-			<Empty title="Find something to watch" hint="Start typing to search all of TMDB." />
+			<Empty art="search" title="Find something to watch" hint="Start typing." />
 		{/if}
 	{:else}
 		<div class="section-head">
@@ -151,7 +154,7 @@
 								aria-label="Add {item.name} to your library"
 								onclick={() => add(item)}
 							>
-								＋
+								<Icon name="plus" size={15} />
 							</button>
 							<button
 								class="q"
@@ -160,7 +163,7 @@
 								aria-label="Mark {item.name} as watching"
 								onclick={() => add(item, 'watching')}
 							>
-								▶
+								<Icon name="play" size={13} filled />
 							</button>
 						</div>
 					{/if}
@@ -191,11 +194,6 @@
 		border-color: var(--accent);
 	}
 
-	.icon {
-		font-size: 1.15rem;
-		color: var(--text-faint);
-	}
-
 	.field-input {
 		flex: 1;
 		padding: 15px 0;
@@ -206,12 +204,17 @@
 	}
 
 	.clear {
+		display: grid;
+		place-items: center;
 		background: none;
 		border: none;
 		color: var(--text-faint);
-		font-size: 1.3rem;
 		cursor: pointer;
-		padding: 0 4px;
+		padding: 4px;
+	}
+
+	.clear:hover {
+		color: var(--text);
 	}
 
 	.notice {
@@ -221,11 +224,6 @@
 		background: color-mix(in srgb, var(--warn) 12%, var(--bg-elev));
 		border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
 		font-size: 0.86rem;
-	}
-
-	code {
-		font-family: var(--font-mono);
-		font-size: 0.92em;
 	}
 
 	.result {

@@ -33,8 +33,9 @@
 	}
 
 	.word {
-		font-weight: 700;
-		letter-spacing: -0.03em;
-		font-size: calc(var(--size) * 0.72);
+		font-family: var(--font-display);
+		font-weight: 600;
+		letter-spacing: -0.02em;
+		font-size: calc(var(--size) * 0.76);
 	}
 </style>

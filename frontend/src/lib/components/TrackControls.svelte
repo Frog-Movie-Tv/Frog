@@ -1,5 +1,7 @@
 <script lang="ts">
+	import Icon from './Icon.svelte';
 	import { api } from '#lib/api';
+	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import type { Kind, LibraryItem, Status } from '#lib/types';
 	import { STATUSES, STATUS_LABEL } from '#lib/types';
@@ -11,6 +13,8 @@
 	}
 
 	let { item, onchange }: Props = $props();
+
+	const defaultStatus = $derived(settings.current.defaultStatus);
 
 	let saving = $state(false);
 	const kind = $derived(item.kind as Kind);
@@ -34,11 +38,28 @@
 	}
 
 	async function remove() {
+		// Hold on to what was there, so taking it back is exact rather than
+		// approximate: status, rating, favourite and notes all come home.
+		const previous = item.entry;
 		saving = true;
 		try {
 			await api.untrack(kind, item.tmdb_id);
 			onchange({ ...item, entry: null });
-			toasts.push('Removed from your library');
+
+			toasts.undoable(`Removed ${item.name}`, async () => {
+				if (!previous) return;
+				try {
+					const { item: restored } = await api.track(kind, item.tmdb_id, {
+						status: previous.status,
+						rating: previous.rating,
+						favourite: previous.favourite,
+						notes: previous.notes
+					});
+					onchange(restored);
+				} catch (e) {
+					toasts.error(e);
+				}
+			});
 		} catch (e) {
 			toasts.error(e);
 		} finally {
@@ -49,8 +70,9 @@
 
 <div class="track">
 	{#if !tracked}
-		<button class="btn primary" disabled={saving} onclick={() => save({ status: 'planned' })}>
-			＋ Add to library
+		<button class="btn primary" disabled={saving} onclick={() => save({ status: defaultStatus })}>
+			<Icon name="plus" size={16} />
+			Add to library
 		</button>
 		<button class="btn" disabled={saving} onclick={() => save({ status: 'watching' })}>
 			Start watching
@@ -80,7 +102,7 @@
 			aria-label="Favourite"
 			onclick={() => save({ favourite: !item.entry?.favourite })}
 		>
-			{item.entry?.favourite ? '♥' : '♡'}
+			<Icon name="heart" filled={item.entry?.favourite} size={17} />
 		</button>
 
 		<button class="btn ghost" disabled={saving} onclick={remove}>Remove</button>
@@ -108,7 +130,6 @@
 	.btn.icon {
 		width: 42px;
 		padding: 10px 0;
-		font-size: 1.05rem;
 	}
 
 	.btn.icon.on {

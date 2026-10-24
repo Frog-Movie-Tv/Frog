@@ -123,3 +123,8 @@ export function episodeCode(season: number, episode: number): string {
 	const pad = (n: number) => String(n).padStart(2, '0');
 	return `S${pad(season)}E${pad(episode)}`;
 }
+
+/** "1 show", "2 shows", "0 films". */
+export function plural(count: number, one: string, many = `${one}s`): string {
+	return `${count} ${count === 1 ? one : many}`;
+}

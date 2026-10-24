@@ -164,8 +164,10 @@ async function seed() {
 	}
 }
 
+let appVersion = '';
+
 async function setTheme(theme) {
-	await call('PUT', '/api/settings', { theme, mascot: 'classic', lastSeenVersion: '0.2.0' });
+	await call('PUT', '/api/settings', { theme, mascot: 'classic', lastSeenVersion: appVersion });
 }
 
 const DESKTOP = { width: 1440, height: 900 };
@@ -202,6 +204,7 @@ async function shoot(browser, { name, path, viewport, theme, full = false, wait 
 try {
 	console.log('starting server…');
 	await waitForServer();
+	appVersion = (await (await fetch(`${BASE}/api/health`)).json()).version ?? '';
 
 	console.log('seeding a demo library…');
 	await seed();
@@ -231,6 +234,24 @@ try {
 	await shoot(browser, {
 		name: 'stats-desktop-pond',
 		path: '/stats',
+		viewport: DESKTOP,
+		theme: 'pond'
+	});
+	await shoot(browser, {
+		name: 'calendar-desktop-pond',
+		path: '/calendar',
+		viewport: DESKTOP,
+		theme: 'pond'
+	});
+	await shoot(browser, {
+		name: 'diary-desktop-pond',
+		path: '/diary',
+		viewport: DESKTOP,
+		theme: 'pond'
+	});
+	await shoot(browser, {
+		name: 'import-desktop-pond',
+		path: '/import',
 		viewport: DESKTOP,
 		theme: 'pond'
 	});

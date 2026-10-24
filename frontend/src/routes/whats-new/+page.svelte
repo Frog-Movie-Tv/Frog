@@ -12,7 +12,9 @@
 
 	interface Release {
 		version: string;
+		codename: string;
 		date: string;
+		image?: string;
 		intro: string;
 		groups: Group[];
 	}
@@ -38,24 +40,33 @@
 
 	const current = $derived(session.status?.version ?? '');
 
-	/** Bold any **text** and render <kbd> keys, without pulling in Markdown. */
+	/**
+	 * Render one changelog line.
+	 *
+	 * Everything is escaped first, then a small allowlist of inline tags is
+	 * put back. Escaping only `<` left `&lt;kbd>` behind, because the closing
+	 * angle bracket was never escaped and so never matched on the way out.
+	 */
 	function render(item: string): string {
 		return item
 			.replace(/&/g, '&amp;')
 			.replace(/</g, '&lt;')
-			.replace(/&lt;kbd&gt;/g, '<kbd>')
-			.replace(/&lt;\/kbd&gt;/g, '</kbd>')
+			.replace(/>/g, '&gt;')
+			.replace(/&lt;(\/?)(kbd|em|strong|code)&gt;/g, '<$1$2>')
 			.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
 			.replace(/`([^`]+)`/g, '<code>$1</code>')
-			.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" rel="noreferrer noopener">$1</a>');
+			.replace(
+				/\[([^\]]+)\]\(([^)]+)\)/g,
+				'<a href="$2" rel="noreferrer noopener" target="_blank">$1</a>'
+			);
 	}
 
-	const tone = (title: string) =>
-		title.toLowerCase().startsWith('fix')
-			? 'fixed'
-			: title.toLowerCase().startsWith('add')
-				? 'added'
-				: 'changed';
+	function tone(title: string) {
+		const t = title.toLowerCase();
+		if (t.startsWith('fix')) return 'fixed';
+		if (t.startsWith('highlight') || t.startsWith('add')) return 'added';
+		return 'changed';
+	}
 </script>
 
 <svelte:head>
@@ -67,7 +78,7 @@
 		<Logo size={44} />
 		<div>
 			<h1>What's new</h1>
-			<p class="muted">Everything that has changed in Frog, newest first.</p>
+			<p class="muted">Newest first.</p>
 		</div>
 	</header>
 
@@ -81,12 +92,19 @@
 				<li class="release">
 					<div class="version">
 						<h2>{release.version}</h2>
-						{#if release.version === current}<span class="pill now">You are here</span>{/if}
-						{#if release.date}<time class="faint">{prettyDate(release.date) || release.date}</time>{/if}
+						{#if release.codename}<span class="codename">{release.codename}</span>{/if}
+						{#if release.version === current}<span class="pill now">Installed</span>{/if}
+						{#if release.date}
+							<time class="faint">{prettyDate(release.date) || release.date}</time>
+						{/if}
 					</div>
 
 					<div class="body">
 						{#if release.intro}<p class="intro">{release.intro}</p>{/if}
+
+						{#if release.image}
+							<img class="shot" src="/{release.image}" alt="" loading="lazy" />
+						{/if}
 
 						{#each release.groups as group (group.title)}
 							<section class="group" data-tone={tone(group.title)}>
@@ -148,6 +166,20 @@
 	.version h2 {
 		font-size: 1.5rem;
 		font-variant-numeric: tabular-nums;
+	}
+
+	.codename {
+		font-family: var(--font-display);
+		font-size: 0.92rem;
+		color: var(--accent);
+		font-weight: 600;
+	}
+
+	.shot {
+		width: 100%;
+		border-radius: var(--radius);
+		border: 1px solid var(--line);
+		display: block;
 	}
 
 	.pill.now {

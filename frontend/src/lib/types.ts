@@ -232,20 +232,42 @@ export interface UpNextEntry {
 	next: NextEpisode | null;
 }
 
+export interface AiringEpisode {
+	season_number: number;
+	episode_number: number;
+	name: string | null;
+	air_date: string | null;
+}
+
+/** One show, with every episode of it due in the window. */
 export interface AiringEntry {
 	item: LibraryItem;
-	episode: {
-		season_number: number;
-		episode_number: number;
-		name: string | null;
-		air_date: string | null;
-	};
+	episodes: AiringEpisode[];
+	air_date: string | null;
 }
 
 export interface HomeData {
-	hero: LibraryItem | null;
+	hero: UpNextEntry | null;
+	/** Part-way through, with an episode already out. */
 	continue: UpNextEntry[];
+	/** Caught up: the next episode has not aired yet. */
+	waiting: UpNextEntry[];
 	this_week: AiringEntry[];
 	recent: LibraryItem[];
 	favourites: LibraryItem[];
+}
+
+export interface MatchResult {
+	key: string;
+	matched: SearchItem | null;
+	candidates: SearchItem[];
+	note: string | null;
+	already_tracked: Status | null;
+}
+
+export interface ImportSummary {
+	added: number;
+	updated: number;
+	skipped: number;
+	failed: { tmdb_id: number; error: string }[];
 }

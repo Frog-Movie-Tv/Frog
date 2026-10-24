@@ -6,7 +6,7 @@ export type ThemeName = 'pond' | 'pond-light' | 'dark' | 'amoled' | 'light';
 export type MascotName = 'classic' | 'sleepy' | 'popcorn' | 'cinema';
 export type CardStyle = 'poster' | 'landscape' | 'list' | 'compact';
 export type HeroStyle = 'backdrop' | 'poster' | 'off';
-export type FontName = 'system' | 'humanist' | 'grotesque' | 'rounded' | 'serif' | 'mono';
+export type FontName = 'system' | 'humanist' | 'grotesque' | 'serif' | 'mono';
 export type AnimationLevel = 'full' | 'reduced' | 'off';
 
 export const THEMES: { id: ThemeName; label: string; hint: string; swatches: string[] }[] = [
@@ -24,27 +24,18 @@ export const MASCOTS: { id: MascotName; label: string; hint: string }[] = [
 	{ id: 'cinema', label: '3D glasses', hint: 'Front row, centre' }
 ];
 
-/**
- * Only fonts that are already on the device. Loading a web font would mean a
- * third-party request on every page and a gap in offline mode, which is not
- * worth it for a choice of letterforms.
- */
-export const FONTS: { id: FontName; label: string; stack: string }[] = [
+/** Bundled with the app, so every device renders them identically. */
+export const FONTS: { id: FontName; label: string; stack: string; display?: string }[] = [
 	{
 		id: 'system',
-		label: 'System',
-		stack:
-			"'Segoe UI Variable Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+		label: 'Frog',
+		stack: "'Inter Variable', system-ui, sans-serif",
+		display: "'Outfit Variable', 'Inter Variable', system-ui, sans-serif"
 	},
-	{ id: 'humanist', label: 'Humanist', stack: "'Segoe UI', Roboto, 'Noto Sans', sans-serif" },
-	{ id: 'grotesque', label: 'Grotesque', stack: "'Helvetica Neue', Helvetica, Arial, sans-serif" },
-	{
-		id: 'rounded',
-		label: 'Rounded',
-		stack: "'Segoe UI Rounded', 'SF Pro Rounded', 'Nunito', system-ui, sans-serif"
-	},
-	{ id: 'serif', label: 'Serif', stack: "Georgia, 'Times New Roman', 'Noto Serif', serif" },
-	{ id: 'mono', label: 'Mono', stack: "ui-monospace, 'Cascadia Mono', Consolas, monospace" }
+	{ id: 'humanist', label: 'Inter', stack: "'Inter Variable', system-ui, sans-serif" },
+	{ id: 'grotesque', label: 'Outfit', stack: "'Outfit Variable', system-ui, sans-serif" },
+	{ id: 'serif', label: 'Newsreader', stack: "'Newsreader Variable', Georgia, serif" },
+	{ id: 'mono', label: 'JetBrains Mono', stack: "'JetBrains Mono Variable', monospace" }
 ];
 
 /** A theme the user built, stored as plain token overrides. */
@@ -121,7 +112,7 @@ export const DEFAULTS: Settings = {
 	font: 'system',
 	textScale: 1,
 	radiusScale: 1,
-	blur: 14,
+	blur: 0,
 	animations: 'full',
 
 	spoilerProtection: false,
@@ -297,7 +288,9 @@ class SettingsStore {
 		style.setProperty('--poster-min', `${s.posterSize}px`);
 		style.setProperty('--gap', `${s.gridGap}px`);
 		style.setProperty('--blur', `${s.blur}px`);
-		style.setProperty('--font', FONTS.find((f) => f.id === s.font)?.stack ?? FONTS[0].stack);
+		const face = FONTS.find((f) => f.id === s.font) ?? FONTS[0];
+		style.setProperty('--font', face.stack);
+		style.setProperty('--font-display', face.display ?? face.stack);
 		style.setProperty('--radius', `${Math.round(16 * s.radiusScale)}px`);
 		style.setProperty('--radius-sm', `${Math.round(10 * s.radiusScale)}px`);
 		style.setProperty('--radius-lg', `${Math.round(24 * s.radiusScale)}px`);

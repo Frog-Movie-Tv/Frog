@@ -7,7 +7,10 @@ export default defineConfig({
 		sveltekit({
 			// A single-page app: the Rust server owns routing and falls back to
 			// index.html, so deployment stays one binary plus one folder.
-			adapter: adapter({ fallback: 'index.html', precompress: false, strict: false })
+			adapter: adapter({ fallback: 'index.html', precompress: false, strict: false }),
+			// Registered by hand in src/lib/offline.svelte.ts so a browser that
+			// refuses reports why instead of leaving an uncaught rejection.
+			serviceWorker: { register: false }
 		})
 	],
 	server: {

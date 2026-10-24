@@ -6,7 +6,9 @@ pub mod library;
 pub mod meta;
 pub mod search;
 pub mod settings;
+pub mod timeline;
 pub mod titles;
+pub mod transfer;
 
 use axum::http::{header, HeaderValue};
 use axum::routing::{delete, get, post, put};
@@ -30,10 +32,16 @@ pub fn router(state: AppState) -> Router {
         .route("/search", get(search::search))
         .route("/discover/trending", get(search::trending))
         .route("/home", get(home::home))
+        .route("/calendar", get(timeline::calendar))
+        .route("/diary", get(timeline::diary))
         .route("/library", get(library::list))
         .route("/library/stats", get(library::stats))
         .route("/settings", get(settings::get))
         .route("/settings", put(settings::put))
+        .route("/export/library.json", get(transfer::export_json))
+        .route("/export/library.csv", get(transfer::export_csv))
+        .route("/import/match", post(transfer::match_titles))
+        .route("/import/apply", post(transfer::apply))
         .route("/person/{person_id}", get(titles::person))
         .route("/titles/{kind}/{tmdb_id}", get(titles::detail))
         .route(

@@ -138,8 +138,25 @@ tailscale serve --bg 8080
 
 That publishes Frog at `https://<your-laptop>.<your-tailnet>.ts.net` inside
 your tailnet, with a valid certificate. Then set `FROG_SECURE_COOKIES=1` in
-`.env` and restart (`docker compose up -d`) so the session cookie gets the
-`Secure` flag.
+`.env` and restart so the session cookie gets the `Secure` flag.
+
+HTTPS is not optional if you want the app on your phone: a browser will only
+install a web app, and only run its offline mode, over a secure connection.
+Over plain `http://` Frog still works, but About will tell you offline mode is
+unavailable.
+
+### Make the address say "frog"
+
+The address comes from the machine's name in Tailscale, so rename the machine
+and the address follows:
+
+1. Open the [machines list](https://login.tailscale.com/admin/machines).
+2. Find your laptop, open the **⋯** menu and choose **Edit machine name**.
+3. Set it to `frog` and disable "auto-generate from OS hostname".
+
+The address becomes `https://frog.<your-tailnet>.ts.net`, which is what the
+phone will show once it is installed. Run `tailscale serve --bg 8080` again
+afterwards so the certificate matches the new name.
 
 > Do **not** run `tailscale funnel`. That publishes to the open internet.
 
@@ -149,9 +166,13 @@ leave `FROG_SECURE_COOKIES=0`.
 
 ### Install it on the phone
 
-Open the `https://…ts.net` address in Chrome on Android, then menu →
-**Add to Home screen**. It installs as a standalone app with its own icon,
-offline shell and cached posters.
+Open `https://frog.<your-tailnet>.ts.net` in Chrome on Android, then menu →
+**Add to Home screen**. It installs with its own icon, opens without browser
+chrome, and keeps anything you have already looked at available offline.
+
+To check it worked, open **About** inside the app: offline mode should read
+*Active*. If it says unavailable, you are on `http://` rather than `https://`
+and Tailscale Serve is the fix.
 
 ---
 
@@ -179,7 +200,8 @@ update, and the **What's new** page explains what changed in plain language.
 Running without Docker:
 
 ```powershell
-git pull; .\scriptsun-local.ps1 -Rebuild
+git pull; .\scripts
+un-local.ps1 -Rebuild
 ```
 
 With Docker:

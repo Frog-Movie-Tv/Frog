@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { api, img } from '#lib/api';
+	import Icon, { type IconName } from '#lib/components/Icon.svelte';
 	import { settings, THEMES } from '#lib/settings.svelte';
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
-	import type { LibraryItem, SearchItem } from '#lib/types';
+	import { STATUS_LABEL, type LibraryItem, type SearchItem } from '#lib/types';
 
 	interface Command {
 		id: string;
+		group: string;
 		label: string;
 		hint?: string;
 		icon?: string;
@@ -53,7 +55,7 @@
 			remote = [];
 			return;
 		}
-		if (localMatches(q).length >= 5) {
+		if (localMatches(q).length >= 6) {
 			remote = [];
 			return;
 		}
@@ -76,38 +78,82 @@
 		return mine.filter((i) => i.name.toLowerCase().includes(needle)).slice(0, 8);
 	}
 
+	const GO = 'Go to';
+
 	const pages: Command[] = [
-		{ id: 'p-home', label: 'Home', icon: '⌂', run: () => goto('/') },
-		{ id: 'p-library', label: 'Library', icon: '▦', run: () => goto('/library') },
-		{ id: 'p-search', label: 'Search', icon: '⌕', run: () => goto('/search') },
-		{ id: 'p-stats', label: 'Stats', icon: '◴', run: () => goto('/stats') },
-		{ id: 'p-settings', label: 'Settings', icon: '⚙', run: () => goto('/settings') },
-		{ id: 'p-new', label: "What's new", icon: '✦', run: () => goto('/whats-new') }
+		{ id: 'p-home', group: GO, label: 'Home', icon: 'home', run: () => goto('/') },
+		{ id: 'p-library', group: GO, label: 'Library', icon: 'grid', run: () => goto('/library') },
+		{ id: 'p-search', group: GO, label: 'Search', icon: 'search', run: () => goto('/search') },
+		{ id: 'p-cal', group: GO, label: 'Calendar', icon: 'calendar', run: () => goto('/calendar') },
+		{ id: 'p-diary', group: GO, label: 'Diary', icon: 'book', run: () => goto('/diary') },
+		{ id: 'p-stats', group: GO, label: 'Stats', icon: 'chart', run: () => goto('/stats') },
+		{ id: 'p-set', group: GO, label: 'Settings', icon: 'settings', run: () => goto('/settings') },
+		{ id: 'p-imp', group: GO, label: 'Import', icon: 'upload', run: () => goto('/import') },
+		{ id: 'p-about', group: GO, label: 'About', icon: 'info', run: () => goto('/about') },
+		{ id: 'p-new', group: GO, label: 'Release notes', icon: 'sparkle', run: () => goto('/whats-new') }
 	];
 
+	const DO = 'Actions';
+
 	const actions = $derived<Command[]>([
+		{
+			id: 'a-theme',
+			group: DO,
+			label: 'Toggle theme',
+			icon: 'contrast',
+			run: () => {
+				const order = THEMES.map((t) => t.id);
+				const next = order[(order.indexOf(settings.current.theme) + 1) % order.length];
+				settings.set('theme', next);
+				toasts.push(THEMES.find((t) => t.id === next)?.label ?? 'Theme changed');
+			}
+		},
 		...THEMES.map((t) => ({
 			id: `t-${t.id}`,
+			group: DO,
 			label: `Theme: ${t.label}`,
-			hint: t.hint,
-			icon: '◐',
-			run: () => {
-				settings.set('theme', t.id);
-				toasts.push(`${t.label} theme`);
-			}
+			icon: 'contrast',
+			run: () => settings.set('theme', t.id)
 		})),
 		{
+			id: 'a-import',
+			group: DO,
+			label: 'Import from another service',
+			icon: 'upload',
+			run: () => goto('/import')
+		},
+		{
+			id: 'a-export',
+			group: DO,
+			label: 'Export library as JSON',
+			icon: 'download',
+			run: () => {
+				window.location.href = '/api/export/library.json';
+			}
+		},
+		{
+			id: 'a-export-csv',
+			group: DO,
+			label: 'Export library as CSV',
+			icon: 'download',
+			run: () => {
+				window.location.href = '/api/export/library.csv';
+			}
+		},
+		{
 			id: 'a-spoilers',
+			group: DO,
 			label: settings.current.spoilerProtection
 				? 'Turn off spoiler protection'
 				: 'Turn on spoiler protection',
-			icon: '🙈',
+			icon: 'eye-off',
 			run: () => settings.set('spoilerProtection', !settings.current.spoilerProtection)
 		},
 		{
 			id: 'a-signout',
+			group: DO,
 			label: 'Sign out',
-			icon: '⎋',
+			icon: 'logout',
 			run: async () => {
 				await session.logout();
 				await goto('/login', { replaceState: true });
@@ -117,11 +163,13 @@
 
 	const results = $derived.by<Command[]>(() => {
 		const q = query.trim().toLowerCase();
+		const matches = (c: Command) => !q || c.label.toLowerCase().includes(q);
 
 		const titles: Command[] = localMatches(q).map((i) => ({
 			id: `l-${i.id}`,
+			group: 'Library',
 			label: i.name,
-			hint: i.entry ? 'In your library' : undefined,
+			hint: i.entry ? STATUS_LABEL[i.entry.status] : undefined,
 			poster: i.poster_path,
 			run: () => goto(`/title/${i.kind}/${i.tmdb_id}`)
 		}));
@@ -130,15 +178,29 @@
 			.filter((r) => !mine.some((m) => m.kind === r.kind && m.tmdb_id === r.tmdb_id))
 			.map((r) => ({
 				id: `r-${r.kind}-${r.tmdb_id}`,
+				group: 'On TMDB',
 				label: r.name,
-				hint: `${r.kind === 'tv' ? 'Show' : 'Film'}${r.year ? ` · ${r.year}` : ''} · on TMDB`,
+				hint: `${r.kind === 'tv' ? 'Show' : 'Film'}${r.year ? ` \u00b7 ${r.year}` : ''}`,
 				poster: r.poster_path,
 				run: () => goto(`/title/${r.kind}/${r.tmdb_id}`)
 			}));
 
-		const matches = (c: Command) => !q || c.label.toLowerCase().includes(q);
+		// Your own library first, then where to go, then what to do, and only
+		// then the wider catalogue.
+		return [...titles, ...pages.filter(matches), ...actions.filter(matches), ...found].slice(0, 16);
+	});
 
-		return [...titles, ...found, ...pages.filter(matches), ...actions.filter(matches)].slice(0, 14);
+	/** Where each group starts, so the list can be labelled as it runs. */
+	const headings = $derived.by(() => {
+		const out = new Map<number, string>();
+		let last = '';
+		results.forEach((c, i) => {
+			if (c.group !== last) {
+				out.set(i, c.group);
+				last = c.group;
+			}
+		});
+		return out;
 	});
 
 	$effect(() => {
@@ -220,7 +282,7 @@
 
 	<div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
 		<div class="field">
-			<span class="icon" aria-hidden="true">⌕</span>
+			<Icon name="search" size={18} />
 			<input
 				bind:this={input}
 				bind:value={query}
@@ -236,6 +298,9 @@
 		{#if results.length}
 			<ul role="listbox" aria-label="Results">
 				{#each results as command, i (command.id)}
+					{#if headings.has(i)}
+						<li class="group-label" role="presentation">{headings.get(i)}</li>
+					{/if}
 					<li>
 						<button
 							class="row"
@@ -248,7 +313,9 @@
 							{#if command.poster}
 								<img src={img(command.poster, 'w92')} alt="" loading="lazy" />
 							{:else}
-								<span class="glyph" aria-hidden="true">{command.icon ?? '›'}</span>
+								<span class="glyph">
+									<Icon name={(command.icon ?? 'chevron-right') as IconName} size={16} />
+								</span>
 							{/if}
 							<span class="label">{command.label}</span>
 							{#if command.hint}<span class="faint small">{command.hint}</span>{/if}
@@ -293,6 +360,7 @@
 
 	.field {
 		display: flex;
+		flex-wrap: nowrap;
 		align-items: center;
 		gap: 10px;
 		padding: 14px 16px;
@@ -300,16 +368,30 @@
 	}
 
 	.field input {
-		flex: 1;
+		flex: 1 1 auto;
+		/* Without an explicit zero basis the input refuses to shrink, wraps
+		   onto its own line and ends up sitting under the icon. */
+		min-width: 0;
+		width: 100%;
 		background: none;
 		border: none;
 		outline: none;
 		font-size: 1rem;
+		text-align: left;
+		line-height: 1.4;
 	}
 
-	.icon {
+	.group-label {
+		padding: 10px 10px 4px;
+		font-size: 0.68rem;
+		font-weight: 650;
+		letter-spacing: 0.09em;
+		text-transform: uppercase;
 		color: var(--text-faint);
-		font-size: 1.1rem;
+	}
+
+	.group-label:first-child {
+		padding-top: 4px;
 	}
 
 	ul {
@@ -345,7 +427,8 @@
 
 	.glyph {
 		width: 26px;
-		text-align: center;
+		display: grid;
+		place-items: center;
 		color: var(--text-faint);
 	}
 

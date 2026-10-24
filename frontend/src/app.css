@@ -1,4 +1,16 @@
 /* ---------------------------------------------------------------------------
+   Typefaces.
+
+   Bundled, not fetched: these are OFL faces shipped as woff2 inside the app,
+   so every device renders the same letterforms and nothing is requested from
+   a font CDN. Outfit sets the brand and the headings, Inter does the reading.
+   --------------------------------------------------------------------------- */
+@import '@fontsource-variable/outfit';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/newsreader';
+@import '@fontsource-variable/jetbrains-mono';
+
+/* ---------------------------------------------------------------------------
    Frog design tokens.
 
    Every colour, radius and spacing step the app uses is declared here as a
@@ -51,14 +63,15 @@
 	--header-h: 60px;
 	--poster-min: 132px;
 
-	/* Glass strength. Settings can drop this to 0, which also switches the
-	   bars to a solid background: the escape hatch for the Chrome compositor
-	   bug where a blurred fixed bar blanks tiles mid-scroll. */
-	--blur: 14px;
+	/* Glass strength. Zero by default: a blurred fixed bar makes Chrome
+	   re-raster the whole scrolling document underneath it, which shows up
+	   as blank tiles while you scroll. Turn it up in Settings if your
+	   machine handles it. */
+	--blur: 0px;
 
-	--font: 'Segoe UI Variable Display', -apple-system, BlinkMacSystemFont, 'Segoe UI',
-		Roboto, 'Helvetica Neue', Arial, sans-serif;
-	--font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+	--font: 'Inter Variable', system-ui, sans-serif;
+	--font-display: 'Outfit Variable', 'Inter Variable', system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
 
 	--ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 	--fast: 140ms;
@@ -195,6 +208,7 @@ body {
 
 body {
 	min-height: 100dvh;
+	font-feature-settings: 'cv05' 1, 'ss03' 1;
 }
 
 h1,
@@ -202,7 +216,8 @@ h2,
 h3,
 h4 {
 	margin: 0;
-	font-weight: 650;
+	font-family: var(--font-display);
+	font-weight: 600;
 	letter-spacing: -0.02em;
 	line-height: 1.15;
 }

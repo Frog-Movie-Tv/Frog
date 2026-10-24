@@ -1,120 +1,131 @@
 # Changelog
 
-Everything that changes in Frog, written for the person using it.
+What changed in each release of Frog.
 
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased] — Lily Pad — unreleased
 
-Nothing yet.
+In progress.
 
-## [0.2.0] — 2026-10-24
+## [0.3.0] — Tadpole — 2026-10-24
 
-The first proper pass over the alpha: Frog has a face, a home screen and a lot
-of knobs.
+Import your library from elsewhere, plan the week ahead, and read back
+everything you have watched.
 
-### Added
+![Home in the Pond theme](docs/screenshots/home-desktop-pond.png)
 
-- **A frog.** Frog finally looks like its name: a round green face with big
-  eyes, a small smile and pink cheeks. It is the app icon, the favicon and the
-  logo in the corner, and it stays readable shrunk down to 16 pixels.
-- **Four mascots to choose from** in Settings — Classic, Sleepy, Popcorn and
-  3D glasses. Picking one changes the logo and the browser tab icon right away.
-- **The Pond theme**, built from the logo's own colours: lily-pad green on a
-  deep pond green-black, with cream text and blush pink. It is now the default,
-  and there is a light version of it too.
-- **A Home screen**, separate from the library. It opens on a big image of
-  whatever you are in the middle of, then shows what to continue, what airs
-  this week, what you added recently and your favourites.
-- **Continue watching looks right.** Instead of one enormous portrait poster,
-  each card is a wide still with the show's logo, the exact next episode and a
-  progress bar.
-- **A command palette.** Press <kbd>Ctrl</kbd>+<kbd>K</kbd> (or <kbd>/</kbd>) to
-  jump to any title, page or action. It searches your library instantly and
-  falls back to TMDB. `g` then `h`, `l`, `s` or `t` jumps straight to Home,
-  Library, Search or Stats.
-- **A theme editor.** Change the background, surfaces, accent and text colour
-  with a live preview, then save, duplicate, export or import themes as JSON.
-- **A lot more to adjust**: font, text size, corner radius, glass blur,
-  animation level, card style, poster size, grid spacing, which details show on
-  cards, hero style, the order of the home rows, which page Frog opens on,
-  default status, automatic dates, half stars, date format and a custom CSS box.
-- **Spoiler protection**, which blurs the still for any episode you have not
-  watched yet.
-- **Settings now follow you.** Preferences are stored on the server, so your
-  phone and your laptop agree instead of each keeping their own.
-- **A "What's new" page**, with a dot on Settings after an update.
-- **Private by default**: the app asks search engines not to index it, serves a
-  `robots.txt` that blocks everything, and sends no referrer.
-- **"Remember this device"** on the sign-in screen. Leave it off on a shared
-  computer and the session ends with the browser.
-- **Sign-in is rate limited.** Eight wrong passwords and the door closes for ten
-  minutes.
-- **Four ways to draw the library**: posters, wide landscape cards, a list, or
-  a compact table.
-- **Mobile filters fit in one button** that opens a sheet, instead of three rows
-  of controls eating the top of the screen.
-- **The episode heatmap is filled in.** It now shows TMDB's score for every
-  episode as soon as you add a show, with your own ratings painted over the top
-  and ringed, and the squares are big enough to see.
-- **Search results say Film or Show**, lead with the thing you probably meant
-  rather than obscure shorts, and have an add button on every card instead of
-  one that only appears when you hover.
-- **Discovery can skip animation**, if that is not what you are here for.
-- **Streaming logos are links** to where you can actually watch the thing.
-- **Rows have arrows** on a wide screen, and no longer hide their first card
-  under the edge of the page.
-- **Settings can check for a newer version**, on request only — Frog does not
-  phone home on its own.
+### Highlights
 
-### Fixed
+- **Import from Letterboxd, Trakt, IMDb, TV Time and Frog backups.** A guided
+  importer reads the export, finds each title on TMDB and shows you the
+  matches before anything is written. Anything uncertain is flagged so you can
+  choose the right one, and you decide whether the file or your library wins.
+- **Export your library** as a full JSON backup or a CSV, from the Import page
+  or the command palette.
+- **Calendar.** A month view and an agenda of every episode and release you
+  follow, with the days you have already watched marked off.
+- **Diary.** Everything you have watched, newest first, grouped by month, with
+  rewatches and episode ratings in line.
+- **About page** with version, credits and licences.
 
-- **The Stats page no longer breaks.** It was showing a raw database error.
-- **Errors are human now.** An internal fault says something went wrong and puts
-  the detail in the log, instead of printing database internals at you.
-- **The library could fail to load** once it held a title you had never watched.
-- **The browser tab title was stuck** on whatever title page you had opened
-  last. Every page names itself now.
-- **Episodes without a still no longer wreck the row layout**; the slot stays
-  put and shows the episode number instead.
-- **Episodes that have not aired cannot be ticked or rated.** They are dimmed
-  and say when they are due, and marking a whole season watched skips them.
-- **Less flicker while scrolling.** The blurred bars are kept on their own layer,
-  and if your machine still struggles you can turn the blur off in Settings.
-- **Rating is no longer a row of sliders.** One small control per title or
-  episode that says "Rate" when it is empty and opens a tap-to-choose popover.
-- **The search button in the corner** opened the search page you were already
-  one tab away from. It opens the command palette instead.
+### Improvements
 
-### Changed
+- Frog ships its own typefaces, so text looks the same on every device.
+- Every icon comes from one set, drawn at the same weight throughout.
+- Dropdown menus match the rest of the app on every platform.
+- Removing a title or unticking an episode offers an Undo.
+- The command palette searches your library first, then pages, then actions
+  such as Import and Export, and only then the wider TMDB catalogue. Results
+  are grouped under headings.
+- Home no longer repeats the same show in the hero and the row beneath it.
+- A show whose next episode has not aired reads as Caught up, with the date
+  the next one arrives.
+- Several episodes of one show in the same week appear as a single entry.
+- Pages show a skeleton while they load.
+- Empty states say what to do next.
+- Trailer artwork is drawn locally; nothing is requested from YouTube until
+  you press play.
+- Search ranks popular titles above obscure ones and labels each result Film
+  or Show.
+- The episode grid shows TMDB scores underneath your own ratings.
+- The mobile tab bar includes Stats.
 
-- The library moved to its own page at `/library`, leaving `/` for Home.
-- **The README is for people now.** A proper front page with screenshots of the
-  real app, taken automatically from a demo library so they never go stale.
-  Installation moved to [docs/INSTALL.md](docs/INSTALL.md).
-- Preferences changed moments before a reload are no longer lost.
+### Fixes
 
-## [0.1.0] — 2026-10-24
+- Offline mode reports why it is unavailable rather than failing quietly. It
+  needs a secure connection, which Tailscale Serve provides.
+- Content no longer blanks out while scrolling. Background blur is off by
+  default and adjustable in Settings.
+- A row holding a single title keeps the normal card size.
+- Release notes show complete entries, including keyboard shortcuts.
+- The command palette input sits on one line.
+- Counts read correctly in the singular.
 
-The first version that runs.
+## [0.2.0] — Ripple — 2026-10-24
 
-### Added
+A face, a home screen and a great deal to adjust.
 
-- Sign in, with a one-time setup screen on a fresh install.
-- Search all of TMDB and add anything to your library.
-- Five statuses, ratings, favourites and notes.
-- Tick episodes one at a time or a whole season at once, with per-episode
+### Highlights
+
+- **Frog has a mascot.** A round green face with big eyes and pink cheeks,
+  readable down to 16 pixels, used as the app icon and the favicon. Four
+  variants to choose from: Classic, Sleepy, Popcorn and 3D glasses.
+- **The Pond theme**, built from the mascot's colours, alongside Pond Light,
+  Dark and AMOLED.
+- **A home screen** separate from the library, opening on whatever you are in
+  the middle of, with what to continue, what airs this week and what you added
+  recently.
+- **A command palette** on <kbd>Ctrl</kbd>+<kbd>K</kbd>.
+- **A theme editor** with live preview, and themes you can save, duplicate,
+  export and import.
+
+### Improvements
+
+- Continue watching uses wide artwork with the show logo, the next episode and
+  a progress bar.
+- Settings are stored on the server, so a phone and a laptop agree.
+- Font, text size, corner radius, animation level, card style, poster size,
+  grid spacing, card details, hero style, home row order, landing page,
+  default status, half stars, date format and custom CSS are all adjustable.
+- Spoiler protection blurs stills for episodes you have not watched.
+- Search engines are asked not to index the instance.
+- Remember this device on the sign-in screen, and sign-in is rate limited.
+- A release notes page, with a marker in the navigation after an update.
+
+### Fixes
+
+- The stats page loads.
+- Internal faults show a readable message and keep the detail in the log.
+- Libraries containing a title you had never watched load correctly.
+- Each page sets its own browser tab title.
+- Episodes without artwork keep the row layout intact.
+- Episodes that have not aired cannot be ticked or rated, and marking a season
+  watched skips them.
+
+## [0.1.0] — Spawn — 2026-10-24
+
+The first release.
+
+### Highlights
+
+- **Track films and shows** from TMDB, with five statuses, ratings, favourites
+  and notes.
+- **Episode tracking**, one at a time or a season at once, with per-episode
   ratings and notes.
-- A library wall with filters, sorts and search.
-- Title pages with colours taken from the poster, logo artwork, cast and crew,
-  seasons, an episode rating heatmap, trailers, franchise order and where to
-  stream in Belgium.
-- Person pages that highlight what you have already seen.
-- Five rating formats, from 100 points to three smileys.
-- Installable on a phone, with an offline shell.
-- Runs as one Docker container, or straight from a script with no Docker.
+- **Title pages** coloured from their own artwork, with cast, crew, seasons,
+  trailers, franchise order and where to stream.
+- **Install it on a phone** and keep what you have opened available offline.
 
-[Unreleased]: https://github.com/MihCons/Frog/compare/v0.2.0...HEAD
+### Improvements
+
+- Five rating formats, from 100 points to three smileys.
+- A library wall with filters, sorting and search.
+- Person pages that highlight what you have already seen.
+- Runs as a single container, or directly with one script.
+
+[Unreleased]: https://github.com/MihCons/Frog/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/MihCons/Frog/releases/tag/v0.3.0
 [0.2.0]: https://github.com/MihCons/Frog/releases/tag/v0.2.0
 [0.1.0]: https://github.com/MihCons/Frog/releases/tag/v0.1.0

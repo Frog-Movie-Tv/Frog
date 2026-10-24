@@ -3,7 +3,7 @@
 	import Empty from '#lib/components/Empty.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { session } from '#lib/session.svelte';
-	import { formatScore, longRuntime } from '#lib/format';
+	import { formatScore, longRuntime, plural } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import type { Stats, Status } from '#lib/types';
 	import { STATUS_LABEL, STATUSES } from '#lib/types';
@@ -44,7 +44,7 @@
 				<span class="eyebrow">Titles tracked</span>
 				<strong>{total}</strong>
 				<span class="faint">
-					{stats.by_kind.movie ?? 0} films · {stats.by_kind.tv ?? 0} shows
+					{plural(stats.by_kind.movie ?? 0, 'film')} · {plural(stats.by_kind.tv ?? 0, 'show')}
 				</span>
 			</div>
 
@@ -61,7 +61,7 @@
 			<div class="tile card">
 				<span class="eyebrow">Time watched</span>
 				<strong>{longRuntime(stats.minutes_watched)}</strong>
-				<span class="faint">estimated from runtimes</span>
+				<span class="faint">approximate</span>
 			</div>
 
 			<div class="tile card">
@@ -101,9 +101,7 @@
 			</section>
 		{/if}
 
-		<p class="faint note">
-			Phase 2 turns this into the full stats page, and phase 4 adds the shareable year in review.
-		</p>
+
 	{/if}
 </div>
 
@@ -190,7 +188,4 @@
 		border-radius: 3px;
 	}
 
-	.note {
-		font-size: 0.78rem;
-	}
 </style>

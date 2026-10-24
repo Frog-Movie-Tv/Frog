@@ -10,7 +10,7 @@ use crate::state::AppState;
 use crate::store::{self, LibraryItem, TitleRow};
 
 /// The next episode of a show, and whether it is out yet.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct NextEpisode {
     pub season_number: i64,
     pub episode_number: i64,
@@ -24,6 +24,22 @@ pub struct NextEpisode {
 pub struct UpNext {
     pub item: LibraryItem,
     pub next: Option<NextEpisode>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AiringEpisode {
+    pub season_number: i64,
+    pub episode_number: i64,
+    pub name: Option<String>,
+    pub air_date: Option<String>,
+}
+
+/// One show, with every episode of it due inside the window.
+#[derive(Debug, Serialize)]
+pub struct Airing {
+    pub item: LibraryItem,
+    pub episodes: Vec<AiringEpisode>,
+    pub air_date: Option<String>,
 }
 
 /// (title_id, season, episode, name, air_date)
@@ -45,14 +61,9 @@ const TITLE_COLUMNS: &str = "t.id, t.kind, t.tmdb_id, t.name, t.overview, t.post
         t.collection_id, t.accent_json";
 
 /// Everything the home screen draws, in one request.
-///
-/// Four small queries beat four round trips from a phone on a tailnet, and
-/// the rows are tiny.
 pub async fn home(_: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
     let pool = &state.pool;
 
-    // Things in flight, most recently watched first. A show you have never
-    // touched is not "continue watching", so require at least one watch.
     let watching = rows(
         pool,
         &format!(
@@ -62,48 +73,25 @@ pub async fn home(_: Auth, State(state): State<AppState>) -> AppResult<Json<Valu
               WHERE l.status = 'watching'
               ORDER BY (SELECT MAX(w.watched_at) FROM watch_event w WHERE w.title_id = t.id) DESC,
                        l.updated_at DESC
-              LIMIT 20"
+              LIMIT 24"
         ),
     )
     .await?;
 
-    let mut continuing = Vec::with_capacity(watching.len());
+    let mut in_flight = Vec::with_capacity(watching.len());
     for row in watching {
         let id = row.id;
         let item = store::build_item(pool, row).await?;
         let next = next_episode(pool, id).await?;
-        continuing.push(UpNext { item, next });
+        in_flight.push(UpNext { item, next });
     }
 
-    // Anything I follow that airs in the next week.
-    let airing: Vec<AiringRow> = sqlx::query_as(
-        "SELECT e.title_id, e.season_number, e.episode_number, e.name, e.air_date
-           FROM episode e
-           JOIN library_entry l ON l.title_id = e.title_id
-          WHERE l.status IN ('watching', 'planned', 'paused')
-            AND e.air_date IS NOT NULL
-            AND e.air_date >= date('now')
-            AND e.air_date <= date('now', '+7 day')
-          ORDER BY e.air_date, e.season_number, e.episode_number
-          LIMIT 30",
-    )
-    .fetch_all(pool)
-    .await?;
-
-    let mut this_week = Vec::with_capacity(airing.len());
-    for (title_id, season, episode, name, air_date) in airing {
-        let row = store::get_title(pool, title_id).await?;
-        let item = store::build_item(pool, row).await?;
-        this_week.push(json!({
-            "item": item,
-            "episode": {
-                "season_number": season,
-                "episode_number": episode,
-                "name": name,
-                "air_date": air_date,
-            }
-        }));
-    }
+    // A show whose next episode has not aired is not something to continue,
+    // it is something to wait for. Saying so beats a play button pointing at
+    // an episode that does not exist yet.
+    let (waiting, continuing): (Vec<UpNext>, Vec<UpNext>) = in_flight
+        .into_iter()
+        .partition(|u| matches!(&u.next, Some(n) if !n.aired));
 
     let recent = items(
         pool,
@@ -126,16 +114,93 @@ pub async fn home(_: Auth, State(state): State<AppState>) -> AppResult<Json<Valu
     )
     .await?;
 
-    // The hero is whatever I am most actively in the middle of.
-    let hero = continuing.first().map(|u| &u.item).or(recent.first());
+    // The hero is whatever is most live, and whatever it is, it never appears
+    // again in the row directly underneath itself.
+    let hero_id = continuing
+        .first()
+        .or_else(|| waiting.first())
+        .map(|u| u.item.title.id)
+        .or_else(|| recent.first().map(|i| i.title.id));
+
+    let hero = continuing
+        .iter()
+        .chain(waiting.iter())
+        .find(|u| Some(u.item.title.id) == hero_id)
+        .map(|u| json!({ "item": u.item, "next": u.next }))
+        .or_else(|| {
+            recent
+                .iter()
+                .find(|i| Some(i.title.id) == hero_id)
+                .map(|i| json!({ "item": i, "next": Value::Null }))
+        });
+
+    let this_week = airing_this_week(pool).await?;
 
     Ok(Json(json!({
         "hero": hero,
-        "continue": continuing,
+        "continue": continuing
+            .iter()
+            .filter(|u| Some(u.item.title.id) != hero_id)
+            .collect::<Vec<_>>(),
+        "waiting": waiting
+            .iter()
+            .filter(|u| Some(u.item.title.id) != hero_id)
+            .collect::<Vec<_>>(),
         "this_week": this_week,
-        "recent": recent,
+        "recent": recent
+            .iter()
+            .filter(|i| Some(i.title.id) != hero_id)
+            .collect::<Vec<_>>(),
         "favourites": favourites,
     })))
+}
+
+/// Episodes due in the next week, one entry per show.
+///
+/// Two episodes of one show in the same week are a double bill, not two
+/// separate things to keep track of, so they fold into a single row.
+async fn airing_this_week(pool: &SqlitePool) -> AppResult<Vec<Airing>> {
+    let found: Vec<AiringRow> = sqlx::query_as(
+        "SELECT e.title_id, e.season_number, e.episode_number, e.name, e.air_date
+           FROM episode e
+           JOIN library_entry l ON l.title_id = e.title_id
+          WHERE l.status IN ('watching', 'planned', 'paused')
+            AND e.air_date IS NOT NULL
+            AND e.air_date >= date('now')
+            AND e.air_date <= date('now', '+7 day')
+          ORDER BY e.air_date, e.season_number, e.episode_number
+          LIMIT 60",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut grouped: Vec<(i64, Vec<AiringEpisode>)> = Vec::new();
+    for (title_id, season_number, episode_number, name, air_date) in found {
+        let episode = AiringEpisode {
+            season_number,
+            episode_number,
+            name,
+            air_date,
+        };
+        match grouped.iter_mut().find(|(id, _)| *id == title_id) {
+            Some((_, list)) => list.push(episode),
+            None => grouped.push((title_id, vec![episode])),
+        }
+    }
+
+    let mut out = Vec::with_capacity(grouped.len());
+    for (title_id, episodes) in grouped {
+        let row = store::get_title(pool, title_id).await?;
+        let item = store::build_item(pool, row).await?;
+        let air_date = episodes.first().and_then(|e| e.air_date.clone());
+        out.push(Airing {
+            item,
+            episodes,
+            air_date,
+        });
+    }
+
+    Ok(out)
 }
 
 async fn rows(pool: &SqlitePool, sql: &str) -> AppResult<Vec<TitleRow>> {
@@ -154,17 +219,17 @@ async fn items(pool: &SqlitePool, sql: &str) -> AppResult<Vec<LibraryItem>> {
 async fn next_episode(pool: &SqlitePool, title_id: i64) -> AppResult<Option<NextEpisode>> {
     let row: Option<NextRow> = sqlx::query_as(
         "SELECT e.season_number,
-                    e.episode_number,
-                    e.name,
-                    e.still_path,
-                    e.air_date,
-                    CASE WHEN e.air_date IS NULL OR e.air_date <= date('now') THEN 1 ELSE 0 END
-               FROM episode e
-              WHERE e.title_id = ?
-                AND e.season_number > 0
-                AND NOT EXISTS (SELECT 1 FROM watch_event w WHERE w.episode_id = e.id)
-              ORDER BY e.season_number, e.episode_number
-              LIMIT 1",
+                e.episode_number,
+                e.name,
+                e.still_path,
+                e.air_date,
+                CASE WHEN e.air_date IS NULL OR e.air_date <= date('now') THEN 1 ELSE 0 END
+           FROM episode e
+          WHERE e.title_id = ?
+            AND e.season_number > 0
+            AND NOT EXISTS (SELECT 1 FROM watch_event w WHERE w.episode_id = e.id)
+          ORDER BY e.season_number, e.episode_number
+          LIMIT 1",
     )
     .bind(title_id)
     .fetch_optional(pool)

@@ -1,78 +1,116 @@
 [
 	{
-		"version": "0.2.0",
+		"version": "0.3.0",
+		"codename": "Tadpole",
 		"date": "2026-10-24",
-		"intro": "The first proper pass over the alpha: Frog has a face, a home screen and a lot of knobs.",
+		"intro": "Import your library from elsewhere, plan the week ahead, and read back everything you have watched.",
 		"groups": [
 			{
-				"title": "Added",
+				"title": "Highlights",
 				"items": [
-					"**A frog.** Frog finally looks like its name: a round green face with big",
-					"**Four mascots to choose from** in Settings — Classic, Sleepy, Popcorn and",
-					"**The Pond theme**, built from the logo's own colours: lily-pad green on a",
-					"**A Home screen**, separate from the library. It opens on a big image of",
-					"**Continue watching looks right.** Instead of one enormous portrait poster,",
-					"**A command palette.** Press <kbd>Ctrl</kbd>+<kbd>K</kbd> (or <kbd>/</kbd>) to",
-					"**A theme editor.** Change the background, surfaces, accent and text colour",
-					"**A lot more to adjust**: font, text size, corner radius, glass blur,",
-					"**Spoiler protection**, which blurs the still for any episode you have not",
-					"**Settings now follow you.** Preferences are stored on the server, so your",
-					"**A \"What's new\" page**, with a dot on Settings after an update.",
-					"**Private by default**: the app asks search engines not to index it, serves a",
-					"**\"Remember this device\"** on the sign-in screen. Leave it off on a shared",
-					"**Sign-in is rate limited.** Eight wrong passwords and the door closes for ten",
-					"**Four ways to draw the library**: posters, wide landscape cards, a list, or",
-					"**Mobile filters fit in one button** that opens a sheet, instead of three rows",
-					"**The episode heatmap is filled in.** It now shows TMDB's score for every",
-					"**Search results say Film or Show**, lead with the thing you probably meant",
-					"**Discovery can skip animation**, if that is not what you are here for.",
-					"**Streaming logos are links** to where you can actually watch the thing.",
-					"**Rows have arrows** on a wide screen, and no longer hide their first card",
-					"**Settings can check for a newer version**, on request only — Frog does not"
+					"**Import from Letterboxd, Trakt, IMDb, TV Time and Frog backups.** A guided importer reads the export, finds each title on TMDB and shows you the matches before anything is written. Anything uncertain is flagged so you can choose the right one, and you decide whether the file or your library wins.",
+					"**Export your library** as a full JSON backup or a CSV, from the Import page or the command palette.",
+					"**Calendar.** A month view and an agenda of every episode and release you follow, with the days you have already watched marked off.",
+					"**Diary.** Everything you have watched, newest first, grouped by month, with rewatches and episode ratings in line.",
+					"**About page** with version, credits and licences."
 				]
 			},
 			{
-				"title": "Fixed",
+				"title": "Improvements",
 				"items": [
-					"**The Stats page no longer breaks.** It was showing a raw database error.",
-					"**Errors are human now.** An internal fault says something went wrong and puts",
-					"**The library could fail to load** once it held a title you had never watched.",
-					"**The browser tab title was stuck** on whatever title page you had opened",
-					"**Episodes without a still no longer wreck the row layout**; the slot stays",
-					"**Episodes that have not aired cannot be ticked or rated.** They are dimmed",
-					"**Less flicker while scrolling.** The blurred bars are kept on their own layer,",
-					"**Rating is no longer a row of sliders.** One small control per title or",
-					"**The search button in the corner** opened the search page you were already"
+					"Frog ships its own typefaces, so text looks the same on every device.",
+					"Every icon comes from one set, drawn at the same weight throughout.",
+					"Dropdown menus match the rest of the app on every platform.",
+					"Removing a title or unticking an episode offers an Undo.",
+					"The command palette searches your library first, then pages, then actions such as Import and Export, and only then the wider TMDB catalogue. Results are grouped under headings.",
+					"Home no longer repeats the same show in the hero and the row beneath it.",
+					"A show whose next episode has not aired reads as Caught up, with the date the next one arrives.",
+					"Several episodes of one show in the same week appear as a single entry.",
+					"Pages show a skeleton while they load.",
+					"Empty states say what to do next.",
+					"Trailer artwork is drawn locally; nothing is requested from YouTube until you press play.",
+					"Search ranks popular titles above obscure ones and labels each result Film or Show.",
+					"The episode grid shows TMDB scores underneath your own ratings.",
+					"The mobile tab bar includes Stats."
 				]
 			},
 			{
-				"title": "Changed",
+				"title": "Fixes",
 				"items": [
-					"The library moved to its own page at `/library`, leaving `/` for Home.",
-					"**The README is for people now.** A proper front page with screenshots of the",
-					"Preferences changed moments before a reload are no longer lost."
+					"Offline mode reports why it is unavailable rather than failing quietly. It needs a secure connection, which Tailscale Serve provides.",
+					"Content no longer blanks out while scrolling. Background blur is off by default and adjustable in Settings.",
+					"A row holding a single title keeps the normal card size.",
+					"Release notes show complete entries, including keyboard shortcuts.",
+					"The command palette input sits on one line.",
+					"Counts read correctly in the singular."
+				]
+			}
+		],
+		"image": "docs/screenshots/home-desktop-pond.png"
+	},
+	{
+		"version": "0.2.0",
+		"codename": "Ripple",
+		"date": "2026-10-24",
+		"intro": "A face, a home screen and a great deal to adjust.",
+		"groups": [
+			{
+				"title": "Highlights",
+				"items": [
+					"**Frog has a mascot.** A round green face with big eyes and pink cheeks, readable down to 16 pixels, used as the app icon and the favicon. Four variants to choose from: Classic, Sleepy, Popcorn and 3D glasses.",
+					"**The Pond theme**, built from the mascot's colours, alongside Pond Light, Dark and AMOLED.",
+					"**A home screen** separate from the library, opening on whatever you are in the middle of, with what to continue, what airs this week and what you added recently.",
+					"**A command palette** on <kbd>Ctrl</kbd>+<kbd>K</kbd>.",
+					"**A theme editor** with live preview, and themes you can save, duplicate, export and import."
+				]
+			},
+			{
+				"title": "Improvements",
+				"items": [
+					"Continue watching uses wide artwork with the show logo, the next episode and a progress bar.",
+					"Settings are stored on the server, so a phone and a laptop agree.",
+					"Font, text size, corner radius, animation level, card style, poster size, grid spacing, card details, hero style, home row order, landing page, default status, half stars, date format and custom CSS are all adjustable.",
+					"Spoiler protection blurs stills for episodes you have not watched.",
+					"Search engines are asked not to index the instance.",
+					"Remember this device on the sign-in screen, and sign-in is rate limited.",
+					"A release notes page, with a marker in the navigation after an update."
+				]
+			},
+			{
+				"title": "Fixes",
+				"items": [
+					"The stats page loads.",
+					"Internal faults show a readable message and keep the detail in the log.",
+					"Libraries containing a title you had never watched load correctly.",
+					"Each page sets its own browser tab title.",
+					"Episodes without artwork keep the row layout intact.",
+					"Episodes that have not aired cannot be ticked or rated, and marking a season watched skips them."
 				]
 			}
 		]
 	},
 	{
 		"version": "0.1.0",
+		"codename": "Spawn",
 		"date": "2026-10-24",
-		"intro": "The first version that runs.",
+		"intro": "The first release.",
 		"groups": [
 			{
-				"title": "Added",
+				"title": "Highlights",
 				"items": [
-					"Sign in, with a one-time setup screen on a fresh install.",
-					"Search all of TMDB and add anything to your library.",
-					"Five statuses, ratings, favourites and notes.",
-					"Tick episodes one at a time or a whole season at once, with per-episode",
-					"A library wall with filters, sorts and search.",
-					"Title pages with colours taken from the poster, logo artwork, cast and crew,",
-					"Person pages that highlight what you have already seen.",
+					"**Track films and shows** from TMDB, with five statuses, ratings, favourites and notes.",
+					"**Episode tracking**, one at a time or a season at once, with per-episode ratings and notes.",
+					"**Title pages** coloured from their own artwork, with cast, crew, seasons, trailers, franchise order and where to stream.",
+					"**Install it on a phone** and keep what you have opened available offline."
+				]
+			},
+			{
+				"title": "Improvements",
+				"items": [
 					"Five rating formats, from 100 points to three smileys.",
-					"Installable on a phone, with an offline shell.",
-					"Runs as one Docker container, or straight from a script with no Docker."
+					"A library wall with filters, sorting and search.",
+					"Person pages that highlight what you have already seen.",
+					"Runs as a single container, or directly with one script."
 				]
 			}
 		]
