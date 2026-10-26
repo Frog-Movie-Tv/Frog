@@ -7,6 +7,26 @@ Developer and operator documentation. Nothing here is user-facing.
 > and nothing is deployed. Three findings change the plan — see
 > [What the research changes](#what-the-research-changes).
 
+## What this actually runs on
+
+Amsterdam had no A1 capacity when the instance was created, so production runs
+on a **VM.Standard.E2.1.Micro**: 2 vCPU, 954 MB, **amd64**. Always free and
+always available, where A1 rarely is.
+
+Frog is comfortable there — the container sits under 30 MB and the machine
+idles at about a quarter of its memory — but three things follow:
+
+- **Production only.** Staging needs another instance; `install.sh` leaves it
+  out unless asked.
+- **The keepalive holds no memory.** Oracle's memory test is A1-only, so on
+  this shape it does a short CPU and network touch instead.
+- **Images are built natively per architecture.** amd64 is what this machine
+  needs; arm64 is still published for a future A1, on an ARM runner rather
+  than through emulation.
+
+The research below still describes the A1, because that is what the free tier
+documents and what to take if capacity ever appears.
+
 ## Researched facts
 
 Free tiers and tooling change, so every claim here carries its source and the

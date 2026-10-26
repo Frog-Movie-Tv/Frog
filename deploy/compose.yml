@@ -49,7 +49,7 @@ services:
 
     # Sized for the smallest Always Free shape, which has under a gigabyte in
     # total. Frog itself sits around 25 MB; this is room to breathe, not a
-    # target. Raise it if you end up on an A1 with 12 GB.
+    # target. Raise it with FROG_MEMORY_LIMIT on a larger shape.
     deploy:
       resources:
         limits:

@@ -168,19 +168,19 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
-      # Pull requests build amd64 only, to keep a review quick. main and tags
-      # build both architectures, because the server is an Ampere ARM machine.
+      # amd64 only here. This image is for checking a change and for staging,
+      # both of which run on x86; the release build publishes both
+      # architectures, each on a runner of its own. Emulating arm64 to compile
+      # Rust took over an hour, which is no use on a pull request.
       - name: Decide platforms
         id: plan
         run: |
+          echo "platforms=linux/amd64" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "platforms=linux/amd64" >> "$GITHUB_OUTPUT"
             echo "push=false" >> "$GITHUB_OUTPUT"
           else
-            echo "platforms=linux/amd64,linux/arm64" >> "$GITHUB_OUTPUT"
             echo "push=true" >> "$GITHUB_OUTPUT"
           fi
 
