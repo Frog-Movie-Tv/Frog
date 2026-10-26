@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.4.3](https://github.com/Frog-Movie-Tv/Frog/compare/v0.4.2...v0.4.3) (2026-10-26)
+
+
+### Features
+
+* **home:** put any shelf on Home ([da412ac](https://github.com/Frog-Movie-Tv/Frog/commit/da412acf7370d7b73e724fa8ea1e01321117dd85))
+* **home:** put any shelf on Home ([4dee98a](https://github.com/Frog-Movie-Tv/Frog/commit/4dee98afb975acb0885cdd14e1f45c15f259a0ca))
+* **mobile:** pull down to refresh on touch screens ([1db8643](https://github.com/Frog-Movie-Tv/Frog/commit/1db86433c50f759d20ed2d0c47e8a942f2a2d3ca))
+* **notifications:** choose the hour new-episode alerts arrive ([c0887f5](https://github.com/Frog-Movie-Tv/Frog/commit/c0887f53b3e254c6075c966089de07baccb65af4))
+* welcome, pull to refresh, and choosing when alerts arrive ([4e05af4](https://github.com/Frog-Movie-Tv/Frog/commit/4e05af4b3ad27b3edf5aeb6b98055e1e72a6d9ae))
+* **welcome:** greet a new account with a theme, a mascot and a way in ([2295e4e](https://github.com/Frog-Movie-Tv/Frog/commit/2295e4e92920b8f92eb54bde4a8814e3e55c06e3))
+
+
+### Fixes
+
+* **docker:** ship time zone data so TZ means local time ([8642eb8](https://github.com/Frog-Movie-Tv/Frog/commit/8642eb8db8626c24c50a945532745afe43729d89))
+* **docker:** ship time zone data so TZ means local time ([07a0979](https://github.com/Frog-Movie-Tv/Frog/commit/07a09790a8f0082d07c7eabaa43f26a5ffc8399d))
+* **notifications:** keep a device that was switched on moments ago ([62389f0](https://github.com/Frog-Movie-Tv/Frog/commit/62389f095d1acf5863c129a60c880128f2a5b713))
+* **settings:** name each device's sign-out button ([c57ca0a](https://github.com/Frog-Movie-Tv/Frog/commit/c57ca0a704d550cd5874877e620568c9a3e7c365))
+
+
+### Documentation
+
+* **release:** write the 0.4.2 notes and require notes for every release ([5814f64](https://github.com/Frog-Movie-Tv/Frog/commit/5814f64cd156bcaed57b795302cb73ede0c6527a))
+* **release:** write the 0.4.2 notes and require notes for every release ([b013e16](https://github.com/Frog-Movie-Tv/Frog/commit/b013e161da377923ab7824f7144df563fd6a4bc1))
+
 ## [0.4.2](https://github.com/Frog-Movie-Tv/Frog/compare/v0.4.1...v0.4.2) (2026-10-26)
 
 
