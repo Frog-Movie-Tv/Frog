@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.4](https://github.com/Frog-Movie-Tv/Frog/compare/v0.4.3...v0.4.4) (2026-10-26)
+
+
+### Features
+
+* **release:** let the bot draft the release notes ([e31a5d9](https://github.com/Frog-Movie-Tv/Frog/commit/e31a5d970030f60a19a70a5904ef3c319811ad12))
+
+
+### Fixes
+
+* **release:** publish the image when the release is tagged ([62d93ce](https://github.com/Frog-Movie-Tv/Frog/commit/62d93ce4e5d667f6a6c5555d815b506eb3e53286))
+* **release:** publish the image when the release is tagged ([798bbc0](https://github.com/Frog-Movie-Tv/Frog/commit/798bbc06b4c2b745122caa4208e6c5569bb59978))
+* **release:** write the 0.4.3 notes and lower-case the image name ([71f9b92](https://github.com/Frog-Movie-Tv/Frog/commit/71f9b9209bec585455db60dbfd2d85e7a93bbfef))
+
 ## [0.4.3](https://github.com/Frog-Movie-Tv/Frog/compare/v0.4.2...v0.4.3) (2026-10-26)
 
 
