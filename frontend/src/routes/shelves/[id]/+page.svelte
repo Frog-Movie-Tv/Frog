@@ -45,7 +45,10 @@
 
 	async function saveOrder() {
 		try {
-			await api.reorderShelf(id, items.map((i) => i.id));
+			await api.reorderShelf(
+				id,
+				items.map((i) => i.id)
+			);
 		} catch (e) {
 			toasts.error(e);
 		}
@@ -59,7 +62,10 @@
 			if (shelf) shelf.count = items.length;
 			toasts.undoable(`Removed ${item.name}`, async () => {
 				await api.addToShelf(id, item.kind, item.tmdb_id);
-				await api.reorderShelf(id, before.map((i) => i.id));
+				await api.reorderShelf(
+					id,
+					before.map((i) => i.id)
+				);
 				await load();
 			});
 		} catch (e) {
@@ -130,9 +136,17 @@
 				{#if renaming}
 					<form class="rename" onsubmit={rename}>
 						<!-- svelte-ignore a11y_autofocus -->
-						<input class="input" bind:value={draftName} maxlength="60" aria-label="Shelf name" autofocus />
+						<input
+							class="input"
+							bind:value={draftName}
+							maxlength="60"
+							aria-label="Shelf name"
+							autofocus
+						/>
 						<button class="btn primary">Save</button>
-						<button type="button" class="btn ghost" onclick={() => (renaming = false)}>Cancel</button>
+						<button type="button" class="btn ghost" onclick={() => (renaming = false)}
+							>Cancel</button
+						>
 					</form>
 				{:else}
 					<h1>{shelf.name}</h1>
@@ -144,7 +158,11 @@
 			</div>
 			<div class="controls">
 				{#if shelf.kind === 'smart'}
-					<button class="btn" class:primary={editingRules} onclick={() => (editingRules = !editingRules)}>
+					<button
+						class="btn"
+						class:primary={editingRules}
+						onclick={() => (editingRules = !editingRules)}
+					>
 						<Icon name="filter" size={16} /> Rules
 					</button>
 				{:else if items.length}
@@ -155,7 +173,12 @@
 				<button class="btn ghost icon" aria-label="Rename" title="Rename" onclick={startRename}>
 					<Icon name="pencil" size={16} />
 				</button>
-				<button class="btn ghost icon" aria-label="Delete shelf" title="Delete shelf" onclick={destroy}>
+				<button
+					class="btn ghost icon"
+					aria-label="Delete shelf"
+					title="Delete shelf"
+					onclick={destroy}
+				>
 					<Icon name="trash" size={16} />
 				</button>
 			</div>
@@ -173,7 +196,10 @@
 					{/if}
 				</Empty>
 			{:else}
-				<Empty title="Nothing on this shelf yet" hint="Add titles from their page with Add to shelf.">
+				<Empty
+					title="Nothing on this shelf yet"
+					hint="Add titles from their page with Add to shelf."
+				>
 					<a class="btn primary" href="/search">Find something</a>
 				</Empty>
 			{/if}
@@ -187,7 +213,11 @@
 					{@const src = img(item.poster_path, 'w342')}
 					<li data-sort-item>
 						<button class="handle" data-sort-handle aria-label="Move {item.name}">
-							<span class="cover">{#if src}<img {src} alt="" draggable="false" />{:else}<span class="faint">{item.name}</span>{/if}</span>
+							<span class="cover"
+								>{#if src}<img {src} alt="" draggable="false" />{:else}<span class="faint"
+										>{item.name}</span
+									>{/if}</span
+							>
 							<span class="name">{item.name}</span>
 						</button>
 						<button class="remove" aria-label="Remove {item.name}" onclick={() => remove(item)}>

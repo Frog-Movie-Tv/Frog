@@ -37,9 +37,7 @@
 
 	const source = $derived(SOURCES.find((s) => s.id === format) ?? SOURCES[0]);
 	const included = $derived(rows.filter((r) => r.include && r.chosen));
-	const problems = $derived(
-		rows.filter((r) => !r.chosen || r.match?.note || r.incoming.warning)
-	);
+	const problems = $derived(rows.filter((r) => !r.chosen || r.match?.note || r.incoming.warning));
 	const shown = $derived(onlyProblems ? problems : rows);
 
 	async function onFiles(list: FileList | null) {
@@ -158,7 +156,10 @@
 					if (row.match?.note?.startsWith('TMDB lists no season')) row.match.note = null;
 				}
 				if (row.incoming.episode_total == null) break;
-				carried = Math.max(carried, (row.incoming.episode_offset ?? 0) + row.incoming.episode_total);
+				carried = Math.max(
+					carried,
+					(row.incoming.episode_offset ?? 0) + row.incoming.episode_total
+				);
 			}
 		}
 		rows = [...rows];
@@ -298,7 +299,9 @@
 					{busy ? 'Reading…' : 'Read my list'}
 				</button>
 			</form>
-			<p class="faint note">Your list is read from AniList by this browser; only titles are looked up on TMDB.</p>
+			<p class="faint note">
+				Your list is read from AniList by this browser; only titles are looked up on TMDB.
+			</p>
 		{:else}
 			<label class="drop">
 				<input
@@ -351,7 +354,11 @@
 			</div>
 
 			<div class="toolbar-right">
-				<button class="btn ghost small" class:on={onlyProblems} onclick={() => (onlyProblems = !onlyProblems)}>
+				<button
+					class="btn ghost small"
+					class:on={onlyProblems}
+					onclick={() => (onlyProblems = !onlyProblems)}
+				>
 					{onlyProblems ? 'Show all' : 'Show only problems'}
 				</button>
 				<Select
@@ -395,9 +402,14 @@
 							{/if}
 						</div>
 						<div class="sub faint">
-							<span>{row.incoming.label ?? row.incoming.title}{row.incoming.year ? ` (${row.incoming.year})` : ''}</span>
+							<span
+								>{row.incoming.label ?? row.incoming.title}{row.incoming.year
+									? ` (${row.incoming.year})`
+									: ''}</span
+							>
 							{#if row.incoming.progress}<span>{row.incoming.progress} watched</span>{/if}
-							{#if row.incoming.rating !== null}<span>rated {Math.round(row.incoming.rating)}</span>{/if}
+							{#if row.incoming.rating !== null}<span>rated {Math.round(row.incoming.rating)}</span
+								>{/if}
 							{#if row.match?.already_tracked}
 								<span class="already">already in library</span>
 							{/if}
@@ -463,11 +475,23 @@
 			<Icon name="check" size={30} />
 			<h2>Import finished</h2>
 			<dl>
-				<div><dt>Added</dt><dd>{summary.added}</dd></div>
-				<div><dt>Updated</dt><dd>{summary.updated}</dd></div>
-				<div><dt>Skipped</dt><dd>{summary.skipped}</dd></div>
+				<div>
+					<dt>Added</dt>
+					<dd>{summary.added}</dd>
+				</div>
+				<div>
+					<dt>Updated</dt>
+					<dd>{summary.updated}</dd>
+				</div>
+				<div>
+					<dt>Skipped</dt>
+					<dd>{summary.skipped}</dd>
+				</div>
 				{#if summary.failed.length}
-					<div><dt>Failed</dt><dd class="bad">{summary.failed.length}</dd></div>
+					<div>
+						<dt>Failed</dt>
+						<dd class="bad">{summary.failed.length}</dd>
+					</div>
 				{/if}
 			</dl>
 			<div class="actions">

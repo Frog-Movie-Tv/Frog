@@ -71,7 +71,10 @@
 		<ol
 			class="shelves"
 			class:arranging
-			use:sortable={{ onmove: (from, to) => (shelves = moved(shelves, from, to)), onend: saveOrder }}
+			use:sortable={{
+				onmove: (from, to) => (shelves = moved(shelves, from, to)),
+				onend: saveOrder
+			}}
 		>
 			{#each shelves as shelf (shelf.id)}
 				<li data-sort-item>
@@ -83,7 +86,9 @@
 						<span class="cover" aria-hidden="true">
 							{#each [0, 1, 2, 3] as i (i)}
 								{@const src = img(shelf.posters[i], 'w185')}
-								<span class="tile">{#if src}<img {src} alt="" loading="lazy" />{/if}</span>
+								<span class="tile"
+									>{#if src}<img {src} alt="" loading="lazy" />{/if}</span
+								>
 							{/each}
 						</span>
 						<span class="meta">

@@ -47,7 +47,9 @@
 	async function load(offset: number) {
 		if (offset > 0) loadingMore = true;
 		try {
-			const res = await fetch(`/api/diary?limit=60&offset=${offset}`, { credentials: 'same-origin' });
+			const res = await fetch(`/api/diary?limit=60&offset=${offset}`, {
+				credentials: 'same-origin'
+			});
 			if (!res.ok) throw new Error('Could not load your diary');
 			const data = await res.json();
 			entries = offset === 0 ? data.entries : [...entries, ...data.entries];
@@ -154,7 +156,11 @@
 
 							<div class="card-row">
 								<div class="row">
-									<a class="art" href="/title/{entry.kind}/{entry.tmdb_id}" aria-label={entry.title}>
+									<a
+										class="art"
+										href="/title/{entry.kind}/{entry.tmdb_id}"
+										aria-label={entry.title}
+									>
 										{#if entry.poster_path}
 											<img src={img(entry.poster_path, 'w92')} alt="" loading="lazy" />
 										{:else}
@@ -211,7 +217,9 @@
 									<ul class="episodes">
 										{#each entry.episodes as ep (`${ep.season_number}-${ep.episode_number}`)}
 											<li>
-												<span class="code faint">{episodeCode(ep.season_number, ep.episode_number)}</span>
+												<span class="code faint"
+													>{episodeCode(ep.season_number, ep.episode_number)}</span
+												>
 												<span class="ep-name">{ep.name ?? 'Untitled'}</span>
 												{#if ep.rating !== null}
 													<span class="score small">{formatScore(ep.rating, fmt)}</span>

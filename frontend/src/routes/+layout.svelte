@@ -84,7 +84,9 @@
 		return [...known, ...NAV_PAGES.filter((p) => !order.includes(p.href))];
 	});
 
-	const nav = $derived(ordered.filter((p) => p.fixed || !settings.current.navHidden.includes(p.href)));
+	const nav = $derived(
+		ordered.filter((p) => p.fixed || !settings.current.navHidden.includes(p.href))
+	);
 
 	/** What fits across a phone; everything else lives under More. */
 	const tabs = $derived(
@@ -187,7 +189,8 @@
 					>
 						<Icon name={link.icon as IconName} size={19} />
 						<span>{link.label}</span>
-						{#if link.href === '/settings' && updated}<i class="dot inline" aria-hidden="true"></i>{/if}
+						{#if link.href === '/settings' && updated}<i class="dot inline" aria-hidden="true"
+							></i>{/if}
 					</a>
 				{/each}
 			</div>

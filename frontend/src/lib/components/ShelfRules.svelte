@@ -41,11 +41,15 @@
 	const scores = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 	const scoreOptions = $derived([
 		{ value: ANY, label: 'Any' },
-		...scores.map((v) => ({ value: String(v), label: formatScore(v, settings.current.scoreFormat) }))
+		...scores.map((v) => ({
+			value: String(v),
+			label: formatScore(v, settings.current.scoreFormat)
+		}))
 	]);
 
 	const num = (v: string) => (v === ANY ? null : Number(v));
-	const str = (v: number | string | null | undefined) => (v === null || v === undefined ? ANY : String(v));
+	const str = (v: number | string | null | undefined) =>
+		v === null || v === undefined ? ANY : String(v);
 
 	function year(value: string): number | null {
 		const n = Number(value);
@@ -107,12 +111,24 @@
 
 		<div class="field">
 			<span>Rated at least</span>
-			<Select label="Rated at least" full value={str(draft.min_rating)} options={scoreOptions} onchange={(v) => (draft.min_rating = num(v))} />
+			<Select
+				label="Rated at least"
+				full
+				value={str(draft.min_rating)}
+				options={scoreOptions}
+				onchange={(v) => (draft.min_rating = num(v))}
+			/>
 		</div>
 
 		<div class="field">
 			<span>Rated at most</span>
-			<Select label="Rated at most" full value={str(draft.max_rating)} options={scoreOptions} onchange={(v) => (draft.max_rating = num(v))} />
+			<Select
+				label="Rated at most"
+				full
+				value={str(draft.max_rating)}
+				options={scoreOptions}
+				onchange={(v) => (draft.max_rating = num(v))}
+			/>
 		</div>
 
 		<label class="field">
@@ -215,7 +231,11 @@
 	{/if}
 
 	<label class="check">
-		<input type="checkbox" checked={!!draft.favourite} onchange={(e) => (draft.favourite = e.currentTarget.checked)} />
+		<input
+			type="checkbox"
+			checked={!!draft.favourite}
+			onchange={(e) => (draft.favourite = e.currentTarget.checked)}
+		/>
 		Favourites only
 	</label>
 

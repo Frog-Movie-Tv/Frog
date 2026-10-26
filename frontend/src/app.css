@@ -228,7 +228,9 @@ body {
 
 body {
 	min-height: 100dvh;
-	font-feature-settings: 'cv05' 1, 'ss03' 1;
+	font-feature-settings:
+		'cv05' 1,
+		'ss03' 1;
 }
 
 h1,
@@ -421,12 +423,7 @@ textarea.input {
 }
 
 .skeleton {
-	background: linear-gradient(
-		100deg,
-		var(--bg-elev) 30%,
-		var(--bg-elev-2) 50%,
-		var(--bg-elev) 70%
-	);
+	background: linear-gradient(100deg, var(--bg-elev) 30%, var(--bg-elev-2) 50%, var(--bg-elev) 70%);
 	background-size: 220% 100%;
 	animation: shimmer 1.4s infinite linear;
 	border-radius: var(--radius-sm);
@@ -484,8 +481,18 @@ textarea.input {
 }
 
 /* Status colour as a variable, so components only need data-status. */
-[data-status='watching'] { --status: var(--status-watching); }
-[data-status='completed'] { --status: var(--status-completed); }
-[data-status='planned'] { --status: var(--status-planned); }
-[data-status='paused'] { --status: var(--status-paused); }
-[data-status='dropped'] { --status: var(--status-dropped); }
+[data-status='watching'] {
+	--status: var(--status-watching);
+}
+[data-status='completed'] {
+	--status: var(--status-completed);
+}
+[data-status='planned'] {
+	--status: var(--status-planned);
+}
+[data-status='paused'] {
+	--status: var(--status-paused);
+}
+[data-status='dropped'] {
+	--status: var(--status-dropped);
+}

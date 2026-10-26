@@ -49,7 +49,6 @@
 	<title>{setup ? 'Set up' : 'Sign in'} · Frog</title>
 </svelte:head>
 
-
 <div class="screen">
 	<div class="glow" aria-hidden="true"></div>
 
@@ -90,36 +89,36 @@
 		{/if}
 
 		<div class="credentials" hidden={askCode}>
-		<label class="field">
-			<span>Username</span>
-			<input
-				class="input"
-				bind:value={username}
-				autocomplete="username"
-				required
-				autocapitalize="off"
-				spellcheck="false"
-			/>
-		</label>
-
-		<label class="field">
-			<span>Password</span>
-			<input
-				class="input"
-				type="password"
-				bind:value={password}
-				autocomplete={setup ? 'new-password' : 'current-password'}
-				required
-				minlength={setup ? 8 : undefined}
-			/>
-		</label>
-
-		{#if !setup}
-			<label class="remember">
-				<input type="checkbox" bind:checked={remember} />
-				<span>Keep me signed in</span>
+			<label class="field">
+				<span>Username</span>
+				<input
+					class="input"
+					bind:value={username}
+					autocomplete="username"
+					required
+					autocapitalize="off"
+					spellcheck="false"
+				/>
 			</label>
-		{/if}
+
+			<label class="field">
+				<span>Password</span>
+				<input
+					class="input"
+					type="password"
+					bind:value={password}
+					autocomplete={setup ? 'new-password' : 'current-password'}
+					required
+					minlength={setup ? 8 : undefined}
+				/>
+			</label>
+
+			{#if !setup}
+				<label class="remember">
+					<input type="checkbox" bind:checked={remember} />
+					<span>Keep me signed in</span>
+				</label>
+			{/if}
 		</div>
 
 		{#if error}
@@ -140,8 +139,6 @@
 				}}>Back</button
 			>
 		{/if}
-
-
 	</form>
 </div>
 
@@ -245,5 +242,4 @@
 		border-color: color-mix(in srgb, var(--bad) 55%, transparent);
 		background: color-mix(in srgb, var(--bad) 14%, var(--bg-elev-2));
 	}
-
 </style>

@@ -117,9 +117,19 @@
 		{#if heroItem && heroStyle !== 'off'}
 			<header class="hero" style:--tint={heroItem.accent.shade}>
 				{#if heroStyle === 'backdrop' && heroItem.backdrop_path}
-					<img class="backdrop" src={img(heroItem.backdrop_path, 'w1280')} alt="" fetchpriority="high" />
+					<img
+						class="backdrop"
+						src={img(heroItem.backdrop_path, 'w1280')}
+						alt=""
+						fetchpriority="high"
+					/>
 				{:else if heroStyle === 'poster' && heroItem.poster_path}
-					<img class="backdrop poster" src={img(heroItem.poster_path, 'w780')} alt="" fetchpriority="high" />
+					<img
+						class="backdrop poster"
+						src={img(heroItem.poster_path, 'w780')}
+						alt=""
+						fetchpriority="high"
+					/>
 				{/if}
 				<div class="veil" aria-hidden="true"></div>
 

@@ -138,10 +138,16 @@ test("the what's new page lists the current release", async ({ page }) => {
 
 	// Release notes must not be cut off at the first line wrap, and <kbd>
 	// must render as a key rather than as literal angle brackets.
-	const bullet = page.locator('li').filter({ hasText: /Import from Letterboxd, Trakt, IMDb/ }).first();
+	const bullet = page
+		.locator('li')
+		.filter({ hasText: /Import from Letterboxd, Trakt, IMDb/ })
+		.first();
 	await expect(bullet).toContainText('you decide whether the file or your library wins');
 
-	const shortcut = page.locator('li').filter({ hasText: /command palette on/i }).first();
+	const shortcut = page
+		.locator('li')
+		.filter({ hasText: /command palette on/i })
+		.first();
 	await expect(shortcut.locator('kbd').first()).toBeVisible();
 	await expect(page.getByText('<kbd>')).toHaveCount(0);
 });
@@ -150,7 +156,15 @@ test('the importer offers every supported source and both exports', async ({ pag
 	await signIn(page);
 	await page.goto('/import');
 
-	for (const source of ['AniList', 'MyAnimeList', 'Letterboxd', 'IMDb', 'Trakt', 'TV Time', 'Frog backup']) {
+	for (const source of [
+		'AniList',
+		'MyAnimeList',
+		'Letterboxd',
+		'IMDb',
+		'Trakt',
+		'TV Time',
+		'Frog backup'
+	]) {
 		await expect(page.getByRole('button', { name: source, exact: true })).toBeVisible();
 	}
 

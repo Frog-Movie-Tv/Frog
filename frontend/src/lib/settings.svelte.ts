@@ -11,9 +11,19 @@ export type AnimationLevel = 'full' | 'reduced' | 'off';
 
 export const THEMES: { id: ThemeName; label: string; hint: string; swatches: string[] }[] = [
 	{ id: 'pond', label: 'Pond', hint: 'The default', swatches: ['#07120e', '#16302a', '#6cc46b'] },
-	{ id: 'pond-light', label: 'Pond Light', hint: 'Cream and green', swatches: ['#f1eee1', '#fbf9f1', '#2f7d4f'] },
+	{
+		id: 'pond-light',
+		label: 'Pond Light',
+		hint: 'Cream and green',
+		swatches: ['#f1eee1', '#fbf9f1', '#2f7d4f']
+	},
 	{ id: 'dark', label: 'Dark', hint: 'Deep charcoal', swatches: ['#08080c', '#191922', '#7a5cff'] },
-	{ id: 'amoled', label: 'AMOLED', hint: 'True black', swatches: ['#000000', '#121217', '#7a5cff'] },
+	{
+		id: 'amoled',
+		label: 'AMOLED',
+		hint: 'True black',
+		swatches: ['#000000', '#121217', '#7a5cff']
+	},
 	{ id: 'light', label: 'Light', hint: 'Paper', swatches: ['#f6f5f8', '#ffffff', '#5b3fd6'] }
 ];
 

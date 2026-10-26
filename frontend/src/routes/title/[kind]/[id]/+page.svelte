@@ -63,9 +63,7 @@
 	}
 
 	const item = $derived(detail?.item);
-	const accent = $derived(
-		settings.current.followPoster && item ? item.accent : null
-	);
+	const accent = $derived(settings.current.followPoster && item ? item.accent : null);
 
 	const metaLine = $derived.by(() => {
 		if (!item) return [];
@@ -150,7 +148,9 @@
 	<article
 		class="title-page"
 		style:--accent={accent?.accent}
-		style:--accent-soft={accent ? `color-mix(in srgb, ${accent.accent} 18%, transparent)` : undefined}
+		style:--accent-soft={accent
+			? `color-mix(in srgb, ${accent.accent} 18%, transparent)`
+			: undefined}
 		style:--page-shade={accent?.shade ?? 'var(--bg)'}
 	>
 		<header class="hero">
@@ -268,7 +268,8 @@
 											     every logo opens the same official page for this title. -->
 											<a
 												class="plogo"
-												href={providers?.link ?? `https://www.themoviedb.org/search?query=${encodeURIComponent(item.name)}`}
+												href={providers?.link ??
+													`https://www.themoviedb.org/search?query=${encodeURIComponent(item.name)}`}
 												target="_blank"
 												rel="noreferrer noopener"
 												title="{p.name} — open watch options"
@@ -375,7 +376,9 @@
 									<span class="sheen" aria-hidden="true"></span>
 									<span class="play" aria-hidden="true">
 										<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-											<path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z" />
+											<path
+												d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z"
+											/>
 										</svg>
 									</span>
 									<span class="tname">{t.name}</span>
@@ -430,9 +433,7 @@
 	.title-page {
 		/* The poster's dark companion bleeds behind the whole page, which is
 		   what makes two different films feel like two different pages. */
-		background:
-			linear-gradient(var(--page-shade), transparent 680px),
-			var(--bg);
+		background: linear-gradient(var(--page-shade), transparent 680px), var(--bg);
 		min-height: 100dvh;
 	}
 
@@ -457,8 +458,17 @@
 		inset: 0;
 		z-index: -1;
 		background:
-			linear-gradient(to top, var(--bg) 2%, color-mix(in srgb, var(--bg) 55%, transparent) 45%, transparent),
-			linear-gradient(to right, color-mix(in srgb, var(--page-shade) 85%, transparent), transparent 70%);
+			linear-gradient(
+				to top,
+				var(--bg) 2%,
+				color-mix(in srgb, var(--bg) 55%, transparent) 45%,
+				transparent
+			),
+			linear-gradient(
+				to right,
+				color-mix(in srgb, var(--page-shade) 85%, transparent),
+				transparent 70%
+			);
 	}
 
 	.hero-inner {

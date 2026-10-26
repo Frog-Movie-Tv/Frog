@@ -1,0 +1,7 @@
+build
+.svelte-kit
+node_modules
+playwright-report
+test-results
+static/changelog.json
+static/fonts

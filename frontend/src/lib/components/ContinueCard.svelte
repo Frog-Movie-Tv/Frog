@@ -42,7 +42,11 @@
 		{#if next && next.aired && item.watched_episodes === 0}
 			<span class="next">
 				<strong>Start</strong>
-				<span class="ep">{episodeCode(next.season_number, next.episode_number)}{next.name ? ` · ${next.name}` : ''}</span>
+				<span class="ep"
+					>{episodeCode(next.season_number, next.episode_number)}{next.name
+						? ` · ${next.name}`
+						: ''}</span
+				>
 			</span>
 		{:else if next && next.aired}
 			<span class="next">

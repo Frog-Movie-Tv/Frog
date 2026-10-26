@@ -153,7 +153,6 @@
 		await goto('/login', { replaceState: true });
 	}
 
-
 	const navPages = $derived.by(() => {
 		const order = s.navOrder;
 		const known = order
@@ -185,7 +184,11 @@
 
 	const hiddenRows = $derived(HOME_ROWS.filter((r) => !s.homeRows.includes(r.id)));
 
-	let update = $state<{ state: 'idle' | 'checking' | 'current' | 'available' | 'failed'; tag?: string; url?: string }>({
+	let update = $state<{
+		state: 'idle' | 'checking' | 'current' | 'available' | 'failed';
+		tag?: string;
+		url?: string;
+	}>({
 		state: 'idle'
 	});
 
@@ -369,7 +372,8 @@
 
 			<label class="row card">
 				<span class="label">
-					<strong>Corner radius</strong><span class="faint">{Math.round(16 * s.radiusScale)}px</span>
+					<strong>Corner radius</strong><span class="faint">{Math.round(16 * s.radiusScale)}px</span
+					>
 				</span>
 				<input
 					type="range"
@@ -403,7 +407,11 @@
 				<Select
 					label="Animation"
 					value={s.animations}
-					options={[{ value: 'full', label: 'Full' }, { value: 'reduced', label: 'Reduced' }, { value: 'off', label: 'Off' }]}
+					options={[
+						{ value: 'full', label: 'Full' },
+						{ value: 'reduced', label: 'Reduced' },
+						{ value: 'off', label: 'Off' }
+					]}
 					onchange={(v) => settings.set('animations', v as AnimationLevel)}
 				/>
 			</div>
@@ -421,7 +429,12 @@
 				<Select
 					label="Card style"
 					value={s.cardStyle}
-					options={[{ value: 'poster', label: 'Poster' }, { value: 'landscape', label: 'Landscape' }, { value: 'list', label: 'List' }, { value: 'compact', label: 'Compact table' }]}
+					options={[
+						{ value: 'poster', label: 'Poster' },
+						{ value: 'landscape', label: 'Landscape' },
+						{ value: 'list', label: 'List' },
+						{ value: 'compact', label: 'Compact table' }
+					]}
 					onchange={(v) => settings.set('cardStyle', v as CardStyle)}
 				/>
 			</div>
@@ -441,7 +454,9 @@
 			</label>
 
 			<label class="row card">
-				<span class="label"><strong>Grid spacing</strong><span class="faint">{s.gridGap}px</span></span>
+				<span class="label"
+					><strong>Grid spacing</strong><span class="faint">{s.gridGap}px</span></span
+				>
 				<input
 					type="range"
 					min="6"
@@ -476,7 +491,11 @@
 				<Select
 					label="Hero"
 					value={s.heroStyle}
-					options={[{ value: 'backdrop', label: 'Backdrop' }, { value: 'poster', label: 'Poster' }, { value: 'off', label: 'Off' }]}
+					options={[
+						{ value: 'backdrop', label: 'Backdrop' },
+						{ value: 'poster', label: 'Poster' },
+						{ value: 'off', label: 'Off' }
+					]}
 					onchange={(v) => settings.set('heroStyle', v as HeroStyle)}
 				/>
 			</div>
@@ -500,7 +519,14 @@
 				<Select
 					label="Open on"
 					value={s.landingPage}
-					options={[{ value: '/', label: 'Home' }, { value: '/library', label: 'Library' }, { value: '/search', label: 'Search' }, { value: '/calendar', label: 'Calendar' }, { value: '/diary', label: 'Diary' }, { value: '/stats', label: 'Stats' }]}
+					options={[
+						{ value: '/', label: 'Home' },
+						{ value: '/library', label: 'Library' },
+						{ value: '/search', label: 'Search' },
+						{ value: '/calendar', label: 'Calendar' },
+						{ value: '/diary', label: 'Diary' },
+						{ value: '/stats', label: 'Stats' }
+					]}
 					onchange={(v) => settings.set('landingPage', v)}
 				/>
 			</div>
@@ -516,7 +542,12 @@
 						<span class="label">
 							<strong>{row.label}</strong><span class="faint">{row.hint}</span>
 						</span>
-						<button class="icon-btn" disabled={i === 0} aria-label="Move up" onclick={() => moveRow(id, -1)}>
+						<button
+							class="icon-btn"
+							disabled={i === 0}
+							aria-label="Move up"
+							onclick={() => moveRow(id, -1)}
+						>
 							<Icon name="chevron-up" size={15} />
 						</button>
 						<button
@@ -652,7 +683,11 @@
 				<Select
 					label="Dates"
 					value={s.dateStyle}
-					options={[{ value: 'friendly', label: 'Friendly (3 days ago)' }, { value: 'long', label: 'Long (24 October 2026)' }, { value: 'iso', label: 'ISO (2026-10-24)' }]}
+					options={[
+						{ value: 'friendly', label: 'Friendly (3 days ago)' },
+						{ value: 'long', label: 'Long (24 October 2026)' },
+						{ value: 'iso', label: 'ISO (2026-10-24)' }
+					]}
 					onchange={(v) => settings.set('dateStyle', v as 'friendly')}
 				/>
 			</div>
@@ -685,7 +720,9 @@
 			<a class="row card link-row" href="/import">
 				<span class="label">
 					<strong>Import</strong>
-					<span class="faint">Letterboxd, Trakt, IMDb, AniList, MyAnimeList, TV Time or a Frog backup</span>
+					<span class="faint"
+						>Letterboxd, Trakt, IMDb, AniList, MyAnimeList, TV Time or a Frog backup</span
+					>
 				</span>
 				<Icon name="chevron-right" size={18} />
 			</a>
@@ -748,7 +785,12 @@
 						/>
 						Tab
 					</label>
-					<button class="icon-btn" disabled={i === 0} aria-label="Move {navPage.label} up" onclick={() => moveNav(navPage.href, -1)}>
+					<button
+						class="icon-btn"
+						disabled={i === 0}
+						aria-label="Move {navPage.label} up"
+						onclick={() => moveNav(navPage.href, -1)}
+					>
 						<Icon name="chevron-up" size={15} />
 					</button>
 					<button
@@ -778,8 +820,7 @@
 				spellcheck="false"
 				placeholder=":root &#123; --radius: 4px; &#125;"
 				value={s.customCss}
-				onchange={(e) => settings.set('customCss', e.currentTarget.value)}
-			></textarea>
+				onchange={(e) => settings.set('customCss', e.currentTarget.value)}></textarea>
 		</details>
 
 		<div class="actions">
@@ -805,9 +846,18 @@
 		<div class="instance card">
 			<Logo size={38} />
 			<dl class="facts">
-				<div><dt>Signed in as</dt><dd>{session.status?.username ?? '—'}</dd></div>
-				<div><dt>Version</dt><dd>{session.status?.version ?? '—'}</dd></div>
-				<div><dt>Provider region</dt><dd>{session.status?.region ?? '—'}</dd></div>
+				<div>
+					<dt>Signed in as</dt>
+					<dd>{session.status?.username ?? '—'}</dd>
+				</div>
+				<div>
+					<dt>Version</dt>
+					<dd>{session.status?.version ?? '—'}</dd>
+				</div>
+				<div>
+					<dt>Provider region</dt>
+					<dd>{session.status?.region ?? '—'}</dd>
+				</div>
 				<div>
 					<dt>TMDB key</dt>
 					<dd class={session.status?.tmdb_configured ? 'ok' : 'bad'}>

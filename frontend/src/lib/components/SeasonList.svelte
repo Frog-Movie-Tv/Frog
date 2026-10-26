@@ -106,9 +106,8 @@
 
 		// Unticking is the one that stings, so it is the one that offers undo.
 		if (!next) {
-			toasts.undoable(
-				`Unmarked ${episodeCode(ep.season_number, ep.episode_number)}`,
-				() => toggle({ ...ep, watched: false })
+			toasts.undoable(`Unmarked ${episodeCode(ep.season_number, ep.episode_number)}`, () =>
+				toggle({ ...ep, watched: false })
 			);
 		}
 	}
@@ -201,8 +200,7 @@
 					<button
 						class="btn ghost small season-action"
 						disabled={busy === `season-${season.season_number}`}
-						onclick={() =>
-							toggleSeason(season.season_number, !seasonWatched(season.season_number))}
+						onclick={() => toggleSeason(season.season_number, !seasonWatched(season.season_number))}
 					>
 						<Icon name={seasonWatched(season.season_number) ? 'x' : 'check'} size={14} />
 						{seasonWatched(season.season_number) ? 'Unmark' : 'Mark watched'}
@@ -280,8 +278,7 @@
 											rows="3"
 											placeholder="What did you think?"
 											value={ep.notes ?? ''}
-											onblur={(e) => saveNote(ep, e.currentTarget.value)}
-										></textarea>
+											onblur={(e) => saveNote(ep, e.currentTarget.value)}></textarea>
 									{/if}
 								</div>
 
