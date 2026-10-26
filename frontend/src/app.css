@@ -14,7 +14,7 @@
    Frog design tokens.
 
    Every colour, radius and spacing step the app uses is declared here as a
-   custom property. Phase 3's theme editor is then a matter of writing a few of
+   custom property. The theme editor is then a matter of writing a few of
    these onto :root at runtime, with no component changes at all. Title pages
    additionally override --accent locally from the poster palette, which is why
    components must never hardcode a colour.
