@@ -35,16 +35,30 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         if: ${{ steps.release.outputs.pr }}
 
+      - uses: actions/setup-node@v4
+        if: ${{ steps.release.outputs.pr }}
+        with:
+          node-version: 22
+
+      # The release check refuses a version with nothing to say for itself on
+      # the What's new page, and that has stopped two releases now. Draft the
+      # section from the same commit messages release-please already used, so
+      # the release is never blocked; it is marked as a draft to rewrite in
+      # Frog's voice before merging.
+      - name: Draft the release notes if nobody has written them
+        if: ${{ steps.release.outputs.pr }}
+        run: node scripts/draft-release-notes.mjs
+
       - name: Sync Cargo.lock with the release version
         if: ${{ steps.release.outputs.pr }}
         run: |
           (cd backend && cargo fetch)
-          if git diff --quiet backend/Cargo.lock; then
-            echo "Cargo.lock already matches"
+          if git diff --quiet backend/Cargo.lock RELEASE-NOTES.md; then
+            echo "nothing to add to the release branch"
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add backend/Cargo.lock
-          git commit -m 'chore: sync Cargo.lock with the released version'
+          git add backend/Cargo.lock RELEASE-NOTES.md
+          git commit -m 'chore: sync the lock file and draft the release notes'
           git push
