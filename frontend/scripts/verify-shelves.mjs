@@ -133,7 +133,6 @@ async function signedIn(viewport, extra = {}) {
 }
 
 const shelfNames = async (id) => (await call('GET', `/api/shelves/${id}`)).items.map((i) => i.name);
-const tileNames = (page) => page.locator('.arrange .name').allTextContents();
 
 /** Drag the handle of item `from` onto item `to` in small steps. */
 async function mouseDrag(page, from, to) {

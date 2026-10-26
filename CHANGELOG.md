@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.2](https://github.com/Frog-Movie-Tv/Frog/compare/v0.4.1...v0.4.2) (2026-10-26)
+
+
+### Features
+
+* **accounts:** add the join page and an administration page ([527ac9f](https://github.com/Frog-Movie-Tv/Frog/commit/527ac9f419fa7c8919c62a789d1dede1fac92fbc))
+* **accounts:** give accounts an interface ([e3bacbb](https://github.com/Frog-Movie-Tv/Frog/commit/e3bacbbb7a44cd18b70888a7f162f60565c32cf4))
+* **accounts:** give accounts an interface ([30d1e6e](https://github.com/Frog-Movie-Tv/Frog/commit/30d1e6e04aa94bd746cbaa3504a9a0d065c5e440))
+
 ## [0.4.1](https://github.com/Frog-Movie-Tv/Frog/compare/v0.4.0...v0.4.1) (2026-10-26)
 
 

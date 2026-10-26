@@ -84,6 +84,10 @@ people editing a changelog is a merge conflict every time.
   *What's new* page inside the app shows, and a generated list of commit
   subjects is not something you show a person. Short, neutral, complete
   sentences, no implementation detail. The `/release` skill has the rules.
+- **The release pull request needs its notes.** CI fails while
+  `RELEASE-NOTES.md` has no `## [x.y.z]` section for the version in
+  `version.txt`. Before merging release-please's pull request, push a commit to
+  it that turns the Upcoming section into that version's section.
 - **Staging follows `main`**, **production follows the latest release tag.**
   So merging a pull request puts it on staging, and merging the release pull
   request puts it in front of people.
@@ -125,9 +129,9 @@ The hooks run these for you. Install them once per clone:
 git config core.hooksPath .githooks
 ```
 
-`pre-commit` runs the fast ones (rustfmt, prettier) and refuses a `.env`, a
-database file, or an edit to an applied migration. `pre-push` runs clippy, the
-backend tests and svelte-check. `FROG_SKIP_HOOKS=1` skips them once, for a
+`pre-commit` runs the fast ones (rustfmt, prettier, and eslint on the staged
+files) and refuses a `.env`, a database file, or an edit to an applied
+migration. `pre-push` runs clippy, the backend tests and svelte-check. `FROG_SKIP_HOOKS=1` skips them once, for a
 work-in-progress commit on your own branch.
 
 By hand:

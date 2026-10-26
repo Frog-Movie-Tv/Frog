@@ -13,6 +13,11 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+## [0.4.2] — Lily Pad — 2026-10-26
+
+Your own corner of a shared Frog: your account, your devices, and a profile
+when you want one.
+
 ### Highlights
 
 - **Your account.** Change your password, see every device you are signed in
@@ -236,6 +241,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[0.4.2]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.2
 [0.4.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.3.0

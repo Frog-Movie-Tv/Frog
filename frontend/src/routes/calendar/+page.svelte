@@ -51,6 +51,7 @@
 	}
 
 	const byDate = $derived.by(() => {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- built and read here, never state
 		const map = new Map<string, Entry[]>();
 		for (const entry of entries) {
 			const list = map.get(entry.date) ?? [];
@@ -79,10 +80,12 @@
 	/** Six weeks starting on the Monday on or before the first of the month. */
 	const weeks = $derived.by(() => {
 		const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- built and read here, never state
 		const start = new Date(first);
 		start.setDate(first.getDate() - ((first.getDay() + 6) % 7));
 
 		const out: { date: string; inMonth: boolean }[][] = [];
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- built and read here, never state
 		const walker = new Date(start);
 		for (let w = 0; w < 6; w++) {
 			const row: { date: string; inMonth: boolean }[] = [];

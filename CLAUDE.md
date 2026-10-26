@@ -123,7 +123,7 @@ Two owners work on this in parallel, often both with Claude Code.
   `backend/tests/scoping.rs` fails the build otherwise. Genuinely shared
   statements go in its `ALLOWED` list with a reason.
 - **Install the hooks once per clone:** `git config core.hooksPath .githooks`.
-  pre-commit runs rustfmt and prettier and blocks `.env`, databases and edited
+  pre-commit runs rustfmt, prettier and eslint (staged files) and blocks `.env`, databases and edited
   migrations; pre-push runs clippy, tests and svelte-check.
 - **Rebuild `--release` before Playwright.** The e2e server prefers the release
   binary, so a stale one silently tests old code.

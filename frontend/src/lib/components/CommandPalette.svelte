@@ -199,6 +199,7 @@
 
 	/** Where each group starts, so the list can be labelled as it runs. */
 	const headings = $derived.by(() => {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- built and read here, never state
 		const out = new Map<number, string>();
 		let last = '';
 		results.forEach((c, i) => {
@@ -225,7 +226,8 @@
 		const mod = event.ctrlKey || event.metaKey;
 		if (mod && event.key.toLowerCase() === 'k') {
 			event.preventDefault();
-			open ? hide() : show();
+			if (open) hide();
+			else show();
 			return;
 		}
 

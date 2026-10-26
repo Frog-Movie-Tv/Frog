@@ -65,6 +65,24 @@ jobs:
         working-directory: frontend
         run: npm run format:check
 
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      # release-please bumps the version but cannot write RELEASE-NOTES.md,
+      # which is in Frog's voice and written by hand. Without a section for
+      # the running version, What's new has nothing to mark as installed. On
+      # the release pull request this fails until the notes are written there.
+      - name: Release notes cover this version
+        run: |
+          version="$(cat version.txt)"
+          if ! grep -q "^## \[$version\] " RELEASE-NOTES.md; then
+            echo "RELEASE-NOTES.md has no section for $version."
+            echo "Turn the Upcoming section into: ## [$version] — <codename> — <date>"
+            exit 1
+          fi
+          echo "RELEASE-NOTES.md covers $version"
+
       - name: Type check
         working-directory: frontend
         run: npm run check

@@ -20,8 +20,9 @@ test('a cold instance sends you to first-run setup', async ({ page }) => {
 	// The heading only settles once the shell has asked whether this instance
 	// has an account, and the very first request hits a server that has just
 	// started and migrated.
+	// CI's runners are slow to start the very first time; 15 seconds was flaky.
 	await expect(page.getByRole('heading', { name: 'Set up Frog' })).toBeVisible({
-		timeout: 15000
+		timeout: 30000
 	});
 });
 

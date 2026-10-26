@@ -11,6 +11,7 @@
 
 	/** Group into seasons, keeping episode order, so each row is one season. */
 	const seasons = $derived.by(() => {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- built and read here, never state
 		const map = new Map<number, HeatmapCell[]>();
 		for (const cell of cells) {
 			const list = map.get(cell.s) ?? [];
