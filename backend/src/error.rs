@@ -7,6 +7,9 @@ use serde_json::json;
 pub enum AppError {
     #[error("unauthorised")]
     Unauthorised,
+    /// The password was right; the authenticator code is missing or wrong.
+    #[error("{0}")]
+    TwoFactor(String),
     #[error("{0}")]
     BadRequest(String),
     #[error("{0}")]
@@ -30,7 +33,7 @@ pub enum AppError {
 impl AppError {
     fn status(&self) -> StatusCode {
         match self {
-            AppError::Unauthorised => StatusCode::UNAUTHORIZED,
+            AppError::Unauthorised | AppError::TwoFactor(_) => StatusCode::UNAUTHORIZED,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Conflict(_) => StatusCode::CONFLICT,
@@ -62,6 +65,13 @@ impl IntoResponse for AppError {
             other => other.to_string(),
         };
 
+        if matches!(self, AppError::TwoFactor(_)) {
+            return (
+                status,
+                Json(json!({ "error": message, "two_factor": true })),
+            )
+                .into_response();
+        }
         (status, Json(json!({ "error": message }))).into_response()
     }
 }

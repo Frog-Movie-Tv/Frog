@@ -31,6 +31,9 @@ dotenvy = "0.15"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 urlencoding = "2"
 futures = "0.3"
+hmac = "0.12"
+sha1 = "0.10"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

@@ -263,6 +263,8 @@ export interface MatchResult {
 	candidates: SearchItem[];
 	note: string | null;
 	already_tracked: Status | null;
+	season?: number | null;
+	last_season?: number | null;
 }
 
 export interface ImportSummary {

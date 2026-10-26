@@ -281,7 +281,7 @@
 	<div class="scrim" onclick={hide}></div>
 
 	<div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
-		<div class="field">
+		<div class="query">
 			<Icon name="search" size={18} />
 			<input
 				bind:this={input}
@@ -358,7 +358,10 @@
 		overflow: hidden;
 	}
 
-	.field {
+	/* Named "query", not "field": app.css has a global .field rule for form
+	   labels with flex-direction: column, and sharing the name stacked the
+	   icon, the input and the esc badge on top of each other. */
+	.query {
 		display: flex;
 		flex-wrap: nowrap;
 		align-items: center;
@@ -367,7 +370,7 @@
 		border-bottom: 1px solid var(--line);
 	}
 
-	.field input {
+	.query input {
 		flex: 1 1 auto;
 		/* Without an explicit zero basis the input refuses to shrink, wraps
 		   onto its own line and ends up sitting under the icon. */

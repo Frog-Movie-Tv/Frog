@@ -30,3 +30,9 @@ Thumbs.db
 /.devdata
 /frontend/.e2e-data
 /frontend/.screenshot-data
+/frontend/.2fa-data
+/frontend/.anime-data
+/frontend/.audit-data
+/frontend/.polish-data
+/frontend/.pwa-data
+/frontend/.verify-data

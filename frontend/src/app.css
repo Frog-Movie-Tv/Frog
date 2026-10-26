@@ -48,6 +48,14 @@
 	--warn: #e0a458;
 	--bad: #f4738f;
 
+	/* One colour per status, used by badges, stats and filters alike. Five
+	   distinct hues, so Watching and Completed never read as the same green. */
+	--status-watching: #5aa7ff;
+	--status-completed: #4cc38a;
+	--status-planned: #b39cff;
+	--status-paused: #f0a73a;
+	--status-dropped: #f06a7d;
+
 	/* --- shape, type and motion, all adjustable in Settings ----------- */
 	--radius: 16px;
 	--radius-sm: 10px;
@@ -103,6 +111,12 @@
 
 	--shadow-2: 0 10px 30px -14px rgba(16, 40, 28, 0.3);
 	--shadow-3: 0 30px 60px -24px rgba(16, 40, 28, 0.35);
+
+	--status-watching: #1f63c6;
+	--status-completed: #1c8452;
+	--status-planned: #6b4fd1;
+	--status-paused: #a4620c;
+	--status-dropped: #c2364f;
 }
 
 :root[data-theme='dark'] {
@@ -174,6 +188,12 @@
 
 	--shadow-2: 0 10px 30px -14px rgba(20, 16, 40, 0.3);
 	--shadow-3: 0 30px 60px -24px rgba(20, 16, 40, 0.35);
+
+	--status-watching: #1f63c6;
+	--status-completed: #1c8452;
+	--status-planned: #6b4fd1;
+	--status-paused: #a4620c;
+	--status-dropped: #c2364f;
 }
 
 /* Animation level, set from Settings. */
@@ -462,3 +482,10 @@ textarea.input {
 		--poster-min: 104px;
 	}
 }
+
+/* Status colour as a variable, so components only need data-status. */
+[data-status='watching'] { --status: var(--status-watching); }
+[data-status='completed'] { --status: var(--status-completed); }
+[data-status='planned'] { --status: var(--status-planned); }
+[data-status='paused'] { --status: var(--status-paused); }
+[data-status='dropped'] { --status: var(--status-dropped); }

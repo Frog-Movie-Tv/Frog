@@ -7,7 +7,42 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Lily Pad —
 
-In progress.
+### Highlights
+
+- **Import from AniList and MyAnimeList.** Enter an AniList username or choose
+  a MyAnimeList export. Each season on your list lands on the right season on
+  TMDB, parts and long-running seasons included, with the episodes you have
+  seen already ticked. Anything Frog is unsure of asks you first.
+- **When did you watch this?** Marking a season or a whole show asks: today,
+  on release, on a date you pick, or you don't know. Undated episodes count
+  towards your progress and stay out of the diary.
+- **A tidier diary.** A day of one show is one entry, such as "S04E08–E16 ·
+  9 episodes", that opens to show each episode. Change the date of any entry.
+- **Two-factor sign-in.** Turn it on in Settings → Security, scan the code
+  with any authenticator app, and keep ten recovery codes for a lost phone.
+- **Choose your tabs.** On phones, pick four tabs and find the rest under More.
+  Reorder or hide pages in Settings → Navigation.
+
+### Improvements
+
+- Import and export live in Settings → Your data, in the Library menu and on
+  an empty library.
+- Each status has its own colour, everywhere it appears.
+- The calendar shows what is on inside each day, with a legend, and the chosen
+  day opens beside the month.
+- Home's hero reads clearly on light themes and says Start watching for a show
+  you have not begun.
+- Data saver loads smaller images.
+- Calendar and Diary can be your start page.
+- Mark a whole show watched from its page.
+- Sign-in remembers this device unless you untick Keep me signed in.
+
+### Fixes
+
+- Frog opens and works offline once installed, signed in.
+- The command palette's search field sits on one line.
+- Season headers fit on narrow phones.
+- Every dropdown uses Frog's own menu.
 
 ## [0.3.0] — Tadpole — 2026-10-24
 

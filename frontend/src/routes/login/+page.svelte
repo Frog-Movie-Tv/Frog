@@ -1,12 +1,16 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { api } from '#lib/api';
+	import { api, ApiError } from '#lib/api';
+	import Logo from '#lib/components/Logo.svelte';
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
 
 	let username = $state('');
 	let password = $state('');
+	let remember = $state(true);
+	let code = $state('');
+	let askCode = $state(false);
 	let busy = $state(false);
 	let error = $state<string | null>(null);
 
@@ -22,12 +26,19 @@
 				await api.setup(username, password);
 				toasts.push('Account created. Welcome to Frog.');
 			} else {
-				await api.login(username, password);
+				await api.login(username, password, remember, askCode ? code : undefined);
 			}
 			await session.refresh();
 			await goto(next, { replaceState: true });
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Something went wrong';
+			if (e instanceof ApiError && e.twoFactor) {
+				// The first ask is a step, not an error.
+				error = askCode ? e.message : null;
+				askCode = true;
+				code = '';
+			} else {
+				error = e instanceof Error ? e.message : 'Something went wrong';
+			}
 		} finally {
 			busy = false;
 		}
@@ -44,10 +55,14 @@
 
 	<form class="card panel" onsubmit={submit}>
 		<div class="head">
-			<span class="mark" aria-hidden="true"></span>
+			<span class="mark" aria-hidden="true"><Logo size={44} /></span>
 			<h1>{setup ? 'Set up Frog' : 'Frog'}</h1>
 			<p class="muted">
-				{setup ? 'Choose the account you will sign in with.' : 'Your film and television diary.'}
+				{setup
+					? 'Choose the account you will sign in with.'
+					: askCode
+						? 'Enter the code from your authenticator app.'
+						: 'Your film and television diary.'}
 			</p>
 		</div>
 
@@ -55,6 +70,26 @@
 			<p class="notice">Cannot reach the server.</p>
 		{/if}
 
+		{#if askCode}
+			<label class="field">
+				<span>Code</span>
+				<!-- svelte-ignore a11y_autofocus -->
+				<input
+					class="input code"
+					bind:value={code}
+					autocomplete="one-time-code"
+					inputmode="text"
+					autocapitalize="off"
+					spellcheck="false"
+					placeholder="123 456"
+					required
+					autofocus
+				/>
+				<small class="faint">Lost your phone? Use one of your recovery codes.</small>
+			</label>
+		{/if}
+
+		<div class="credentials" hidden={askCode}>
 		<label class="field">
 			<span>Username</span>
 			<input
@@ -79,13 +114,32 @@
 			/>
 		</label>
 
+		{#if !setup}
+			<label class="remember">
+				<input type="checkbox" bind:checked={remember} />
+				<span>Keep me signed in</span>
+			</label>
+		{/if}
+		</div>
+
 		{#if error}
 			<p class="notice error" role="alert">{error}</p>
 		{/if}
 
 		<button class="btn primary wide" type="submit" disabled={busy}>
-			{busy ? 'Working…' : setup ? 'Create account' : 'Sign in'}
+			{busy ? 'Working…' : setup ? 'Create account' : askCode ? 'Verify' : 'Sign in'}
 		</button>
+
+		{#if askCode}
+			<button
+				class="btn ghost wide"
+				type="button"
+				onclick={() => {
+					askCode = false;
+					error = null;
+				}}>Back</button
+			>
+		{/if}
 
 
 	</form>
@@ -137,12 +191,9 @@
 	}
 
 	.mark {
-		width: 30px;
-		height: 30px;
-		border-radius: 9px;
-		background: linear-gradient(140deg, var(--accent), color-mix(in oklab, var(--accent), #28e1a0));
-		box-shadow: 0 0 26px -6px var(--accent);
+		display: block;
 		margin-bottom: 6px;
+		filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--accent) 35%, transparent));
 	}
 
 	h1 {
@@ -165,6 +216,29 @@
 		background: var(--bg-elev-2);
 		border: 1px solid var(--line-strong);
 		font-size: 0.84rem;
+	}
+
+	.credentials {
+		display: contents;
+	}
+
+	.credentials[hidden] {
+		display: none;
+	}
+
+	.code {
+		font-size: 1.25rem;
+		letter-spacing: 0.12em;
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.remember {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 0.86rem;
+		color: var(--text-dim);
 	}
 
 	.notice.error {

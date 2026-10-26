@@ -3,7 +3,14 @@
 	import { api, img } from '#lib/api';
 	import Icon from '#lib/components/Icon.svelte';
 	import Select from '#lib/components/Select.svelte';
-	import { dedupe, readFile, SOURCES, type Incoming } from '#lib/import/parsers';
+	import {
+		dedupe,
+		readAniList,
+		readFile,
+		SOURCES,
+		type Incoming,
+		type ParsedFile
+	} from '#lib/import/parsers';
 	import { toasts } from '#lib/toast.svelte';
 	import type { ImportSummary, MatchResult, SearchItem, Status } from '#lib/types';
 	import { STATUS_LABEL, STATUSES } from '#lib/types';
@@ -18,7 +25,8 @@
 	}
 
 	let step = $state<Step>('source');
-	let format = $state('letterboxd');
+	let format = $state('anilist');
+	let username = $state('');
 	let rows = $state<Row[]>([]);
 	let busy = $state(false);
 	let progress = $state({ done: 0, total: 0, label: '' });
@@ -29,23 +37,35 @@
 
 	const source = $derived(SOURCES.find((s) => s.id === format) ?? SOURCES[0]);
 	const included = $derived(rows.filter((r) => r.include && r.chosen));
-	const problems = $derived(rows.filter((r) => !r.chosen || r.match?.note));
+	const problems = $derived(
+		rows.filter((r) => !r.chosen || r.match?.note || r.incoming.warning)
+	);
 	const shown = $derived(onlyProblems ? problems : rows);
 
 	async function onFiles(list: FileList | null) {
 		if (!list?.length) return;
+		await load(async () => {
+			const chunks: ParsedFile[] = [];
+			for (const file of Array.from(list)) chunks.push(...(await readFile(format, file)));
+			return chunks;
+		}, 'Reading the file');
+	}
+
+	async function fetchAniList(event: SubmitEvent) {
+		event.preventDefault();
+		await load(() => readAniList(username), 'Reading your AniList');
+	}
+
+	async function load(read: () => Promise<ParsedFile[]>, label: string) {
 		busy = true;
-		progress = { done: 0, total: 0, label: 'Reading the file' };
+		progress = { done: 0, total: 0, label };
 		filesRead = [];
 
 		try {
 			const parsed: Incoming[] = [];
-			for (const file of Array.from(list)) {
-				const chunks = await readFile(format, file);
-				for (const chunk of chunks) {
-					filesRead.push(`${chunk.name} (${chunk.rows.length})`);
-					parsed.push(...chunk.rows);
-				}
+			for (const chunk of await read()) {
+				filesRead.push(`${chunk.name} (${chunk.rows.length})`);
+				parsed.push(...chunk.rows);
 			}
 
 			const unique = dedupe(parsed);
@@ -88,17 +108,87 @@
 			progress = { ...progress, done: Math.min(i + size, rows.length) };
 		}
 
+		foldSeasons();
 		busy = false;
+	}
+
+	/**
+	 * TMDB often keeps an anime as one long season where trackers count
+	 * several ("Season 2" is TMDB's season 1 from episode 25). When the
+	 * earlier seasons are in this import too, their episode counts say where
+	 * the later one starts.
+	 */
+	function foldSeasons() {
+		const shows = new Map<number, Row[]>();
+		for (const row of rows) {
+			if (row.chosen?.kind !== 'tv' || row.incoming.season == null) continue;
+			const list = shows.get(row.chosen.tmdb_id) ?? [];
+			list.push(row);
+			shows.set(row.chosen.tmdb_id, list);
+		}
+
+		for (const list of shows.values()) {
+			const last = list.find((r) => r.match?.last_season != null)?.match?.last_season;
+			if (last == null || last < 1) continue;
+			list.sort(
+				(a, b) =>
+					a.incoming.season! - b.incoming.season! ||
+					(a.incoming.episode_offset ?? 0) - (b.incoming.episode_offset ?? 0)
+			);
+
+			// `carried` is how far into TMDB's last season the rows so far reach;
+			// each later tracker season starts where the one before it ended.
+			let carried = 0;
+			let base = 0;
+			let current = -1;
+			for (const row of list) {
+				const season = row.incoming.season!;
+				if (season < last) continue;
+				if (season !== current) {
+					// A gap means an episode count is missing; stop guessing.
+					if (season > last && season !== current + 1) break;
+					base = carried;
+					current = season;
+				}
+				if (season > last) {
+					const start = base + (row.incoming.episode_offset ?? 0);
+					row.incoming.season = last;
+					row.incoming.episode_offset = start;
+					row.incoming.info = `Counted as season ${last}, from episode ${start + 1}`;
+					if (row.match?.note?.startsWith('TMDB lists no season')) row.match.note = null;
+				}
+				if (row.incoming.episode_total == null) break;
+				carried = Math.max(carried, (row.incoming.episode_offset ?? 0) + row.incoming.episode_total);
+			}
+		}
+		rows = [...rows];
 	}
 
 	async function run() {
 		busy = true;
-		summary = { added: 0, updated: 0, skipped: 0, failed: [] };
-		progress = { done: 0, total: included.length, label: 'Adding to your library' };
+
+		// "Keep what I have" is decided against the library as it was before
+		// this import: otherwise season 2 of a show would be skipped because
+		// season 1 was added a moment earlier in the same run.
+		const keep = onConflict === 'skip';
+		const skippedUp = keep ? included.filter((r) => r.match?.already_tracked).length : 0;
+		const todo = included
+			.filter((r) => !keep || !r.match?.already_tracked)
+			// Seasons of one show in order, so the latest season's status is the
+			// one the library ends up with.
+			.sort(
+				(a, b) =>
+					a.chosen!.tmdb_id - b.chosen!.tmdb_id ||
+					(a.incoming.season ?? 0) - (b.incoming.season ?? 0) ||
+					(a.incoming.episode_offset ?? 0) - (b.incoming.episode_offset ?? 0)
+			);
+
+		summary = { added: 0, updated: 0, skipped: skippedUp, failed: [] };
+		progress = { done: 0, total: todo.length, label: 'Adding to your library' };
 
 		const size = 25;
-		for (let i = 0; i < included.length; i += size) {
-			const batch = included.slice(i, i + size);
+		for (let i = 0; i < todo.length; i += size) {
+			const batch = todo.slice(i, i + size);
 			try {
 				const result = await api.applyImport(
 					batch.map((r) => ({
@@ -108,9 +198,13 @@
 						rating: r.incoming.rating,
 						watched_at: r.incoming.watched_at,
 						favourite: r.incoming.favourite,
-						rewatch: r.incoming.rewatch
+						rewatch: r.incoming.rewatch,
+						season: r.chosen!.kind === 'tv' ? (r.incoming.season ?? null) : null,
+						progress: r.incoming.progress ?? null,
+						episode_offset: r.incoming.episode_offset ?? 0,
+						episode_total: r.incoming.episode_total ?? null
 					})),
-					onConflict
+					'overwrite'
 				);
 				summary = {
 					added: summary.added + result.added,
@@ -122,7 +216,7 @@
 				toasts.error(e);
 				break;
 			}
-			progress = { ...progress, done: Math.min(i + size, included.length) };
+			progress = { ...progress, done: Math.min(i + size, todo.length) };
 		}
 
 		busy = false;
@@ -132,6 +226,15 @@
 	function choose(row: Row, candidate: SearchItem) {
 		row.chosen = candidate;
 		if (row.match) row.match.note = null;
+		rows = [...rows];
+	}
+
+	function setSeason(row: Row, value: string) {
+		const n = Number(value);
+		row.incoming.season = Number.isInteger(n) && n >= 0 ? n : null;
+		if (row.incoming.warning === 'Choose which season this is' && row.incoming.season !== null) {
+			row.incoming.warning = undefined;
+		}
 		rows = [...rows];
 	}
 
@@ -176,23 +279,41 @@
 			{/each}
 		</div>
 
-		<label class="drop">
-			<input
-				type="file"
-				accept={source.accept}
-				multiple
-				disabled={busy}
-				onchange={(e) => onFiles(e.currentTarget.files)}
-			/>
-			<Icon name="upload" size={26} />
-			<strong>Choose a file</strong>
-			<span class="faint">{source.label} · {source.accept.split(',').join(' or ')}</span>
-		</label>
-
-		<p class="faint note">
-			Nothing is sent anywhere but your own server. Files are read in the browser; only the
-			titles are looked up on TMDB.
-		</p>
+		{#if source.remote}
+			<form class="drop remote" onsubmit={fetchAniList}>
+				<Icon name="download" size={26} />
+				<label class="user">
+					<span>AniList username</span>
+					<input
+						class="input"
+						bind:value={username}
+						autocomplete="off"
+						autocapitalize="off"
+						spellcheck="false"
+						placeholder="username"
+						disabled={busy}
+					/>
+				</label>
+				<button class="btn primary" type="submit" disabled={busy || !username.trim()}>
+					{busy ? 'Reading…' : 'Read my list'}
+				</button>
+			</form>
+			<p class="faint note">Your list is read from AniList by this browser; only titles are looked up on TMDB.</p>
+		{:else}
+			<label class="drop">
+				<input
+					type="file"
+					accept={source.accept}
+					multiple
+					disabled={busy}
+					onchange={(e) => onFiles(e.currentTarget.files)}
+				/>
+				<Icon name="upload" size={26} />
+				<strong>Choose a file</strong>
+				<span class="faint">{source.label} · {source.accept.split(',').join(' or ')}</span>
+			</label>
+			<p class="faint note">Files are read in this browser; only titles are looked up on TMDB.</p>
+		{/if}
 
 		<div class="alt">
 			<h2>Export</h2>
@@ -274,13 +395,20 @@
 							{/if}
 						</div>
 						<div class="sub faint">
-							<span>{row.incoming.title}{row.incoming.year ? ` (${row.incoming.year})` : ''}</span>
+							<span>{row.incoming.label ?? row.incoming.title}{row.incoming.year ? ` (${row.incoming.year})` : ''}</span>
+							{#if row.incoming.progress}<span>{row.incoming.progress} watched</span>{/if}
 							{#if row.incoming.rating !== null}<span>rated {Math.round(row.incoming.rating)}</span>{/if}
 							{#if row.match?.already_tracked}
 								<span class="already">already in library</span>
 							{/if}
 						</div>
 
+						{#if row.incoming.warning}
+							<p class="note-line">{row.incoming.warning}</p>
+						{/if}
+						{#if row.incoming.info}
+							<p class="info-line">{row.incoming.info}</p>
+						{/if}
 						{#if row.match?.note}
 							<p class="note-line">{row.match.note}</p>
 						{/if}
@@ -296,13 +424,29 @@
 						{/if}
 					</div>
 
-					<Select
-						value={row.incoming.status ?? 'completed'}
-						label="Status"
-						compact
-						options={STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
-						onchange={(v) => setStatus(row, v as Status)}
-					/>
+					<div class="row-controls">
+						{#if row.chosen?.kind === 'tv' && row.incoming.anime}
+							<label class="season" title="TMDB season">
+								<span>S</span>
+								<input
+									type="number"
+									min="0"
+									inputmode="numeric"
+									aria-label="Season for {row.incoming.label ?? row.incoming.title}"
+									value={row.incoming.season ?? ''}
+									placeholder="?"
+									onchange={(e) => setSeason(row, e.currentTarget.value)}
+								/>
+							</label>
+						{/if}
+						<Select
+							value={row.incoming.status ?? 'completed'}
+							label="Status"
+							compact
+							options={STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
+							onchange={(v) => setStatus(row, v as Status)}
+						/>
+					</div>
 				</li>
 			{/each}
 		</ul>
@@ -388,11 +532,58 @@
 		transition: border-color var(--fast) var(--ease);
 	}
 
+	.row-controls {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.season {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 0 4px 0 9px;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--line-strong);
+		background: var(--bg-elev-2);
+		font-size: 0.78rem;
+		color: var(--text-faint);
+	}
+
+	.season input {
+		width: 3.2ch;
+		padding: 6px 2px;
+		border: none;
+		background: none;
+		font-size: 0.82rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--text);
+		-moz-appearance: textfield;
+		appearance: textfield;
+	}
+
+	.season input::-webkit-inner-spin-button {
+		display: none;
+	}
+
+	.remote {
+		cursor: default;
+	}
+
+	.remote .user {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		width: min(320px, 100%);
+		font-size: 0.8rem;
+		color: var(--text-dim);
+	}
+
 	.drop:hover {
 		border-color: var(--accent);
 	}
 
-	.drop input {
+	.drop > input[type='file'] {
 		position: absolute;
 		inset: 0;
 		opacity: 0;
@@ -564,6 +755,11 @@
 		color: var(--warn);
 	}
 
+	.info-line {
+		font-size: 0.75rem;
+		color: var(--text-faint);
+	}
+
 	.candidates {
 		display: flex;
 		flex-wrap: wrap;
@@ -653,7 +849,7 @@
 			row-gap: 8px;
 		}
 
-		.row :global(.select) {
+		.row-controls {
 			grid-column: 2 / -1;
 		}
 	}

@@ -90,10 +90,109 @@ pub async fn set_watched(
     after_change(&state, title_id).await
 }
 
+/// When a batch of episodes was watched.
+///
+/// Marking a whole back catalogue as watched is a statement about the past,
+/// and stamping every episode with today's date flooded the diary with
+/// hundreds of entries that never happened. So bulk marking asks.
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum When {
+    /// Just now.
+    #[default]
+    Today,
+    /// Each episode on the day it aired; undated if the air date is unknown.
+    Release,
+    /// One chosen day for all of them.
+    Date,
+    /// Watched, but no idea when: counted everywhere, kept out of the diary.
+    Unknown,
+}
+
 #[derive(Deserialize)]
-pub struct SeasonWatchBody {
+pub struct BulkWatchBody {
     #[serde(default = "yes")]
     pub watched: bool,
+    #[serde(default)]
+    pub when: When,
+    /// yyyy-mm-dd, required when `when` is `date`.
+    pub date: Option<String>,
+}
+
+/// Turn a yyyy-mm-dd into the timestamp watches are stored with, refusing
+/// anything that is not a real calendar date or lies in the future.
+pub fn evening_of(date: &str) -> AppResult<String> {
+    let day = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map_err(|_| AppError::BadRequest("pick a valid date".into()))?;
+    if day > Utc::now().date_naive() {
+        return Err(AppError::BadRequest("that date is in the future".into()));
+    }
+    Ok(format!("{date}T20:00:00Z"))
+}
+
+/// Tick or clear every aired episode of one season, or of the whole show when
+/// `season` is `None` (specials excluded).
+async fn bulk(
+    state: &AppState,
+    title_id: i64,
+    season: Option<i64>,
+    body: &BulkWatchBody,
+) -> AppResult<()> {
+    if !body.watched {
+        sqlx::query(
+            "DELETE FROM watch_event
+              WHERE episode_id IN (
+                    SELECT id FROM episode
+                     WHERE title_id = ?1
+                       AND (?2 IS NOT NULL OR season_number > 0)
+                       AND (?2 IS NULL OR season_number = ?2))",
+        )
+        .bind(title_id)
+        .bind(season)
+        .execute(&state.pool)
+        .await?;
+        return Ok(());
+    }
+
+    let mode = match body.when {
+        When::Today => "today",
+        When::Release => "release",
+        When::Date => "date",
+        When::Unknown => "unknown",
+    };
+    let chosen = match body.when {
+        When::Date => Some(evening_of(body.date.as_deref().unwrap_or(""))?),
+        _ => None,
+    };
+
+    // Only episodes with no watch yet, so this never inflates rewatches, and
+    // only ones that have aired.
+    sqlx::query(
+        "INSERT INTO watch_event (title_id, episode_id, watched_at, is_rewatch, source, undated)
+         SELECT ?1, e.id,
+                CASE ?2 WHEN 'release' THEN COALESCE(e.air_date || 'T20:00:00Z', ?3)
+                        WHEN 'date' THEN ?4
+                        ELSE ?3 END,
+                0, 'manual',
+                CASE ?2 WHEN 'unknown' THEN 1
+                        WHEN 'release' THEN e.air_date IS NULL
+                        ELSE 0 END
+           FROM episode e
+          WHERE e.title_id = ?1
+            AND (?5 IS NOT NULL OR e.season_number > 0)
+            AND (?5 IS NULL OR e.season_number = ?5)
+            AND (e.air_date IS NULL OR e.air_date <= date('now'))
+            AND NOT EXISTS (SELECT 1 FROM watch_event w WHERE w.episode_id = e.id)",
+    )
+    .bind(title_id)
+    .bind(mode)
+    .bind(Utc::now().to_rfc3339())
+    .bind(chosen)
+    .bind(season)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(())
 }
 
 /// Tick or clear a whole season in one go.
@@ -101,38 +200,22 @@ pub async fn set_season_watched(
     _: Auth,
     State(state): State<AppState>,
     Path((kind, tmdb_id, season)): Path<(String, i64, i64)>,
-    Json(body): Json<SeasonWatchBody>,
+    Json(body): Json<BulkWatchBody>,
 ) -> AppResult<Json<Value>> {
     let title_id = resolve(&state, &kind, tmdb_id).await?;
+    bulk(&state, title_id, Some(season), &body).await?;
+    after_change(&state, title_id).await
+}
 
-    if body.watched {
-        let now = Utc::now().to_rfc3339();
-        // Only episodes that have no watch yet, so this never inflates rewatches.
-        sqlx::query(
-            "INSERT INTO watch_event (title_id, episode_id, watched_at, is_rewatch, source)
-             SELECT ?, e.id, ?, 0, 'manual'
-               FROM episode e
-              WHERE e.title_id = ? AND e.season_number = ?
-                AND (e.air_date IS NULL OR e.air_date <= date('now'))
-                AND NOT EXISTS (SELECT 1 FROM watch_event w WHERE w.episode_id = e.id)",
-        )
-        .bind(title_id)
-        .bind(&now)
-        .bind(title_id)
-        .bind(season)
-        .execute(&state.pool)
-        .await?;
-    } else {
-        sqlx::query(
-            "DELETE FROM watch_event
-              WHERE episode_id IN (SELECT id FROM episode WHERE title_id = ? AND season_number = ?)",
-        )
-        .bind(title_id)
-        .bind(season)
-        .execute(&state.pool)
-        .await?;
-    }
-
+/// Tick or clear every aired episode of a show.
+pub async fn set_show_watched(
+    _: Auth,
+    State(state): State<AppState>,
+    Path((kind, tmdb_id)): Path<(String, i64)>,
+    Json(body): Json<BulkWatchBody>,
+) -> AppResult<Json<Value>> {
+    let title_id = resolve(&state, &kind, tmdb_id).await?;
+    bulk(&state, title_id, None, &body).await?;
     after_change(&state, title_id).await
 }
 

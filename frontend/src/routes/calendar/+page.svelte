@@ -3,7 +3,7 @@
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
-	import { episodeCode, prettyDate, relativeDate } from '#lib/format';
+	import { episodeCode, plural, prettyDate, relativeDate } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
 
@@ -25,6 +25,9 @@
 	let view = $state<'month' | 'agenda'>('month');
 	let cursor = $state(new Date());
 
+	const today = new Date().toISOString().slice(0, 10);
+	let selected = $state<string>(today);
+
 	$effect(() => {
 		if (!session.authenticated) return;
 		void load();
@@ -35,14 +38,17 @@
 			const res = await fetch('/api/calendar', { credentials: 'same-origin' });
 			if (!res.ok) throw new Error('Could not load the calendar');
 			entries = (await res.json()).entries;
+			// Open on the next day that has something, if today has nothing.
+			if (!entries.some((e) => e.date === today)) {
+				const next = entries.find((e) => e.date >= today);
+				if (next) selected = next.date;
+			}
 		} catch (e) {
 			toasts.error(e);
 		} finally {
 			loading = false;
 		}
 	}
-
-	const today = new Date().toISOString().slice(0, 10);
 
 	const byDate = $derived.by(() => {
 		const map = new Map<string, Entry[]>();
@@ -54,20 +60,32 @@
 		return map;
 	});
 
+	/** One cell per show per day: three episodes of one show is one line. */
+	function collapse(list: Entry[]) {
+		const out: { entry: Entry; count: number }[] = [];
+		for (const entry of list) {
+			const same = out.find((o) => o.entry.tmdb_id === entry.tmdb_id && o.entry.kind === entry.kind);
+			if (same) same.count++;
+			else out.push({ entry, count: 1 });
+		}
+		return out;
+	}
+
+	const iso = (d: Date) =>
+		`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 	/** Six weeks starting on the Monday on or before the first of the month. */
 	const weeks = $derived.by(() => {
 		const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
 		const start = new Date(first);
-		const weekday = (first.getDay() + 6) % 7;
-		start.setDate(first.getDate() - weekday);
+		start.setDate(first.getDate() - ((first.getDay() + 6) % 7));
 
 		const out: { date: string; inMonth: boolean }[][] = [];
 		const walker = new Date(start);
 		for (let w = 0; w < 6; w++) {
 			const row: { date: string; inMonth: boolean }[] = [];
 			for (let d = 0; d < 7; d++) {
-				const iso = `${walker.getFullYear()}-${String(walker.getMonth() + 1).padStart(2, '0')}-${String(walker.getDate()).padStart(2, '0')}`;
-				row.push({ date: iso, inMonth: walker.getMonth() === cursor.getMonth() });
+				row.push({ date: iso(walker), inMonth: walker.getMonth() === cursor.getMonth() });
 				walker.setDate(walker.getDate() + 1);
 			}
 			out.push(row);
@@ -76,19 +94,18 @@
 	});
 
 	const upcoming = $derived(entries.filter((e) => e.date >= today));
-
-	const monthLabel = $derived(
-		cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
-	);
-
+	const monthLabel = $derived(cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }));
 	const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+	const selectedEntries = $derived(byDate.get(selected) ?? []);
 
 	function shift(months: number) {
 		cursor = new Date(cursor.getFullYear(), cursor.getMonth() + months, 1);
 	}
 
-	let selected = $state<string | null>(null);
-	const selectedEntries = $derived(selected ? (byDate.get(selected) ?? []) : []);
+	function goToday() {
+		cursor = new Date();
+		selected = today;
+	}
 </script>
 
 <svelte:head>
@@ -110,76 +127,103 @@
 		<Empty
 			art="rest"
 			title="Nothing scheduled"
-			hint="Follow a show and its episodes will appear here as they are announced."
+			hint="Follow a show and its episodes appear here as they are announced."
 		>
 			<a class="btn primary" href="/search">Find a show</a>
 		</Empty>
 	{:else if view === 'month'}
-		<div class="monthbar">
-			<button class="nav" aria-label="Previous month" onclick={() => shift(-1)}>
-				<Icon name="chevron-left" size={17} />
-			</button>
-			<strong>{monthLabel}</strong>
-			<button class="nav" aria-label="Next month" onclick={() => shift(1)}>
-				<Icon name="chevron-right" size={17} />
-			</button>
-			<button class="btn ghost small" onclick={() => (cursor = new Date())}>Today</button>
-		</div>
-
-		<div class="grid" role="grid">
-			{#each dayNames as day (day)}
-				<span class="dayname faint">{day}</span>
-			{/each}
-
-			{#each weeks as week, w (w)}
-				{#each week as cell (cell.date)}
-					{@const list = byDate.get(cell.date) ?? []}
-					<button
-						class="cell"
-						class:dim={!cell.inMonth}
-						class:today={cell.date === today}
-						class:has={list.length > 0}
-						class:picked={selected === cell.date}
-						onclick={() => (selected = selected === cell.date ? null : cell.date)}
-					>
-						<span class="num">{Number(cell.date.slice(8, 10))}</span>
-						{#if list.length}
-							<span class="dots">
-								{#each list.slice(0, 3) as entry (`${entry.tmdb_id}-${entry.episode_number}`)}
-									<i style:background={entry.accent ?? 'var(--accent)'}></i>
-								{/each}
-								{#if list.length > 3}<small>+{list.length - 3}</small>{/if}
-							</span>
-						{/if}
+		<div class="layout">
+			<div class="month">
+				<div class="monthbar">
+					<button class="nav" aria-label="Previous month" onclick={() => shift(-1)}>
+						<Icon name="chevron-left" size={17} />
 					</button>
-				{/each}
-			{/each}
-		</div>
+					<strong>{monthLabel}</strong>
+					<button class="nav" aria-label="Next month" onclick={() => shift(1)}>
+						<Icon name="chevron-right" size={17} />
+					</button>
+					<button class="btn ghost small" onclick={goToday}>Today</button>
+				</div>
 
-		{#if selected}
-			<section class="day">
+				<div class="grid" role="grid" aria-label={monthLabel}>
+					{#each dayNames as day (day)}
+						<span class="dayname faint">{day}</span>
+					{/each}
+
+					{#each weeks as week, w (w)}
+						{#each week as cell (cell.date)}
+							{@const items = collapse(byDate.get(cell.date) ?? [])}
+							<button
+								class="cell"
+								class:dim={!cell.inMonth}
+								class:today={cell.date === today}
+								class:has={items.length > 0}
+								class:picked={selected === cell.date}
+								aria-label="{prettyDate(cell.date)}: {items.length ? plural(items.length, 'title') : 'nothing'}"
+								onclick={() => (selected = cell.date)}
+							>
+								<span class="num">{Number(cell.date.slice(8, 10))}</span>
+
+								<!-- Desktop: who is on. Phone: one coloured dot each. -->
+								{#if items.length}
+									<span class="titles">
+										{#each items.slice(0, 2) as { entry, count } (`${entry.kind}-${entry.tmdb_id}`)}
+											<span class="mini" class:film={entry.kind === 'movie'} class:seen={entry.watched}>
+												{#if entry.poster_path}
+													<img src={img(entry.poster_path, 'w92')} alt="" loading="lazy" />
+												{/if}
+												<span class="t">{entry.title}{count > 1 ? ` ×${count}` : ''}</span>
+											</span>
+										{/each}
+										{#if items.length > 2}<small class="more">+{items.length - 2} more</small>{/if}
+									</span>
+									<span class="dots">
+										{#each items.slice(0, 4) as { entry } (`${entry.kind}-${entry.tmdb_id}`)}
+											<i
+												class:film={entry.kind === 'movie'}
+												style:background={entry.kind === 'movie' ? 'transparent' : (entry.accent ?? 'var(--accent)')}
+												style:border-color={entry.accent ?? 'var(--accent)'}
+											></i>
+										{/each}
+									</span>
+								{/if}
+							</button>
+						{/each}
+					{/each}
+				</div>
+
+				<ul class="legend faint" aria-label="Legend">
+					<li><i class="key ep"></i> Episode</li>
+					<li><i class="key film"></i> Film release</li>
+					<li><Icon name="check" size={13} /> Watched</li>
+					<li><i class="key today-key"></i> Today</li>
+				</ul>
+			</div>
+
+			<aside class="day" aria-live="polite">
 				<h2>{prettyDate(selected)}</h2>
+				<p class="faint when">{relativeDate(selected)}</p>
 				{#if selectedEntries.length}
 					<ul class="agenda">
 						{#each selectedEntries as entry (`${entry.tmdb_id}-${entry.season_number}-${entry.episode_number}`)}
-							{@render row(entry)}
+							{@render row(entry, false)}
 						{/each}
 					</ul>
 				{:else}
-					<p class="muted">Nothing on this day.</p>
+					<p class="muted nothing">Nothing on this day.</p>
 				{/if}
-			</section>
-		{/if}
+			</aside>
+		</div>
 	{:else}
 		<ul class="agenda">
 			{#each upcoming as entry (`${entry.tmdb_id}-${entry.season_number}-${entry.episode_number}-${entry.date}`)}
-				{@render row(entry)}
+				{@render row(entry, true)}
 			{/each}
 		</ul>
 	{/if}
 </div>
 
-{#snippet row(entry: Entry)}
+{#snippet row(entry: Entry, showWhen: boolean)}
 	<li>
 		<a href="/title/{entry.kind}/{entry.tmdb_id}">
 			{#if entry.poster_path}
@@ -194,14 +238,14 @@
 						{episodeCode(entry.season_number, entry.episode_number)}
 						{#if entry.episode_name}· {entry.episode_name}{/if}
 					{:else}
-						In cinemas
+						Released
 					{/if}
 				</span>
 			</span>
 			{#if entry.watched}
-				<span class="seen"><Icon name="check" size={14} /></span>
+				<span class="seen-mark" title="Watched"><Icon name="check" size={14} /></span>
 			{/if}
-			<span class="when">{relativeDate(entry.date)}</span>
+			{#if showWhen}<span class="when-tag">{relativeDate(entry.date)}</span>{/if}
 		</a>
 	</li>
 {/snippet}
@@ -229,11 +273,20 @@
 		color: var(--accent-ink);
 	}
 
+	/* Grid and the chosen day side by side, so the details are never below
+	   the fold on a desktop. */
+	.layout {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 320px;
+		gap: 26px;
+		align-items: start;
+	}
+
 	.monthbar {
 		display: flex;
 		align-items: center;
 		gap: 12px;
-		margin-bottom: 16px;
+		margin-bottom: 14px;
 	}
 
 	.monthbar strong {
@@ -266,7 +319,7 @@
 
 	.grid {
 		display: grid;
-		grid-template-columns: repeat(7, 1fr);
+		grid-template-columns: repeat(7, minmax(0, 1fr));
 		gap: 5px;
 	}
 
@@ -280,18 +333,18 @@
 	}
 
 	.cell {
-		position: relative;
-		aspect-ratio: 1.15;
+		min-height: 96px;
+		min-width: 0;
 		display: flex;
 		flex-direction: column;
-		align-items: flex-start;
-		justify-content: space-between;
+		align-items: stretch;
 		gap: 4px;
-		padding: 7px 8px;
+		padding: 6px;
 		border-radius: var(--radius-sm);
 		border: 1px solid var(--line);
 		background: var(--bg-elev);
 		color: var(--text-dim);
+		text-align: left;
 		cursor: pointer;
 		transition: border-color var(--fast) var(--ease);
 	}
@@ -308,44 +361,154 @@
 		color: var(--text);
 	}
 
-	.cell.today {
-		border-color: var(--accent);
+	.cell.today .num {
+		display: inline-grid;
+		place-items: center;
+		min-width: 22px;
+		height: 22px;
+		border-radius: var(--radius-pill);
+		background: var(--accent);
+		color: var(--accent-ink);
+		font-weight: 700;
 	}
 
 	.cell.picked {
-		background: var(--accent-soft);
 		border-color: var(--accent);
+		box-shadow: 0 0 0 1px var(--accent) inset;
 	}
 
 	.num {
-		font-size: 0.8rem;
+		align-self: flex-start;
+		font-size: 0.78rem;
 		font-variant-numeric: tabular-nums;
 	}
 
-	.dots {
+	.titles {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		min-width: 0;
+	}
+
+	.mini {
 		display: flex;
 		align-items: center;
+		gap: 5px;
+		min-width: 0;
+		padding: 2px 4px 2px 2px;
+		border-radius: 5px;
+		background: var(--bg-elev-2);
+		font-size: 0.68rem;
+		line-height: 1.2;
+	}
+
+	.mini.film {
+		outline: 1px dashed var(--line-strong);
+		outline-offset: -1px;
+	}
+
+	.mini.seen {
+		opacity: 0.55;
+	}
+
+	.mini img {
+		width: 14px;
+		height: 21px;
+		border-radius: 2px;
+		object-fit: cover;
+		flex: none;
+	}
+
+	.mini .t {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.more {
+		font-size: 0.64rem;
+		color: var(--text-faint);
+		padding-left: 2px;
+	}
+
+	.dots {
+		display: none;
 		gap: 3px;
 		flex-wrap: wrap;
 	}
 
 	.dots i {
-		width: 7px;
-		height: 7px;
+		width: 6px;
+		height: 6px;
 		border-radius: 50%;
+		border: 1.5px solid transparent;
 	}
 
-	.dots small {
-		font-size: 0.62rem;
-		color: var(--text-faint);
+	.legend {
+		list-style: none;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 18px;
+		margin: 14px 0 0;
+		padding: 0;
+		font-size: 0.76rem;
+	}
+
+	.legend li {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+	}
+
+	.key {
+		width: 12px;
+		height: 12px;
+		border-radius: 3px;
+		background: var(--bg-elev-2);
+		border: 1px solid var(--line-strong);
+	}
+
+	.key.ep {
+		background: var(--accent);
+		border-color: var(--accent);
+		border-radius: 50%;
+		width: 8px;
+		height: 8px;
+	}
+
+	.key.film {
+		border-style: dashed;
+	}
+
+	.key.today-key {
+		background: var(--accent);
+		border-color: var(--accent);
+		border-radius: var(--radius-pill);
+		width: 16px;
 	}
 
 	.day {
-		margin-top: 28px;
+		position: sticky;
+		top: calc(var(--header-h) + 16px);
+		padding: 18px;
+		border-radius: var(--radius);
+		border: 1px solid var(--line);
+		background: var(--bg-elev);
+		max-height: calc(100dvh - var(--header-h) - 40px);
+		overflow-y: auto;
 	}
 
 	.day h2 {
-		margin-bottom: 12px;
+		font-size: 1.05rem;
+	}
+
+	.when {
+		font-size: 0.8rem;
+		margin: 2px 0 14px;
+	}
+
+	.nothing {
+		font-size: 0.88rem;
 	}
 
 	.agenda {
@@ -360,11 +523,11 @@
 	.agenda a {
 		display: flex;
 		align-items: center;
-		gap: 14px;
-		padding: 9px 12px;
+		gap: 12px;
+		padding: 8px 10px;
 		border-radius: var(--radius-sm);
 		border: 1px solid var(--line);
-		background: var(--bg-elev);
+		background: var(--bg-elev-2);
 	}
 
 	.agenda a:hover {
@@ -373,14 +536,15 @@
 
 	.agenda img,
 	.no-art {
-		width: 34px;
+		width: 32px;
 		aspect-ratio: 2 / 3;
 		border-radius: 4px;
 		object-fit: cover;
 		display: grid;
 		place-items: center;
-		background: var(--bg-elev-2);
+		background: var(--bg-elev);
 		color: var(--text-faint);
+		flex: none;
 	}
 
 	.what {
@@ -392,38 +556,53 @@
 	}
 
 	.what strong {
-		font-size: 0.9rem;
+		font-size: 0.88rem;
 	}
 
 	.what .faint {
-		font-size: 0.76rem;
+		font-size: 0.75rem;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
-	.seen {
+	.seen-mark {
 		color: var(--good);
 		display: grid;
-		place-items: center;
 	}
 
-	.when {
+	.when-tag {
 		font-size: 0.8rem;
 		font-weight: 600;
 		color: var(--accent);
 		flex: none;
 	}
 
-	@media (max-width: 620px) {
+	/* Below a desktop the details sit under the grid and cells show dots. */
+	@media (max-width: 1000px) {
+		.layout {
+			grid-template-columns: 1fr;
+		}
+
+		.day {
+			position: static;
+			max-height: none;
+		}
+	}
+
+	@media (max-width: 720px) {
 		.cell {
+			min-height: 0;
 			aspect-ratio: 1;
 			padding: 5px;
 		}
 
-		.dots i {
-			width: 5px;
-			height: 5px;
+		.titles {
+			display: none;
+		}
+
+		.dots {
+			display: flex;
 		}
 	}
 </style>

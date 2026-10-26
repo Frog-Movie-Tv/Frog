@@ -4,6 +4,7 @@
 	import { episodeCode, prettyDate, relativeDate, runtime } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
+	import { whenWatched, type WhenAnswer } from '#lib/when.svelte';
 	import type { EpisodeView, Kind, LibraryItem, SeasonDetail, SeasonSummary } from '#lib/types';
 	import Rating from './Rating.svelte';
 	import Spinner from './Spinner.svelte';
@@ -14,10 +15,19 @@
 		seasons: SeasonSummary[];
 		/** Which season to open on first paint, usually the one you are on. */
 		initialSeason?: number | null;
+		/** Shown in the "When did you watch this?" prompt. */
+		showName?: string;
 		onprogress?: (item: LibraryItem) => void;
 	}
 
-	let { kind, tmdbId, seasons, initialSeason = null, onprogress }: Props = $props();
+	let {
+		kind,
+		tmdbId,
+		seasons,
+		initialSeason = null,
+		showName = 'This show',
+		onprogress
+	}: Props = $props();
 
 	// `undefined` means "nothing clicked yet", so the default can keep tracking
 	// the props without freezing their first value.
@@ -104,9 +114,19 @@
 	}
 
 	async function toggleSeason(season: number, watched: boolean) {
+		// Marking a season is a claim about the past, so ask when. Clearing it
+		// needs no date.
+		let when: WhenAnswer | undefined;
+		if (watched) {
+			const name = seasons.find((s) => s.season_number === season)?.name ?? `Season ${season}`;
+			const answer = await whenWatched.ask(showName, name);
+			if (!answer) return;
+			when = answer;
+		}
+
 		busy = `season-${season}`;
 		try {
-			const { item } = await api.setSeasonWatched(kind, tmdbId, season, watched);
+			const { item } = await api.setSeasonWatched(kind, tmdbId, season, watched, when);
 			onprogress?.(item);
 			await fetchSeason(season);
 		} catch (e) {
@@ -170,28 +190,41 @@
 				>
 					<span class="chev" class:turned={isOpen}><Icon name="chevron-right" size={17} /></span>
 					<span class="title">{season.name}</span>
-					<span class="count faint">{season.episode_count} ep</span>
-					{#if season.air_date}
-						<span class="aired faint">{season.air_date.slice(0, 4)}</span>
-					{/if}
+					<span class="meta faint">
+						{season.episode_count}
+						{season.episode_count === 1 ? 'episode' : 'episodes'}{#if season.air_date}&nbsp;·
+							{season.air_date.slice(0, 4)}{/if}
+					</span>
 				</button>
 
 				{#if isOpen && detail}
 					<button
-						class="btn ghost small"
+						class="btn ghost small season-action"
 						disabled={busy === `season-${season.season_number}`}
 						onclick={() =>
 							toggleSeason(season.season_number, !seasonWatched(season.season_number))}
 					>
-						{seasonWatched(season.season_number) ? 'Unmark season' : 'Mark season watched'}
+						<Icon name={seasonWatched(season.season_number) ? 'x' : 'check'} size={14} />
+						{seasonWatched(season.season_number) ? 'Unmark' : 'Mark watched'}
 					</button>
 				{/if}
 			</header>
 
 			{#if isOpen}
-				{#if loading === season.season_number && !detail}
-					<Spinner label="Loading episodes" />
-				{:else if detail}
+				{#if !detail}
+					<ul class="episodes" aria-busy="true" aria-label="Loading episodes">
+						{#each Array(Math.min(season.episode_count || 6, 8)) as _, i (i)}
+							<li class="episode skeleton-row">
+								<span class="check skeleton"></span>
+								<span class="still skeleton"></span>
+								<span class="body">
+									<span class="line-skel skeleton"></span>
+									<span class="line-skel short skeleton"></span>
+								</span>
+							</li>
+						{/each}
+					</ul>
+				{:else}
 					<ul class="episodes">
 						{#each detail.episodes as ep (ep.episode_number)}
 							{@const key = `${ep.season_number}-${ep.episode_number}`}
@@ -295,12 +328,33 @@
 	header {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		flex-wrap: wrap;
+		gap: 0 10px;
 		padding-right: 12px;
 	}
 
+	.season-action {
+		flex: none;
+	}
+
+	.skeleton-row .check {
+		border: none;
+	}
+
+	.line-skel {
+		display: block;
+		height: 11px;
+		width: 62%;
+		border-radius: 4px;
+	}
+
+	.line-skel.short {
+		width: 34%;
+	}
+
 	.head {
-		flex: 1;
+		flex: 1 1 220px;
+		min-width: 0;
 		display: flex;
 		align-items: center;
 		gap: 10px;
@@ -324,15 +378,19 @@
 
 	.title {
 		font-weight: 600;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		min-width: 0;
 	}
 
-	.count,
-	.aired {
-		font-size: 0.78rem;
-	}
-
-	.aired {
+	/* One unbreakable unit, pushed to the right: "25 episodes · 2014" never
+	   splits across two lines. */
+	.meta {
 		margin-left: auto;
+		font-size: 0.78rem;
+		white-space: nowrap;
+		flex: none;
 	}
 
 	.btn.small {
@@ -515,6 +573,12 @@
 	@media (max-width: 720px) {
 		.still {
 			display: none;
+		}
+
+		/* The action drops to its own line under the season name rather than
+		   pushing past the edge of the card. */
+		.season-action {
+			margin: -4px 0 12px 43px;
 		}
 
 		.episode {

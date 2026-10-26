@@ -92,6 +92,38 @@ test('the command palette opens and can navigate', async ({ page }) => {
 	await expect(page).toHaveURL('/library');
 });
 
+test('the command palette input sits on one line with its icon and esc badge', async ({
+	page
+}, testInfo) => {
+	await signIn(page);
+	await page.keyboard.press('Control+k');
+
+	const dialog = page.getByRole('dialog', { name: 'Command palette' });
+	const input = dialog.getByPlaceholder('Jump to a title, a page or an action');
+	await expect(input).toBeVisible();
+
+	const row = dialog.locator('.query');
+	const icon = row.locator('svg').first();
+	const esc = row.locator('kbd');
+
+	const [inputBox, iconBox, escBox, rowBox] = await Promise.all([
+		input.boundingBox(),
+		icon.boundingBox(),
+		esc.boundingBox(),
+		row.boundingBox()
+	]);
+	const middle = (b: { y: number; height: number } | null) => (b ? b.y + b.height / 2 : NaN);
+
+	// All three share one horizontal line, in order, and the row stays one line tall.
+	expect(Math.abs(middle(iconBox) - middle(inputBox))).toBeLessThan(6);
+	expect(Math.abs(middle(escBox) - middle(inputBox))).toBeLessThan(6);
+	expect(iconBox!.x).toBeLessThan(inputBox!.x);
+	expect(escBox!.x).toBeGreaterThan(inputBox!.x);
+	expect(rowBox!.height).toBeLessThan(64);
+
+	await page.screenshot({ path: testInfo.outputPath('palette.png') });
+});
+
 test("the what's new page lists the current release", async ({ page }) => {
 	await signIn(page);
 	await page.goto('/whats-new');
@@ -114,9 +146,14 @@ test('the importer offers every supported source and both exports', async ({ pag
 	await signIn(page);
 	await page.goto('/import');
 
-	for (const source of ['Letterboxd', 'IMDb', 'Trakt', 'TV Time', 'Frog backup']) {
+	for (const source of ['AniList', 'MyAnimeList', 'Letterboxd', 'IMDb', 'Trakt', 'TV Time', 'Frog backup']) {
 		await expect(page.getByRole('button', { name: source, exact: true })).toBeVisible();
 	}
+
+	// AniList is read by username; its field must be usable, not covered.
+	await page.getByRole('button', { name: 'AniList', exact: true }).click();
+	await page.getByLabel('AniList username').fill('someone');
+	await expect(page.getByRole('button', { name: 'Read my list' })).toBeEnabled();
 	await expect(page.getByRole('link', { name: 'Download backup' })).toBeVisible();
 	await expect(page.getByRole('link', { name: 'Download CSV' })).toBeVisible();
 });
@@ -252,10 +289,23 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/calendar',
 		'/api/diary',
 		'/api/export/library.json',
+		'/api/auth/two-factor',
 		'/img/w342/nope.jpg'
 	]) {
 		const res = await request.get(path);
 		expect(res.status(), `${path} should be 401`).toBe(401);
+	}
+	for (const path of [
+		'/api/auth/two-factor/start',
+		'/api/auth/two-factor/confirm',
+		'/api/auth/two-factor/disable',
+		'/api/auth/two-factor/recovery-codes',
+		'/api/diary/redate',
+		'/api/import/match',
+		'/api/import/apply'
+	]) {
+		const res = await request.post(path, { data: {} });
+		expect(res.status(), `POST ${path} should be 401`).toBe(401);
 	}
 });
 

@@ -8,5 +8,6 @@ pub mod routes;
 pub mod state;
 pub mod store;
 pub mod tmdb;
+pub mod totp;
 
 pub use state::AppState;

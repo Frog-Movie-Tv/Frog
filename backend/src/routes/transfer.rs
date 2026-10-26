@@ -38,6 +38,21 @@ pub struct Incoming {
     pub favourite: bool,
     #[serde(default)]
     pub rewatch: bool,
+    /// Anime trackers list each season as its own entry; TMDB has one show
+    /// with numbered seasons. This is the TMDB season the row is about.
+    pub season: Option<i64>,
+    /// Episodes watched within that season.
+    pub progress: Option<i64>,
+    #[serde(default)]
+    pub episode_offset: i64,
+    pub episode_total: Option<i64>,
+    /// Other names to try when the main title finds nothing (English,
+    /// romaji, synonyms).
+    #[serde(default)]
+    pub alt_titles: Vec<String>,
+    /// From an anime tracker: prefer animated results when matching.
+    #[serde(default)]
+    pub anime: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -48,6 +63,11 @@ pub struct MatchResult {
     /// Why this one needs a human: nothing found, or two plausible answers.
     pub note: Option<String>,
     pub already_tracked: Option<String>,
+    /// The season the row maps to, once checked against TMDB.
+    pub season: Option<i64>,
+    /// The show's highest numbered season on TMDB, so the client can carry
+    /// episode numbering on when TMDB folds later seasons into an earlier one.
+    pub last_season: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,7 +99,25 @@ pub async fn match_titles(
 
     let mut out = Vec::with_capacity(body.items.len());
     for row in body.items {
-        let (matched, candidates, note) = resolve(&state, &row).await;
+        let (matched, candidates, mut note) = resolve(&state, &row).await;
+        let mut last_season = None;
+
+        // A season the show does not have is the anime case that needs a
+        // human: some shows are split into seasons differently on TMDB.
+        if let (Some(m), Some(season)) = (matched.as_ref(), row.season) {
+            if m.kind == "tv" {
+                if let Ok(detail) = state.tmdb.tv(m.tmdb_id).await {
+                    let seasons = crate::tmdb::models::seasons(&detail);
+                    last_season = seasons.iter().map(|s| s.season_number).max();
+                    let known = seasons.iter().any(|s| s.season_number == season);
+                    if !known {
+                        note = Some(format!(
+                            "TMDB lists no season {season} for this show; check the match"
+                        ));
+                    }
+                }
+            }
+        }
 
         let already = matched.as_ref().and_then(|m| {
             tracked
@@ -94,6 +132,8 @@ pub async fn match_titles(
             candidates,
             note,
             already_tracked: already,
+            season: row.season,
+            last_season,
         });
     }
 
@@ -123,24 +163,38 @@ async fn resolve(
         }
     }
 
-    let raw = match state.tmdb.search_multi(&row.title, 1).await {
-        Ok(v) => v,
-        Err(_) => return (None, Vec::new(), Some("TMDB did not answer".into())),
-    };
+    // English, romaji and synonyms often differ; the first name that finds
+    // anything of the right kind wins.
+    let names: Vec<&str> = std::iter::once(row.title.as_str())
+        .chain(row.alt_titles.iter().map(String::as_str))
+        .filter(|n| !n.trim().is_empty())
+        .collect();
 
-    let mut found: Vec<SearchItem> = raw
-        .get("results")
-        .and_then(Value::as_array)
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| SearchItem::from_value(v, None))
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut found: Vec<SearchItem> = Vec::new();
+    let mut searched = row.title.clone();
+    for name in names {
+        let raw = match state.tmdb.search_multi(name, 1).await {
+            Ok(v) => v,
+            Err(_) => return (None, Vec::new(), Some("TMDB did not answer".into())),
+        };
+        found = raw
+            .get("results")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| SearchItem::from_value(v, None))
+                    .collect()
+            })
+            .unwrap_or_default();
 
-    if let Some(kind) = row.kind.as_deref() {
-        if kind == "movie" || kind == "tv" {
-            found.retain(|f| f.kind == kind);
+        if let Some(kind) = row.kind.as_deref() {
+            if kind == "movie" || kind == "tv" {
+                found.retain(|f| f.kind == kind);
+            }
+        }
+        if !found.is_empty() {
+            searched = name.to_string();
+            break;
         }
     }
 
@@ -148,7 +202,14 @@ async fn resolve(
         return (None, Vec::new(), Some("No match found".into()));
     }
 
-    let wanted = row.title.trim().to_lowercase();
+    // A live-action remake shares a name with half of anime; for rows from
+    // an anime tracker, animated results go first.
+    if row.anime {
+        const ANIMATION: i64 = 16;
+        found.sort_by_key(|f| !f.genre_ids.contains(&ANIMATION));
+    }
+
+    let wanted = searched.trim().to_lowercase();
     let exact_same_year = found
         .iter()
         .position(|f| f.name.to_lowercase() == wanted && row.year.is_some() && f.year == row.year);
@@ -164,8 +225,9 @@ async fn resolve(
 
     // Say so when the year does not line up: that is the case a person
     // actually needs to look at.
+    let later_season = row.season.is_some_and(|s| s > 1);
     let note = match (row.year, best.year) {
-        (Some(a), Some(b)) if (a - b).abs() > 1 => {
+        (Some(a), Some(b)) if (a - b).abs() > 1 && !later_season => {
             Some(format!("Your file says {a}, TMDB says {b}"))
         }
         _ if exact.is_none() => Some("Closest match by name".into()),
@@ -238,6 +300,17 @@ pub struct ApplyItem {
     pub favourite: bool,
     #[serde(default)]
     pub rewatch: bool,
+    /// For a show: the season this row covers.
+    pub season: Option<i64>,
+    /// Episodes watched within it. Absent with status "completed" means all.
+    pub progress: Option<i64>,
+    /// Where this row starts inside the TMDB season. Trackers split a season
+    /// into parts ("Season 3 Part 2") that TMDB keeps as one, so part two's
+    /// first episode is TMDB's episode 13, not 1.
+    #[serde(default)]
+    pub episode_offset: i64,
+    /// How many episodes this row covers, when the tracker says.
+    pub episode_total: Option<i64>,
 }
 
 pub async fn apply(
@@ -273,7 +346,7 @@ pub async fn apply(
             continue;
         }
 
-        let (title_id, _) = match store::ensure_title(&state, &item.kind, item.tmdb_id).await {
+        let (title_id, detail) = match store::ensure_title(&state, &item.kind, item.tmdb_id).await {
             Ok(pair) => pair,
             Err(e) => {
                 failed.push(json!({ "tmdb_id": item.tmdb_id, "error": e.to_string() }));
@@ -286,6 +359,20 @@ pub async fn apply(
             .filter(|s| STATUSES.contains(&s.as_str()))
             .unwrap_or_else(|| "completed".to_string());
 
+        // A later season you only plan to watch must not push a show you are
+        // part-way through back onto the watchlist.
+        let status = if status == "planned" {
+            let watched = store::progress(&state.pool, title_id).await?.watched;
+            if watched > 0 {
+                "watching".to_string()
+            } else {
+                status
+            }
+        } else {
+            status
+        };
+
+        let completed = status == "completed";
         let patch = LibraryPatch {
             status: Some(status),
             rating: Some(item.rating),
@@ -293,6 +380,20 @@ pub async fn apply(
             notes: None,
         };
         store::apply_patch(&state.pool, title_id, &patch).await?;
+
+        if item.kind == "tv" {
+            if let Some(season) = item.season {
+                let after = item.episode_offset.max(0);
+                let count = match (item.progress, completed) {
+                    (Some(n), _) => Some(n),
+                    (None, true) => Some(item.episode_total.unwrap_or(i64::MAX - after)),
+                    (None, false) => None,
+                };
+                if let Some(count) = count.filter(|n| *n > 0) {
+                    tick_season(&state, title_id, &detail, season, after, after + count).await?;
+                }
+            }
+        }
 
         // A diary entry is the whole point of importing a diary.
         if let Some(watched_at) = item.watched_at.as_deref() {
@@ -331,6 +432,50 @@ pub async fn apply(
         "skipped": skipped,
         "failed": failed,
     })))
+}
+
+/// Mark episodes `after + 1 ..= upto` of a season watched.
+///
+/// Trackers record how far you got, not when, so these watches are undated:
+/// they count towards progress and stats but stay out of the diary rather
+/// than all landing on the day of the import.
+async fn tick_season(
+    state: &AppState,
+    title_id: i64,
+    detail: &Value,
+    season: i64,
+    after: i64,
+    upto: i64,
+) -> AppResult<()> {
+    let (have,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM episode WHERE title_id = ? AND season_number = ?")
+            .bind(title_id)
+            .bind(season)
+            .fetch_one(&state.pool)
+            .await?;
+    if have == 0 {
+        store::sync_all_seasons(state, title_id, detail).await?;
+    }
+
+    sqlx::query(
+        "INSERT INTO watch_event (title_id, episode_id, watched_at, is_rewatch, source, undated)
+         SELECT ?, e.id, ?, 0, 'import', 1
+           FROM episode e
+          WHERE e.title_id = ? AND e.season_number = ?
+            AND e.episode_number > ? AND e.episode_number <= ?
+            AND (e.air_date IS NULL OR e.air_date <= date('now'))
+            AND NOT EXISTS (SELECT 1 FROM watch_event w WHERE w.episode_id = e.id)",
+    )
+    .bind(title_id)
+    .bind(chrono::Utc::now().to_rfc3339())
+    .bind(title_id)
+    .bind(season)
+    .bind(after)
+    .bind(upto)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(())
 }
 
 /// (kind, tmdb_id, name, year, status, rating, favourite, notes, added, watches)

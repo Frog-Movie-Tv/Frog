@@ -1,3 +1,5 @@
+import { settings } from './settings.svelte';
+import type { WhenAnswer } from './when.svelte';
 import type {
 	AuthStatus,
 	HomeData,
@@ -16,7 +18,8 @@ import type {
 export class ApiError extends Error {
 	constructor(
 		message: string,
-		readonly status: number
+		readonly status: number,
+		readonly twoFactor = false
 	) {
 		super(message);
 		this.name = 'ApiError';
@@ -54,7 +57,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 			body && typeof body === 'object' && 'error' in body
 				? String((body as { error: unknown }).error)
 				: '';
-		throw new ApiError(detail || `Request failed (${res.status})`, res.status);
+		const twoFactor = !!body && typeof body === 'object' && 'two_factor' in body;
+		throw new ApiError(detail || `Request failed (${res.status})`, res.status, twoFactor);
 	}
 
 	return body as T;
@@ -72,10 +76,23 @@ const get = <T>(path: string) => request<T>(path);
 const send = <T>(method: string, path: string, body?: unknown) =>
 	request<T>(path, { method, body: body === undefined ? undefined : JSON.stringify(body) });
 
+/** One step down for each size, used when data saver is on. */
+const SMALLER: Record<string, string> = {
+	original: 'w1280',
+	w1280: 'w780',
+	w780: 'w500',
+	w500: 'w342',
+	w342: 'w185',
+	w300: 'w185',
+	w185: 'w154',
+	w154: 'w92'
+};
+
 /** Image proxy. Every poster goes through our own origin, never TMDB directly. */
 export function img(path: string | null | undefined, size = 'w342'): string | null {
 	if (!path) return null;
-	return `/img/${size}${path.startsWith('/') ? path : `/${path}`}`;
+	const chosen = settings.current.dataSaver ? (SMALLER[size] ?? size) : size;
+	return `/img/${chosen}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
 export interface LibraryQuery {
@@ -102,8 +119,20 @@ export const api = {
 	status: () => get<AuthStatus>('/api/auth/status'),
 	setup: (username: string, password: string) =>
 		send<{ ok: true }>('POST', '/api/auth/setup', { username, password }),
-	login: (username: string, password: string) =>
-		send<{ ok: true }>('POST', '/api/auth/login', { username, password }),
+	login: (username: string, password: string, remember: boolean, code?: string) =>
+		send<{ ok: true }>('POST', '/api/auth/login', { username, password, remember, code }),
+	twoFactor: () =>
+		get<{ enabled: boolean; recovery_codes_left: number }>('/api/auth/two-factor'),
+	startTwoFactor: () =>
+		send<{ secret: string; uri: string; qr_svg: string }>('POST', '/api/auth/two-factor/start', {}),
+	confirmTwoFactor: (code: string) =>
+		send<{ recovery_codes: string[] }>('POST', '/api/auth/two-factor/confirm', { code }),
+	disableTwoFactor: (password: string) =>
+		send<{ ok: true }>('POST', '/api/auth/two-factor/disable', { password }),
+	newRecoveryCodes: (password: string) =>
+		send<{ recovery_codes: string[] }>('POST', '/api/auth/two-factor/recovery-codes', {
+			password
+		}),
 	logout: () => send<{ ok: true }>('POST', '/api/auth/logout', {}),
 
 	search: (q: string, page = 1, hideAnimation = false) =>
@@ -145,10 +174,26 @@ export const api = {
 			{ watched }
 		),
 
-	setSeasonWatched: (kind: Kind, id: number, season: number, watched: boolean) =>
+	setSeasonWatched: (
+		kind: Kind,
+		id: number,
+		season: number,
+		watched: boolean,
+		when?: WhenAnswer
+	) =>
 		send<{ item: LibraryItem }>('POST', `/api/titles/${kind}/${id}/episodes/${season}/watch`, {
-			watched
+			watched,
+			...when
 		}),
+
+	setShowWatched: (kind: Kind, id: number, watched: boolean, when?: WhenAnswer) =>
+		send<{ item: LibraryItem }>('POST', `/api/titles/${kind}/${id}/episodes/watch`, {
+			watched,
+			...when
+		}),
+
+	redateDiary: (kind: Kind, id: number, day: string, when: WhenAnswer) =>
+		send<{ changed: number }>('POST', '/api/diary/redate', { kind, tmdb_id: id, day, ...when }),
 
 	setEpisodeState: (
 		kind: Kind,

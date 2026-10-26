@@ -9,6 +9,7 @@ pub mod settings;
 pub mod timeline;
 pub mod titles;
 pub mod transfer;
+pub mod two_factor;
 
 use axum::http::{header, HeaderValue};
 use axum::routing::{delete, get, post, put};
@@ -28,6 +29,14 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/setup", post(auth::setup))
         .route("/auth/login", post(auth::login))
         .route("/auth/logout", post(auth::logout))
+        .route("/auth/two-factor", get(two_factor::status))
+        .route("/auth/two-factor/start", post(two_factor::start))
+        .route("/auth/two-factor/confirm", post(two_factor::confirm))
+        .route("/auth/two-factor/disable", post(two_factor::disable))
+        .route(
+            "/auth/two-factor/recovery-codes",
+            post(two_factor::new_recovery_codes),
+        )
         // Everything below needs a session.
         .route("/search", get(search::search))
         .route("/discover/trending", get(search::trending))
@@ -61,7 +70,12 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/titles/{kind}/{tmdb_id}/episodes/{season}/watch",
             post(episodes::set_season_watched),
-        );
+        )
+        .route(
+            "/titles/{kind}/{tmdb_id}/episodes/watch",
+            post(episodes::set_show_watched),
+        )
+        .route("/diary/redate", post(timeline::redate));
 
     Router::new()
         .nest("/api", api)

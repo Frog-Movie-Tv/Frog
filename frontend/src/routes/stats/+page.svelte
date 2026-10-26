@@ -150,20 +150,7 @@
 
 	.seg,
 	.swatch {
-		background: var(--accent);
-	}
-
-	[data-status='completed'] {
-		background: var(--good);
-	}
-	[data-status='planned'] {
-		background: var(--text-faint);
-	}
-	[data-status='paused'] {
-		background: var(--warn);
-	}
-	[data-status='dropped'] {
-		background: var(--bad);
+		background: var(--status, var(--accent));
 	}
 
 	.legend {

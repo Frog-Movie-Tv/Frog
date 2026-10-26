@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
+	import Icon from '#lib/components/Icon.svelte';
 	import Heatmap from '#lib/components/Heatmap.svelte';
 	import Poster from '#lib/components/Poster.svelte';
 	import Rail from '#lib/components/Rail.svelte';
@@ -11,6 +12,7 @@
 	import { episodeCode, prettyDate, runtime, year } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
+	import { whenWatched } from '#lib/when.svelte';
 	import type { Kind, LibraryItem, TitleDetail } from '#lib/types';
 
 	let detail = $state<TitleDetail | null>(null);
@@ -89,6 +91,27 @@
 			: []
 	);
 	const hasProviders = $derived(providerGroups.length > 0);
+
+	let markingAll = $state(false);
+	/** Bumped to remount the season list after a whole-show change. */
+	let seasonsVersion = $state(0);
+
+	async function markAllWatched() {
+		if (!item) return;
+		const answer = await whenWatched.ask(item.name, 'Every aired episode');
+		if (!answer) return;
+		markingAll = true;
+		try {
+			const { item: updated } = await api.setShowWatched(kind, tmdbId, true, answer);
+			await refreshAfterEpisodes(updated);
+			seasonsVersion++;
+			toasts.push(`Marked ${updated.watched_episodes} episodes watched`);
+		} catch (e) {
+			toasts.error(e);
+		} finally {
+			markingAll = false;
+		}
+	}
 
 	async function markFilmWatched() {
 		if (!item) return;
@@ -245,14 +268,23 @@
 
 			{#if item.kind === 'tv' && detail.seasons.length}
 				<section class="block" id="seasons">
-					<div class="section-head"><h2>Seasons</h2></div>
-					<SeasonList
-						{kind}
-						{tmdbId}
-						seasons={detail.seasons}
-						initialSeason={detail.next_up?.season_number ?? null}
-						onprogress={refreshAfterEpisodes}
-					/>
+					<div class="section-head">
+						<h2>Seasons</h2>
+						<button class="btn ghost small" disabled={markingAll} onclick={markAllWatched}>
+							<Icon name="check" size={14} />
+							Mark all watched
+						</button>
+					</div>
+					{#key seasonsVersion}
+						<SeasonList
+							{kind}
+							{tmdbId}
+							showName={item.name}
+							seasons={detail.seasons}
+							initialSeason={detail.next_up?.season_number ?? null}
+							onprogress={refreshAfterEpisodes}
+						/>
+					{/key}
 				</section>
 
 				{#if detail.heatmap.length}
@@ -526,6 +558,11 @@
 
 	.block {
 		margin-bottom: 44px;
+	}
+
+	.btn.small {
+		padding: 7px 13px;
+		font-size: 0.8rem;
 	}
 
 	.overview {

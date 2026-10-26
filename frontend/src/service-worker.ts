@@ -5,13 +5,18 @@ import { assets, immutable } from '$app/manifest';
 import { version } from '$app/env';
 
 /**
- * Offline strategy, phase 1.
+ * Offline strategy.
  *
- *  - app shell and hashed assets: cache first, they are immutable per version
+ *  - app shell and hashed assets: cache first, immutable per version
  *  - posters through /img: cache first, TMDB paths are content addressed
- *  - API reads: network first, falling back to the last good response, so the
- *    library and a title you have opened before still render on the train
- *  - API writes: network only; a queue for offline ticks lands in phase 3
+ *  - API reads, auth status included: network first, falling back to the
+ *    last good response, so a library you have opened still renders offline
+ *  - API writes: network only
+ *
+ * The manifest lists paths relative to the app root ("_app/…"), while request
+ * URLs are absolute ("/_app/…"). Every path is normalised to the absolute
+ * form once, here; comparing the two shapes directly is what used to make
+ * every asset miss the cache.
  */
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
@@ -20,15 +25,18 @@ const SHELL = `frog-shell-${version}`;
 const DATA = 'frog-data-v1';
 const MEDIA = 'frog-media-v1';
 
-const PRECACHE = [...immutable, ...assets].map((entry) => entry.path);
+/** The page every client-side route boots from. */
+const APP_SHELL = '/';
+
+const absolute = (path: string) => (path.startsWith('/') ? path : `/${path}`);
+const PRECACHE = new Set([APP_SHELL, ...[...immutable, ...assets].map((e) => absolute(e.path))]);
 
 sw.addEventListener('install', (event) => {
 	event.waitUntil(
 		caches
 			.open(SHELL)
-			// One bad asset must not sink the whole install, so they are added
-			// individually and failures are tolerated.
-			.then((cache) => Promise.allSettled(PRECACHE.map((path) => cache.add(path))))
+			// One missing asset must not sink the whole install.
+			.then((cache) => Promise.allSettled([...PRECACHE].map((path) => cache.add(path))))
 			.then(() => sw.skipWaiting())
 	);
 });
@@ -55,27 +63,35 @@ sw.addEventListener('fetch', (event) => {
 	const url = new URL(request.url);
 	if (url.origin !== sw.location.origin) return;
 
+	if (request.mode === 'navigate') {
+		event.respondWith(navigate(request));
+		return;
+	}
+
 	if (url.pathname.startsWith('/img/')) {
 		event.respondWith(cacheFirst(request, MEDIA));
 		return;
 	}
 
 	if (url.pathname.startsWith('/api/')) {
-		// Auth status must never come from cache: a stale "authenticated" would
-		// show library chrome to a signed-out visitor.
-		if (url.pathname.startsWith('/api/auth/')) return;
+		// Exports are downloads, not data the app reads back.
+		if (url.pathname.startsWith('/api/export/')) return;
 		event.respondWith(networkFirst(request, DATA));
 		return;
 	}
 
-	if (PRECACHE.includes(url.pathname)) {
+	if (PRECACHE.has(url.pathname)) {
 		event.respondWith(cacheFirst(request, SHELL));
-		return;
 	}
+});
 
-	// Everything else is a client-side route: serve the shell.
-	if (request.mode === 'navigate') {
-		event.respondWith(navigate(request));
+/**
+ * Signing out has to take the cached data with it, or the next person to open
+ * the browser offline would see the library.
+ */
+sw.addEventListener('message', (event) => {
+	if (event.data === 'frog:signed-out') {
+		event.waitUntil(caches.delete(DATA));
 	}
 });
 
@@ -85,9 +101,7 @@ async function cacheFirst(request: Request, cacheName: string): Promise<Response
 	if (hit) return hit;
 
 	const response = await fetch(request);
-	if (response.status === 200) {
-		cache.put(request, response.clone());
-	}
+	if (response.status === 200) cache.put(request, response.clone());
 	return response;
 }
 
@@ -104,12 +118,18 @@ async function networkFirst(request: Request, cacheName: string): Promise<Respon
 	}
 }
 
+/** Every route is the same single page, so the cached shell answers them all. */
 async function navigate(request: Request): Promise<Response> {
 	try {
 		return await fetch(request);
 	} catch {
 		const cache = await caches.open(SHELL);
-		const shell = (await cache.match('/index.html')) ?? (await cache.match('/'));
-		return shell ?? new Response('Offline', { status: 503, statusText: 'Offline' });
+		return (
+			(await cache.match(APP_SHELL)) ??
+			new Response('Frog is offline and has nothing cached yet.', {
+				status: 503,
+				headers: { 'content-type': 'text/plain; charset=utf-8' }
+			})
+		);
 	}
 }

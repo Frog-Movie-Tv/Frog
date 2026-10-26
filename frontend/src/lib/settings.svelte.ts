@@ -85,6 +85,14 @@ export interface Settings {
 	clock24: boolean;
 
 	customCss: string;
+	/** Smaller artwork everywhere, for mobile data. */
+	dataSaver: boolean;
+	/** Every page, in the order the navigation shows them. */
+	navOrder: string[];
+	/** Pages left out of the desktop menu bar. */
+	navHidden: string[];
+	/** Up to four pages in the phone tab bar; the rest live under More. */
+	navTabs: string[];
 	/** Which release the "what's new" dot was last cleared for. */
 	lastSeenVersion: string;
 }
@@ -129,8 +137,25 @@ export const DEFAULTS: Settings = {
 	clock24: true,
 
 	customCss: '',
+	dataSaver: false,
+	navOrder: ['/', '/library', '/search', '/calendar', '/diary', '/stats', '/settings'],
+	navHidden: [],
+	navTabs: ['/', '/library', '/search', '/calendar'],
 	lastSeenVersion: ''
 };
+
+export const NAV_PAGES: { href: string; label: string; icon: string; fixed?: boolean }[] = [
+	{ href: '/', label: 'Home', icon: 'home', fixed: true },
+	{ href: '/library', label: 'Library', icon: 'grid' },
+	{ href: '/search', label: 'Search', icon: 'search' },
+	{ href: '/calendar', label: 'Calendar', icon: 'calendar' },
+	{ href: '/diary', label: 'Diary', icon: 'book' },
+	{ href: '/stats', label: 'Stats', icon: 'chart' },
+	{ href: '/settings', label: 'Settings', icon: 'settings', fixed: true }
+];
+
+/** Most pages a phone tab bar holds before the More tab. */
+export const MAX_TABS = 4;
 
 export const HOME_ROWS: { id: string; label: string; hint: string }[] = [
 	{ id: 'continue', label: 'Continue watching', hint: 'Shows you are part-way through' },

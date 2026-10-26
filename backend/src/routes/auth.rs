@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use crate::auth as session;
 use crate::error::{AppError, AppResult};
+use crate::routes::two_factor;
 use crate::state::AppState;
 
 #[derive(Deserialize)]
@@ -20,6 +21,9 @@ pub struct Credentials {
     /// the browser and a session the server forgets within a day.
     #[serde(default)]
     pub remember: bool,
+    /// The six digits from an authenticator app, or a recovery code.
+    #[serde(default)]
+    pub code: Option<String>,
 }
 
 /// Failed sign-ins allowed before the door shuts for a while.
@@ -110,12 +114,12 @@ pub async fn login(
     headers: HeaderMap,
     Json(body): Json<Credentials>,
 ) -> AppResult<impl IntoResponse> {
-    let row: Option<(String, String)> =
-        sqlx::query_as("SELECT username, password_hash FROM app_user WHERE id = 1")
+    let row: Option<(String, String, Option<String>)> =
+        sqlx::query_as("SELECT username, password_hash, totp_secret FROM app_user WHERE id = 1")
             .fetch_optional(&state.pool)
             .await?;
 
-    let Some((username, hash)) = row else {
+    let Some((username, hash, totp_secret)) = row else {
         return Err(AppError::BadRequest(
             "no account yet — run setup first".into(),
         ));
@@ -136,8 +140,46 @@ pub async fn login(
         return Err(AppError::Unauthorised);
     }
 
+    if let Some(secret) = totp_secret {
+        let code = body.code.as_deref().map(str::trim).unwrap_or("");
+        if code.is_empty() {
+            // Not a failure: the password was right and the app asks next.
+            return Err(AppError::TwoFactor(
+                "Enter the code from your authenticator app.".into(),
+            ));
+        }
+        if !second_factor_ok(&state, &secret, code).await? {
+            record_failure(&state);
+            return Err(AppError::TwoFactor("That code didn't work.".into()));
+        }
+    }
+
     clear_failures(&state);
     issue(state, jar, headers, body.remember).await
+}
+
+/// Checks an authenticator code, or else spends a recovery code.
+async fn second_factor_ok(state: &AppState, secret: &str, code: &str) -> AppResult<bool> {
+    if let Some(step) = crate::totp::verify(secret, code, Utc::now().timestamp()) {
+        // Only a step later than the last accepted one, so a code seen over
+        // someone's shoulder cannot be used again.
+        let used = sqlx::query(
+            "UPDATE app_user SET totp_last_step = ? WHERE id = 1 AND totp_last_step < ?",
+        )
+        .bind(step)
+        .bind(step)
+        .execute(&state.pool)
+        .await?;
+        return Ok(used.rows_affected() == 1);
+    }
+
+    let spent =
+        sqlx::query("UPDATE recovery_code SET used_at = ? WHERE code_hash = ? AND used_at IS NULL")
+            .bind(Utc::now().to_rfc3339())
+            .bind(two_factor::hash_recovery(code))
+            .execute(&state.pool)
+            .await?;
+    Ok(spent.rows_affected() == 1)
 }
 
 pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> AppResult<impl IntoResponse> {

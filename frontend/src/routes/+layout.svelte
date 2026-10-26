@@ -8,9 +8,11 @@
 	import Spinner from '#lib/components/Spinner.svelte';
 	import Toasts from '#lib/components/Toasts.svelte';
 	import UpdateBanner from '#lib/components/UpdateBanner.svelte';
+	import WhenWatched from '#lib/components/WhenWatched.svelte';
 	import { offline } from '#lib/offline.svelte';
 	import { session } from '#lib/session.svelte';
-	import { settings } from '#lib/settings.svelte';
+	import { MAX_TABS, NAV_PAGES, settings } from '#lib/settings.svelte';
+	import type { IconName } from '#lib/components/Icon.svelte';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -71,22 +73,40 @@
 		});
 	});
 
-	const nav = [
-		{ href: '/', label: 'Home', icon: 'home' },
-		{ href: '/library', label: 'Library', icon: 'grid' },
-		{ href: '/search', label: 'Search', icon: 'search' },
-		{ href: '/calendar', label: 'Calendar', icon: 'calendar' },
-		{ href: '/diary', label: 'Diary', icon: 'book' },
-		{ href: '/stats', label: 'Stats', icon: 'chart' },
-		{ href: '/settings', label: 'Settings', icon: 'settings' }
-	] as const;
+	type Page = (typeof NAV_PAGES)[number];
 
-	/** The five that fit across a phone. */
+	/** Pages in the order chosen in Settings; anything new goes at the end. */
+	const ordered = $derived.by(() => {
+		const order = settings.current.navOrder;
+		const known = order
+			.map((href) => NAV_PAGES.find((p) => p.href === href))
+			.filter((p): p is Page => !!p);
+		return [...known, ...NAV_PAGES.filter((p) => !order.includes(p.href))];
+	});
+
+	const nav = $derived(ordered.filter((p) => p.fixed || !settings.current.navHidden.includes(p.href)));
+
+	/** What fits across a phone; everything else lives under More. */
 	const tabs = $derived(
-		nav.filter((n) => ['/', '/library', '/search', '/stats', '/settings'].includes(n.href))
+		ordered.filter((p) => settings.current.navTabs.includes(p.href)).slice(0, MAX_TABS)
 	);
+	const more = $derived([
+		...ordered.filter((p) => !tabs.includes(p)),
+		{ href: '/import', label: 'Import & export', icon: 'upload' },
+		{ href: '/whats-new', label: 'Release notes', icon: 'sparkle' },
+		{ href: '/about', label: 'About', icon: 'info' }
+	]);
+
+	let moreOpen = $state(false);
+	const inMore = $derived(more.some((p) => isActive(p.href)));
 
 	const current = $derived(page.url.pathname);
+
+	// Navigating anywhere closes the More sheet.
+	$effect(() => {
+		void current;
+		moreOpen = false;
+	});
 	const isActive = (href: string) => (href === '/' ? current === '/' : current.startsWith(href));
 	const showChrome = $derived(session.authenticated && !current.startsWith('/login'));
 
@@ -134,12 +154,44 @@
 		<nav class="tabs" aria-label="Sections">
 			{#each tabs as link (link.href)}
 				<a href={link.href} class:active={isActive(link.href)}>
-					<Icon name={link.icon} size={20} />
+					<Icon name={link.icon as IconName} size={20} />
 					<small>{link.label}</small>
 					{#if link.href === '/settings' && updated}<i class="dot" aria-hidden="true"></i>{/if}
 				</a>
 			{/each}
+			<button
+				class="more-tab"
+				class:active={inMore || moreOpen}
+				aria-expanded={moreOpen}
+				aria-haspopup="menu"
+				onclick={() => (moreOpen = !moreOpen)}
+			>
+				<Icon name="more" size={20} />
+				<small>More</small>
+				{#if updated && !tabs.some((t) => t.href === '/settings')}
+					<i class="dot" aria-hidden="true"></i>
+				{/if}
+			</button>
 		</nav>
+
+		{#if moreOpen}
+			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+			<div class="more-scrim" onclick={() => (moreOpen = false)}></div>
+			<div class="more-sheet" role="menu" aria-label="More">
+				{#each more as link (link.href)}
+					<a
+						href={link.href}
+						role="menuitem"
+						class:active={isActive(link.href)}
+						onclick={() => (moreOpen = false)}
+					>
+						<Icon name={link.icon as IconName} size={19} />
+						<span>{link.label}</span>
+						{#if link.href === '/settings' && updated}<i class="dot inline" aria-hidden="true"></i>{/if}
+					</a>
+				{/each}
+			</div>
+		{/if}
 
 		<footer class="attribution">
 			<p class="faint">
@@ -154,6 +206,7 @@
 {#if session.authenticated}
 	<CommandPalette bind:this={palette} />
 	<UpdateBanner />
+	<WhenWatched />
 {/if}
 
 <Toasts />
@@ -323,8 +376,67 @@
 			font-size: 1.05rem;
 		}
 
-		.tabs a.active {
+		.tabs a.active,
+		.tabs .more-tab.active {
 			color: var(--accent);
+		}
+
+		.more-tab {
+			position: relative;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 2px;
+			padding: 9px 0 7px;
+			border: none;
+			background: none;
+			color: var(--text-faint);
+			cursor: pointer;
+		}
+
+		.more-scrim {
+			position: fixed;
+			inset: 0;
+			z-index: 38;
+			background: rgba(0, 0, 0, 0.45);
+		}
+
+		.more-sheet {
+			position: fixed;
+			z-index: 39;
+			left: 10px;
+			right: 10px;
+			bottom: calc(66px + env(safe-area-inset-bottom));
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 6px;
+			padding: 10px;
+			border-radius: var(--radius-lg);
+			background: var(--bg-elev);
+			border: 1px solid var(--line-strong);
+			box-shadow: var(--shadow-3);
+		}
+
+		.more-sheet a {
+			position: relative;
+			display: flex;
+			align-items: center;
+			gap: 11px;
+			padding: 13px 14px;
+			border-radius: var(--radius);
+			background: var(--bg-elev-2);
+			color: var(--text-dim);
+			font-size: 0.88rem;
+			font-weight: 550;
+		}
+
+		.more-sheet a.active {
+			color: var(--accent);
+		}
+
+		.dot.inline {
+			position: static;
+			margin-left: auto;
 		}
 
 		.tabs small {

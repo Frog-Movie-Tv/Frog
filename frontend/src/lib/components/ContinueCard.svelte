@@ -39,7 +39,12 @@
 	</div>
 
 	<div class="meta">
-		{#if next && next.aired}
+		{#if next && next.aired && item.watched_episodes === 0}
+			<span class="next">
+				<strong>Start</strong>
+				<span class="ep">{episodeCode(next.season_number, next.episode_number)}{next.name ? ` · ${next.name}` : ''}</span>
+			</span>
+		{:else if next && next.aired}
 			<span class="next">
 				<strong>{episodeCode(next.season_number, next.episode_number)}</strong>
 				{#if next.name}<span class="ep">{next.name}</span>{/if}

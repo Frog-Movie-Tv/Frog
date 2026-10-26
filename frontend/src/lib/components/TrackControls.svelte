@@ -6,6 +6,7 @@
 	import type { Kind, LibraryItem, Status } from '#lib/types';
 	import { STATUSES, STATUS_LABEL } from '#lib/types';
 	import Rating from './Rating.svelte';
+	import Select from './Select.svelte';
 
 	interface Props {
 		item: LibraryItem;
@@ -78,18 +79,12 @@
 			Start watching
 		</button>
 	{:else}
-		<label class="status">
-			<select
-				class="input"
-				value={item.entry?.status}
-				disabled={saving}
-				onchange={(e) => save({ status: e.currentTarget.value as Status })}
-			>
-				{#each STATUSES as s (s)}
-					<option value={s}>{STATUS_LABEL[s]}</option>
-				{/each}
-			</select>
-		</label>
+		<Select
+			label="Status"
+			value={item.entry?.status ?? 'planned'}
+			options={STATUSES.map((st) => ({ value: st, label: STATUS_LABEL[st] }))}
+			onchange={(v) => save({ status: v as Status })}
+		/>
 
 		<Rating value={item.entry?.rating ?? null} onchange={(v) => save({ rating: v })} />
 
@@ -115,16 +110,6 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 10px;
-	}
-
-	.status select {
-		padding: 10px 14px;
-		border-radius: var(--radius-pill);
-		border-color: var(--line-strong);
-		background: var(--bg-elev-2);
-		font-weight: 600;
-		font-size: 0.9rem;
-		cursor: pointer;
 	}
 
 	.btn.icon {

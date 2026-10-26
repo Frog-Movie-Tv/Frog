@@ -1,14 +1,18 @@
 <script lang="ts">
-	import Icon from '#lib/components/Icon.svelte';
+	import Icon, { type IconName } from '#lib/components/Icon.svelte';
 	import { goto } from '$app/navigation';
 	import Logo from '#lib/components/Logo.svelte';
 	import Rating from '#lib/components/Rating.svelte';
+	import Select from '#lib/components/Select.svelte';
+	import TwoFactor from '#lib/components/TwoFactor.svelte';
 	import { SCORE_FORMATS, type ScoreFormat } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 	import {
 		DEFAULTS,
 		FONTS,
 		HOME_ROWS,
+		MAX_TABS,
+		NAV_PAGES,
 		MASCOTS,
 		THEMES,
 		settings,
@@ -146,6 +150,36 @@
 		await session.logout();
 		toasts.push('Signed out');
 		await goto('/login', { replaceState: true });
+	}
+
+
+	const navPages = $derived.by(() => {
+		const order = s.navOrder;
+		const known = order
+			.map((href) => NAV_PAGES.find((p) => p.href === href))
+			.filter((p): p is (typeof NAV_PAGES)[number] => !!p);
+		return [...known, ...NAV_PAGES.filter((p) => !order.includes(p.href))];
+	});
+
+	function moveNav(href: string, delta: number) {
+		const order = navPages.map((p) => p.href);
+		const i = order.indexOf(href);
+		const j = i + delta;
+		if (j < 0 || j >= order.length) return;
+		[order[i], order[j]] = [order[j], order[i]];
+		settings.set('navOrder', order);
+	}
+
+	function toggleHidden(href: string, hide: boolean) {
+		settings.set(
+			'navHidden',
+			hide ? [...s.navHidden, href] : s.navHidden.filter((h) => h !== href)
+		);
+	}
+
+	function toggleTab(href: string, on: boolean) {
+		if (on && s.navTabs.length >= MAX_TABS) return;
+		settings.set('navTabs', on ? [...s.navTabs, href] : s.navTabs.filter((h) => h !== href));
 	}
 
 	const hiddenRows = $derived(HOME_ROWS.filter((r) => !s.homeRows.includes(r.id)));
@@ -298,7 +332,6 @@
 				>
 					<img src="/mascots/{m.id}.svg" alt="" width="44" height="44" />
 					<strong>{m.label}</strong>
-					<span class="faint">{m.hint}</span>
 				</button>
 			{/each}
 		</div>
@@ -309,16 +342,15 @@
 		<div class="section-head"><h2>Type and shape</h2></div>
 
 		<div class="rows">
-			<label class="row card">
+			<div class="row card">
 				<span class="label"><strong>Font</strong></span>
-				<select
-					class="input auto"
+				<Select
+					label="Font"
 					value={s.font}
-					onchange={(e) => settings.set('font', e.currentTarget.value as FontName)}
-				>
-					{#each FONTS as f (f.id)}<option value={f.id}>{f.label}</option>{/each}
-				</select>
-			</label>
+					options={FONTS.map((f) => ({ value: f.id, label: f.label }))}
+					onchange={(v) => settings.set('font', v as FontName)}
+				/>
+			</div>
 
 			<label class="row card">
 				<span class="label">
@@ -363,20 +395,17 @@
 				/>
 			</label>
 
-			<label class="row card">
+			<div class="row card">
 				<span class="label">
 					<strong>Animation</strong>
 				</span>
-				<select
-					class="input auto"
+				<Select
+					label="Animation"
 					value={s.animations}
-					onchange={(e) => settings.set('animations', e.currentTarget.value as AnimationLevel)}
-				>
-					<option value="full">Full</option>
-					<option value="reduced">Reduced</option>
-					<option value="off">Off</option>
-				</select>
-			</label>
+					options={[{ value: 'full', label: 'Full' }, { value: 'reduced', label: 'Reduced' }, { value: 'off', label: 'Off' }]}
+					onchange={(v) => settings.set('animations', v as AnimationLevel)}
+				/>
+			</div>
 		</div>
 	</section>
 
@@ -384,21 +413,17 @@
 		<div class="section-head"><h2>Cards and grid</h2></div>
 
 		<div class="rows">
-			<label class="row card">
+			<div class="row card">
 				<span class="label">
 					<strong>Card style</strong>
 				</span>
-				<select
-					class="input auto"
+				<Select
+					label="Card style"
 					value={s.cardStyle}
-					onchange={(e) => settings.set('cardStyle', e.currentTarget.value as CardStyle)}
-				>
-					<option value="poster">Poster</option>
-					<option value="landscape">Landscape</option>
-					<option value="list">List</option>
-					<option value="compact">Compact table</option>
-				</select>
-			</label>
+					options={[{ value: 'poster', label: 'Poster' }, { value: 'landscape', label: 'Landscape' }, { value: 'list', label: 'List' }, { value: 'compact', label: 'Compact table' }]}
+					onchange={(v) => settings.set('cardStyle', v as CardStyle)}
+				/>
+			</div>
 
 			<label class="row card">
 				<span class="label">
@@ -443,20 +468,17 @@
 		<div class="section-head"><h2>Hero and pages</h2></div>
 
 		<div class="rows">
-			<label class="row card">
+			<div class="row card">
 				<span class="label">
 					<strong>Hero</strong>
 				</span>
-				<select
-					class="input auto"
+				<Select
+					label="Hero"
 					value={s.heroStyle}
-					onchange={(e) => settings.set('heroStyle', e.currentTarget.value as HeroStyle)}
-				>
-					<option value="backdrop">Backdrop</option>
-					<option value="poster">Poster</option>
-					<option value="off">Off</option>
-				</select>
-			</label>
+					options={[{ value: 'backdrop', label: 'Backdrop' }, { value: 'poster', label: 'Poster' }, { value: 'off', label: 'Off' }]}
+					onchange={(v) => settings.set('heroStyle', v as HeroStyle)}
+				/>
+			</div>
 
 			<label class="row card">
 				<span class="label">
@@ -470,21 +492,17 @@
 				/>
 			</label>
 
-			<label class="row card">
+			<div class="row card">
 				<span class="label">
 					<strong>Open on</strong>
 				</span>
-				<select
-					class="input auto"
+				<Select
+					label="Open on"
 					value={s.landingPage}
-					onchange={(e) => settings.set('landingPage', e.currentTarget.value)}
-				>
-					<option value="/">Home</option>
-					<option value="/library">Library</option>
-					<option value="/search">Search</option>
-					<option value="/stats">Stats</option>
-				</select>
-			</label>
+					options={[{ value: '/', label: 'Home' }, { value: '/library', label: 'Library' }, { value: '/search', label: 'Search' }, { value: '/calendar', label: 'Calendar' }, { value: '/diary', label: 'Diary' }, { value: '/stats', label: 'Stats' }]}
+					onchange={(v) => settings.set('landingPage', v)}
+				/>
+			</div>
 		</div>
 
 		<h3 class="sub">Home rows</h3>
@@ -569,18 +587,17 @@
 		<div class="section-head"><h2>Watching</h2></div>
 
 		<div class="rows">
-			<label class="row card">
+			<div class="row card">
 				<span class="label">
 					<strong>Default status</strong>
 				</span>
-				<select
-					class="input auto"
+				<Select
+					label="Default status"
 					value={s.defaultStatus}
-					onchange={(e) => settings.set('defaultStatus', e.currentTarget.value as Status)}
-				>
-					{#each STATUSES as st (st)}<option value={st}>{STATUS_LABEL[st]}</option>{/each}
-				</select>
-			</label>
+					options={STATUSES.map((st) => ({ value: st, label: STATUS_LABEL[st] }))}
+					onchange={(v) => settings.set('defaultStatus', v as Status)}
+				/>
+			</div>
 
 			<label class="row card">
 				<span class="label">
@@ -629,18 +646,15 @@
 				/>
 			</label>
 
-			<label class="row card">
+			<div class="row card">
 				<span class="label"><strong>Dates</strong></span>
-				<select
-					class="input auto"
+				<Select
+					label="Dates"
 					value={s.dateStyle}
-					onchange={(e) => settings.set('dateStyle', e.currentTarget.value as 'friendly')}
-				>
-					<option value="friendly">Friendly (3 days ago)</option>
-					<option value="long">Long (24 October 2026)</option>
-					<option value="iso">ISO (2026-10-24)</option>
-				</select>
-			</label>
+					options={[{ value: 'friendly', label: 'Friendly (3 days ago)' }, { value: 'long', label: 'Long (24 October 2026)' }, { value: 'iso', label: 'ISO (2026-10-24)' }]}
+					onchange={(v) => settings.set('dateStyle', v as 'friendly')}
+				/>
+			</div>
 
 			<label class="row card">
 				<span class="label"><strong>24-hour clock</strong></span>
@@ -651,6 +665,97 @@
 				/>
 			</label>
 		</div>
+	</section>
+
+	<section class="block">
+		<div class="section-head"><h2>Security</h2></div>
+		<TwoFactor />
+	</section>
+
+	<section class="block">
+		<div class="section-head"><h2>Your data</h2></div>
+
+		<div class="rows">
+			<a class="row card link-row" href="/import">
+				<span class="label">
+					<strong>Import</strong>
+					<span class="faint">Letterboxd, Trakt, IMDb, AniList, MyAnimeList, TV Time or a Frog backup</span>
+				</span>
+				<Icon name="chevron-right" size={18} />
+			</a>
+			<a class="row card link-row" href="/api/export/library.json" download>
+				<span class="label">
+					<strong>Download backup</strong>
+					<span class="faint">Everything, as JSON</span>
+				</span>
+				<Icon name="download" size={18} />
+			</a>
+			<a class="row card link-row" href="/api/export/library.csv" download>
+				<span class="label">
+					<strong>Download spreadsheet</strong>
+					<span class="faint">Your library, as CSV</span>
+				</span>
+				<Icon name="download" size={18} />
+			</a>
+			<label class="row card">
+				<span class="label">
+					<strong>Data saver</strong>
+					<span class="faint">Smaller artwork everywhere</span>
+				</span>
+				<input
+					type="checkbox"
+					checked={s.dataSaver}
+					onchange={(e) => settings.set('dataSaver', e.currentTarget.checked)}
+				/>
+			</label>
+		</div>
+	</section>
+
+	<section class="block">
+		<div class="section-head">
+			<h2>Navigation</h2>
+			<span class="faint">{s.navTabs.length} of {MAX_TABS} in the phone tab bar</span>
+		</div>
+
+		<ul class="builder">
+			{#each navPages as navPage, i (navPage.href)}
+				{@const inBar = !s.navHidden.includes(navPage.href)}
+				{@const inTabs = s.navTabs.includes(navPage.href)}
+				<li>
+					<span class="nav-icon"><Icon name={navPage.icon as IconName} size={17} /></span>
+					<span class="label"><strong>{navPage.label}</strong></span>
+					<label class="mini" title="Show in the menu bar">
+						<input
+							type="checkbox"
+							checked={inBar || navPage.fixed}
+							disabled={navPage.fixed}
+							onchange={(e) => toggleHidden(navPage.href, !e.currentTarget.checked)}
+						/>
+						Menu
+					</label>
+					<label class="mini" title="Show in the phone tab bar">
+						<input
+							type="checkbox"
+							checked={inTabs}
+							disabled={!inTabs && s.navTabs.length >= MAX_TABS}
+							onchange={(e) => toggleTab(navPage.href, e.currentTarget.checked)}
+						/>
+						Tab
+					</label>
+					<button class="icon-btn" disabled={i === 0} aria-label="Move {navPage.label} up" onclick={() => moveNav(navPage.href, -1)}>
+						<Icon name="chevron-up" size={15} />
+					</button>
+					<button
+						class="icon-btn"
+						disabled={i === navPages.length - 1}
+						aria-label="Move {navPage.label} down"
+						onclick={() => moveNav(navPage.href, 1)}
+					>
+						<Icon name="chevron-down" size={15} />
+					</button>
+				</li>
+			{/each}
+		</ul>
 	</section>
 
 	<section class="block">
@@ -833,11 +938,6 @@
 		flex: none;
 	}
 
-	.input.auto {
-		width: auto;
-		flex: none;
-	}
-
 	.editor {
 		border: 1px solid var(--line);
 		border-radius: var(--radius);
@@ -977,6 +1077,33 @@
 
 	.builder .label {
 		flex: 1;
+	}
+
+	.nav-icon {
+		display: grid;
+		color: var(--text-faint);
+	}
+
+	.mini {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 0.76rem;
+		color: var(--text-dim);
+		cursor: pointer;
+	}
+
+	.mini input {
+		width: 16px;
+		height: 16px;
+	}
+
+	.link-row {
+		color: inherit;
+	}
+
+	.link-row:hover {
+		border-color: var(--line-strong);
 	}
 
 	.grip {

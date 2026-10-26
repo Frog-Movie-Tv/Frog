@@ -17,6 +17,7 @@
 	let loading = $state(true);
 	let failed = $state(false);
 	let sheetOpen = $state(false);
+	let menuOpen = $state(false);
 
 	let status = $state<Status | 'all'>('all');
 	let kind = $state<Kind | 'all'>('all');
@@ -121,7 +122,33 @@
 <div class="page">
 	<div class="section-head">
 		<h1>Library</h1>
-		<span class="faint">{plural(items.length, 'title')}</span>
+		<div class="head-tools">
+			<span class="faint">{plural(items.length, 'title')}</span>
+			<div class="menu-wrap">
+				<button
+					class="btn ghost icon-only"
+					aria-label="Library options"
+					aria-haspopup="menu"
+					aria-expanded={menuOpen}
+					onclick={() => (menuOpen = !menuOpen)}
+				>
+					<Icon name="more" size={18} />
+				</button>
+				{#if menuOpen}
+					<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+					<div class="menu-catch" onclick={() => (menuOpen = false)}></div>
+					<div class="menu" role="menu">
+						<a role="menuitem" href="/import"><Icon name="upload" size={16} /> Import</a>
+						<a role="menuitem" href="/api/export/library.json" download>
+							<Icon name="download" size={16} /> Download backup
+						</a>
+						<a role="menuitem" href="/api/export/library.csv" download>
+							<Icon name="download" size={16} /> Download spreadsheet
+						</a>
+					</div>
+				{/if}
+			</div>
+		</div>
 	</div>
 
 	<!-- Desktop: everything laid out. Mobile: one button into a sheet. -->
@@ -129,7 +156,8 @@
 		<div class="chips" role="group" aria-label="Status filter">
 			<button class="chip" class:on={status === 'all'} onclick={() => (status = 'all')}>All</button>
 			{#each STATUSES as s (s)}
-				<button class="chip" class:on={status === s} onclick={() => (status = s)}>
+				<button class="chip" data-status={s} class:on={status === s} onclick={() => (status = s)}>
+					<i class="sdot" aria-hidden="true"></i>
 					{STATUS_LABEL[s]}
 					{#if counts[s]}<span class="n">{counts[s]}</span>{/if}
 				</button>
@@ -204,7 +232,8 @@
 						All
 					</button>
 					{#each STATUSES as s (s)}
-						<button class="chip" class:on={status === s} onclick={() => (status = s)}>
+						<button class="chip" data-status={s} class:on={status === s} onclick={() => (status = s)}>
+							<i class="sdot" aria-hidden="true"></i>
 							{STATUS_LABEL[s]}
 							{#if counts[s]}<span class="n">{counts[s]}</span>{/if}
 						</button>
@@ -271,6 +300,10 @@
 				<button class="btn" onclick={reset}>Clear filters</button>
 			{:else}
 				<a class="btn primary" href="/search">Find something to watch</a>
+				<a class="btn ghost" href="/import">
+					<Icon name="upload" size={16} />
+					Import a library
+				</a>
 			{/if}
 		</Empty>
 	{:else if style === 'poster'}
@@ -420,6 +453,62 @@
 		background: var(--accent);
 		border-color: transparent;
 		color: var(--accent-ink);
+	}
+
+	.sdot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--status);
+		flex: none;
+	}
+
+	.chip.on .sdot {
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-ink) 70%, transparent);
+	}
+
+	.head-tools {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.menu-wrap {
+		position: relative;
+	}
+
+	.menu-catch {
+		position: fixed;
+		inset: 0;
+		z-index: 60;
+	}
+
+	.menu {
+		position: absolute;
+		z-index: 61;
+		right: 0;
+		top: calc(100% + 6px);
+		min-width: 220px;
+		padding: 6px;
+		border-radius: var(--radius);
+		background: var(--bg-elev-2);
+		border: 1px solid var(--line-strong);
+		box-shadow: var(--shadow-3);
+	}
+
+	.menu a {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 9px 11px;
+		border-radius: var(--radius-sm);
+		font-size: 0.86rem;
+		color: var(--text-dim);
+	}
+
+	.menu a:hover {
+		background: var(--bg-hover);
+		color: var(--text);
 	}
 
 	.chip .n {

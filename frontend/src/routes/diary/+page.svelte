@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { img } from '#lib/api';
+	import { api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
@@ -7,25 +7,37 @@
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
+	import { whenWatched } from '#lib/when.svelte';
+
+	interface Episode {
+		season_number: number;
+		episode_number: number;
+		name: string | null;
+		rating: number | null;
+		rewatch: boolean;
+	}
 
 	interface Entry {
+		day: string;
 		watched_at: string;
-		rewatch: boolean;
-		source: string;
 		kind: 'movie' | 'tv';
 		tmdb_id: number;
 		title: string;
 		poster_path: string | null;
-		season_number: number | null;
-		episode_number: number | null;
-		episode_name: string | null;
+		film: boolean;
+		count: number;
+		rewatch: boolean;
+		imported: boolean;
 		rating: number | null;
+		episodes: Episode[];
 	}
 
 	let entries = $state<Entry[]>([]);
 	let total = $state(0);
+	let undated = $state(0);
 	let loading = $state(true);
 	let loadingMore = $state(false);
+	let open = $state<string | null>(null);
 
 	$effect(() => {
 		if (!session.authenticated) return;
@@ -35,13 +47,12 @@
 	async function load(offset: number) {
 		if (offset > 0) loadingMore = true;
 		try {
-			const res = await fetch(`/api/diary?limit=100&offset=${offset}`, {
-				credentials: 'same-origin'
-			});
+			const res = await fetch(`/api/diary?limit=60&offset=${offset}`, { credentials: 'same-origin' });
 			if (!res.ok) throw new Error('Could not load your diary');
 			const data = await res.json();
 			entries = offset === 0 ? data.entries : [...entries, ...data.entries];
 			total = data.total;
+			undated = data.undated;
 		} catch (e) {
 			toasts.error(e);
 		} finally {
@@ -50,11 +61,12 @@
 		}
 	}
 
-	/** Group by month, which is how anyone reads back a year of watching. */
+	const keyOf = (e: Entry) => `${e.day}-${e.kind}-${e.tmdb_id}-${e.film}`;
+
 	const months = $derived.by(() => {
-		const out: { label: string; key: string; entries: Entry[] }[] = [];
+		const out: { key: string; label: string; entries: Entry[] }[] = [];
 		for (const entry of entries) {
-			const key = entry.watched_at.slice(0, 7);
+			const key = entry.day.slice(0, 7);
 			let bucket = out.find((m) => m.key === key);
 			if (!bucket) {
 				const date = new Date(`${key}-01T00:00:00Z`);
@@ -71,6 +83,38 @@
 		}
 		return out;
 	});
+
+	/** "S04E08" for one, "S04E08–S07E16" for a run. */
+	function range(episodes: Episode[]): string {
+		if (!episodes.length) return '';
+		const first = episodes[0];
+		const last = episodes[episodes.length - 1];
+		const start = episodeCode(first.season_number, first.episode_number);
+		if (episodes.length === 1) return start;
+		const end =
+			last.season_number === first.season_number
+				? `E${String(last.episode_number).padStart(2, '0')}`
+				: episodeCode(last.season_number, last.episode_number);
+		return `${start}–${end}`;
+	}
+
+	async function changeDate(entry: Entry) {
+		const what = entry.film ? 'Film' : plural(entry.count, 'episode');
+		const answer = await whenWatched.ask(entry.title, `${what} on ${prettyDate(entry.day)}`, false);
+		if (!answer) return;
+		try {
+			const { changed } = await api.redateDiary(entry.kind, entry.tmdb_id, entry.day, answer);
+			toasts.push(
+				answer.when === 'unknown'
+					? `${plural(changed, 'watch', 'watches')} moved out of the diary`
+					: `${plural(changed, 'watch', 'watches')} redated`
+			);
+			open = null;
+			await load(0);
+		} catch (e) {
+			toasts.error(e);
+		}
+	}
 
 	const fmt = $derived(settings.current.scoreFormat);
 </script>
@@ -91,7 +135,9 @@
 		<Empty
 			art="rest"
 			title="Nothing watched yet"
-			hint="Tick an episode or mark a film watched and it will show up here."
+			hint={undated
+				? `${plural(undated, 'watch', 'watches')} without a date are counted, but not shown here.`
+				: 'Tick an episode or mark a film watched and it will show up here.'}
 		>
 			<a class="btn primary" href="/library">Open library</a>
 		</Empty>
@@ -100,36 +146,81 @@
 			<section class="month">
 				<h2>{month.label}</h2>
 				<ol class="entries">
-					{#each month.entries as entry, i (`${entry.watched_at}-${entry.tmdb_id}-${i}`)}
-						<li>
-							<span class="day faint">{entry.watched_at.slice(8, 10)}</span>
-							<a href="/title/{entry.kind}/{entry.tmdb_id}">
-								{#if entry.poster_path}
-									<img src={img(entry.poster_path, 'w92')} alt="" loading="lazy" />
-								{:else}
-									<span class="no-art"><Icon name="film" size={14} /></span>
-								{/if}
+					{#each month.entries as entry (keyOf(entry))}
+						{@const key = keyOf(entry)}
+						{@const expandable = entry.episodes.length > 1}
+						<li class="entry" class:open={open === key}>
+							<span class="day faint">{entry.day.slice(8, 10)}</span>
 
-								<span class="what">
-									<span class="line">
-										<strong>{entry.title}</strong>
-										{#if entry.rewatch}<span class="pill tiny">Rewatch</span>{/if}
-										{#if entry.source === 'import'}<span class="pill tiny">Imported</span>{/if}
-									</span>
-									<span class="faint">
-										{#if entry.season_number !== null && entry.episode_number !== null}
-											{episodeCode(entry.season_number, entry.episode_number)}
-											{#if entry.episode_name}· {entry.episode_name}{/if}
+							<div class="card-row">
+								<div class="row">
+									<a class="art" href="/title/{entry.kind}/{entry.tmdb_id}" aria-label={entry.title}>
+										{#if entry.poster_path}
+											<img src={img(entry.poster_path, 'w92')} alt="" loading="lazy" />
 										{:else}
-											{prettyDate(entry.watched_at)}
+											<Icon name={entry.film ? 'film' : 'tv'} size={14} />
 										{/if}
-									</span>
-								</span>
+									</a>
 
-								{#if entry.rating !== null}
-									<span class="score">{formatScore(entry.rating, fmt)}</span>
+									<button
+										class="what"
+										aria-expanded={expandable ? open === key : undefined}
+										disabled={!expandable}
+										onclick={() => (open = open === key ? null : key)}
+									>
+										<span class="line">
+											<strong>{entry.title}</strong>
+											{#if entry.rewatch}<span class="pill tiny">Rewatch</span>{/if}
+											{#if entry.imported}<span class="pill tiny">Imported</span>{/if}
+										</span>
+										<span class="faint sub">
+											{#if entry.film}
+												Film
+											{:else if entry.episodes.length === 1}
+												{range(entry.episodes)}{#if entry.episodes[0].name}
+													· {entry.episodes[0].name}{/if}
+											{:else}
+												{range(entry.episodes)} · {plural(entry.count, 'episode')}
+											{/if}
+										</span>
+									</button>
+
+									{#if entry.film && entry.rating !== null}
+										<span class="score">{formatScore(entry.rating, fmt)}</span>
+									{:else if entry.episodes.length === 1 && entry.episodes[0].rating !== null}
+										<span class="score">{formatScore(entry.episodes[0].rating, fmt)}</span>
+									{/if}
+
+									{#if expandable}
+										<span class="chev" class:turned={open === key}>
+											<Icon name="chevron-down" size={16} />
+										</span>
+									{/if}
+
+									<button
+										class="icon-btn"
+										aria-label="Change date for {entry.title} on {entry.day}"
+										title="Change date"
+										onclick={() => changeDate(entry)}
+									>
+										<Icon name="calendar" size={15} />
+									</button>
+								</div>
+
+								{#if expandable && open === key}
+									<ul class="episodes">
+										{#each entry.episodes as ep (`${ep.season_number}-${ep.episode_number}`)}
+											<li>
+												<span class="code faint">{episodeCode(ep.season_number, ep.episode_number)}</span>
+												<span class="ep-name">{ep.name ?? 'Untitled'}</span>
+												{#if ep.rating !== null}
+													<span class="score small">{formatScore(ep.rating, fmt)}</span>
+												{/if}
+											</li>
+										{/each}
+									</ul>
 								{/if}
-							</a>
+							</div>
 						</li>
 					{/each}
 				</ol>
@@ -139,9 +230,15 @@
 		{#if entries.length < total}
 			<div class="more">
 				<button class="btn" disabled={loadingMore} onclick={() => load(entries.length)}>
-					{loadingMore ? 'Loading' : `Show more (${total - entries.length} left)`}
+					{loadingMore ? 'Loading' : 'Show more'}
 				</button>
 			</div>
+		{/if}
+
+		{#if undated}
+			<p class="faint undated">
+				{plural(undated, 'watch', 'watches')} without a date are counted, but not shown here.
+			</p>
 		{/if}
 	{/if}
 </div>
@@ -167,49 +264,60 @@
 		padding: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: 5px;
 	}
 
-	.entries li {
+	.entry {
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		gap: 12px;
 	}
 
 	.day {
 		width: 2.4ch;
+		padding-top: 18px;
 		text-align: right;
 		font-size: 0.78rem;
 		font-variant-numeric: tabular-nums;
 		flex: none;
 	}
 
-	.entries a {
+	.card-row {
 		flex: 1;
 		min-width: 0;
-		display: flex;
-		align-items: center;
-		gap: 13px;
-		padding: 8px 12px;
 		border-radius: var(--radius-sm);
 		border: 1px solid var(--line);
 		background: var(--bg-elev);
+		overflow: hidden;
 	}
 
-	.entries a:hover {
+	.entry.open .card-row {
 		border-color: var(--line-strong);
 	}
 
-	img,
-	.no-art {
+	.row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 8px 10px 8px 12px;
+	}
+
+	.art {
 		width: 32px;
 		aspect-ratio: 2 / 3;
 		border-radius: 4px;
-		object-fit: cover;
+		overflow: hidden;
 		display: grid;
 		place-items: center;
 		background: var(--bg-elev-2);
 		color: var(--text-faint);
+		flex: none;
+	}
+
+	.art img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
 	}
 
 	.what {
@@ -218,6 +326,16 @@
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
+		padding: 0;
+		border: none;
+		background: none;
+		text-align: left;
+		color: inherit;
+		cursor: pointer;
+	}
+
+	.what:disabled {
+		cursor: default;
 	}
 
 	.line {
@@ -228,14 +346,14 @@
 	}
 
 	.line strong {
-		font-size: 0.88rem;
+		font-size: 0.9rem;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
-	.what .faint {
-		font-size: 0.75rem;
+	.sub {
+		font-size: 0.76rem;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -253,9 +371,87 @@
 		flex: none;
 	}
 
+	.score.small {
+		font-size: 0.78rem;
+	}
+
+	.chev {
+		display: grid;
+		color: var(--text-faint);
+		transition: transform var(--fast) var(--ease);
+	}
+
+	.chev.turned {
+		transform: rotate(180deg);
+	}
+
+	.icon-btn {
+		display: grid;
+		place-items: center;
+		width: 30px;
+		height: 30px;
+		border-radius: 8px;
+		border: 1px solid transparent;
+		background: none;
+		color: var(--text-faint);
+		cursor: pointer;
+		flex: none;
+	}
+
+	.icon-btn:hover {
+		color: var(--text);
+		border-color: var(--line);
+	}
+
+	.episodes {
+		list-style: none;
+		margin: 0;
+		padding: 4px 12px 10px 56px;
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+		border-top: 1px solid var(--line);
+		max-height: 340px;
+		overflow-y: auto;
+	}
+
+	.episodes li {
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
+		padding: 5px 0;
+		font-size: 0.82rem;
+	}
+
+	.code {
+		font-variant-numeric: tabular-nums;
+		font-size: 0.74rem;
+		flex: none;
+	}
+
+	.ep-name {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
 	.more {
 		display: flex;
 		justify-content: center;
-		padding: 10px 0 30px;
+		padding: 10px 0 20px;
+	}
+
+	.undated {
+		text-align: center;
+		font-size: 0.8rem;
+		padding-bottom: 20px;
+	}
+
+	@media (max-width: 720px) {
+		.episodes {
+			padding-left: 16px;
+		}
 	}
 </style>

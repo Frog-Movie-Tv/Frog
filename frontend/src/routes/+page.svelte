@@ -34,6 +34,13 @@
 	const heroItem = $derived(hero?.item ?? null);
 	const heroNext = $derived(hero?.next ?? null);
 	const heroCaughtUp = $derived(!!heroNext && !heroNext.aired);
+	/** Marked as watching, but not a single episode ticked yet. */
+	const heroFresh = $derived(
+		!!heroItem && heroItem.kind === 'tv' && heroItem.watched_episodes === 0 && !heroCaughtUp
+	);
+	const heroLabel = $derived(
+		heroCaughtUp ? 'Caught up' : heroFresh ? 'Start watching' : 'Continue watching'
+	);
 	const heroStyle = $derived(settings.current.heroStyle);
 
 	const isEmpty = $derived(
@@ -99,7 +106,7 @@
 				<div class="veil" aria-hidden="true"></div>
 
 				<div class="hero-body">
-					<span class="eyebrow">{heroCaughtUp ? 'Caught up' : 'Continue watching'}</span>
+					<span class="hero-label">{heroLabel}</span>
 
 					{#if heroItem.logo_path}
 						<img class="logo" src={img(heroItem.logo_path, 'w500')} alt={heroItem.name} />
@@ -132,7 +139,7 @@
 						{:else}
 							<a class="btn primary" href="/title/{heroItem.kind}/{heroItem.tmdb_id}">
 								<Icon name="play" size={14} filled />
-								{heroNext ? 'Next episode' : 'Open'}
+								{heroFresh ? 'Start watching' : heroNext ? 'Next episode' : 'Open'}
 							</a>
 						{/if}
 						<a class="btn ghost" href="/library">Library</a>
@@ -259,11 +266,32 @@
 		background:
 			linear-gradient(
 				to top,
-				var(--bg) 1%,
-				color-mix(in srgb, var(--bg) 40%, transparent) 50%,
-				transparent
+				var(--bg) 0%,
+				color-mix(in srgb, var(--bg) 82%, transparent) 26%,
+				color-mix(in srgb, var(--bg) 30%, transparent) 62%,
+				transparent 100%
 			),
-			linear-gradient(to right, color-mix(in srgb, var(--tint) 78%, transparent), transparent 65%);
+			linear-gradient(
+				to right,
+				color-mix(in srgb, var(--bg) 94%, transparent) 0%,
+				color-mix(in srgb, var(--bg) 72%, transparent) 38%,
+				transparent 72%
+			);
+	}
+
+	/* Accent and bold: the old faint caption was close to invisible over
+	   artwork, and outright invisible on Pond Light. */
+	.hero-label {
+		font-size: 0.74rem;
+		font-weight: 750;
+		letter-spacing: 0.11em;
+		text-transform: uppercase;
+		color: var(--accent);
+	}
+
+	.hero .facts,
+	.hero .upnext {
+		color: var(--text);
 	}
 
 	.hero-body {

@@ -142,14 +142,10 @@
 		border: 1px solid rgba(255, 255, 255, 0.14);
 	}
 
-	.badge[data-status='watching'] {
-		background: color-mix(in srgb, var(--accent) 80%, black);
-	}
-	.badge[data-status='completed'] {
-		background: color-mix(in srgb, var(--good) 70%, black);
-	}
-	.badge[data-status='dropped'] {
-		background: color-mix(in srgb, var(--bad) 70%, black);
+	/* Dark enough under white text in every theme, still clearly its hue. */
+	.badge[data-status] {
+		background: color-mix(in srgb, var(--status) 72%, black);
+		border-color: color-mix(in srgb, var(--status) 60%, white 10%);
 	}
 
 	.badge.kind {
