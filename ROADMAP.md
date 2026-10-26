@@ -44,10 +44,12 @@ RELEASE-NOTES.md; the owners asked for everything new to be named 0.4.1):
    builds under QEMU plus CI on every PR plus E2E will not fit, and the only
    fix is money, which the brief rules out. Making the repository public (it
    is MIT already) buys unlimited standard minutes and native arm64 runners.
-2. **Nothing here can configure GitHub itself.** `gh` is not installed and
-   there is no token, so branch protection, required reviews, CODEOWNERS
-   enforcement, labels, the Projects board and GitHub Releases need the CLI
-   installed and signed in, or the web UI.
+2. **GitHub settings are still to configure.** `gh` 2.103 is installed on
+   the laptop and signed in as zschaeken (scopes repo, workflow, read:org,
+   gist), so branch protection, required reviews, CODEOWNERS enforcement,
+   labels and the Projects board can now be set from here. The GitHub
+   Releases for v0.2.0, v0.3.0 and v0.4.0 exist (notes from
+   RELEASE-NOTES.md; v0.4.0 is Latest).
 
 **Part 1 — multi-user. Backend done; no interface for it yet.**
 
@@ -196,8 +198,6 @@ The interface stays English only.
   English only, which is fine while the interface is English only.
 - The Docker image has never been built locally (no Docker on the laptop).
   CI builds it; check the latest run on GitHub Actions.
-- GitHub Releases for v0.2.0, v0.3.0 and v0.4.0 have not been created; the
-  tags exist. Create them from the tags with the notes in RELEASE-NOTES.md.
 - The calendar screenshot comes out empty, because the demo titles have no
   upcoming episodes. Seed a currently airing show in `scripts/screenshots.mjs`.
 
