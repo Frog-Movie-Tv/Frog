@@ -16,6 +16,10 @@ jobs:
   release-please:
     name: Release pull request
     runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
@@ -62,3 +66,41 @@ jobs:
           git add backend/Cargo.lock RELEASE-NOTES.md
           git commit -m 'chore: sync the lock file and draft the release notes'
           git push
+
+  # A tag created with GITHUB_TOKEN does not start a workflow run, so the tag
+  # build in CI never happens and production has no image to pull. Publish it
+  # here instead, from the release release-please just made.
+  publish:
+    name: Publish the release image
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          # Lower case on purpose: a registry refuses a capital letter in a
+          # repository name, and the organisation has them.
+          tags: |
+            ghcr.io/frog-movie-tv/frog:${{ needs.release-please.outputs.version }}
+            ghcr.io/frog-movie-tv/frog:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -13,6 +13,17 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+## [0.4.3] — Lily Pad — 2026-10-26
+
+New-episode alerts arrive at the hour you picked, in your own time.
+
+### Fixes
+
+- New-episode alerts go out at the hour you chose, read in your own time zone
+  rather than the server's.
+- Each signed-in device has its own clearly named sign-out, so it is obvious
+  which one you are ending.
+
 ## [0.4.2] — Lily Pad — 2026-10-26
 
 Your own corner of a shared Frog: your account, your devices, and a profile
@@ -241,6 +252,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[0.4.3]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.3
 [0.4.2]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.2
 [0.4.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.0
