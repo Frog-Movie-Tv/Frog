@@ -1,0 +1,10 @@
+[Unit]
+Description=A light sign of life for Oracle's idle check
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/frog/deploy/keepalive.sh tick
+# One core at most, so Frog is never crowded out.
+CPUQuota=100%
+Nice=19

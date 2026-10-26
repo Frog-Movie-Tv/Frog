@@ -99,7 +99,10 @@ docker network inspect frog-edge > /dev/null 2>&1 || docker network create frog-
 step "services"
 cp "$ROOT"/deploy/systemd/*.service "$ROOT"/deploy/systemd/*.timer /etc/systemd/system/
 systemctl daemon-reload
+# Both are installed; each no-ops on the shape it is not meant for, so the
+# same install works on an A1 and on a micro.
 systemctl enable --now frog-keepalive.service
+systemctl enable --now frog-keepalive-tick.timer
 for instance in production staging; do
 	systemctl enable "frog-update@$instance.timer" "frog-backup@$instance.timer"
 done

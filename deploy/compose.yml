@@ -47,12 +47,13 @@ services:
       retries: 3
       start_period: 20s
 
-    # Two instances on a 12 GB machine, leaving room for Caddy and the
-    # keepalive. Frog is one small Rust binary; this is generous.
+    # Sized for the smallest Always Free shape, which has under a gigabyte in
+    # total. Frog itself sits around 25 MB; this is room to breathe, not a
+    # target. Raise it if you end up on an A1 with 12 GB.
     deploy:
       resources:
         limits:
-          memory: 1g
+          memory: ${FROG_MEMORY_LIMIT:-320m}
 
     logging:
       driver: json-file

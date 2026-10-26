@@ -1,0 +1,13 @@
+[Unit]
+Description=Keep this instance from looking idle to Oracle
+
+[Timer]
+# Only does anything on shapes where memory is not part of the idle test;
+# on A1 the memory hold covers it and each tick returns immediately.
+OnBootSec=5min
+OnUnitActiveSec=10min
+RandomizedDelaySec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target
