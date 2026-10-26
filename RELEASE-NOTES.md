@@ -1,13 +1,34 @@
-# Changelog
+# Release notes
 
-What changed in each release of Frog.
+What changed in each release of Frog, written for the people who use it. This
+is what the What's new page inside the app shows.
+
+`CHANGELOG.md` is the other one: generated from the commit messages, for
+people working on Frog.
 
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — 0.4.1 Lily Pad —
+## Upcoming — Ribbit —
 
 In progress.
+
+## [0.4.1] — Lily Pad — 2026-10-26
+
+Frog holds more than one person now, and everybody's library is their own.
+
+![Home in the Pond theme](docs/screenshots/home-desktop-pond.png)
+
+### Highlights
+
+- **An account each.** Your library, ratings, episodes, diary, notes,
+  favourites, shelves, settings and notifications belong to you. Nobody else
+  on the same Frog can see them or change them.
+- **Invitations.** There is no sign-up page. An administrator makes a link
+  that works once and stops working after that; whoever opens it picks a name
+  and a password.
+- **Administration.** One page for making invitations, seeing which are still
+  open, which were used and by whom, and withdrawing any nobody took.
 
 ### Improvements
 
@@ -195,6 +216,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[0.4.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.2.0

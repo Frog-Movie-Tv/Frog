@@ -17,7 +17,12 @@ test.describe.configure({ mode: 'serial' });
 test('a cold instance sends you to first-run setup', async ({ page }) => {
 	await page.goto('/');
 	await expect(page).toHaveURL(/\/login/);
-	await expect(page.getByRole('heading', { name: 'Set up Frog' })).toBeVisible();
+	// The heading only settles once the shell has asked whether this instance
+	// has an account, and the very first request hits a server that has just
+	// started and migrated.
+	await expect(page.getByRole('heading', { name: 'Set up Frog' })).toBeVisible({
+		timeout: 15000
+	});
 });
 
 test('creating the account signs you straight in', async ({ page }) => {
