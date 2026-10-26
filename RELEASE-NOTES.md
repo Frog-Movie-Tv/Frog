@@ -13,6 +13,26 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Highlights
+
+- **Your account.** Change your password, see every device you are signed in
+  on and sign out of any of them, switch account from the menu at the top
+  right, or delete your account.
+- **Profiles.** Turn on your profile to let others on your Frog see what you
+  are watching, your favourites and your totals. It is off until you turn it
+  on, and nobody outside your Frog can see it.
+- **Who is here.** Administration lists every account. Change a role, switch
+  an account off, and see the space Frog uses and when it was last backed up.
+
+### Improvements
+
+- The top bar keeps search and your account in reach on every screen size.
+
+### Fixes
+
+- Invitation links open the page for joining, and Administration is in the
+  menu for owners and administrators.
+
 ## [0.4.1] — Lily Pad — 2026-10-26
 
 Frog holds more than one person now, and everybody's library is their own.

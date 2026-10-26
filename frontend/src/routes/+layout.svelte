@@ -3,6 +3,7 @@
 	import '../app.css';
 	import { goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
+	import AccountMenu from '#lib/components/AccountMenu.svelte';
 	import CommandPalette from '#lib/components/CommandPalette.svelte';
 	import Logo from '#lib/components/Logo.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
@@ -17,7 +18,8 @@
 
 	let { children }: { children: Snippet } = $props();
 
-	const PUBLIC = ['/login'];
+	// Reachable signed out: signing in, and joining with an invite link.
+	const PUBLIC = ['/login', '/join'];
 
 	let checked = $state(false);
 	let palette: CommandPalette | undefined = $state();
@@ -96,6 +98,10 @@
 		...ordered.filter((p) => !tabs.includes(p)),
 		{ href: '/import', label: 'Import & export', icon: 'upload' },
 		{ href: '/whats-new', label: 'Release notes', icon: 'sparkle' },
+		// Only an administrator can do anything there, so only they see it.
+		...(session.status?.is_admin
+			? [{ href: '/admin', label: 'Administration', icon: 'shield' }]
+			: []),
 		{ href: '/about', label: 'About', icon: 'info' }
 	]);
 
@@ -144,6 +150,7 @@
 					<Icon name="search" size={16} />
 					<kbd>Ctrl</kbd><kbd>K</kbd>
 				</button>
+				<AccountMenu />
 			</div>
 		</header>
 	{/if}
@@ -251,13 +258,23 @@
 		flex: none;
 	}
 
+	/* Eight pages and the account button do not fit every laptop. The links
+	   give way (scrolling sideways at worst); search and the account never do. */
 	.links {
 		display: flex;
 		gap: 4px;
+		min-width: 0;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+
+	.links::-webkit-scrollbar {
+		display: none;
 	}
 
 	.links a {
 		position: relative;
+		flex: none;
 		padding: 7px 14px;
 		border-radius: var(--radius-pill);
 		font-size: 0.88rem;
@@ -286,6 +303,7 @@
 
 	.right {
 		margin-left: auto;
+		flex: none;
 		display: flex;
 		align-items: center;
 		gap: 10px;
@@ -340,6 +358,20 @@
 
 	.attribution a {
 		text-decoration: underline;
+	}
+
+	@media (max-width: 1180px) {
+		.bar {
+			gap: 14px;
+		}
+
+		.links a {
+			padding: 7px 10px;
+		}
+
+		.right .cmdk kbd {
+			display: none;
+		}
 	}
 
 	@media (max-width: 760px) {

@@ -5,6 +5,13 @@ import type {
 	BecauseRow,
 	HomeData,
 	ImportSummary,
+	Account,
+	AdminUser,
+	DeviceSession,
+	InstanceInfo,
+	Invite,
+	Profile,
+	NewInvite,
 	MatchResult,
 	Kind,
 	LibraryItem,
@@ -137,6 +144,37 @@ export const api = {
 			password
 		}),
 	logout: () => send<{ ok: true }>('POST', '/api/auth/logout', {}),
+
+	/** Joining with an invite link. There is no open sign-up. */
+	register: (username: string, password: string, invite: string, remember = true) =>
+		send<{ ok: true }>('POST', '/api/auth/register', { username, password, invite, remember }),
+
+	account: () => get<Account>('/api/account'),
+	changePassword: (current: string, password: string) =>
+		send<{ ok: true; signed_out: number }>('PUT', '/api/account/password', { current, password }),
+	sessions: () => get<{ sessions: DeviceSession[] }>('/api/account/sessions'),
+	endSession: (id: string) => send<{ ok: true }>('DELETE', `/api/account/sessions/${id}`),
+	endOtherSessions: () => send<{ signed_out: number }>('DELETE', '/api/account/sessions/others'),
+	setProfilePublic: (value: boolean) =>
+		send<{ profile_public: boolean }>('PUT', '/api/account/profile', { public: value }),
+	deleteAccount: (password: string) => send<{ ok: true }>('DELETE', '/api/account', { password }),
+
+	adminUsers: () => get<{ users: AdminUser[] }>('/api/admin/users'),
+	updateUser: (id: number, patch: { role?: 'admin' | 'user'; disabled?: boolean }) =>
+		send<{ id: number; role: AdminUser['role']; disabled: boolean }>(
+			'PUT',
+			`/api/admin/users/${id}`,
+			patch
+		),
+	instance: () => get<InstanceInfo>('/api/admin/instance'),
+
+	profiles: () => get<{ profiles: { username: string; me: boolean }[] }>('/api/profiles'),
+	profile: (username: string) => get<Profile>(`/api/profiles/${encodeURIComponent(username)}`),
+
+	invites: () => get<{ invites: Invite[] }>('/api/invites'),
+	createInvite: (role: Invite['role'], days?: number) =>
+		send<NewInvite>('POST', '/api/invites', { role, days }),
+	revokeInvite: (id: string) => send<{ ok: true }>('DELETE', `/api/invites/${id}`),
 
 	search: (q: string, page = 1, hideAnimation = false) =>
 		get<{ page: number; total_pages: number; results: SearchItem[] }>(

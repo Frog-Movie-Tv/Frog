@@ -133,10 +133,13 @@ const ROUTES = [
 	'/stats',
 	'/stats?year=2026',
 	'/shelves',
+	'/people',
+	'/people/audit',
 	'/settings',
 	'/import',
 	'/about',
 	'/whats-new',
+	'/admin',
 	'/title/tv/95396',
 	'/title/movie/157336',
 	'/person/73457'

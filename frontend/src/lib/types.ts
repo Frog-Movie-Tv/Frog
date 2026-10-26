@@ -366,3 +366,79 @@ export interface ImportSummary {
 	skipped: number;
 	failed: { tmdb_id: number; error: string }[];
 }
+
+/** An invite link, as the admin page lists them. Never the code itself. */
+export interface Invite {
+	id: string;
+	role: 'admin' | 'user';
+	created_by: string | null;
+	created_at: string;
+	expires_at: string;
+	used_at: string | null;
+	used_by: string | null;
+	state: 'open' | 'used' | 'expired';
+}
+
+/** Shown once, when the link is made. */
+/** You, as Settings → Account shows it. */
+export interface Account {
+	id: number;
+	username: string;
+	role: 'owner' | 'admin' | 'user';
+	created_at: string;
+	profile_public: boolean;
+	two_factor: boolean;
+}
+
+/** One device signed in to your account. */
+export interface DeviceSession {
+	id: string;
+	created_at: string;
+	expires_at: string;
+	device: string | null;
+	current: boolean;
+}
+
+export interface AdminUser {
+	id: number;
+	username: string;
+	role: 'owner' | 'admin' | 'user';
+	disabled: boolean;
+	created_at: string;
+	titles: number;
+	last_sign_in: string | null;
+}
+
+export interface InstanceInfo {
+	version: string;
+	database_bytes: number;
+	image_cache_bytes: number;
+	accounts: number;
+	last_backup: { at: string; label: string; pushed: boolean } | null;
+}
+
+export interface ProfileCard {
+	kind: Kind;
+	tmdb_id: number;
+	name: string;
+	poster_path: string | null;
+	rating: number | null;
+}
+
+export interface Profile {
+	username: string;
+	joined: string;
+	public: boolean;
+	me: boolean;
+	stats: { films: number; episodes: number; minutes: number };
+	watching: ProfileCard[];
+	favourites: ProfileCard[];
+	recent: ProfileCard[];
+}
+
+export interface NewInvite {
+	code: string;
+	path: string;
+	role: 'admin' | 'user';
+	expires_at: string;
+}

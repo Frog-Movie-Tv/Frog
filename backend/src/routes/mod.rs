@@ -1,3 +1,5 @@
+pub mod account;
+pub mod admin;
 pub mod auth;
 pub mod episodes;
 pub mod home;
@@ -5,6 +7,7 @@ pub mod images;
 pub mod invites;
 pub mod library;
 pub mod meta;
+pub mod profiles;
 pub mod push;
 pub mod search;
 pub mod settings;
@@ -73,6 +76,20 @@ pub fn router(state: AppState) -> Router {
         .route("/push/test", post(push::test))
         .route("/settings", get(settings::get))
         .route("/settings", put(settings::put))
+        .route("/account", get(account::get).delete(account::delete))
+        .route("/account/password", put(account::change_password))
+        .route("/account/profile", put(account::set_profile))
+        .route("/account/sessions", get(account::sessions))
+        .route(
+            "/account/sessions/others",
+            delete(account::end_other_sessions),
+        )
+        .route("/account/sessions/{id}", delete(account::end_session))
+        .route("/admin/users", get(admin::users))
+        .route("/admin/users/{id}", put(admin::update_user))
+        .route("/admin/instance", get(admin::instance))
+        .route("/profiles", get(profiles::list))
+        .route("/profiles/{username}", get(profiles::get))
         .route("/invites", get(invites::list).post(invites::create))
         .route("/invites/{id}", delete(invites::revoke))
         .route("/export/library.json", get(transfer::export_json))
