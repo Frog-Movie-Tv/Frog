@@ -44,12 +44,7 @@
 	}
 }
 
-{$STAGING_DOMAIN} {
-	import common frog-staging
-	log {
-		output file /data/staging.log {
-			roll_size 10MiB
-			roll_keep 3
-		}
-	}
-}
+# Staging is optional: it only exists when install.sh was told to set it up.
+# Without this, Caddy would keep asking Let's Encrypt for a certificate for a
+# hostname with nothing behind it.
+import /etc/caddy/conf.d/*.caddy

@@ -249,8 +249,12 @@ Check the availability domain says **Always Free Eligible** before creating.
 2 vCPU and 1 GB, always free, and always available. Frog runs fine on it —
 the container sits around 25 MB — but two things change:
 
-- **Run production only.** Staging will not fit beside it comfortably. Point
-  staging at a second micro, or go without until an A1 frees up.
+- **Run production only.** Staging will not fit beside it comfortably, so it
+  is opt-in: `install.sh` sets up production alone unless you pass
+  `--with-staging`. Caddy only serves the staging hostname when staging
+  exists, so it never asks Let's Encrypt for a certificate it cannot use.
+  Point staging at a second micro (you get two) or go without until an A1
+  frees up.
 - **The keepalive works differently.** Oracle's memory test applies to A1
   shapes only, so holding memory there buys nothing and takes RAM the machine
   needs. `keepalive.sh` detects the shape and does a short CPU and network

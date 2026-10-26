@@ -10,6 +10,15 @@ set -euo pipefail
 
 [ "$(id -u)" = "0" ] || { echo "run this with sudo"; exit 1; }
 
+# Staging is a second Frog beside production. It needs about another 300 MB,
+# which the smallest Always Free shape does not have, so it is opt-in:
+#
+#   sudo ./install.sh --with-staging
+WITH_STAGING=0
+for arg in "$@"; do
+	[ "$arg" = "--with-staging" ] && WITH_STAGING=1
+done
+
 ROOT=/opt/frog
 HERE="$(cd "$(dirname "$0")" && pwd)"
 step() { echo; echo "==> $*"; }
@@ -60,16 +69,27 @@ netfilter-persistent save > /dev/null
 echo "    saved; check /etc/iptables/rules.v4 for duplicates"
 
 step "directories"
-mkdir -p "$ROOT"/{deploy,production,staging,backups/production,backups/staging,caddy}
+mkdir -p "$ROOT"/{deploy,production,backups/production,caddy/conf.d}
+[ "$WITH_STAGING" = "1" ] && mkdir -p "$ROOT"/{staging,backups/staging}
 cp -r "$HERE"/*.sh "$ROOT/deploy/"
 cp -r "$HERE"/systemd "$ROOT/deploy/"
 cp "$HERE/compose.yml" "$ROOT/production/compose.yml"
-cp "$HERE/compose.yml" "$ROOT/staging/compose.yml"
+[ "$WITH_STAGING" = "1" ] && cp "$HERE/compose.yml" "$ROOT/staging/compose.yml"
 cp "$HERE/caddy/compose.yml" "$ROOT/caddy/compose.yml"
 cp "$HERE/caddy/Caddyfile" "$ROOT/caddy/Caddyfile"
+# The staging site only exists when staging does, or Caddy keeps asking for a
+# certificate for a hostname with nothing behind it.
+if [ "$WITH_STAGING" = "1" ]; then
+	cp "$HERE/caddy/staging.caddy" "$ROOT/caddy/conf.d/staging.caddy"
+else
+	rm -f "$ROOT/caddy/conf.d/staging.caddy"
+fi
 chmod +x "$ROOT"/deploy/*.sh
 
-for instance in production staging; do
+instances="production"
+[ "$WITH_STAGING" = "1" ] && instances="production staging"
+
+for instance in $instances; do
 	env_file="$ROOT/$instance/.env"
 	if [ ! -f "$env_file" ]; then
 		cp "$HERE/instance.env.example" "$env_file"
@@ -103,9 +123,13 @@ systemctl daemon-reload
 # same install works on an A1 and on a micro.
 systemctl enable --now frog-keepalive.service
 systemctl enable --now frog-keepalive-tick.timer
-for instance in production staging; do
+for instance in $instances; do
 	systemctl enable "frog-update@$instance.timer" "frog-backup@$instance.timer"
 done
+if [ "$WITH_STAGING" != "1" ]; then
+	systemctl disable --now frog-update@staging.timer frog-backup@staging.timer 2> /dev/null || true
+	echo "    staging is off; pass --with-staging to set it up"
+fi
 echo "    timers enabled but not started; start them once the .env files are filled in"
 
 step "hardening"
@@ -133,16 +157,13 @@ cat <<EOF
 
 Done. Next, by hand:
 
-  1. Fill in $ROOT/production/.env and $ROOT/staging/.env
-     (TMDB_API_KEY, FROG_NOTIFY_HOUR, TZ)
+  1. Fill in $ROOT/production/.env (TMDB_API_KEY, FROG_NOTIFY_HOUR, TZ)
   2. Fill in $ROOT/caddy/.env (the two DuckDNS names and an email)
   3. Fill in $ROOT/backup.env (AGE_RECIPIENT, BACKUP_REPO_DIR)
   4. docker login ghcr.io       (only if the repository is private)
   5. cd $ROOT/caddy && docker compose up -d
   6. $ROOT/deploy/update.sh production
-     $ROOT/deploy/update.sh staging
-  7. systemctl start frog-update@production.timer frog-update@staging.timer
-     systemctl start frog-backup@production.timer frog-backup@staging.timer
+  7. systemctl start frog-update@production.timer frog-backup@production.timer
 
 docs/DEPLOY-ORACLE.md has the click-by-click for the parts only you can do.
 EOF

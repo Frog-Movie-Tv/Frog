@@ -1,0 +1,9 @@
+{$STAGING_DOMAIN} {
+	import common frog-staging
+	log {
+		output file /data/staging.log {
+			roll_size 10MiB
+			roll_keep 3
+		}
+	}
+}
