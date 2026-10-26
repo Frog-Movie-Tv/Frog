@@ -77,15 +77,32 @@ impl Rules {
 }
 
 // Progress, as the library's progress bars count it: specials do not count.
-const WATCHED_EPS: &str = "(SELECT COUNT(DISTINCT e.id) FROM episode e
-      JOIN watch_event w ON w.episode_id = e.id
-     WHERE e.title_id = t.id AND e.season_number > 0)";
 const TOTAL_EPS: &str =
     "(SELECT COUNT(*) FROM episode e WHERE e.title_id = t.id AND e.season_number > 0)";
-const FILM_SEEN: &str = "EXISTS (SELECT 1 FROM watch_event w WHERE w.title_id = t.id)";
+
+/// The account is written in rather than bound: these fragments are pasted
+/// into a QueryBuilder several times each, and a placeholder would have to be
+/// bound once per appearance in the right order. It is an `i64` from the
+/// session, so there is nothing in it to escape.
+fn watched_eps(user_id: i64) -> String {
+    format!(
+        "(SELECT COUNT(DISTINCT e.id) FROM episode e
+      JOIN watch_event w ON w.episode_id = e.id AND w.user_id = {user_id}
+     WHERE e.title_id = t.id AND e.season_number > 0)"
+    )
+}
+
+fn film_seen(user_id: i64) -> String {
+    format!(
+        "EXISTS (SELECT 1 FROM watch_event w
+                  WHERE w.user_id = {user_id} AND w.title_id = t.id)"
+    )
+}
 
 /// Titles a smart shelf holds right now.
-pub async fn evaluate(pool: &SqlitePool, rules: &Rules) -> AppResult<Vec<TitleRow>> {
+pub async fn evaluate(pool: &SqlitePool, user_id: i64, rules: &Rules) -> AppResult<Vec<TitleRow>> {
+    let watched_eps = watched_eps(user_id);
+    let film_seen = film_seen(user_id);
     let mut q: QueryBuilder<Sqlite> = QueryBuilder::new(
         "SELECT t.id, t.kind, t.tmdb_id, t.name, t.overview, t.poster_path, t.backdrop_path,
                 t.logo_path, t.release_date, t.last_air_date, t.tmdb_status, t.runtime,
@@ -93,8 +110,9 @@ pub async fn evaluate(pool: &SqlitePool, rules: &Rules) -> AppResult<Vec<TitleRo
                 t.collection_id, t.accent_json
            FROM library_entry l
            JOIN title t ON t.id = l.title_id
-          WHERE 1 = 1",
+          WHERE l.user_id = ",
     );
+    q.push_bind(user_id);
     if let Some(kind) = &rules.kind {
         q.push(" AND t.kind = ").push_bind(kind.clone());
     }
@@ -136,23 +154,27 @@ pub async fn evaluate(pool: &SqlitePool, rules: &Rules) -> AppResult<Vec<TitleRo
     }
     match rules.progress.as_deref() {
         Some("unstarted") => q.push(format!(
-            " AND ((t.kind = 'movie' AND NOT {FILM_SEEN}) OR (t.kind = 'tv' AND {WATCHED_EPS} = 0))"
+            " AND ((t.kind = 'movie' AND NOT {film_seen}) OR (t.kind = 'tv' AND {watched_eps} = 0))"
         )),
         Some("started") => q.push(format!(
-            " AND t.kind = 'tv' AND {WATCHED_EPS} > 0 AND {WATCHED_EPS} < {TOTAL_EPS}"
+            " AND t.kind = 'tv' AND {watched_eps} > 0 AND {watched_eps} < {TOTAL_EPS}"
         )),
         Some("unfinished") => q.push(format!(
-            " AND ((t.kind = 'movie' AND NOT {FILM_SEEN})
-                OR (t.kind = 'tv' AND ({TOTAL_EPS} = 0 OR {WATCHED_EPS} < {TOTAL_EPS})))"
+            " AND ((t.kind = 'movie' AND NOT {film_seen})
+                OR (t.kind = 'tv' AND ({TOTAL_EPS} = 0 OR {watched_eps} < {TOTAL_EPS})))"
         )),
         Some("finished") => q.push(format!(
-            " AND ((t.kind = 'movie' AND {FILM_SEEN})
-                OR (t.kind = 'tv' AND {TOTAL_EPS} > 0 AND {WATCHED_EPS} >= {TOTAL_EPS}))"
+            " AND ((t.kind = 'movie' AND {film_seen})
+                OR (t.kind = 'tv' AND {TOTAL_EPS} > 0 AND {watched_eps} >= {TOTAL_EPS}))"
         )),
         _ => &mut q,
     };
     q.push(" ");
-    q.push(order_clause(rules.sort.as_deref(), rules.order.as_deref()));
+    q.push(order_clause(
+        rules.sort.as_deref(),
+        rules.order.as_deref(),
+        user_id,
+    ));
     q.push(" LIMIT ")
         .push_bind(rules.limit.unwrap_or(MAX_ITEMS).clamp(1, MAX_ITEMS));
 
@@ -162,12 +184,18 @@ pub async fn evaluate(pool: &SqlitePool, rules: &Rules) -> AppResult<Vec<TitleRo
 /// (id, name, kind, rules, position)
 type ShelfRow = (i64, String, String, String, i64);
 
-async fn shelf(pool: &SqlitePool, id: i64) -> AppResult<ShelfRow> {
-    sqlx::query_as("SELECT id, name, kind, rules_json, position FROM shelf WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound("no such shelf".into()))
+/// The one gate for every shelf operation: a shelf that belongs to somebody
+/// else is simply not there.
+async fn shelf(pool: &SqlitePool, user_id: i64, id: i64) -> AppResult<ShelfRow> {
+    sqlx::query_as(
+        "SELECT id, name, kind, rules_json, position
+           FROM shelf WHERE id = ? AND user_id = ?",
+    )
+    .bind(id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("no such shelf".into()))
 }
 
 fn rules_of(raw: &str) -> Rules {
@@ -190,9 +218,9 @@ async fn manual_titles(pool: &SqlitePool, shelf_id: i64) -> AppResult<Vec<TitleR
     .await?)
 }
 
-async fn titles_of(pool: &SqlitePool, row: &ShelfRow) -> AppResult<Vec<TitleRow>> {
+async fn titles_of(pool: &SqlitePool, user_id: i64, row: &ShelfRow) -> AppResult<Vec<TitleRow>> {
     if row.2 == "smart" {
-        evaluate(pool, &rules_of(&row.3)).await
+        evaluate(pool, user_id, &rules_of(&row.3)).await
     } else {
         manual_titles(pool, row.0).await
     }
@@ -210,31 +238,33 @@ fn summary(row: &ShelfRow, titles: &[TitleRow]) -> Value {
     })
 }
 
-pub async fn list(_: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
+pub async fn list(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
     let rows: Vec<ShelfRow> = sqlx::query_as(
-        "SELECT id, name, kind, rules_json, position FROM shelf ORDER BY position, id",
+        "SELECT id, name, kind, rules_json, position
+           FROM shelf WHERE user_id = ? ORDER BY position, id",
     )
+    .bind(auth.user_id())
     .fetch_all(&state.pool)
     .await?;
     let mut shelves = Vec::with_capacity(rows.len());
     for row in &rows {
-        let titles = titles_of(&state.pool, row).await?;
+        let titles = titles_of(&state.pool, auth.user_id(), row).await?;
         shelves.push(summary(row, &titles));
     }
     Ok(Json(json!({ "shelves": shelves })))
 }
 
 pub async fn get(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<Value>> {
-    let row = shelf(&state.pool, id).await?;
-    let titles = titles_of(&state.pool, &row).await?;
+    let row = shelf(&state.pool, auth.user_id(), id).await?;
+    let titles = titles_of(&state.pool, auth.user_id(), &row).await?;
     let shelf = summary(&row, &titles);
     let mut items: Vec<LibraryItem> = Vec::with_capacity(titles.len());
     for t in titles {
-        items.push(store::build_item(&state.pool, t).await?);
+        items.push(store::build_item(&state.pool, auth.user_id(), t).await?);
     }
     Ok(Json(json!({ "shelf": shelf, "items": items })))
 }
@@ -262,7 +292,7 @@ pub struct CreateBody {
 }
 
 pub async fn create(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Json(body): Json<CreateBody>,
 ) -> AppResult<Json<Value>> {
@@ -273,12 +303,16 @@ pub async fn create(
     body.rules.validate()?;
 
     let mut tx = state.pool.begin().await?;
-    let (next,): (i64,) = sqlx::query_as("SELECT COALESCE(MAX(position), -1) + 1 FROM shelf")
-        .fetch_one(&mut *tx)
-        .await?;
+    let (next,): (i64,) =
+        sqlx::query_as("SELECT COALESCE(MAX(position), -1) + 1 FROM shelf WHERE user_id = ?")
+            .bind(auth.user_id())
+            .fetch_one(&mut *tx)
+            .await?;
     let id = sqlx::query(
-        "INSERT INTO shelf (name, kind, rules_json, position, created_at) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO shelf (user_id, name, kind, rules_json, position, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)",
     )
+    .bind(auth.user_id())
     .bind(&name)
     .bind(&body.kind)
     .bind(serde_json::to_string(&body.rules).unwrap_or_else(|_| "{}".into()))
@@ -302,8 +336,8 @@ pub async fn create(
     }
     tx.commit().await?;
 
-    let row = shelf(&state.pool, id).await?;
-    let titles = titles_of(&state.pool, &row).await?;
+    let row = shelf(&state.pool, auth.user_id(), id).await?;
+    let titles = titles_of(&state.pool, auth.user_id(), &row).await?;
     Ok(Json(json!({ "shelf": summary(&row, &titles) })))
 }
 
@@ -314,16 +348,17 @@ pub struct UpdateBody {
 }
 
 pub async fn update(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Json(body): Json<UpdateBody>,
 ) -> AppResult<Json<Value>> {
-    let row = shelf(&state.pool, id).await?;
+    let row = shelf(&state.pool, auth.user_id(), id).await?;
     if let Some(name) = &body.name {
-        sqlx::query("UPDATE shelf SET name = ? WHERE id = ?")
+        sqlx::query("UPDATE shelf SET name = ? WHERE id = ? AND user_id = ?")
             .bind(clean_name(name)?)
             .bind(id)
+            .bind(auth.user_id())
             .execute(&state.pool)
             .await?;
     }
@@ -332,31 +367,33 @@ pub async fn update(
             return Err(AppError::BadRequest("only smart shelves have rules".into()));
         }
         rules.validate()?;
-        sqlx::query("UPDATE shelf SET rules_json = ? WHERE id = ?")
+        sqlx::query("UPDATE shelf SET rules_json = ? WHERE id = ? AND user_id = ?")
             .bind(serde_json::to_string(rules).unwrap_or_else(|_| "{}".into()))
             .bind(id)
+            .bind(auth.user_id())
             .execute(&state.pool)
             .await?;
     }
-    let row = shelf(&state.pool, id).await?;
-    let titles = titles_of(&state.pool, &row).await?;
+    let row = shelf(&state.pool, auth.user_id(), id).await?;
+    let titles = titles_of(&state.pool, auth.user_id(), &row).await?;
     Ok(Json(json!({ "shelf": summary(&row, &titles) })))
 }
 
 pub async fn remove(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<Value>> {
-    let row = shelf(&state.pool, id).await?;
+    let row = shelf(&state.pool, auth.user_id(), id).await?;
     // Hand back what undo needs to put it back exactly.
     let title_ids: Vec<(i64,)> =
         sqlx::query_as("SELECT title_id FROM shelf_item WHERE shelf_id = ? ORDER BY position")
             .bind(id)
             .fetch_all(&state.pool)
             .await?;
-    sqlx::query("DELETE FROM shelf WHERE id = ?")
+    sqlx::query("DELETE FROM shelf WHERE id = ? AND user_id = ?")
         .bind(id)
+        .bind(auth.user_id())
         .execute(&state.pool)
         .await?;
     Ok(Json(json!({
@@ -373,15 +410,16 @@ pub struct OrderBody {
 }
 
 pub async fn reorder(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Json(body): Json<OrderBody>,
 ) -> AppResult<Json<Value>> {
     let mut tx = state.pool.begin().await?;
     for (pos, id) in body.ids.iter().enumerate() {
-        sqlx::query("UPDATE shelf SET position = ? WHERE id = ?")
+        sqlx::query("UPDATE shelf SET position = ? WHERE id = ? AND user_id = ?")
             .bind(pos as i64)
             .bind(id)
+            .bind(auth.user_id())
             .execute(&mut *tx)
             .await?;
     }
@@ -389,8 +427,8 @@ pub async fn reorder(
     Ok(Json(json!({ "ok": true })))
 }
 
-async fn manual(pool: &SqlitePool, id: i64) -> AppResult<()> {
-    let row = shelf(pool, id).await?;
+async fn manual(pool: &SqlitePool, user_id: i64, id: i64) -> AppResult<()> {
+    let row = shelf(pool, user_id, id).await?;
     if row.2 != "manual" {
         return Err(AppError::BadRequest(
             "a smart shelf fills itself; change its rules instead".into(),
@@ -406,12 +444,12 @@ pub struct ItemBody {
 }
 
 pub async fn add_item(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Json(body): Json<ItemBody>,
 ) -> AppResult<Json<Value>> {
-    manual(&state.pool, id).await?;
+    manual(&state.pool, auth.user_id(), id).await?;
     let title_id = match store::find_title_id(&state.pool, &body.kind, body.tmdb_id).await? {
         Some(t) => t,
         None => {
@@ -433,11 +471,11 @@ pub async fn add_item(
 }
 
 pub async fn remove_item(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path((id, kind, tmdb_id)): Path<(i64, String, i64)>,
 ) -> AppResult<Json<Value>> {
-    manual(&state.pool, id).await?;
+    manual(&state.pool, auth.user_id(), id).await?;
     if let Some(title_id) = store::find_title_id(&state.pool, &kind, tmdb_id).await? {
         sqlx::query("DELETE FROM shelf_item WHERE shelf_id = ? AND title_id = ?")
             .bind(id)
@@ -455,12 +493,12 @@ pub struct ItemOrderBody {
 }
 
 pub async fn reorder_items(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Json(body): Json<ItemOrderBody>,
 ) -> AppResult<Json<Value>> {
-    manual(&state.pool, id).await?;
+    manual(&state.pool, auth.user_id(), id).await?;
     let mut tx = state.pool.begin().await?;
     for (pos, title_id) in body.title_ids.iter().enumerate() {
         sqlx::query("UPDATE shelf_item SET position = ? WHERE shelf_id = ? AND title_id = ?")
@@ -477,7 +515,7 @@ pub async fn reorder_items(
 /// The manual shelves, and whether this title is on each: the title page's
 /// "Add to shelf" menu.
 pub async fn for_title(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path((kind, tmdb_id)): Path<(String, i64)>,
 ) -> AppResult<Json<Value>> {
@@ -486,12 +524,14 @@ pub async fn for_title(
         .unwrap_or(-1);
     let rows: Vec<(i64, String, bool)> = sqlx::query_as(
         "SELECT s.id, s.name,
-                EXISTS (SELECT 1 FROM shelf_item i WHERE i.shelf_id = s.id AND i.title_id = ?)
+                EXISTS (SELECT 1 FROM shelf_item i
+                          WHERE i.shelf_id = s.id AND i.title_id = ?)
            FROM shelf s
-          WHERE s.kind = 'manual'
+          WHERE s.user_id = ? AND s.kind = 'manual'
           ORDER BY s.position, s.id",
     )
     .bind(title_id)
+    .bind(auth.user_id())
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(json!({

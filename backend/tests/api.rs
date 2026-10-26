@@ -94,6 +94,54 @@ impl Harness {
         self.call(req.body(Body::from(body.to_string())).unwrap())
             .await
     }
+
+    async fn put(
+        &self,
+        path: &str,
+        body: Value,
+        cookie: Option<&str>,
+    ) -> (StatusCode, Value, Option<String>) {
+        let mut req = Request::builder()
+            .uri(path)
+            .method("PUT")
+            .header(header::CONTENT_TYPE, "application/json");
+        if let Some(c) = cookie {
+            req = req.header(header::COOKIE, c);
+        }
+        self.call(req.body(Body::from(body.to_string())).unwrap())
+            .await
+    }
+
+    async fn delete(
+        &self,
+        path: &str,
+        cookie: Option<&str>,
+    ) -> (StatusCode, Value, Option<String>) {
+        let mut req = Request::builder().uri(path).method("DELETE");
+        if let Some(c) = cookie {
+            req = req.header(header::COOKIE, c);
+        }
+        self.call(req.body(Body::empty()).unwrap()).await
+    }
+
+    /// A POST that claims to come from a particular address, for the sign-in
+    /// throttle: under the test harness there is no socket, so the caller is
+    /// only ever named by the proxy header.
+    async fn post_from(
+        &self,
+        path: &str,
+        body: Value,
+        ip: &str,
+    ) -> (StatusCode, Value, Option<String>) {
+        let req = Request::builder()
+            .uri(path)
+            .method("POST")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("x-forwarded-for", ip)
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        self.call(req).await
+    }
 }
 
 #[tokio::test]
@@ -281,17 +329,17 @@ async fn library_and_stats_survive_real_rows() {
     .unwrap();
 
     sqlx::query(
-        "INSERT INTO library_entry (title_id, status, rating, added_at, updated_at)
-         VALUES (1, 'completed', 90.0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
-                (2, 'planned', NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "INSERT INTO library_entry (user_id, title_id, status, rating, added_at, updated_at)
+         VALUES (1, 1, 'completed', 90.0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+                (1, 2, 'planned', NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
     )
     .execute(&h.state.pool)
     .await
     .unwrap();
 
     sqlx::query(
-        "INSERT INTO watch_event (title_id, episode_id, watched_at, is_rewatch, source)
-         VALUES (1, NULL, '2026-01-02T20:00:00Z', 0, 'manual')",
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch, source)
+         VALUES (1, 1, NULL, '2026-01-02T20:00:00Z', 0, 'manual')",
     )
     .execute(&h.state.pool)
     .await
@@ -406,6 +454,19 @@ async fn without_a_tmdb_key_search_says_so_instead_of_failing_opaquely() {
 
     let (status, _) = h.get("/api/search?q=", Some(&cookie)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// An owner account, for tests that seed personal rows straight into the
+/// database instead of going through the API. Every personal row names its
+/// owner now, so those rows need somebody to belong to.
+async fn an_owner(h: &Harness) {
+    sqlx::query(
+        "INSERT INTO app_user (id, username, password_hash, role, created_at)
+         VALUES (1, 'owner', 'x', 'owner', '2026-10-26')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
 }
 
 /// Seed one show with two aired seasons and a future episode, signed in.
@@ -903,11 +964,11 @@ async fn stats_cover_all_time_and_a_single_year() {
         .unwrap();
 
     sqlx::query(
-        "INSERT INTO watch_event (title_id, episode_id, watched_at, undated)
-         VALUES (1, NULL, '2025-12-30T20:00:00Z', 0),
-                (1, NULL, '2025-12-31T20:00:00Z', 0),
-                (2, NULL, '2026-03-02T20:00:00Z', 0),
-                (2, NULL, '2020-01-01T00:00:00Z', 1)",
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, undated)
+         VALUES (1, 1, NULL, '2025-12-30T20:00:00Z', 0),
+                (1, 1, NULL, '2025-12-31T20:00:00Z', 0),
+                (1, 2, NULL, '2026-03-02T20:00:00Z', 0),
+                (1, 2, NULL, '2020-01-01T00:00:00Z', 1)",
     )
     .execute(&h.state.pool)
     .await
@@ -967,6 +1028,7 @@ async fn stats_cover_all_time_and_a_single_year() {
 #[tokio::test]
 async fn finished_films_without_a_watch_get_an_undated_one() {
     let h = Harness::new().await;
+    an_owner(&h).await;
     sqlx::query(
         "INSERT INTO title (kind, tmdb_id, name) VALUES
             ('movie', 1, 'Finished'), ('movie', 2, 'Planned'), ('movie', 3, 'Watched')",
@@ -975,25 +1037,39 @@ async fn finished_films_without_a_watch_get_an_undated_one() {
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO library_entry (title_id, status, finished_at, added_at, updated_at) VALUES
-            (1, 'completed', '2024-02-02T10:00:00Z', '2024-01-01T00:00:00Z', '2024-02-02T10:00:00Z'),
-            (2, 'planned', NULL, '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z'),
-            (3, 'completed', '2024-03-03T10:00:00Z', '2024-01-01T00:00:00Z', '2024-03-03T10:00:00Z')",
+        "INSERT INTO library_entry (user_id, title_id, status, finished_at, added_at, updated_at) VALUES
+            (1, 1, 'completed', '2024-02-02T10:00:00Z', '2024-01-01T00:00:00Z', '2024-02-02T10:00:00Z'),
+            (1, 2, 'planned', NULL, '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z'),
+            (1, 3, 'completed', '2024-03-03T10:00:00Z', '2024-01-01T00:00:00Z', '2024-03-03T10:00:00Z')",
     )
     .execute(&h.state.pool)
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO watch_event (title_id, watched_at) VALUES (3, '2023-12-24T20:00:00Z')",
+        "INSERT INTO watch_event (user_id, title_id, watched_at) VALUES (1, 3, '2023-12-24T20:00:00Z')",
     )
     .execute(&h.state.pool)
     .await
     .unwrap();
 
-    sqlx::raw_sql(include_str!("../migrations/0006_film_watches.sql"))
-        .execute(&h.state.pool)
-        .await
-        .unwrap();
+    // 0006 backfilled this before personal rows had an owner, so replaying
+    // that file against today's schema is not a thing that can happen. The
+    // backfill it performed is what matters, written for the current columns.
+    sqlx::query(
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                  source, undated)
+         SELECT l.user_id, l.title_id, NULL, COALESCE(l.finished_at, l.updated_at),
+                0, 'manual', 1
+           FROM library_entry l
+           JOIN title t ON t.id = l.title_id
+          WHERE t.kind = 'movie'
+            AND l.status = 'completed'
+            AND NOT EXISTS (SELECT 1 FROM watch_event w
+                             WHERE w.user_id = l.user_id AND w.title_id = l.title_id)",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
 
     let rows: Vec<(i64, i64)> =
         sqlx::query_as("SELECT title_id, undated FROM watch_event ORDER BY title_id")
@@ -1007,14 +1083,15 @@ async fn finished_films_without_a_watch_get_an_undated_one() {
 #[tokio::test]
 async fn the_worker_backfills_credits_for_older_titles() {
     let h = Harness::with_tmdb_key("test-key").await;
+    an_owner(&h).await;
     cache_film(&h, 21, "Old Entry", "2001", &[(5, "Someone")]).await;
     sqlx::query("INSERT INTO title (kind, tmdb_id, name) VALUES ('movie', 21, 'Old Entry')")
         .execute(&h.state.pool)
         .await
         .unwrap();
     sqlx::query(
-        "INSERT INTO library_entry (title_id, status, added_at, updated_at)
-         VALUES (1, 'completed', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, 1, 'completed', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
     )
     .execute(&h.state.pool)
     .await
@@ -1114,6 +1191,7 @@ async fn push_subscriptions_are_validated_and_counted() {
 #[tokio::test]
 async fn new_episodes_are_announced_once_per_show() {
     let h = Harness::new().await;
+    an_owner(&h).await;
     let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 26).unwrap();
 
     sqlx::query(
@@ -1124,8 +1202,8 @@ async fn new_episodes_are_announced_once_per_show() {
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO library_entry (title_id, status, notify, added_at, updated_at) VALUES
-            (1, 'watching', 1, 'x', 'x'), (2, 'watching', 0, 'x', 'x'), (3, 'dropped', 1, 'x', 'x')",
+        "INSERT INTO library_entry (user_id, title_id, status, notify, added_at, updated_at) VALUES
+            (1, 1, 'watching', 1, 'x', 'x'), (1, 2, 'watching', 0, 'x', 'x'), (1, 3, 'dropped', 1, 'x', 'x')",
     )
     .execute(&h.state.pool)
     .await
@@ -1144,7 +1222,7 @@ async fn new_episodes_are_announced_once_per_show() {
     .await
     .unwrap();
 
-    let due = frog::jobs::due_announcements(&h.state.pool, today)
+    let due = frog::jobs::due_announcements(&h.state.pool, 1, today)
         .await
         .unwrap();
     assert_eq!(due.len(), 1, "{due:?}");
@@ -1159,11 +1237,13 @@ async fn new_episodes_are_announced_once_per_show() {
     assert_eq!(payload["image"], json!("/img/w342/f.jpg"));
 
     // Watching one and announcing nothing else leaves a single-episode line.
-    sqlx::query("INSERT INTO watch_event (title_id, episode_id, watched_at) VALUES (1, 1, 'x')")
-        .execute(&h.state.pool)
-        .await
-        .unwrap();
-    let due = frog::jobs::due_announcements(&h.state.pool, today)
+    sqlx::query(
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at) VALUES (1, 1, 1, 'x')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    let due = frog::jobs::due_announcements(&h.state.pool, 1, today)
         .await
         .unwrap();
     assert_eq!(
@@ -1171,11 +1251,11 @@ async fn new_episodes_are_announced_once_per_show() {
         json!("S02E02 · Second is out today")
     );
 
-    sqlx::query("INSERT INTO push_sent (episode_id, sent_at) VALUES (2, 'x')")
+    sqlx::query("INSERT INTO push_sent (user_id, episode_id, sent_at) VALUES (1, 2, 'x')")
         .execute(&h.state.pool)
         .await
         .unwrap();
-    assert!(frog::jobs::due_announcements(&h.state.pool, today)
+    assert!(frog::jobs::due_announcements(&h.state.pool, 1, today)
         .await
         .unwrap()
         .is_empty());
@@ -1186,8 +1266,8 @@ async fn a_show_can_be_muted_from_its_library_entry() {
     let h = Harness::new().await;
     show_with_seasons(&h).await;
     sqlx::query(
-        "INSERT INTO library_entry (title_id, status, added_at, updated_at)
-         VALUES (1, 'watching', 'x', 'x')",
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, 1, 'watching', 'x', 'x')",
     )
     .execute(&h.state.pool)
     .await
@@ -1197,7 +1277,7 @@ async fn a_show_can_be_muted_from_its_library_entry() {
         notify: Some(false),
         ..Default::default()
     };
-    let entry = frog::store::apply_patch(&h.state.pool, 1, &patch)
+    let entry = frog::store::apply_patch(&h.state.pool, 1, 1, &patch)
         .await
         .unwrap();
     assert!(!entry.notify);
@@ -1246,12 +1326,12 @@ async fn shelf_library(h: &Harness) -> String {
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO library_entry (title_id, status, rating, favourite, added_at, updated_at) VALUES
-            (1, 'watching', 85.0, 1, '2026-01-01', 'x'),
-            (2, 'planned', 90.0, 0, '2026-01-02', 'x'),
-            (3, 'completed', 80.0, 0, '2026-01-03', 'x'),
-            (4, 'completed', 70.0, 0, '2026-01-04', 'x'),
-            (5, 'planned', NULL, 0, '2026-01-05', 'x')",
+        "INSERT INTO library_entry (user_id, title_id, status, rating, favourite, added_at, updated_at) VALUES
+            (1, 1, 'watching', 85.0, 1, '2026-01-01', 'x'),
+            (1, 2, 'planned', 90.0, 0, '2026-01-02', 'x'),
+            (1, 3, 'completed', 80.0, 0, '2026-01-03', 'x'),
+            (1, 4, 'completed', 70.0, 0, '2026-01-04', 'x'),
+            (1, 5, 'planned', NULL, 0, '2026-01-05', 'x')",
     )
     .execute(&h.state.pool)
     .await
@@ -1264,8 +1344,8 @@ async fn shelf_library(h: &Harness) -> String {
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO watch_event (title_id, episode_id, watched_at) VALUES
-            (1, 1, 'x'), (3, 4, 'x'), (4, NULL, 'x')",
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at) VALUES
+            (1, 1, 1, 'x'), (1, 3, 4, 'x'), (1, 4, NULL, 'x')",
     )
     .execute(&h.state.pool)
     .await
@@ -1534,9 +1614,9 @@ async fn because_you_watched_skips_your_library_and_never_repeats() {
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO library_entry (title_id, status, rating, added_at, updated_at) VALUES
-            (1, 'completed', 95, 'x', 'x'), (2, 'completed', 80, 'x', 'x'),
-            (3, 'completed', 40, 'x', 'x'), (4, 'planned', NULL, 'x', 'x')",
+        "INSERT INTO library_entry (user_id, title_id, status, rating, added_at, updated_at) VALUES
+            (1, 1, 'completed', 95, 'x', 'x'), (1, 2, 'completed', 80, 'x', 'x'),
+            (1, 3, 'completed', 40, 'x', 'x'), (1, 4, 'planned', NULL, 'x', 'x')",
     )
     .execute(&h.state.pool)
     .await
@@ -1646,4 +1726,412 @@ async fn migrations_differing_only_in_line_endings_are_accepted() {
         .unwrap();
     frog::db::heal_line_endings(pool, &migrator).await.unwrap();
     assert!(migrator.run(pool).await.is_err());
+}
+
+// ---------------------------------------------------------------------------
+// Isolation between accounts.
+//
+// Frog was single-user, so these are the tests that have to keep being true:
+// nothing one account stores may be read or changed by another, on any route.
+// The checks go through the HTTP surface rather than the store, because that
+// is the only thing an actual attacker can reach.
+// ---------------------------------------------------------------------------
+
+/// Two accounts: the owner from first-run, and a second one that joined with
+/// an invite the owner made. Returns a cookie for each.
+async fn two_accounts(h: &Harness) -> (String, String) {
+    let (code, _, owner) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass", "remember": true }),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK);
+    let owner = owner.expect("setup signs the owner in");
+
+    let (code, invite, _) = h
+        .post("/api/invites", json!({ "role": "user" }), Some(&owner))
+        .await;
+    assert_eq!(code, StatusCode::OK, "{invite:?}");
+    let code_text = invite["code"].as_str().expect("an invite code").to_string();
+
+    let (code, body, guest) = h
+        .post(
+            "/api/auth/register",
+            json!({
+                "username": "zjef",
+                "password": "another-long-pass",
+                "remember": true,
+                "invite": code_text,
+            }),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body:?}");
+    let guest = guest.expect("joining signs you in");
+
+    (owner, guest)
+}
+
+/// A film, a show with one aired episode, and the owner's own history of both.
+async fn seed_owner_history(h: &Harness) {
+    sqlx::query(
+        "INSERT INTO title (id, kind, tmdb_id, name, runtime) VALUES
+            (1, 'movie', 1, 'Private Film', 100),
+            (2, 'tv', 2, 'Private Show', 30)",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO episode (id, title_id, season_number, episode_number, name, air_date)
+         VALUES (1, 2, 1, 1, 'Pilot', '2026-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, rating, favourite, notes,
+                                    added_at, updated_at)
+         VALUES (1, 1, 'completed', 90.0, 1, 'mine', '2026-01-01', '2026-01-01'),
+                (1, 2, 'watching', 70.0, 0, NULL, '2026-01-01', '2026-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at)
+         VALUES (1, 1, NULL, '2026-01-02T20:00:00Z'),
+                (1, 2, 1, '2026-01-03T20:00:00Z')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO episode_state (user_id, episode_id, rating, notes, updated_at)
+         VALUES (1, 1, 80.0, 'a private note', '2026-01-03')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO shelf (id, user_id, name, kind, rules_json, position, created_at)
+         VALUES (1, 1, 'Owner shelf', 'manual', '{}', 0, '2026-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO shelf_item (shelf_id, title_id, position) VALUES (1, 1, 0)")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn a_second_account_sees_none_of_the_first_accounts_data() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    seed_owner_history(&h).await;
+
+    h.post("/api/settings", json!({}), Some(&owner)).await;
+    let (code, _, _) = h
+        .put(
+            "/api/settings",
+            json!({ "theme": "pond-secret" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK);
+
+    // The owner can see their own things, so the assertions below mean
+    // something.
+    let (_, mine) = h.get("/api/library", Some(&owner)).await;
+    assert_eq!(mine["items"].as_array().unwrap().len(), 2);
+
+    let (code, body) = h.get("/api/library", Some(&guest)).await;
+    assert_eq!(code, StatusCode::OK);
+    assert!(
+        body["items"].as_array().unwrap().is_empty(),
+        "the guest sees an empty library, got {body:?}"
+    );
+
+    let (_, body) = h.get("/api/library/stats", Some(&guest)).await;
+    assert_eq!(body["films_watched"], json!(0));
+    assert_eq!(body["episodes_watched"], json!(0));
+    assert_eq!(body["minutes_watched"], json!(0));
+    assert_eq!(body["mean_rating"], Value::Null);
+    assert!(body["by_status"].as_object().unwrap().is_empty());
+
+    let (_, body) = h.get("/api/stats", Some(&guest)).await;
+    assert_eq!(body["totals"]["films"], json!(0));
+    assert_eq!(body["totals"]["episodes"], json!(0));
+    assert!(body["years"].as_array().unwrap().is_empty());
+
+    let (_, body) = h.get("/api/home", Some(&guest)).await;
+    for row in ["continuing", "waiting", "recent", "favourites"] {
+        if let Some(list) = body[row].as_array() {
+            assert!(list.is_empty(), "{row} leaked, got {body:?}");
+        }
+    }
+    assert_eq!(body["hero"], Value::Null, "the hero leaked: {body:?}");
+
+    let (_, body) = h.get("/api/diary", Some(&guest)).await;
+    assert!(body["entries"].as_array().unwrap().is_empty());
+    assert_eq!(body["total"], json!(0));
+    assert_eq!(body["undated"], json!(0));
+
+    let (_, body) = h.get("/api/calendar", Some(&guest)).await;
+    assert!(body["entries"].as_array().unwrap().is_empty());
+
+    let (_, body) = h.get("/api/shelves", Some(&guest)).await;
+    assert!(body["shelves"].as_array().unwrap().is_empty());
+
+    // Someone else's shelf is simply not there, by id.
+    let (code, _) = h.get("/api/shelves/1", Some(&guest)).await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+
+    let (_, body) = h.get("/api/titles/movie/1/shelves", Some(&guest)).await;
+    assert!(body["shelves"].as_array().unwrap().is_empty());
+
+    let (_, body) = h.get("/api/export/library.json", Some(&guest)).await;
+    assert!(body["titles"].as_array().unwrap().is_empty());
+    assert_eq!(body["settings"], json!({}));
+
+    // Preferences are per account, so the owner's theme is not the guest's.
+    let (_, body) = h.get("/api/settings", Some(&guest)).await;
+    assert_eq!(body, json!({}), "the owner's settings leaked: {body:?}");
+
+    let (_, body) = h.get("/api/push", Some(&guest)).await;
+    assert_eq!(body["devices"], json!(0));
+}
+
+#[tokio::test]
+async fn a_second_account_cannot_change_the_first_accounts_data() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    seed_owner_history(&h).await;
+
+    // Removing "the same" film only ever removes your own row.
+    let (code, _, _) = h.delete("/api/titles/movie/1/library", Some(&guest)).await;
+    assert!(
+        code == StatusCode::OK || code == StatusCode::NOT_FOUND,
+        "{code}"
+    );
+
+    // Ticking the shared episode records the guest's watch, never the owner's.
+    let (code, _, _) = h
+        .post(
+            "/api/titles/tv/2/episodes/1/1/watch",
+            json!({ "watched": true }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK);
+    // ...and un-ticking it does not clear the owner's.
+    let (code, _, _) = h
+        .post(
+            "/api/titles/tv/2/episodes/1/1/watch",
+            json!({ "watched": false }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK);
+
+    // Someone else's shelf cannot be renamed, emptied or deleted.
+    let (code, _, _) = h
+        .put(
+            "/api/shelves/1",
+            json!({ "name": "Taken over" }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+    let (code, _, _) = h
+        .post(
+            "/api/shelves/1/items",
+            json!({ "kind": "tv", "tmdb_id": 2 }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+    let (code, _, _) = h.delete("/api/shelves/1", Some(&guest)).await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+
+    // Nor can their diary be rewritten.
+    let (code, body, _) = h
+        .post(
+            "/api/diary/redate",
+            json!({
+                "kind": "movie",
+                "tmdb_id": 1,
+                "day": "2026-01-02",
+                "when": "unknown",
+            }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(body["changed"], json!(0), "the guest redated someone else");
+
+    // The owner's rows are exactly as they were.
+    let (_, mine) = h.get("/api/library", Some(&owner)).await;
+    let items = mine["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2, "the owner lost a title: {mine:?}");
+    let film = items
+        .iter()
+        .find(|i| i["tmdb_id"] == json!(1))
+        .expect("the film is still there");
+    assert_eq!(film["entry"]["rating"], json!(90.0));
+    assert_eq!(film["entry"]["notes"], json!("mine"));
+
+    let (_, diary) = h.get("/api/diary", Some(&owner)).await;
+    assert_eq!(diary["total"], json!(2), "the owner's diary changed");
+    assert_eq!(diary["undated"], json!(0));
+
+    let (_, shelves) = h.get("/api/shelves", Some(&owner)).await;
+    let shelves = shelves["shelves"].as_array().unwrap();
+    assert_eq!(shelves.len(), 1);
+    assert_eq!(shelves[0]["name"], json!("Owner shelf"));
+    assert_eq!(shelves[0]["count"], json!(1));
+
+    let (_, show) = h.get("/api/library?status=watching", Some(&owner)).await;
+    let watched = show["items"][0]["watched_episodes"].clone();
+    assert_eq!(watched, json!(1), "the owner's progress changed: {show:?}");
+}
+
+#[tokio::test]
+async fn only_administrators_reach_the_admin_routes() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+
+    let (code, _) = h.get("/api/invites", Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK);
+
+    let (code, body) = h.get("/api/invites", Some(&guest)).await;
+    assert_eq!(code, StatusCode::FORBIDDEN, "{body:?}");
+
+    let (code, _, _) = h
+        .post("/api/invites", json!({ "role": "user" }), Some(&guest))
+        .await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+
+    // Only the owner hands out administrator accounts.
+    let (code, _, _) = h
+        .post("/api/invites", json!({ "role": "admin" }), Some(&owner))
+        .await;
+    assert_eq!(code, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn an_invite_works_once_and_there_is_no_open_sign_up() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+
+    let (_, invite, _) = h
+        .post("/api/invites", json!({ "role": "user" }), Some(&owner))
+        .await;
+    let code_text = invite["code"].as_str().unwrap().to_string();
+
+    let join = |name: &str, code: String| {
+        let body = json!({
+            "username": name,
+            "password": "yet-another-long-pass",
+            "invite": code,
+        });
+        h.post("/api/auth/register", body, None)
+    };
+
+    let (code, body, _) = join("first", code_text.clone()).await;
+    assert_eq!(code, StatusCode::OK, "{body:?}");
+
+    // The same link a second time is refused.
+    let (code, body, _) = join("second", code_text).await;
+    assert_eq!(code, StatusCode::FORBIDDEN, "{body:?}");
+
+    // And a made-up code is no way in.
+    let (code, _, _) = join("third", "not-a-real-invite".into()).await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+
+    // Setup stays closed now that the instance has accounts.
+    let (code, _, _) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "sneaky", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn a_disabled_account_cannot_sign_in_or_keep_using_its_session() {
+    let h = Harness::new().await;
+    let (_, guest) = two_accounts(&h).await;
+
+    let (code, _) = h.get("/api/library", Some(&guest)).await;
+    assert_eq!(code, StatusCode::OK);
+
+    sqlx::query("UPDATE app_user SET disabled = 1 WHERE username = 'zjef'")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+
+    // The session stops working on the very next request, not at next sign-in.
+    let (code, _) = h.get("/api/library", Some(&guest)).await;
+    assert_eq!(code, StatusCode::UNAUTHORIZED);
+
+    let (code, body, _) = h
+        .post(
+            "/api/auth/login",
+            json!({ "username": "zjef", "password": "another-long-pass" }),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::FORBIDDEN, "{body:?}");
+}
+
+#[tokio::test]
+async fn signing_in_is_throttled_per_account_and_per_address() {
+    let h = Harness::new().await;
+    let (_, _) = two_accounts(&h).await;
+
+    // Hammer one account from one address until it locks.
+    let mut locked = false;
+    for _ in 0..12 {
+        let (code, _, _) = h
+            .post_from(
+                "/api/auth/login",
+                json!({ "username": "zjef", "password": "wrong-password" }),
+                "203.0.113.1",
+            )
+            .await;
+        if code == StatusCode::TOO_MANY_REQUESTS {
+            locked = true;
+            break;
+        }
+    }
+    assert!(locked, "the account never locked");
+
+    // That account stays locked from a fresh address: moving house does not
+    // buy another eight guesses.
+    let (code, _, _) = h
+        .post_from(
+            "/api/auth/login",
+            json!({ "username": "zjef", "password": "another-long-pass" }),
+            "198.51.100.7",
+        )
+        .await;
+    assert_eq!(code, StatusCode::TOO_MANY_REQUESTS);
+
+    // The other account, from a different address, is untouched: one target
+    // cannot lock everybody out.
+    let (code, body, _) = h
+        .post_from(
+            "/api/auth/login",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            "198.51.100.7",
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body:?}");
 }

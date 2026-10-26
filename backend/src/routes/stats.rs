@@ -21,20 +21,32 @@ pub struct StatsQuery {
     pub year: Option<i32>,
 }
 
-/// Which watches a figure is computed over.
+/// Which watches a figure is computed over: whose they are, and when.
 struct Scope {
+    user_id: i64,
     year: Option<String>,
 }
 
 impl Scope {
-    /// Every query starts from `scoped`, so the year filter lives in one place.
+    /// Every query starts from `scoped`, so the account and the year filter
+    /// live in one place.
+    ///
+    /// The account is written into the SQL rather than bound: these bodies are
+    /// assembled by several callers and a placeholder would have to be bound in
+    /// an order each of them agreed on. It is an `i64` from the session, so
+    /// there is nothing in it to escape. The year is still bound.
     fn sql(&self, body: &str) -> String {
-        let filter = if self.year.is_some() {
-            "w.undated = 0 AND substr(w.watched_at, 1, 4) = ?"
-        } else {
-            "1 = 1"
-        };
+        let mut filter = format!("w.user_id = {}", self.user_id);
+        if self.year.is_some() {
+            filter.push_str(" AND w.undated = 0 AND substr(w.watched_at, 1, 4) = ?");
+        }
         format!("WITH scoped AS (SELECT w.* FROM watch_event w WHERE {filter}) {body}")
+    }
+
+    /// `library_entry` is not reached through `scoped`, so rows of it carry
+    /// this test instead.
+    fn mine(&self) -> String {
+        format!("l.user_id = {}", self.user_id)
     }
 
     async fn all<T>(&self, pool: &SqlitePool, body: &str) -> AppResult<Vec<T>>
@@ -82,7 +94,7 @@ pub struct Streak {
 }
 
 pub async fn stats(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Query(q): Query<StatsQuery>,
 ) -> AppResult<Json<Value>> {
@@ -94,14 +106,16 @@ pub async fn stats(
         }
     }
     let scope = Scope {
+        user_id: auth.user_id(),
         year: q.year.map(|y| y.to_string()),
     };
     let pool = &state.pool;
 
     let years: Vec<(String,)> = sqlx::query_as(
         "SELECT DISTINCT substr(watched_at, 1, 4) FROM watch_event
-          WHERE undated = 0 ORDER BY 1 DESC",
+          WHERE user_id = ? AND undated = 0 ORDER BY 1 DESC",
     )
+    .bind(auth.user_id())
     .fetch_all(pool)
     .await?;
     let years: Vec<i32> = years
@@ -177,9 +191,12 @@ pub async fn stats(
     // All time covers every rating, including titles rated without a
     // recorded watch; a year covers what was watched in it.
     let rated = if scope.year.is_some() {
-        "l.rating IS NOT NULL AND l.title_id IN (SELECT title_id FROM scoped)"
+        format!(
+            "{} AND l.rating IS NOT NULL AND l.title_id IN (SELECT title_id FROM scoped)",
+            scope.mine()
+        )
     } else {
-        "l.rating IS NOT NULL"
+        format!("{} AND l.rating IS NOT NULL", scope.mine())
     };
     let buckets: Vec<(i64, i64)> = scope
         .all(
@@ -218,6 +235,8 @@ pub async fn stats(
     let today = Utc::now().date_naive();
     let (longest, current) = streaks(&watch_days, today);
 
+    let mine = scope.mine();
+
     let top_shows: Vec<TopRow> = scope
         .all(
             pool,
@@ -227,7 +246,7 @@ pub async fn stats(
                    FROM scoped s
                    JOIN title t ON t.id = s.title_id
                    JOIN episode e ON e.id = s.episode_id
-                   LEFT JOIN library_entry l ON l.title_id = t.id
+                   LEFT JOIN library_entry l ON l.title_id = t.id AND {mine}
                   GROUP BY t.id
                   ORDER BY COUNT(*) DESC, MAX(s.watched_at) DESC
                   LIMIT 6"
@@ -239,15 +258,17 @@ pub async fn stats(
     let top_films: Vec<TopRow> = scope
         .all(
             pool,
-            "SELECT t.kind, t.tmdb_id, t.name, t.poster_path, COUNT(*),
+            &format!(
+                "SELECT t.kind, t.tmdb_id, t.name, t.poster_path, COUNT(*),
                     CAST(COALESCE(MAX(t.runtime), 0) * COUNT(*) AS REAL), l.rating
                FROM scoped s
                JOIN title t ON t.id = s.title_id
-               LEFT JOIN library_entry l ON l.title_id = t.id
+               LEFT JOIN library_entry l ON l.title_id = t.id AND {mine}
               WHERE s.episode_id IS NULL
               GROUP BY t.id
               ORDER BY l.rating IS NULL, l.rating DESC, COUNT(*) DESC, MAX(s.watched_at) DESC
-              LIMIT 6",
+              LIMIT 6"
+            ),
         )
         .await?;
 

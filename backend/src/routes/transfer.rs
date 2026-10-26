@@ -80,7 +80,7 @@ pub struct MatchRequest {
 const MAX_BATCH: usize = 200;
 
 pub async fn match_titles(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Json(body): Json<MatchRequest>,
 ) -> AppResult<Json<Value>> {
@@ -92,8 +92,10 @@ pub async fn match_titles(
 
     let tracked: Vec<(String, i64, String)> = sqlx::query_as(
         "SELECT t.kind, t.tmdb_id, l.status
-           FROM library_entry l JOIN title t ON t.id = l.title_id",
+           FROM library_entry l JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = ?",
     )
+    .bind(auth.user_id())
     .fetch_all(&state.pool)
     .await?;
 
@@ -314,7 +316,7 @@ pub struct ApplyItem {
 }
 
 pub async fn apply(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Json(body): Json<ApplyRequest>,
 ) -> AppResult<Json<Value>> {
@@ -337,7 +339,9 @@ pub async fn apply(
 
         let existing = store::find_title_id(&state.pool, &item.kind, item.tmdb_id).await?;
         let already = match existing {
-            Some(id) => store::get_entry(&state.pool, id).await?.is_some(),
+            Some(id) => store::get_entry(&state.pool, auth.user_id(), id)
+                .await?
+                .is_some(),
             None => false,
         };
 
@@ -362,7 +366,9 @@ pub async fn apply(
         // A later season you only plan to watch must not push a show you are
         // part-way through back onto the watchlist.
         let status = if status == "planned" {
-            let watched = store::progress(&state.pool, title_id).await?.watched;
+            let watched = store::progress(&state.pool, auth.user_id(), title_id)
+                .await?
+                .watched;
             if watched > 0 {
                 "watching".to_string()
             } else {
@@ -380,7 +386,7 @@ pub async fn apply(
             notes: None,
             notify: None,
         };
-        store::apply_patch(&state.pool, title_id, &patch).await?;
+        store::apply_patch(&state.pool, auth.user_id(), title_id, &patch).await?;
 
         if item.kind == "tv" {
             if let Some(season) = item.season {
@@ -391,7 +397,16 @@ pub async fn apply(
                     (None, false) => None,
                 };
                 if let Some(count) = count.filter(|n| *n > 0) {
-                    tick_season(&state, title_id, &detail, season, after, after + count).await?;
+                    tick_season(
+                        &state,
+                        auth.user_id(),
+                        title_id,
+                        &detail,
+                        season,
+                        after,
+                        after + count,
+                    )
+                    .await?;
                 }
             }
         }
@@ -400,8 +415,10 @@ pub async fn apply(
         if let Some(watched_at) = item.watched_at.as_deref() {
             let exists: (i64,) = sqlx::query_as(
                 "SELECT COUNT(*) FROM watch_event
-                  WHERE title_id = ? AND episode_id IS NULL AND watched_at = ?",
+                  WHERE user_id = ? AND title_id = ? AND episode_id IS NULL
+                    AND watched_at = ?",
             )
+            .bind(auth.user_id())
             .bind(title_id)
             .bind(watched_at)
             .fetch_one(&state.pool)
@@ -409,9 +426,11 @@ pub async fn apply(
 
             if exists.0 == 0 {
                 sqlx::query(
-                    "INSERT INTO watch_event (title_id, episode_id, watched_at, is_rewatch, source)
-                     VALUES (?, NULL, ?, ?, 'import')",
+                    "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at,
+                                              is_rewatch, source)
+                     VALUES (?, ?, NULL, ?, ?, 'import')",
                 )
+                .bind(auth.user_id())
                 .bind(title_id)
                 .bind(watched_at)
                 .bind(i64::from(item.rewatch))
@@ -442,6 +461,7 @@ pub async fn apply(
 /// than all landing on the day of the import.
 async fn tick_season(
     state: &AppState,
+    user_id: i64,
     title_id: i64,
     detail: &Value,
     season: i64,
@@ -459,17 +479,20 @@ async fn tick_season(
     }
 
     sqlx::query(
-        "INSERT INTO watch_event (title_id, episode_id, watched_at, is_rewatch, source, undated)
-         SELECT ?, e.id, ?, 0, 'import', 1
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                  source, undated)
+         SELECT ?1, ?2, e.id, ?3, 0, 'import', 1
            FROM episode e
-          WHERE e.title_id = ? AND e.season_number = ?
-            AND e.episode_number > ? AND e.episode_number <= ?
+          WHERE e.title_id = ?2 AND e.season_number = ?4
+            AND e.episode_number > ?5 AND e.episode_number <= ?6
             AND (e.air_date IS NULL OR e.air_date <= date('now'))
-            AND NOT EXISTS (SELECT 1 FROM watch_event w WHERE w.episode_id = e.id)",
+            AND NOT EXISTS (
+                  SELECT 1 FROM watch_event w
+                   WHERE w.user_id = ?1 AND w.episode_id = e.id)",
     )
+    .bind(user_id)
     .bind(title_id)
     .bind(chrono::Utc::now().to_rfc3339())
-    .bind(title_id)
     .bind(season)
     .bind(after)
     .bind(upto)
@@ -499,21 +522,27 @@ type EpisodeExportRow = (i64, i64, Option<f64>, Option<String>, i64);
 /// (unused, watched_at, is_rewatch, source)
 type WatchExportRow = (Option<String>, String, i64, String);
 
-async fn export_rows(state: &AppState) -> AppResult<Vec<ExportRow>> {
+async fn export_rows(state: &AppState, user_id: i64) -> AppResult<Vec<ExportRow>> {
     Ok(sqlx::query_as(
         "SELECT t.kind, t.tmdb_id, t.name, t.release_date, l.status, l.rating, l.favourite,
                 l.notes, l.added_at,
-                (SELECT COUNT(*) FROM watch_event w WHERE w.title_id = t.id)
+                (SELECT COUNT(*) FROM watch_event w
+                  WHERE w.user_id = ?1 AND w.title_id = t.id)
            FROM library_entry l JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = ?1
           ORDER BY t.name COLLATE NOCASE",
     )
+    .bind(user_id)
     .fetch_all(&state.pool)
     .await?)
 }
 
 /// A complete backup: everything needed to rebuild the library elsewhere.
-pub async fn export_json(_: Auth, State(state): State<AppState>) -> AppResult<impl IntoResponse> {
-    let rows = export_rows(&state).await?;
+pub async fn export_json(
+    auth: Auth,
+    State(state): State<AppState>,
+) -> AppResult<impl IntoResponse> {
+    let rows = export_rows(&state, auth.user_id()).await?;
 
     let mut titles = Vec::with_capacity(rows.len());
     for (kind, tmdb_id, name, release_date, status, rating, favourite, notes, added_at, _) in rows {
@@ -523,14 +552,17 @@ pub async fn export_json(_: Auth, State(state): State<AppState>) -> AppResult<im
             Some(id) => {
                 sqlx::query_as(
                     "SELECT e.season_number, e.episode_number, s.rating, s.notes,
-                            (SELECT COUNT(*) FROM watch_event w WHERE w.episode_id = e.id)
+                            (SELECT COUNT(*) FROM watch_event w
+                              WHERE w.user_id = ?1 AND w.episode_id = e.id)
                        FROM episode e
-                       LEFT JOIN episode_state s ON s.episode_id = e.id
-                      WHERE e.title_id = ?
+                       LEFT JOIN episode_state s ON s.episode_id = e.id AND s.user_id = ?1
+                      WHERE e.title_id = ?2
                         AND (s.rating IS NOT NULL OR s.notes IS NOT NULL
-                             OR EXISTS (SELECT 1 FROM watch_event w WHERE w.episode_id = e.id))
+                             OR EXISTS (SELECT 1 FROM watch_event w
+                                         WHERE w.user_id = ?1 AND w.episode_id = e.id))
                       ORDER BY e.season_number, e.episode_number",
                 )
+                .bind(auth.user_id())
                 .bind(id)
                 .fetch_all(&state.pool)
                 .await?
@@ -543,9 +575,10 @@ pub async fn export_json(_: Auth, State(state): State<AppState>) -> AppResult<im
                 sqlx::query_as(
                     "SELECT NULL, w.watched_at, w.is_rewatch, w.source
                        FROM watch_event w
-                      WHERE w.title_id = ? AND w.episode_id IS NULL
+                      WHERE w.user_id = ? AND w.title_id = ? AND w.episode_id IS NULL
                       ORDER BY w.watched_at",
                 )
+                .bind(auth.user_id())
                 .bind(id)
                 .fetch_all(&state.pool)
                 .await?
@@ -580,7 +613,8 @@ pub async fn export_json(_: Auth, State(state): State<AppState>) -> AppResult<im
     }
 
     let settings: Option<(String,)> =
-        sqlx::query_as("SELECT value FROM app_setting WHERE key = 'preferences'")
+        sqlx::query_as("SELECT value FROM app_setting WHERE user_id = ? AND key = 'preferences'")
+            .bind(auth.user_id())
             .fetch_optional(&state.pool)
             .await?;
 
@@ -603,8 +637,8 @@ pub async fn export_json(_: Auth, State(state): State<AppState>) -> AppResult<im
 }
 
 /// A flat sheet, for anything that reads CSV.
-pub async fn export_csv(_: Auth, State(state): State<AppState>) -> AppResult<impl IntoResponse> {
-    let rows = export_rows(&state).await?;
+pub async fn export_csv(auth: Auth, State(state): State<AppState>) -> AppResult<impl IntoResponse> {
+    let rows = export_rows(&state, auth.user_id()).await?;
 
     let mut out = String::from("Type,TMDB ID,Title,Year,Status,Rating,Favourite,Added,Watches\n");
     for (kind, tmdb_id, name, release_date, status, rating, favourite, _, added_at, watches) in rows

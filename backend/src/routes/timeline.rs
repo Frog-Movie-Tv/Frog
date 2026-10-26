@@ -47,7 +47,7 @@ type CalendarRow = (
 /// Episodes of anything followed, plus release dates of films on the
 /// watchlist, inside a window.
 pub async fn calendar(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Query(range): Query<Range>,
 ) -> AppResult<Json<Value>> {
@@ -62,16 +62,19 @@ pub async fn calendar(
     let episodes: Vec<CalendarRow> = sqlx::query_as(
         "SELECT t.kind, t.tmdb_id, t.name, t.poster_path, t.accent_json,
                 e.air_date, e.season_number, e.episode_number, e.name,
-                (SELECT COUNT(*) FROM watch_event w WHERE w.episode_id = e.id)
+                (SELECT COUNT(*) FROM watch_event w
+                  WHERE w.user_id = ? AND w.episode_id = e.id)
            FROM episode e
            JOIN title t ON t.id = e.title_id
-           JOIN library_entry l ON l.title_id = t.id
+           JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?
           WHERE l.status IN ('watching', 'planned', 'paused')
             AND e.air_date IS NOT NULL
             AND e.air_date >= ? AND e.air_date <= ?
           ORDER BY e.air_date, t.name, e.season_number, e.episode_number
           LIMIT 600",
     )
+    .bind(auth.user_id())
+    .bind(auth.user_id())
     .bind(&from)
     .bind(&to)
     .fetch_all(&state.pool)
@@ -100,13 +103,14 @@ pub async fn calendar(
     let films: Vec<FilmRow> = sqlx::query_as(
         "SELECT t.kind, t.tmdb_id, t.name, t.poster_path, t.accent_json, t.release_date
            FROM title t
-           JOIN library_entry l ON l.title_id = t.id
+           JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?
           WHERE t.kind = 'movie'
             AND l.status = 'planned'
             AND t.release_date IS NOT NULL
             AND t.release_date >= ? AND t.release_date <= ?
           ORDER BY t.release_date",
     )
+    .bind(auth.user_id())
     .bind(&from)
     .bind(&to)
     .fetch_all(&state.pool)
@@ -185,7 +189,7 @@ type DiaryEpisodeRow = (i64, i64, Option<String>, Option<f64>, i64);
 /// pagination honest: a 135-episode catch-up is one entry, never split across
 /// pages. Watches recorded without a date are counted but not listed.
 pub async fn diary(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Query(q): Query<DiaryQuery>,
 ) -> AppResult<Json<Value>> {
@@ -203,12 +207,14 @@ pub async fn diary(
                 l.rating
            FROM watch_event w
            JOIN title t ON t.id = w.title_id
-           LEFT JOIN library_entry l ON l.title_id = t.id
-          WHERE w.undated = 0
+           LEFT JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?
+          WHERE w.user_id = ? AND w.undated = 0
           GROUP BY day, t.id, film
           ORDER BY day DESC, latest DESC
           LIMIT ? OFFSET ?",
     )
+    .bind(auth.user_id())
+    .bind(auth.user_id())
     .bind(limit)
     .bind(offset)
     .fetch_all(&state.pool)
@@ -226,12 +232,15 @@ pub async fn diary(
                    FROM watch_event w
                    JOIN title t ON t.id = w.title_id
                    JOIN episode e ON e.id = w.episode_id
-                   LEFT JOIN episode_state s ON s.episode_id = e.id
-                  WHERE t.kind = ? AND t.tmdb_id = ?
+                   LEFT JOIN episode_state s ON s.episode_id = e.id AND s.user_id = ?
+                  WHERE w.user_id = ?
+                    AND t.kind = ? AND t.tmdb_id = ?
                     AND w.undated = 0
                     AND substr(w.watched_at, 1, 10) = ?
                   ORDER BY e.season_number, e.episode_number",
             )
+            .bind(auth.user_id())
+            .bind(auth.user_id())
             .bind(&kind)
             .bind(tmdb_id)
             .bind(&day)
@@ -267,15 +276,18 @@ pub async fn diary(
     let (total,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM (
             SELECT 1 FROM watch_event
-             WHERE undated = 0
+             WHERE user_id = ? AND undated = 0
              GROUP BY substr(watched_at, 1, 10), title_id, episode_id IS NULL)",
     )
+    .bind(auth.user_id())
     .fetch_one(&state.pool)
     .await?;
 
-    let (undated,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE undated = 1")
-        .fetch_one(&state.pool)
-        .await?;
+    let (undated,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE user_id = ? AND undated = 1")
+            .bind(auth.user_id())
+            .fetch_one(&state.pool)
+            .await?;
 
     Ok(Json(
         json!({ "entries": entries, "total": total, "undated": undated }),
@@ -296,7 +308,7 @@ pub struct RedateBody {
 /// release date, or out of the diary altogether. This is how a catch-up that
 /// was logged as "today" gets put right after the fact.
 pub async fn redate(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Json(body): Json<RedateBody>,
 ) -> AppResult<Json<Value>> {
@@ -306,13 +318,17 @@ pub async fn redate(
         .await?
         .ok_or_else(|| AppError::NotFound("not in your library".into()))?;
 
-    let scope = "WHERE title_id = ?1 AND undated = 0 AND substr(watched_at, 1, 10) = ?2";
+    // Numbered parameters, because each branch binds a different number of
+    // them: ?1 title, ?2 day, ?3 the account, ?4 a timestamp where one is used.
+    let scope = "WHERE user_id = ?3 AND title_id = ?1 AND undated = 0
+                   AND substr(watched_at, 1, 10) = ?2";
 
     let changed = match body.when {
         When::Unknown => {
             sqlx::query(&format!("UPDATE watch_event SET undated = 1 {scope}"))
                 .bind(title_id)
                 .bind(&body.day)
+                .bind(auth.user_id())
                 .execute(&state.pool)
                 .await?
         }
@@ -335,22 +351,25 @@ pub async fn redate(
             ))
             .bind(title_id)
             .bind(&body.day)
+            .bind(auth.user_id())
             .execute(&state.pool)
             .await?
         }
         When::Date => {
             let stamp = evening_of(body.date.as_deref().unwrap_or(""))?;
-            sqlx::query(&format!("UPDATE watch_event SET watched_at = ?3 {scope}"))
+            sqlx::query(&format!("UPDATE watch_event SET watched_at = ?4 {scope}"))
                 .bind(title_id)
                 .bind(&body.day)
+                .bind(auth.user_id())
                 .bind(stamp)
                 .execute(&state.pool)
                 .await?
         }
         When::Today => {
-            sqlx::query(&format!("UPDATE watch_event SET watched_at = ?3 {scope}"))
+            sqlx::query(&format!("UPDATE watch_event SET watched_at = ?4 {scope}"))
                 .bind(title_id)
                 .bind(&body.day)
+                .bind(auth.user_id())
                 .bind(chrono::Utc::now().to_rfc3339())
                 .execute(&state.pool)
                 .await?

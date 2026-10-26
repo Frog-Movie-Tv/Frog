@@ -253,14 +253,16 @@ pub struct Broadcast {
 /// abandoned; a browser that was simply offline recovers well before that.
 const MAX_FAILURES: i64 = 20;
 
-/// Send one message to every subscribed browser, forgetting the ones whose
-/// push service says they are gone.
+/// Send one message to every browser one account has subscribed, forgetting
+/// the ones whose push service says they are gone.
 pub async fn broadcast(
     state: &crate::AppState,
+    user_id: i64,
     payload: &serde_json::Value,
 ) -> AppResult<Broadcast> {
     let subs: Vec<(String, String, String)> =
-        sqlx::query_as("SELECT endpoint, p256dh, auth FROM push_subscription")
+        sqlx::query_as("SELECT endpoint, p256dh, auth FROM push_subscription WHERE user_id = ?")
+            .bind(user_id)
             .fetch_all(&state.pool)
             .await?;
     let mut out = Broadcast::default();
@@ -274,9 +276,11 @@ pub async fn broadcast(
             Ok(Delivery::Sent) => {
                 out.sent += 1;
                 sqlx::query(
-                    "UPDATE push_subscription SET last_ok_at = ?, failures = 0 WHERE endpoint = ?",
+                    "UPDATE push_subscription SET last_ok_at = ?, failures = 0
+                      WHERE user_id = ? AND endpoint = ?",
                 )
                 .bind(Utc::now().to_rfc3339())
+                .bind(user_id)
                 .bind(&endpoint)
                 .execute(&state.pool)
                 .await?;
@@ -284,7 +288,8 @@ pub async fn broadcast(
             Ok(Delivery::Gone) => {
                 out.gone += 1;
                 tracing::info!("a browser unsubscribed; forgetting it");
-                sqlx::query("DELETE FROM push_subscription WHERE endpoint = ?")
+                sqlx::query("DELETE FROM push_subscription WHERE user_id = ? AND endpoint = ?")
+                    .bind(user_id)
                     .bind(&endpoint)
                     .execute(&state.pool)
                     .await?;
@@ -293,8 +298,10 @@ pub async fn broadcast(
                 out.failed += 1;
                 tracing::warn!(error = %why, "push delivery failed");
                 sqlx::query(
-                    "UPDATE push_subscription SET failures = failures + 1 WHERE endpoint = ?",
+                    "UPDATE push_subscription SET failures = failures + 1
+                      WHERE user_id = ? AND endpoint = ?",
                 )
+                .bind(user_id)
                 .bind(&endpoint)
                 .execute(&state.pool)
                 .await?;
@@ -302,7 +309,8 @@ pub async fn broadcast(
             Err(e) => return Err(e),
         }
     }
-    sqlx::query("DELETE FROM push_subscription WHERE failures >= ?")
+    sqlx::query("DELETE FROM push_subscription WHERE user_id = ? AND failures >= ?")
+        .bind(user_id)
         .bind(MAX_FAILURES)
         .execute(&state.pool)
         .await?;

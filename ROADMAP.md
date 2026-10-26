@@ -6,6 +6,156 @@ it when something ships. Top of **Next** is what to do next.
 Current release: **0.4.0 "Lily Pad"** (2026-10-26). Next release:
 **0.5.0 "Ribbit"**. Codenames after that, in order: Leapfrog, Bullfrog (1.0).
 
+## In progress — the multi-user brief, handed over 2026-10-26
+
+The owners' brief, in four parts, to be done **in order**. Nothing deploys
+until Part 4's checklist passes. Part 4 supersedes the Oracle item that used to
+sit at the top of **Next**.
+
+Frog now has two owners: Mihai Constantin (GitHub: MihCons) and Zjef Schaeken
+(GitHub: zschaeken). The repository moved to the **Frog-Movie-Tv**
+organisation: `https://github.com/Frog-Movie-Tv/Frog`.
+
+**Done in this session** (collecting under `## Upcoming — 0.4.1 Lily Pad —` in
+CHANGELOG.md; the owners asked for everything new to be named 0.4.1):
+
+- Remote and every in-repo reference moved to the new organisation, including
+  the GHCR image name in `docs/INSTALL.md` and the update check in Settings.
+- Both owners credited in the README, in a "Made by" section on About, and in
+  LICENSE.
+- README covers the 0.4.0 features (full stats, year in review, new-episode
+  alerts, shelves, AniList and MyAnimeList imports, two-factor sign-in).
+- About showed the wrong release codename; it now reads Lily Pad, and the
+  `/release` skill bumps it from now on.
+- **Part 4 research done and cited in `docs/DEPLOY-ORACLE.md`.** Confirmed:
+  Always Free A1 is now 2 OCPU / 12 GB (down from 4 / 24); idle reclamation
+  needs CPU **and** network **and** memory all under 20% over 7 days, so the
+  keepalive should hold ~2.4 GB of memory rather than burn CPU; the Ubuntu
+  image's own iptables reject must be handled in `install.sh`; two plain
+  hostnames need only HTTP-01, so stock Caddy with no DuckDNS plugin;
+  GHCR container storage is free even for private images; release-please is
+  current (17.11.2) and the plan stands.
+
+**Blocked on a decision from the owners** — see "What the research changes" in
+`docs/DEPLOY-ORACLE.md`:
+
+1. **The repository is private.** Free arm64 runners are public-repository
+   only, and private repos get 2,000 Actions minutes a month. Multi-arch
+   builds under QEMU plus CI on every PR plus E2E will not fit, and the only
+   fix is money, which the brief rules out. Making the repository public (it
+   is MIT already) buys unlimited standard minutes and native arm64 runners.
+2. **Nothing here can configure GitHub itself.** `gh` is not installed and
+   there is no token, so branch protection, required reviews, CODEOWNERS
+   enforcement, labels, the Projects board and GitHub Releases need the CLI
+   installed and signed in, or the web UI.
+
+**Part 1 — multi-user. Backend done; no interface for it yet.**
+
+Done, with `cargo fmt`, `clippy -D warnings` and 67 tests green:
+
+- **Migration `0008_multi_user.sql`.** Every personal table gained a NOT NULL
+  `user_id` with a foreign key to `app_user` and `ON DELETE CASCADE`:
+  library_entry, episode_state, watch_event, app_setting, shelf,
+  push_subscription, push_sent, recovery_code, session. Shared: title,
+  episode, title_person, tmdb_cache, image_cache and the VAPID keys. Tables
+  were rebuilt (SQLite cannot add a NOT NULL foreign key or change a primary
+  key in place), and shelf_item is parked in a constraint-free copy while
+  shelf is rebuilt so its ON DELETE CASCADE does not wipe it.
+  **Existing data was preserved, not deleted:** the one account that was there
+  becomes the owner and keeps its library. Verified on a fresh database and on
+  a copy of the owner's real one — schema scoped, `foreign_key_check` and
+  `integrity_check` clean, no orphaned rows, every row count unchanged.
+  The owner's database was still at migration 0004, so 0005–0007 applied in
+  the same run; 0006 adds its own film watches by design.
+- **`Auth` carries identity.** It was a unit struct that only answered "is
+  there a session"; it now holds `user_id`, `username` and `role`, so a
+  handler cannot reach data without saying whose it is. `AdminAuth` refuses
+  anyone below administrator in the route table itself. Roles are ordered, so
+  checks read `role >= Role::Admin`. Sessions belong to an account, and a
+  disabled account loses access on its very next request rather than at its
+  next sign-in.
+- **Every query scoped**, about 200 sites across the store, 14 route modules,
+  the push sender and the background worker. Sign-in now looks an account up
+  by username instead of assuming row 1, with the same message whichever part
+  was wrong.
+- **Invites** (`routes/invites.rs`). Single use, expiring, only the hash
+  stored. Claiming is the same statement that checks it, so two people
+  redeeming one link cannot both get in; a failed account creation puts it
+  back. Only the owner may invite an administrator. First run still makes the
+  owner, and setup closes for good afterwards. No open sign-up.
+- **Login throttling per account and per address.** Both buckets are checked,
+  so guessing one password from everywhere locks that account while one
+  address cannot work through every account. `X-Forwarded-For` names the
+  caller (Caddy sits in front in Part 4), falling back to the socket address.
+- **Isolation tests** through the HTTP surface, not the store: a second
+  account sees nothing of the first on library, library stats, stats, home,
+  diary, calendar, shelves, shelves by id, shelves for a title, export and
+  settings; and cannot rename, fill or delete another account's shelf, redate
+  their diary, or disturb their entries, ratings or progress. Plus role
+  checks, invite single-use, disabled accounts and the throttle.
+- **`tests/scoping.rs`** reads the source and fails if any new query touches a
+  personal table without naming an owner. Genuinely shared statements are
+  listed with their reason, so an exception is a visible decision. Checked
+  that it fails when a `user_id` is removed, which matters with two people
+  writing queries in parallel.
+
+Left for Part 1:
+
+1. **Per-account routes:** change password, active sessions with "sign out
+   everywhere" (`destroy_sessions_for` already exists and can spare the
+   current session), export my data, delete my account.
+2. **Admin routes and page:** users list with disable and role changes,
+   invites, storage used, version, last backup, update status.
+3. **Optional profile page**, off by default per account (the
+   `profile_public` column exists), visible only to signed-in accounts on the
+   same instance, showing what they are watching, favourites and stats.
+4. **The whole interface:** a join screen for an invite link, account
+   switching, the admin page, per-account settings in the UI, and the
+   what's-new seen state moving into per-account settings.
+5. **Re-check for single-user assumptions** now that the backend is scoped:
+   the `FROG_ADMIN_USERNAME`/`PASSWORD` bootstrap makes an owner, which is
+   right, but backups, imports and the screenshot and verify scripts all still
+   assume one account.
+
+Nothing about accounts is in CHANGELOG.md yet, on purpose: there is no
+interface for it, so there is nothing a user can do with it.
+
+**Part 2 — two developers at once.** Not started. Protect main (no direct
+pushes, PRs only, CI green plus one approval from the other owner, admin
+override for emergencies); conventional commits; release-please for versions
+and CHANGELOG.md so neither of us edits it by hand; timestamped migration
+filenames plus a CI check that migrations apply on a fresh database and on a
+copy of the previous version's; pre-commit hooks for rustfmt, clippy,
+prettier, eslint and svelte-check, with CI running the same; CODEOWNERS, PR
+and issue templates, labels, a Projects board (Backlog / In progress / Review
+/ Done); CLAUDE.md in the repo root covering conventions; one-command local dev
+setup with two seeded demo users, documented in `docs/CONTRIBUTING.md`;
+staging deploys on every merge to main, production only on a tagged release.
+
+**Part 3 — clean-up before deploying.** Not started. Docker is the real way
+Frog runs, and the production image must be the one CI built and tested; label
+or remove the local non-Docker run modes; delete dead code, unused
+dependencies and leftover comments; all configuration through environment
+variables with one documented `.env.example`; a consistent structure documented
+in CLAUDE.md and CONTRIBUTING.md; a small multi-arch image with a non-root
+user, a healthcheck and `/healthz`; backend, isolation and Playwright tests all
+green in CI.
+
+**Part 4 — Oracle Cloud.** Research done (above). Code not started. Always
+Free Ampere A1 on Ubuntu in eu-amsterdam-1, a public site over DuckDNS with
+Caddy and automatic HTTPS, production and staging as separate compose projects
+with separate databases, pull-based updates by systemd timer (staging follows
+`:main`, production the latest release tag) with a backup first and a
+`/healthz` rollback, nightly age-encrypted backups to a private repo with
+30-day retention and a tested restore, a keepalive, SSH keys only, fail2ban,
+security headers, noindex, no public sign-up, and a `deploy/` folder with
+compose files, Caddyfile, `install.sh`, `update.sh`, `backup.sh` and
+`restore.sh`. Never suggest Pay As You Go. No Watchtower.
+
+**On finishing:** open the app as two users side by side and show the
+isolation, demonstrate the PR workflow on a test branch, and summarise what
+changed.
+
 ## Next
 
 Ordered by what the owner asked for most recently. Take from the top.

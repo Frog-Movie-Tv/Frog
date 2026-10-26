@@ -26,7 +26,7 @@ fn first_page() -> u32 {
 }
 
 pub async fn search(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Query(q): Query<SearchQuery>,
 ) -> AppResult<Json<Value>> {
@@ -40,7 +40,7 @@ pub async fn search(
     let raw = state.tmdb.search_multi(term, q.page.clamp(1, 500)).await?;
     let mut items = collect(&raw, None);
     rank(&mut items, term, q.hide_animation);
-    annotate_library(&state, &mut items).await?;
+    annotate_library(&state, auth.user_id(), &mut items).await?;
 
     Ok(Json(serde_json::json!({
         "page": raw.get("page").and_then(Value::as_i64).unwrap_or(1),
@@ -49,10 +49,10 @@ pub async fn search(
     })))
 }
 
-pub async fn trending(_: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
+pub async fn trending(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
     let raw = state.tmdb.trending().await?;
     let mut items = collect(&raw, None);
-    annotate_library(&state, &mut items).await?;
+    annotate_library(&state, auth.user_id(), &mut items).await?;
     Ok(Json(serde_json::json!({ "results": items })))
 }
 
@@ -98,15 +98,21 @@ fn collect(raw: &Value, force_kind: Option<&str>) -> Vec<SearchItem> {
 
 /// Mark results that are already tracked, so the grid can show their status
 /// instead of offering to add them again.
-pub async fn annotate_library(state: &AppState, items: &mut [SearchItem]) -> AppResult<()> {
+pub async fn annotate_library(
+    state: &AppState,
+    user_id: i64,
+    items: &mut [SearchItem],
+) -> AppResult<()> {
     if items.is_empty() {
         return Ok(());
     }
 
     let rows: Vec<(String, i64, String)> = sqlx::query_as(
         "SELECT t.kind, t.tmdb_id, l.status
-           FROM library_entry l JOIN title t ON t.id = l.title_id",
+           FROM library_entry l JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = ?",
     )
+    .bind(user_id)
     .fetch_all(&state.pool)
     .await?;
 

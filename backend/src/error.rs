@@ -10,6 +10,9 @@ pub enum AppError {
     /// The password was right; the authenticator code is missing or wrong.
     #[error("{0}")]
     TwoFactor(String),
+    /// Signed in, but not allowed to do this.
+    #[error("{0}")]
+    Forbidden(String),
     #[error("{0}")]
     BadRequest(String),
     #[error("{0}")]
@@ -34,6 +37,7 @@ impl AppError {
     fn status(&self) -> StatusCode {
         match self {
             AppError::Unauthorised | AppError::TwoFactor(_) => StatusCode::UNAUTHORIZED,
+            AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Conflict(_) => StatusCode::CONFLICT,

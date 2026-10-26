@@ -211,7 +211,10 @@ export interface PersonDetail {
 export interface AuthStatus {
 	needs_setup: boolean;
 	authenticated: boolean;
+	/** Whoever is signed in, or null. */
 	username: string | null;
+	role: 'owner' | 'admin' | 'user' | null;
+	is_admin: boolean;
 	tmdb_configured: boolean;
 	region: string;
 	version: string;

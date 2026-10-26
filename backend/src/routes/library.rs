@@ -24,25 +24,33 @@ pub struct ListQuery {
 }
 
 /// Map a sort key to SQL. An allowlist, never interpolation of user input.
-pub fn order_clause(sort: Option<&str>, order: Option<&str>) -> String {
+///
+/// `user_id` is written into the sort subquery rather than bound, because a
+/// placeholder inside ORDER BY would have to be bound between the filters and
+/// the paging ones and silently shift if either changed. It comes from the
+/// session as an `i64`, so there is nothing in it to escape.
+pub fn order_clause(sort: Option<&str>, order: Option<&str>, user_id: i64) -> String {
     let dir = match order {
         Some("asc") => "ASC",
         _ => "DESC",
     };
-    let column = match sort.unwrap_or("added") {
-        "name" => "t.name COLLATE NOCASE",
-        "rating" => "l.rating",
-        "release" => "COALESCE(t.release_date, '')",
-        "updated" => "l.updated_at",
-        "last_watched" => "(SELECT MAX(w.watched_at) FROM watch_event w WHERE w.title_id = t.id)",
-        _ => "l.added_at",
+    let column: String = match sort.unwrap_or("added") {
+        "name" => "t.name COLLATE NOCASE".into(),
+        "rating" => "l.rating".into(),
+        "release" => "COALESCE(t.release_date, '')".into(),
+        "updated" => "l.updated_at".into(),
+        "last_watched" => format!(
+            "(SELECT MAX(w.watched_at) FROM watch_event w
+                WHERE w.title_id = t.id AND w.user_id = {user_id})"
+        ),
+        _ => "l.added_at".into(),
     };
     // NULLs last in either direction: an unrated title should never head the list.
     format!("ORDER BY ({column}) IS NULL, {column} {dir}, t.name COLLATE NOCASE ASC")
 }
 
 pub async fn list(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Query(q): Query<ListQuery>,
 ) -> AppResult<Json<Value>> {
@@ -53,7 +61,7 @@ pub async fn list(
                 t.collection_id, t.accent_json
            FROM library_entry l
            JOIN title t ON t.id = l.title_id
-          WHERE 1 = 1",
+          WHERE l.user_id = ?",
     );
 
     if let Some(status) = &q.status {
@@ -76,10 +84,14 @@ pub async fn list(
     }
 
     sql.push(' ');
-    sql.push_str(&order_clause(q.sort.as_deref(), q.order.as_deref()));
+    sql.push_str(&order_clause(
+        q.sort.as_deref(),
+        q.order.as_deref(),
+        auth.user_id(),
+    ));
     sql.push_str(" LIMIT ? OFFSET ?");
 
-    let mut query = sqlx::query_as::<_, TitleRow>(&sql);
+    let mut query = sqlx::query_as::<_, TitleRow>(&sql).bind(auth.user_id());
     if let Some(status) = &q.status {
         query = query.bind(status.clone());
     }
@@ -101,7 +113,7 @@ pub async fn list(
 
     let mut items: Vec<LibraryItem> = Vec::with_capacity(rows.len());
     for row in rows {
-        items.push(store::build_item(&state.pool, row).await?);
+        items.push(store::build_item(&state.pool, auth.user_id(), row).await?);
     }
 
     Ok(Json(json!({ "items": items })))
@@ -112,24 +124,30 @@ fn to_map(rows: Vec<(String, i64)>) -> Value {
 }
 
 /// Counts for the library header and the first cut of the stats page.
-pub async fn stats(_: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
-    let by_status: Vec<(String, i64)> =
-        sqlx::query_as("SELECT status, COUNT(*) FROM library_entry GROUP BY status")
-            .fetch_all(&state.pool)
-            .await?;
+pub async fn stats(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
+    let by_status: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT status, COUNT(*) FROM library_entry WHERE user_id = ? GROUP BY status",
+    )
+    .bind(auth.user_id())
+    .fetch_all(&state.pool)
+    .await?;
 
     let by_kind: Vec<(String, i64)> = sqlx::query_as(
         "SELECT t.kind, COUNT(*) FROM library_entry l JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = ?
          GROUP BY t.kind",
     )
+    .bind(auth.user_id())
     .fetch_all(&state.pool)
     .await?;
 
     let (films_watched, episodes_watched): (i64, i64) = sqlx::query_as(
         "SELECT
-            (SELECT COUNT(*) FROM watch_event WHERE episode_id IS NULL),
-            (SELECT COUNT(*) FROM watch_event WHERE episode_id IS NOT NULL)",
+            (SELECT COUNT(*) FROM watch_event WHERE user_id = ? AND episode_id IS NULL),
+            (SELECT COUNT(*) FROM watch_event WHERE user_id = ? AND episode_id IS NOT NULL)",
     )
+    .bind(auth.user_id())
+    .bind(auth.user_id())
     .fetch_one(&state.pool)
     .await?;
 
@@ -141,15 +159,19 @@ pub async fn stats(_: Auth, State(state): State<AppState>) -> AppResult<Json<Val
         "SELECT CAST(SUM(COALESCE(e.runtime, t.runtime, 0)) AS REAL)
            FROM watch_event w
            JOIN title t ON t.id = w.title_id
-           LEFT JOIN episode e ON e.id = w.episode_id",
+           LEFT JOIN episode e ON e.id = w.episode_id
+          WHERE w.user_id = ?",
     )
+    .bind(auth.user_id())
     .fetch_one(&state.pool)
     .await?;
 
-    let (mean_rating,): (Option<f64>,) =
-        sqlx::query_as("SELECT AVG(rating) FROM library_entry WHERE rating IS NOT NULL")
-            .fetch_one(&state.pool)
-            .await?;
+    let (mean_rating,): (Option<f64>,) = sqlx::query_as(
+        "SELECT AVG(rating) FROM library_entry WHERE user_id = ? AND rating IS NOT NULL",
+    )
+    .bind(auth.user_id())
+    .fetch_one(&state.pool)
+    .await?;
 
     Ok(Json(json!({
         "by_status": to_map(by_status),
@@ -176,7 +198,7 @@ fn yes() -> bool {
 }
 
 pub async fn upsert(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path((kind, tmdb_id)): Path<(String, i64)>,
     Json(body): Json<UpsertBody>,
@@ -186,9 +208,9 @@ pub async fn upsert(
     }
 
     let (title_id, detail) = store::ensure_title(&state, &kind, tmdb_id).await?;
-    let before = store::get_entry(&state.pool, title_id).await?;
+    let before = store::get_entry(&state.pool, auth.user_id(), title_id).await?;
     let is_new = before.is_none();
-    store::apply_patch(&state.pool, title_id, &body.patch).await?;
+    store::apply_patch(&state.pool, auth.user_id(), title_id, &body.patch).await?;
 
     // Finishing a film is watching it: without a watch it would never reach
     // the diary or the stats. A film already watched keeps its history.
@@ -196,12 +218,15 @@ pub async fn upsert(
         && before.as_ref().map(|e| e.status.as_str()) != Some("completed");
     if kind == "movie" && finished_now {
         sqlx::query(
-            "INSERT INTO watch_event (title_id, episode_id, watched_at, is_rewatch, source)
-             SELECT ?, NULL, ?, 0, 'manual'
-              WHERE NOT EXISTS (SELECT 1 FROM watch_event WHERE title_id = ?)",
+            "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch, source)
+             SELECT ?, ?, NULL, ?, 0, 'manual'
+              WHERE NOT EXISTS (
+                    SELECT 1 FROM watch_event WHERE user_id = ? AND title_id = ?)",
         )
+        .bind(auth.user_id())
         .bind(title_id)
         .bind(chrono::Utc::now().to_rfc3339())
+        .bind(auth.user_id())
         .bind(title_id)
         .execute(&state.pool)
         .await?;
@@ -214,19 +239,19 @@ pub async fn upsert(
     }
 
     let row = store::get_title(&state.pool, title_id).await?;
-    let item = store::build_item(&state.pool, row).await?;
+    let item = store::build_item(&state.pool, auth.user_id(), row).await?;
     Ok(Json(json!({ "item": item })))
 }
 
 pub async fn remove(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path((kind, tmdb_id)): Path<(String, i64)>,
 ) -> AppResult<Json<Value>> {
     let Some(title_id) = store::find_title_id(&state.pool, &kind, tmdb_id).await? else {
         return Err(AppError::NotFound("not in your library".into()));
     };
-    store::remove_entry(&state.pool, title_id).await?;
+    store::remove_entry(&state.pool, auth.user_id(), title_id).await?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -236,11 +261,17 @@ mod tests {
 
     #[test]
     fn sort_keys_are_allowlisted() {
-        assert!(order_clause(Some("name"), Some("asc")).contains("t.name"));
-        assert!(order_clause(Some("rating"), None).contains("l.rating"));
+        assert!(order_clause(Some("name"), Some("asc"), 1).contains("t.name"));
+        assert!(order_clause(Some("rating"), None, 1).contains("l.rating"));
         // Anything unknown falls back to added_at rather than reaching SQL.
-        let injected = order_clause(Some("name; DROP TABLE title"), None);
+        let injected = order_clause(Some("name; DROP TABLE title"), None, 1);
         assert!(injected.contains("l.added_at"));
         assert!(!injected.contains("DROP"));
+    }
+
+    #[test]
+    fn sorting_by_last_watched_only_counts_my_watches() {
+        let clause = order_clause(Some("last_watched"), None, 7);
+        assert!(clause.contains("w.user_id = 7"));
     }
 }

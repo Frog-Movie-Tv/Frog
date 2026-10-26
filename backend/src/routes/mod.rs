@@ -2,6 +2,7 @@ pub mod auth;
 pub mod episodes;
 pub mod home;
 pub mod images;
+pub mod invites;
 pub mod library;
 pub mod meta;
 pub mod push;
@@ -31,6 +32,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/status", get(auth::status))
         .route("/auth/setup", post(auth::setup))
         .route("/auth/login", post(auth::login))
+        .route("/auth/register", post(auth::register))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/two-factor", get(two_factor::status))
         .route("/auth/two-factor/start", post(two_factor::start))
@@ -71,6 +73,8 @@ pub fn router(state: AppState) -> Router {
         .route("/push/test", post(push::test))
         .route("/settings", get(settings::get))
         .route("/settings", put(settings::put))
+        .route("/invites", get(invites::list).post(invites::create))
+        .route("/invites/{id}", delete(invites::revoke))
         .route("/export/library.json", get(transfer::export_json))
         .route("/export/library.csv", get(transfer::export_csv))
         .route("/import/match", post(transfer::match_titles))

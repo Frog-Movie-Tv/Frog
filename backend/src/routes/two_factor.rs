@@ -39,13 +39,15 @@ fn new_recovery_code() -> String {
     format!("{}-{}", pick(5), pick(5))
 }
 
-pub async fn status(_: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
+pub async fn status(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
     let (enabled,): (bool,) =
-        sqlx::query_as("SELECT totp_secret IS NOT NULL FROM app_user WHERE id = 1")
+        sqlx::query_as("SELECT totp_secret IS NOT NULL FROM app_user WHERE id = ?")
+            .bind(auth.user_id())
             .fetch_one(&state.pool)
             .await?;
     let (left,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM recovery_code WHERE used_at IS NULL")
+        sqlx::query_as("SELECT COUNT(*) FROM recovery_code WHERE user_id = ? AND used_at IS NULL")
+            .bind(auth.user_id())
             .fetch_one(&state.pool)
             .await?;
     Ok(Json(
@@ -54,9 +56,10 @@ pub async fn status(_: Auth, State(state): State<AppState>) -> AppResult<Json<Va
 }
 
 /// A new secret to scan. It only takes effect once a code from it is confirmed.
-pub async fn start(_: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
+pub async fn start(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
     let (username, enabled): (String, bool) =
-        sqlx::query_as("SELECT username, totp_secret IS NOT NULL FROM app_user WHERE id = 1")
+        sqlx::query_as("SELECT username, totp_secret IS NOT NULL FROM app_user WHERE id = ?")
+            .bind(auth.user_id())
             .fetch_one(&state.pool)
             .await?;
     if enabled {
@@ -66,8 +69,9 @@ pub async fn start(_: Auth, State(state): State<AppState>) -> AppResult<Json<Val
     }
 
     let secret = totp::generate_secret();
-    sqlx::query("UPDATE app_user SET totp_pending = ? WHERE id = 1")
+    sqlx::query("UPDATE app_user SET totp_pending = ? WHERE id = ?")
         .bind(&secret)
+        .bind(auth.user_id())
         .execute(&state.pool)
         .await?;
 
@@ -98,12 +102,13 @@ pub struct ConfirmBody {
 }
 
 pub async fn confirm(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Json(body): Json<ConfirmBody>,
 ) -> AppResult<Json<Value>> {
     let (pending,): (Option<String>,) =
-        sqlx::query_as("SELECT totp_pending FROM app_user WHERE id = 1")
+        sqlx::query_as("SELECT totp_pending FROM app_user WHERE id = ?")
+            .bind(auth.user_id())
             .fetch_one(&state.pool)
             .await?;
     let Some(secret) = pending else {
@@ -120,16 +125,19 @@ pub async fn confirm(
     let mut tx = state.pool.begin().await?;
     sqlx::query(
         "UPDATE app_user SET totp_secret = totp_pending, totp_pending = NULL, totp_last_step = ?
-          WHERE id = 1",
+          WHERE id = ?",
     )
     .bind(step)
+    .bind(auth.user_id())
     .execute(&mut *tx)
     .await?;
-    sqlx::query("DELETE FROM recovery_code")
+    sqlx::query("DELETE FROM recovery_code WHERE user_id = ?")
+        .bind(auth.user_id())
         .execute(&mut *tx)
         .await?;
     for code in &codes {
-        sqlx::query("INSERT INTO recovery_code (code_hash) VALUES (?)")
+        sqlx::query("INSERT INTO recovery_code (user_id, code_hash) VALUES (?, ?)")
+            .bind(auth.user_id())
             .bind(hash_recovery(code))
             .execute(&mut *tx)
             .await?;
@@ -144,8 +152,9 @@ pub struct PasswordBody {
     pub password: String,
 }
 
-async fn check_password(state: &AppState, password: &str) -> AppResult<()> {
-    let (hash,): (String,) = sqlx::query_as("SELECT password_hash FROM app_user WHERE id = 1")
+async fn check_password(state: &AppState, user_id: i64, password: &str) -> AppResult<()> {
+    let (hash,): (String,) = sqlx::query_as("SELECT password_hash FROM app_user WHERE id = ?")
+        .bind(user_id)
         .fetch_one(&state.pool)
         .await?;
     if verify_password(password, &hash) {
@@ -156,19 +165,21 @@ async fn check_password(state: &AppState, password: &str) -> AppResult<()> {
 }
 
 pub async fn disable(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Json(body): Json<PasswordBody>,
 ) -> AppResult<Json<Value>> {
-    check_password(&state, &body.password).await?;
+    check_password(&state, auth.user_id(), &body.password).await?;
     let mut tx = state.pool.begin().await?;
     sqlx::query(
         "UPDATE app_user SET totp_secret = NULL, totp_pending = NULL, totp_last_step = 0
-          WHERE id = 1",
+          WHERE id = ?",
     )
+    .bind(auth.user_id())
     .execute(&mut *tx)
     .await?;
-    sqlx::query("DELETE FROM recovery_code")
+    sqlx::query("DELETE FROM recovery_code WHERE user_id = ?")
+        .bind(auth.user_id())
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
@@ -177,13 +188,14 @@ pub async fn disable(
 
 /// A fresh set of recovery codes; the old ones stop working.
 pub async fn new_recovery_codes(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Json(body): Json<PasswordBody>,
 ) -> AppResult<Json<Value>> {
-    check_password(&state, &body.password).await?;
+    check_password(&state, auth.user_id(), &body.password).await?;
     let (enabled,): (bool,) =
-        sqlx::query_as("SELECT totp_secret IS NOT NULL FROM app_user WHERE id = 1")
+        sqlx::query_as("SELECT totp_secret IS NOT NULL FROM app_user WHERE id = ?")
+            .bind(auth.user_id())
             .fetch_one(&state.pool)
             .await?;
     if !enabled {
@@ -193,11 +205,13 @@ pub async fn new_recovery_codes(
     }
     let codes: Vec<String> = (0..RECOVERY_CODES).map(|_| new_recovery_code()).collect();
     let mut tx = state.pool.begin().await?;
-    sqlx::query("DELETE FROM recovery_code")
+    sqlx::query("DELETE FROM recovery_code WHERE user_id = ?")
+        .bind(auth.user_id())
         .execute(&mut *tx)
         .await?;
     for code in &codes {
-        sqlx::query("INSERT INTO recovery_code (code_hash) VALUES (?)")
+        sqlx::query("INSERT INTO recovery_code (user_id, code_hash) VALUES (?, ?)")
+            .bind(auth.user_id())
             .bind(hash_recovery(code))
             .execute(&mut *tx)
             .await?;
