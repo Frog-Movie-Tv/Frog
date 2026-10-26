@@ -14,15 +14,22 @@ const PASS = 'a-long-enough-pass';
 // the rest reuse the session via the browser context.
 test.describe.configure({ mode: 'serial' });
 
-test('a cold instance sends you to first-run setup', async ({ page }) => {
-	await page.goto('/');
-	await expect(page).toHaveURL(/\/login/);
-	// The heading only settles once the shell has asked whether this instance
-	// has an account, and the very first request hits a server that has just
-	// started and migrated.
-	// CI's runners are slow to start the very first time; 15 seconds was flaky.
-	await expect(page.getByRole('heading', { name: 'Set up Frog' })).toBeVisible({
-		timeout: 30000
+// Retrying this one is pointless: the suite is serial and shares one
+// instance, so by the second attempt the account exists and the instance
+// is no longer cold.
+test.describe('a cold instance', () => {
+	test.describe.configure({ retries: 0 });
+
+	test('a cold instance sends you to first-run setup', async ({ page }) => {
+		await page.goto('/');
+		await expect(page).toHaveURL(/\/login/);
+		// The heading only settles once the shell has asked whether this instance
+		// has an account, and the very first request hits a server that has just
+		// started and migrated.
+		// CI's runners are slow to start the very first time; 15 seconds was flaky.
+		await expect(page.getByRole('heading', { name: 'Set up Frog' })).toBeVisible({
+			timeout: 30000
+		});
 	});
 });
 
@@ -39,8 +46,25 @@ test('creating the account signs you straight in', async ({ page }) => {
 	await page.getByLabel('Password').fill(PASS);
 	await page.getByRole('button', { name: isSetup ? 'Create account' : 'Sign in' }).click();
 
+	// A new account with nothing tracked is welcomed first. Either project may
+	// have been through it already on this shared database.
+	await expect(page).toHaveURL(/\/(welcome)?$/);
+	if (page.url().endsWith('/welcome')) {
+		await expect(page.getByRole('heading', { name: /^Welcome/ })).toBeVisible();
+		await page.getByRole('button', { name: 'Continue' }).click();
+		await expect(page.getByRole('heading', { name: 'Fill your library' })).toBeVisible();
+		await page.getByRole('button', { name: 'Later' }).click();
+	}
 	await expect(page).toHaveURL('/');
 	await expect(page.getByText('Nothing here yet')).toBeVisible();
+});
+
+test('once welcomed, an empty home stays home', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/');
+	await expect(page.getByText('Nothing here yet')).toBeVisible();
+	await page.waitForTimeout(500);
+	await expect(page).toHaveURL('/');
 });
 
 test('an empty home and library explain themselves instead of showing blank grids', async ({
@@ -374,5 +398,11 @@ async function signIn(page: import('@playwright/test').Page) {
 	await page
 		.getByRole('button', { name: heading?.includes('Set up') ? 'Create account' : 'Sign in' })
 		.click();
-	await expect(page).toHaveURL('/');
+	// A brand-new account is shown the welcome first. Read past it, as a
+	// person would, so everything after this starts on Home.
+	await expect(page).toHaveURL(/\/(welcome)?$/);
+	if (page.url().includes('/welcome')) {
+		await page.getByRole('button', { name: 'Skip' }).click();
+		await expect(page).toHaveURL('/');
+	}
 }

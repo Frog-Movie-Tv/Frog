@@ -207,14 +207,54 @@ check(
 );
 await page.screenshot({ path: join(out, '1-settings-on.png') });
 
+console.log('\n== the hour alerts go out ==');
+const hourPicker = card.getByRole('button', { name: 'Send alerts from' });
+await hourPicker.waitFor();
+check(
+	"the usual time is the server's hour",
+	/Usual time \(00:00\)/.test(await hourPicker.innerText()),
+	await hourPicker.innerText()
+);
+await hourPicker.click();
+await page.getByRole('option', { name: '07:00', exact: true }).click();
+await page.waitForTimeout(800);
+const chosen = (await api('GET', '/api/settings')).body?.notifyHour;
+check('choosing an hour saves it to the account', chosen === 7, String(chosen));
+await hourPicker.click();
+await page.getByRole('option', { name: /^Usual time/ }).click();
+await page.waitForTimeout(800);
+const usual = (await api('GET', '/api/settings')).body?.notifyHour;
+check('the usual time clears it again', usual === null || usual === undefined, String(usual));
+
 console.log('\n== test notification ==');
 await shown();
-await card.getByRole('button', { name: 'Send a test' }).click();
-await page
-	.getByText('Sent to 1 device')
-	.waitFor({ timeout: 20000 })
-	.catch(() => undefined);
-check('FCM accepted it', (await page.getByText('Sent to 1 device').count()) > 0);
+// As a person would: a device switched on seconds ago can be refused while
+// it settles, so wait, open Settings again (which re-sends it) and retry.
+let accepted = false;
+for (let attempt = 1; attempt <= 4 && !accepted; attempt++) {
+	await card.getByRole('button', { name: 'Send a test' }).click();
+	const outcome = await Promise.race([
+		page
+			.getByText('Sent to 1 device')
+			.first()
+			.waitFor({ timeout: 20000 })
+			.then(() => 'sent'),
+		page
+			.getByText(/only just been set up/)
+			.first()
+			.waitFor({ timeout: 20000 })
+			.then(() => 'settling')
+	]).catch(() => 'nothing');
+	console.log(`  test attempt ${attempt}: ${outcome}`);
+	accepted = outcome === 'sent';
+	if (!accepted) {
+		await page.waitForTimeout(20000);
+		await page.goto(`${BASE}/settings`);
+		await card.getByText('On for this device').waitFor({ timeout: 60000 });
+		await shown();
+	}
+}
+check('FCM accepted it', accepted);
 // A brand-new registration can take a while to start receiving.
 const test = await waitForNotification('frog-test', 120000);
 check(

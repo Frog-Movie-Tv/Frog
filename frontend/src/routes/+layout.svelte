@@ -4,6 +4,7 @@
 	import { goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import AccountMenu from '#lib/components/AccountMenu.svelte';
+	import PullToRefresh from '#lib/components/PullToRefresh.svelte';
 	import CommandPalette from '#lib/components/CommandPalette.svelte';
 	import Logo from '#lib/components/Logo.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
@@ -214,6 +215,7 @@
 {/if}
 
 {#if session.authenticated}
+	<PullToRefresh />
 	<CommandPalette bind:this={palette} />
 	<UpdateBanner />
 	<WhenWatched />

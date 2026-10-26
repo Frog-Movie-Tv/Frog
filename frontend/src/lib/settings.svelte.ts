@@ -92,6 +92,10 @@ export interface Settings {
 	homeRows: string[];
 	/** Row ids this layout has been offered, so a new row appears once. */
 	homeRowsSeen?: string[];
+	/** Shown the welcome once. Absent on every account from before it. */
+	onboarded?: boolean;
+	/** Hour (0-23, server time) new-episode alerts go out; absent is the server's. */
+	notifyHour?: number | null;
 
 	dateStyle: 'friendly' | 'iso' | 'long';
 	clock24: boolean;

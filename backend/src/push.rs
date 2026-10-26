@@ -247,7 +247,15 @@ pub struct Broadcast {
     pub sent: usize,
     pub gone: usize,
     pub failed: usize,
+    /// Refused as gone within minutes of subscribing; kept and tried again.
+    pub settling: usize,
 }
+
+/// FCM sometimes answers 410 Gone for a subscription made seconds ago, while
+/// the browser's registration settles. Forgetting it then would turn "Send a
+/// test" straight after switching on into "switched off". A subscription this
+/// young that is refused is kept; the browser re-sends it on its next visit.
+const SETTLING_MINUTES: i64 = 10;
 
 /// A subscription that keeps failing for this many sends in a row is
 /// abandoned; a browser that was simply offline recovers well before that.
@@ -260,17 +268,19 @@ pub async fn broadcast(
     user_id: i64,
     payload: &serde_json::Value,
 ) -> AppResult<Broadcast> {
-    let subs: Vec<(String, String, String)> =
-        sqlx::query_as("SELECT endpoint, p256dh, auth FROM push_subscription WHERE user_id = ?")
-            .bind(user_id)
-            .fetch_all(&state.pool)
-            .await?;
+    let subs: Vec<(String, String, String, String)> = sqlx::query_as(
+        "SELECT endpoint, p256dh, auth, created_at FROM push_subscription WHERE user_id = ?",
+    )
+    .bind(user_id)
+    .fetch_all(&state.pool)
+    .await?;
+    let settling_since = (Utc::now() - chrono::Duration::minutes(SETTLING_MINUTES)).to_rfc3339();
     let mut out = Broadcast::default();
     if subs.is_empty() {
         return Ok(out);
     }
     let vapid = Vapid::load_or_create(&state.pool).await?;
-    for (endpoint, p256dh, auth) in subs {
+    for (endpoint, p256dh, auth, created_at) in subs {
         let result = send(&state.http, &vapid, &endpoint, &p256dh, &auth, payload).await;
         match result {
             Ok(Delivery::Sent) => {
@@ -284,6 +294,10 @@ pub async fn broadcast(
                 .bind(&endpoint)
                 .execute(&state.pool)
                 .await?;
+            }
+            Ok(Delivery::Gone) if created_at > settling_since => {
+                out.settling += 1;
+                tracing::info!("a new subscription was refused while it settles; keeping it");
             }
             Ok(Delivery::Gone) => {
                 out.gone += 1;

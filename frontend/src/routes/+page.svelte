@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { api, img } from '#lib/api';
 	import ContinueCard from '#lib/components/ContinueCard.svelte';
 	import Empty from '#lib/components/Empty.svelte';
@@ -63,6 +64,15 @@
 	const isEmpty = $derived(
 		!!data && !data.hero && !data.continue.length && !data.recent.length && !data.favourites.length
 	);
+
+	// A brand-new account starts with a welcome rather than an empty page.
+	// It waits for the account's own settings, which load alongside Home, and
+	// anyone who already tracks something never sees it.
+	$effect(() => {
+		if (isEmpty && settings.loaded && !settings.current.onboarded) {
+			void goto('/welcome', { replace: true });
+		}
+	});
 
 	const rows = $derived.by(() => {
 		if (!data) return [];

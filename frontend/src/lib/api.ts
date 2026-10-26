@@ -221,7 +221,7 @@ export const api = {
 		get<{ shelves: { id: number; name: string; on: boolean }[] }>(
 			`/api/titles/${kind}/${tmdbId}/shelves`
 		),
-	pushStatus: () => get<{ public_key: string; devices: number }>('/api/push'),
+	pushStatus: () => get<{ public_key: string; devices: number; default_hour: number }>('/api/push'),
 	pushSubscribe: (subscription: PushSubscriptionJSON) =>
 		send<{ ok: true }>('POST', '/api/push/subscribe', subscription),
 	pushUnsubscribe: (endpoint: string) =>

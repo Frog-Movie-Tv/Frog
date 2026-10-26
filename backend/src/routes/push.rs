@@ -21,6 +21,8 @@ pub async fn status(auth: Auth, State(state): State<AppState>) -> AppResult<Json
     Ok(Json(json!({
         "public_key": vapid.public_key(),
         "devices": devices,
+        // What "the usual time" means on this server, for Settings to show.
+        "default_hour": state.config.notify_hour,
     })))
 }
 
@@ -107,7 +109,9 @@ pub async fn test(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
     )
     .await?;
     if result.sent == 0 {
-        let why = if result.failed > 0 {
+        let why = if result.settling > 0 {
+            "This device has only just been set up. Try the test again in a minute."
+        } else if result.failed > 0 {
             "The push service turned the notification down. Turn notifications off and on again on this device."
         } else {
             "This browser no longer accepts notifications from Frog. Turn them on again."
