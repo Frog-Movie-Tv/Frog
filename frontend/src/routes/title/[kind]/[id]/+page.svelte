@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
+	import AddToShelf from '#lib/components/AddToShelf.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import Heatmap from '#lib/components/Heatmap.svelte';
 	import Poster from '#lib/components/Poster.svelte';
@@ -113,6 +114,18 @@
 		}
 	}
 
+	async function toggleNotify() {
+		if (!item?.entry) return;
+		const notify = !item.entry.notify;
+		try {
+			const { item: updated } = await api.track(kind, tmdbId, { notify });
+			updateItem(updated);
+			toasts.push(notify ? 'Alerts on for new episodes' : 'Alerts off for this show');
+		} catch (e) {
+			toasts.error(e);
+		}
+	}
+
 	async function markFilmWatched() {
 		if (!item) return;
 		try {
@@ -186,6 +199,20 @@
 						{#if item.kind === 'movie' && item.entry && item.entry.status !== 'completed'}
 							<button class="btn" onclick={markFilmWatched}>Mark watched</button>
 						{/if}
+						{#if item.kind === 'tv' && item.entry && ['watching', 'planned', 'paused'].includes(item.entry.status)}
+							{@const on = item.entry.notify}
+							<button
+								class="btn bell"
+								class:on
+								aria-pressed={on}
+								aria-label={on ? 'New episode alerts on' : 'New episode alerts off'}
+								title={on ? 'New episode alerts on' : 'New episode alerts off'}
+								onclick={toggleNotify}
+							>
+								<Icon name={on ? 'bell' : 'bell-off'} size={17} />
+							</button>
+						{/if}
+						<AddToShelf kind={item.kind} tmdbId={item.tmdb_id} name={item.name} />
 					</div>
 
 					{#if detail.next_up && item.entry}
@@ -777,5 +804,14 @@
 		.hero {
 			padding-top: calc(var(--header-h) + 24px);
 		}
+	}
+
+	.bell {
+		padding: 10px 12px;
+		color: var(--text-dim);
+	}
+
+	.bell.on {
+		color: var(--accent);
 	}
 </style>

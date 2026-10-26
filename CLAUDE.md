@@ -58,7 +58,8 @@ In Git Bash, put cargo on PATH first: `export PATH="$HOME/.cargo/bin:$PATH"`.
 | Icons | `cd frontend && npm run icons` — regenerates every icon from `scripts/mascots.mjs` |
 
 Ports: the owner's instance uses 8080. E2E uses 8098/8099, audit 8095,
-screenshots 8096 — each with its own throwaway database.
+screenshots 8096, pwa-check 8094, and the verify scripts 8088–8093 and 8097 —
+each with its own throwaway database.
 
 ## Gotchas that have already cost time
 

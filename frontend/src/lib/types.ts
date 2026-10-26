@@ -28,6 +28,8 @@ export interface LibraryEntry {
 	rewatch_count: number;
 	added_at: string;
 	updated_at: string;
+	/** New-episode notifications for this show. */
+	notify: boolean;
 }
 
 /** A title plus my state: what the grid, the rows and the hero all draw. */
@@ -67,6 +69,12 @@ export interface SearchItem {
 	overview: string | null;
 	vote: number | null;
 	in_library: Status | null;
+}
+
+/** One "Because you watched" row on Home. */
+export interface BecauseRow {
+	seed: { kind: Kind; tmdb_id: number; name: string };
+	items: SearchItem[];
 }
 
 export interface CastMember {
@@ -216,6 +224,88 @@ export interface Stats {
 	episodes_watched: number;
 	minutes_watched: number;
 	mean_rating: number | null;
+}
+
+export type ShelfProgress = 'unstarted' | 'started' | 'unfinished' | 'finished';
+
+/** What a smart shelf matches. Empty matches the whole library. */
+export interface ShelfRules {
+	kind?: Kind | null;
+	statuses?: Status[];
+	genres?: string[];
+	/** 0-100 */
+	min_rating?: number | null;
+	max_rating?: number | null;
+	progress?: ShelfProgress | null;
+	favourite?: boolean;
+	from_year?: number | null;
+	to_year?: number | null;
+	sort?: 'added' | 'updated' | 'name' | 'rating' | 'release' | 'last_watched' | null;
+	order?: 'asc' | 'desc' | null;
+	limit?: number | null;
+}
+
+export interface Shelf {
+	id: number;
+	name: string;
+	kind: 'manual' | 'smart';
+	rules: ShelfRules;
+	position: number;
+	count: number;
+	/** Up to four, for the cover. */
+	posters: string[];
+}
+
+/** A title ranked on the stats page. */
+export interface StatsTitle {
+	kind: Kind;
+	tmdb_id: number;
+	name: string;
+	poster_path: string | null;
+	watches: number;
+	minutes: number;
+	rating: number | null;
+}
+
+export interface StatsPerson {
+	tmdb_id: number;
+	name: string;
+	/** A headshot, or a logo for studios. */
+	image: string | null;
+	titles: number;
+}
+
+export interface Streak {
+	days: number;
+	from: string | null;
+	to: string | null;
+}
+
+/** `/api/stats`: everything, or one calendar year when `year` is set. */
+export interface FullStats {
+	year: number | null;
+	years: number[];
+	totals: {
+		films: number;
+		episodes: number;
+		shows: number;
+		titles: number;
+		rewatches: number;
+		minutes: number;
+		days: number;
+		mean_rating: number | null;
+	};
+	/** Months (YYYY-MM) for a year, years (YYYY) for all time. */
+	timeline: { unit: string; minutes: number; films: number; episodes: number }[];
+	genres: { name: string; titles: number; minutes: number }[];
+	decades: { decade: number; titles: number }[];
+	/** Ten buckets of ten points: 0-9, 10-19, ... 90-100. */
+	ratings: number[];
+	streaks: { longest: Streak; current: Streak };
+	top_shows: StatsTitle[];
+	top_films: StatsTitle[];
+	people: { actors: StatsPerson[]; directors: StatsPerson[]; studios: StatsPerson[] };
+	credits_pending: number;
 }
 
 export interface NextEpisode {

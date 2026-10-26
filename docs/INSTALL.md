@@ -141,9 +141,13 @@ your tailnet, with a valid certificate. Then set `FROG_SECURE_COOKIES=1` in
 `.env` and restart so the session cookie gets the `Secure` flag.
 
 HTTPS is not optional if you want the app on your phone: a browser will only
-install a web app, and only run its offline mode, over a secure connection.
-Over plain `http://` Frog still works, but About will tell you offline mode is
-unavailable.
+install a web app, run its offline mode, and show new-episode notifications
+over a secure connection. Over plain `http://` Frog still works, but About will
+tell you offline mode is unavailable, and Settings → Notifications says it
+needs HTTPS.
+
+New-episode notifications go out from 18:00 on the day an episode airs. Set
+`FROG_NOTIFY_HOUR` in `.env` (0–23, the server's local time) to change that.
 
 ### Make the address say "frog"
 

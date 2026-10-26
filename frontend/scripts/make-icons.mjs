@@ -239,6 +239,25 @@ function renderIcon(shapes, size, { maskable = false } = {}) {
 	return png(size, buf);
 }
 
+/**
+ * Android's status-bar badge: white on transparent, nothing else. The frog's
+ * dark details (pupils, mouth) become holes so it still reads as a face at
+ * 24dp.
+ */
+function renderBadge(shapes, size) {
+	const buf = Buffer.alloc(size * size * 4);
+	const scale = (size / GRID) * 0.92;
+	const offset = (size - GRID * scale) / 2;
+	paint(buf, size, shapes, scale, offset, offset);
+	for (let i = 0; i < buf.length; i += 4) {
+		const lum = (0.2126 * buf[i] + 0.7152 * buf[i + 1] + 0.0722 * buf[i + 2]) / 255;
+		const keep = Math.min(1, Math.max(0, (lum - 0.12) / 0.15));
+		buf[i + 3] = Math.round(buf[i + 3] * keep);
+		buf[i] = buf[i + 1] = buf[i + 2] = 255;
+	}
+	return png(size, buf);
+}
+
 // ----------------------------------------------------------------- emit ---
 
 rmSync(mascotDir, { recursive: true, force: true });
@@ -276,6 +295,7 @@ emit(join(staticDir, 'icon-192.png'), renderIcon(classic, 192));
 emit(join(staticDir, 'icon-512.png'), renderIcon(classic, 512));
 emit(join(staticDir, 'icon-maskable-512.png'), renderIcon(classic, 512, { maskable: true }));
 emit(join(staticDir, 'icon-mono.svg'), toSvg(classic, { monochrome: 'currentColor' }));
+emit(join(staticDir, 'badge-96.png'), renderBadge(classic, 96));
 emit(join(staticDir, 'manifest.webmanifest'), Buffer.from(JSON.stringify(manifest('classic'), null, '\t') + '\n'));
 emit(join(staticDir, 'wordmark.svg'), Buffer.from(wordmark()));
 

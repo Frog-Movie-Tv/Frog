@@ -14,6 +14,8 @@ pub struct Config {
     pub admin_password: Option<String>,
     pub secure_cookies: bool,
     pub session_days: i64,
+    /// Local hour (0-23) from which new episodes are announced on their air date.
+    pub notify_hour: u32,
 }
 
 fn env_opt(key: &str) -> Option<String> {
@@ -46,6 +48,11 @@ impl Config {
             admin_password: env_opt("FROG_ADMIN_PASSWORD"),
             secure_cookies: matches!(env_or("FROG_SECURE_COOKIES", "0").as_str(), "1" | "true"),
             session_days: env_or("FROG_SESSION_DAYS", "90").parse().unwrap_or(90),
+            notify_hour: env_or("FROG_NOTIFY_HOUR", "18")
+                .parse::<u32>()
+                .ok()
+                .filter(|h| *h < 24)
+                .unwrap_or(18),
         })
     }
 

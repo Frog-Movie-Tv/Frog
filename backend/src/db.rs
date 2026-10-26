@@ -1,3 +1,5 @@
+use sha2::{Digest, Sha384};
+use sqlx::migrate::Migrator;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
 use std::str::FromStr;
@@ -28,8 +30,49 @@ pub async fn connect(database_url: &str) -> anyhow::Result<SqlitePool> {
         .connect_with(opts)
         .await?;
 
-    sqlx::migrate!("./migrations").run(&pool).await?;
+    let migrator = sqlx::migrate!("./migrations");
+    heal_line_endings(&pool, &migrator).await?;
+    migrator.run(&pool).await?;
     Ok(pool)
+}
+
+/// sqlx checksums each migration byte for byte, and a Windows checkout can turn
+/// LF into CRLF (or back). A database migrated from one checkout would then
+/// refuse to start under a build from another, though nothing really changed.
+/// Before migrating, accept a stored checksum that differs only in line
+/// endings and record the current one. Any other change is still refused.
+pub async fn heal_line_endings(pool: &SqlitePool, migrator: &Migrator) -> anyhow::Result<()> {
+    // A fresh database has no history yet.
+    let Ok(applied) =
+        sqlx::query_as::<_, (i64, Vec<u8>)>("SELECT version, checksum FROM _sqlx_migrations")
+            .fetch_all(pool)
+            .await
+    else {
+        return Ok(());
+    };
+
+    for m in migrator.iter() {
+        let Some((_, stored)) = applied.iter().find(|(v, _)| *v == m.version) else {
+            continue;
+        };
+        if stored.as_slice() == m.checksum.as_ref() {
+            continue;
+        }
+        let lf = m.sql.replace("\r\n", "\n");
+        let crlf = lf.replace('\n', "\r\n");
+        let same_sql = [lf, crlf]
+            .iter()
+            .any(|sql| Sha384::digest(sql.as_bytes()).as_slice() == stored.as_slice());
+        if same_sql {
+            sqlx::query("UPDATE _sqlx_migrations SET checksum = ? WHERE version = ?")
+                .bind(m.checksum.as_ref())
+                .bind(m.version)
+                .execute(pool)
+                .await?;
+            tracing::info!(version = m.version, "migration line endings reconciled");
+        }
+    }
+    Ok(())
 }
 
 /// Pull the filesystem path out of a `sqlite:` URL so we can mkdir -p for it.

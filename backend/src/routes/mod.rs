@@ -4,8 +4,11 @@ pub mod home;
 pub mod images;
 pub mod library;
 pub mod meta;
+pub mod push;
 pub mod search;
 pub mod settings;
+pub mod shelves;
+pub mod stats;
 pub mod timeline;
 pub mod titles;
 pub mod transfer;
@@ -41,10 +44,31 @@ pub fn router(state: AppState) -> Router {
         .route("/search", get(search::search))
         .route("/discover/trending", get(search::trending))
         .route("/home", get(home::home))
+        .route("/home/because", get(home::because))
         .route("/calendar", get(timeline::calendar))
         .route("/diary", get(timeline::diary))
         .route("/library", get(library::list))
         .route("/library/stats", get(library::stats))
+        .route("/stats", get(stats::stats))
+        .route("/shelves", get(shelves::list).post(shelves::create))
+        .route("/shelves/order", put(shelves::reorder))
+        .route(
+            "/shelves/{id}",
+            get(shelves::get)
+                .put(shelves::update)
+                .delete(shelves::remove),
+        )
+        .route("/shelves/{id}/items", post(shelves::add_item))
+        .route("/shelves/{id}/items/order", put(shelves::reorder_items))
+        .route(
+            "/shelves/{id}/items/{kind}/{tmdb_id}",
+            delete(shelves::remove_item),
+        )
+        .route("/titles/{kind}/{tmdb_id}/shelves", get(shelves::for_title))
+        .route("/push", get(push::status))
+        .route("/push/subscribe", post(push::subscribe))
+        .route("/push/unsubscribe", post(push::unsubscribe))
+        .route("/push/test", post(push::test))
         .route("/settings", get(settings::get))
         .route("/settings", put(settings::put))
         .route("/export/library.json", get(transfer::export_json))

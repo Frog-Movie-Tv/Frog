@@ -378,6 +378,7 @@ pub async fn apply(
             rating: Some(item.rating),
             favourite: Some(item.favourite),
             notes: None,
+            notify: None,
         };
         store::apply_patch(&state.pool, title_id, &patch).await?;
 

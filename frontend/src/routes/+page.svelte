@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { api, img } from '#lib/api';
 	import ContinueCard from '#lib/components/ContinueCard.svelte';
 	import Empty from '#lib/components/Empty.svelte';
@@ -10,14 +11,23 @@
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
-	import type { AiringEntry, HomeData } from '#lib/types';
+	import type { AiringEntry, BecauseRow, HomeData } from '#lib/types';
 
 	let data = $state<HomeData | null>(null);
 	let loading = $state(true);
+	let because = $state<BecauseRow[]>([]);
 
 	$effect(() => {
 		if (!session.authenticated) return;
 		void load();
+		// Recommendations may need TMDB; Home does not wait for them.
+		// Read once: the effect must not rerun on every settings change.
+		if (untrack(() => settings.current.homeRows.includes('because'))) {
+			void api
+				.because()
+				.then((r) => (because = r.rows))
+				.catch(() => undefined);
+		}
 	});
 
 	async function load() {
@@ -39,7 +49,14 @@
 		!!heroItem && heroItem.kind === 'tv' && heroItem.watched_episodes === 0 && !heroCaughtUp
 	);
 	const heroLabel = $derived(
-		heroCaughtUp ? 'Caught up' : heroFresh ? 'Start watching' : 'Continue watching'
+		heroCaughtUp
+			? 'Caught up'
+			: heroFresh
+				? 'Start watching'
+				: heroNext || heroItem?.entry?.status === 'watching'
+					? 'Continue watching'
+					: // Nothing in progress: the hero is simply the newest addition.
+						'Recently added'
 	);
 	const heroStyle = $derived(settings.current.heroStyle);
 
@@ -54,7 +71,8 @@
 			upnext: data.waiting.length > 0,
 			thisweek: data.this_week.length > 0,
 			recent: data.recent.length > 0,
-			favourites: data.favourites.length > 0
+			favourites: data.favourites.length > 0,
+			because: because.length > 0
 		};
 		return settings.current.homeRows.filter((id) => available[id]);
 	});
@@ -189,6 +207,20 @@
 							{/each}
 						</ul>
 					</section>
+				{:else if row === 'because'}
+					{#each because as group (group.seed.kind + group.seed.tmdb_id)}
+						<Rail title="Because you watched {group.seed.name}">
+							{#each group.items as item (item.kind + item.tmdb_id)}
+								<Poster
+									kind={item.kind}
+									tmdbId={item.tmdb_id}
+									name={item.name}
+									posterPath={item.poster_path}
+									year={item.year}
+								/>
+							{/each}
+						</Rail>
+					{/each}
 				{:else if row === 'recent'}
 					<Rail title="Recently added">
 						{#each data.recent as item (item.id)}

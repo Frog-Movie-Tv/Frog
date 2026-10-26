@@ -13,10 +13,17 @@ use crate::store;
 
 const TICK: Duration = Duration::from_secs(60 * 30);
 
+/// Credits backfill runs far more often than the main tick, so a library from
+/// before stats existed fills in within the hour rather than over days.
+const CREDITS_TICK: Duration = Duration::from_secs(60 * 2);
+const CREDITS_BATCH: i64 = 25;
+
 pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         // Give the HTTP server a moment before the first sweep.
         tokio::time::sleep(Duration::from_secs(5)).await;
+        let credits = tokio::spawn(backfill_credits(state.clone()));
+        let _guard = AbortOnDrop(credits);
         loop {
             if let Err(e) = tick(&state).await {
                 tracing::warn!(error = %e, "worker tick failed");
@@ -42,7 +49,197 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
     }
 
     refresh_airing_shows(state).await;
+    if let Err(e) = announce_new_episodes(state, chrono::Local::now().naive_local()).await {
+        tracing::warn!(error = %e, "new-episode notifications failed");
+    }
     Ok(())
+}
+
+/// One notification: every new episode of one show on one day.
+#[derive(Debug, PartialEq)]
+pub struct Announcement {
+    pub episode_ids: Vec<i64>,
+    pub tmdb_id: i64,
+    pub show: String,
+    pub poster_path: Option<String>,
+    /// (season, episode, name)
+    pub episodes: Vec<(i64, i64, Option<String>)>,
+    pub aired_today: bool,
+}
+
+/// (episode id, tmdb id, show, poster, season, episode, episode name, air date)
+type DueRow = (
+    i64,
+    i64,
+    String,
+    Option<String>,
+    i64,
+    i64,
+    Option<String>,
+    String,
+);
+
+/// New episodes of followed shows that air today, or aired yesterday while the
+/// server was off, not yet announced and not already watched.
+pub async fn due_announcements(
+    pool: &sqlx::SqlitePool,
+    today: chrono::NaiveDate,
+) -> anyhow::Result<Vec<Announcement>> {
+    let yesterday = today - chrono::Duration::days(1);
+    let rows: Vec<DueRow> = sqlx::query_as(
+        "SELECT e.id, t.tmdb_id, t.name, t.poster_path, e.season_number, e.episode_number,
+                e.name, e.air_date
+           FROM episode e
+           JOIN title t ON t.id = e.title_id
+           JOIN library_entry l ON l.title_id = t.id
+          WHERE t.kind = 'tv'
+            AND l.status IN ('watching', 'planned', 'paused')
+            AND l.notify = 1
+            AND e.season_number > 0
+            AND e.air_date IN (?, ?)
+            AND NOT EXISTS (SELECT 1 FROM push_sent p WHERE p.episode_id = e.id)
+            AND NOT EXISTS (SELECT 1 FROM watch_event w WHERE w.episode_id = e.id)
+          ORDER BY t.name, e.season_number, e.episode_number",
+    )
+    .bind(today.to_string())
+    .bind(yesterday.to_string())
+    .fetch_all(pool)
+    .await?;
+
+    let mut out: Vec<Announcement> = Vec::new();
+    for (id, tmdb_id, show, poster_path, season, episode, name, air_date) in rows {
+        let aired_today = air_date == today.to_string();
+        match out.last_mut() {
+            Some(a) if a.tmdb_id == tmdb_id => {
+                a.episode_ids.push(id);
+                a.episodes.push((season, episode, name));
+                a.aired_today |= aired_today;
+            }
+            _ => out.push(Announcement {
+                episode_ids: vec![id],
+                tmdb_id,
+                show,
+                poster_path,
+                episodes: vec![(season, episode, name)],
+                aired_today,
+            }),
+        }
+    }
+    Ok(out)
+}
+
+impl Announcement {
+    pub fn payload(&self) -> serde_json::Value {
+        let code = |s: i64, e: i64| format!("S{s:02}E{e:02}");
+        let when = if self.aired_today {
+            "out today"
+        } else {
+            "out now"
+        };
+        let body = match self.episodes.as_slice() {
+            [(s, e, Some(name))] => format!("{} · {name} is {when}", code(*s, *e)),
+            [(s, e, None)] => format!("{} is {when}", code(*s, *e)),
+            [first, .., last] => format!(
+                "{} new episodes, {}–{}, are {when}",
+                self.episodes.len(),
+                code(first.0, first.1),
+                code(last.0, last.1)
+            ),
+            [] => String::new(),
+        };
+        serde_json::json!({
+            "title": self.show,
+            "body": body,
+            "url": format!("/title/tv/{}", self.tmdb_id),
+            // One notification per show: a later one replaces it, never stacks.
+            "tag": format!("frog-tv-{}", self.tmdb_id),
+            "image": self.poster_path.as_ref().map(|p| format!("/img/w342{p}")),
+        })
+    }
+}
+
+async fn announce_new_episodes(state: &AppState, now: chrono::NaiveDateTime) -> anyhow::Result<()> {
+    use chrono::Timelike;
+    // Evening by default (FROG_NOTIFY_HOUR): when most episodes are watchable.
+    if now.hour() < state.config.notify_hour {
+        return Ok(());
+    }
+    let (devices,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM push_subscription")
+        .fetch_one(&state.pool)
+        .await?;
+    if devices == 0 {
+        return Ok(());
+    }
+
+    for a in due_announcements(&state.pool, now.date()).await? {
+        let result = crate::push::broadcast(state, &a.payload()).await?;
+        // Nobody reached because the network is down: try again next tick.
+        if result.sent == 0 && result.failed > 0 {
+            continue;
+        }
+        let sent_at = Utc::now().to_rfc3339();
+        for id in &a.episode_ids {
+            sqlx::query("INSERT OR IGNORE INTO push_sent (episode_id, sent_at) VALUES (?, ?)")
+                .bind(id)
+                .bind(&sent_at)
+                .execute(&state.pool)
+                .await?;
+        }
+        tracing::info!(show = %a.show, episodes = a.episode_ids.len(), "announced new episodes");
+    }
+    Ok(())
+}
+
+/// Stops the backfill when the worker itself is aborted at shutdown.
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+async fn backfill_credits(state: AppState) {
+    loop {
+        backfill_credits_once(&state).await;
+        tokio::time::sleep(CREDITS_TICK).await;
+    }
+}
+
+/// Fill in credits for titles stored before they were kept. Most details are
+/// still in the TMDB cache, so this rarely touches the network.
+pub async fn backfill_credits_once(state: &AppState) -> usize {
+    if !state.tmdb.is_configured() {
+        return 0;
+    }
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT t.kind, t.tmdb_id
+           FROM title t
+          WHERE t.people_synced_at IS NULL
+            AND (EXISTS (SELECT 1 FROM library_entry l WHERE l.title_id = t.id)
+                 OR EXISTS (SELECT 1 FROM watch_event w WHERE w.title_id = t.id))
+          LIMIT ?",
+    )
+    .bind(CREDITS_BATCH)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
+    let mut done = 0;
+    for (kind, tmdb_id) in rows {
+        match store::ensure_title(state, &kind, tmdb_id).await {
+            Ok(_) => done += 1,
+            Err(e) => {
+                // Most likely offline; the rest of the batch would fail too.
+                tracing::debug!(tmdb_id, error = %e, "credits backfill paused");
+                break;
+            }
+        }
+    }
+    if done > 0 {
+        tracing::info!(done, "stored credits for older titles");
+    }
+    done
 }
 
 /// Re-sync shows that are still producing episodes and that I am part-way

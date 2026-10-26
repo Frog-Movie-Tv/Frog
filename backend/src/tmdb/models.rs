@@ -298,6 +298,73 @@ pub fn key_crew(v: &Value) -> Vec<CrewMember> {
     out
 }
 
+/// One row of `title_person`: who stats can credit a title to.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StatCredit {
+    pub role: &'static str,
+    pub tmdb_id: i64,
+    pub name: String,
+    pub profile_path: Option<String>,
+    pub ord: i64,
+}
+
+/// Billing beyond this is mostly one-scene parts, which would let a prolific
+/// bit-part actor outrank the leads you actually watched.
+const STAT_CAST: usize = 12;
+
+/// Top-billed cast, directors (films), creators (shows) and production
+/// companies -- what the stats page ranks.
+pub fn stat_credits(v: &Value) -> Vec<StatCredit> {
+    let mut out = Vec::new();
+    let mut push = |role: &'static str, item: &Value, image_key: &str, ord: i64| {
+        let (Some(tmdb_id), Some(name)) = (i64_at(item, "id"), str_at(item, "name")) else {
+            return;
+        };
+        if out
+            .iter()
+            .any(|c: &StatCredit| c.role == role && c.tmdb_id == tmdb_id)
+        {
+            return;
+        }
+        out.push(StatCredit {
+            role,
+            tmdb_id,
+            name,
+            profile_path: str_at(item, image_key),
+            ord,
+        });
+    };
+
+    let credits = v.get("credits");
+    let list = |parent: Option<&Value>, key: &str| -> Vec<Value> {
+        parent
+            .and_then(|p| p.get(key))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+    };
+
+    let mut cast = list(credits, "cast");
+    cast.sort_by_key(|c| i64_at(c, "order").unwrap_or(999));
+    for (i, c) in cast.iter().take(STAT_CAST).enumerate() {
+        push("cast", c, "profile_path", i as i64);
+    }
+    for (i, c) in list(credits, "crew")
+        .iter()
+        .filter(|c| str_at(c, "job").as_deref() == Some("Director"))
+        .enumerate()
+    {
+        push("director", c, "profile_path", i as i64);
+    }
+    for (i, c) in list(Some(v), "created_by").iter().enumerate() {
+        push("creator", c, "profile_path", i as i64);
+    }
+    for (i, c) in list(Some(v), "production_companies").iter().enumerate() {
+        push("studio", c, "logo_path", i as i64);
+    }
+    out
+}
+
 pub fn trailers(v: &Value) -> Vec<Trailer> {
     let mut out: Vec<Trailer> = v
         .get("videos")
@@ -502,5 +569,41 @@ mod tests {
         assert_eq!(c.season_count, Some(3));
         assert_eq!(c.imdb_id.as_deref(), Some("tt123"));
         assert_eq!(c.genres_json, "[\"Drama\"]");
+    }
+
+    #[test]
+    fn stat_credits_keep_leads_directors_creators_and_studios() {
+        let mut cast: Vec<Value> = (0..20)
+            .map(|i| json!({ "id": 100 + i, "name": format!("Actor {i}"), "order": i }))
+            .collect();
+        // TMDB does not promise billing order in the array itself.
+        cast.reverse();
+        let v = json!({
+            "credits": {
+                "cast": cast,
+                "crew": [
+                    { "id": 7, "name": "Dir", "job": "Director", "profile_path": "/d.jpg" },
+                    { "id": 7, "name": "Dir", "job": "Director" },
+                    { "id": 8, "name": "Editor", "job": "Editor" }
+                ]
+            },
+            "created_by": [{ "id": 9, "name": "Maker" }],
+            "production_companies": [{ "id": 3, "name": "Studio", "logo_path": "/s.png" }]
+        });
+
+        let c = stat_credits(&v);
+        let of = |role: &str| c.iter().filter(|x| x.role == role).collect::<Vec<_>>();
+        let cast = of("cast");
+        assert_eq!(cast.len(), STAT_CAST);
+        assert_eq!(cast[0].name, "Actor 0", "billing order, not array order");
+        assert_eq!(
+            of("director").len(),
+            1,
+            "duplicates collapse, editors are skipped"
+        );
+        assert_eq!(of("director")[0].profile_path.as_deref(), Some("/d.jpg"));
+        assert_eq!(of("creator")[0].name, "Maker");
+        assert_eq!(of("studio")[0].profile_path.as_deref(), Some("/s.png"));
+        assert!(stat_credits(&json!({})).is_empty());
     }
 }

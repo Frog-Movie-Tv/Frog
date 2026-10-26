@@ -95,6 +95,83 @@ sw.addEventListener('message', (event) => {
 	}
 });
 
+interface PushMessage {
+	title?: string;
+	body?: string;
+	url?: string;
+	tag?: string;
+	image?: string | null;
+}
+
+/**
+ * A new episode, sent by the server's worker. The message arrives encrypted
+ * and complete, so it shows even when Frog itself cannot be reached.
+ */
+sw.addEventListener('push', (event) => {
+	let message: PushMessage = {};
+	try {
+		message = event.data?.json() ?? {};
+	} catch {
+		message = { body: event.data?.text() };
+	}
+	const options: NotificationOptions & { image?: string } = {
+		body: message.body ?? 'New episodes are out',
+		tag: message.tag,
+		icon: '/icon-192.png',
+		badge: '/badge-96.png',
+		data: { url: message.url ?? '/' }
+	};
+	if (message.image) options.image = message.image;
+	event.waitUntil(sw.registration.showNotification(message.title ?? 'Frog', options));
+});
+
+sw.addEventListener('notificationclick', (event) => {
+	event.notification.close();
+	const url = new URL((event.notification.data as { url?: string })?.url ?? '/', sw.location.origin).href;
+	event.waitUntil(
+		sw.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+			const open = windows.find((w) => new URL(w.url).origin === sw.location.origin);
+			if (open) return open.navigate(url).then((w) => (w ?? open).focus());
+			return sw.clients.openWindow(url);
+		})
+	);
+});
+
+/**
+ * Browsers occasionally rotate a push subscription. Re-subscribe with the same
+ * server key and tell Frog, or alerts would stop without a word.
+ */
+sw.addEventListener('pushsubscriptionchange', (event) => {
+	const change = event as Event & {
+		oldSubscription?: PushSubscription | null;
+		newSubscription?: PushSubscription | null;
+		waitUntil(p: Promise<unknown>): void;
+	};
+	change.waitUntil(
+		(async () => {
+			const key = change.oldSubscription?.options.applicationServerKey;
+			const next =
+				change.newSubscription ??
+				(key ? await sw.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }) : null);
+			if (!next) return;
+			await fetch('/api/push/subscribe', {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(next.toJSON())
+			});
+			if (change.oldSubscription && change.oldSubscription.endpoint !== next.endpoint) {
+				await fetch('/api/push/unsubscribe', {
+					method: 'POST',
+					credentials: 'same-origin',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ endpoint: change.oldSubscription.endpoint })
+				});
+			}
+		})()
+	);
+});
+
 async function cacheFirst(request: Request, cacheName: string): Promise<Response> {
 	const cache = await caches.open(cacheName);
 	const hit = await cache.match(request);

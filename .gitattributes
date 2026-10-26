@@ -1,0 +1,4 @@
+# sqlx checksums each migration byte for byte. A Windows checkout that turned
+# these into CRLF would make an existing database refuse to start, so they
+# stay LF everywhere.
+backend/migrations/*.sql text eol=lf

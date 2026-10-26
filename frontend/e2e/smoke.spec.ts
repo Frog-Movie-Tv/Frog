@@ -74,7 +74,11 @@ test('the stats page loads instead of showing a database error', async ({ page }
 	await page.goto('/stats');
 
 	await expect(page.getByRole('heading', { name: 'Stats', level: 1 })).toBeVisible();
-	await expect(page.getByText('Titles tracked')).toBeVisible();
+	// A fresh instance has watched nothing: it says so rather than drawing zeros.
+	await expect(page.getByText('Nothing watched yet')).toBeVisible();
+	// A year with nothing in it is an empty state too, not an error.
+	await page.goto('/stats?year=2020');
+	await expect(page.getByText('Nothing watched yet')).toBeVisible();
 	// The exact failure that shipped in 0.1.0.
 	await expect(page.getByText(/mismatched types/i)).toHaveCount(0);
 	await expect(page.getByText(/Rust type/i)).toHaveCount(0);
@@ -129,8 +133,8 @@ test("the what's new page lists the current release", async ({ page }) => {
 	await page.goto('/whats-new');
 
 	await expect(page.getByRole('heading', { name: "What's new" })).toBeVisible();
-	await expect(page.getByText('Installed')).toBeVisible();
-	await expect(page.getByText('Tadpole')).toBeVisible();
+	await expect(page.getByText('Installed', { exact: true })).toBeVisible();
+	await expect(page.getByText('Lily Pad').first()).toBeVisible();
 
 	// Release notes must not be cut off at the first line wrap, and <kbd>
 	// must render as a key rather than as literal angle brackets.
@@ -290,6 +294,13 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/diary',
 		'/api/export/library.json',
 		'/api/auth/two-factor',
+		'/api/stats',
+		'/api/stats?year=2025',
+		'/api/push',
+		'/api/shelves',
+		'/api/shelves/1',
+		'/api/titles/movie/1/shelves',
+		'/api/home/because',
 		'/img/w342/nope.jpg'
 	]) {
 		const res = await request.get(path);
@@ -302,7 +313,12 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/auth/two-factor/recovery-codes',
 		'/api/diary/redate',
 		'/api/import/match',
-		'/api/import/apply'
+		'/api/import/apply',
+		'/api/push/subscribe',
+		'/api/push/unsubscribe',
+		'/api/push/test',
+		'/api/shelves',
+		'/api/shelves/1/items'
 	]) {
 		const res = await request.post(path, { data: {} });
 		expect(res.status(), `POST ${path} should be 401`).toBe(401);

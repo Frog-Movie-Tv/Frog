@@ -24,7 +24,7 @@ pub struct ListQuery {
 }
 
 /// Map a sort key to SQL. An allowlist, never interpolation of user input.
-fn order_clause(sort: Option<&str>, order: Option<&str>) -> String {
+pub fn order_clause(sort: Option<&str>, order: Option<&str>) -> String {
     let dir = match order {
         Some("asc") => "ASC",
         _ => "DESC",
@@ -186,8 +186,26 @@ pub async fn upsert(
     }
 
     let (title_id, detail) = store::ensure_title(&state, &kind, tmdb_id).await?;
-    let is_new = store::get_entry(&state.pool, title_id).await?.is_none();
+    let before = store::get_entry(&state.pool, title_id).await?;
+    let is_new = before.is_none();
     store::apply_patch(&state.pool, title_id, &body.patch).await?;
+
+    // Finishing a film is watching it: without a watch it would never reach
+    // the diary or the stats. A film already watched keeps its history.
+    let finished_now = body.patch.status.as_deref() == Some("completed")
+        && before.as_ref().map(|e| e.status.as_str()) != Some("completed");
+    if kind == "movie" && finished_now {
+        sqlx::query(
+            "INSERT INTO watch_event (title_id, episode_id, watched_at, is_rewatch, source)
+             SELECT ?, NULL, ?, 0, 'manual'
+              WHERE NOT EXISTS (SELECT 1 FROM watch_event WHERE title_id = ?)",
+        )
+        .bind(title_id)
+        .bind(chrono::Utc::now().to_rfc3339())
+        .bind(title_id)
+        .execute(&state.pool)
+        .await?;
+    }
 
     if kind == "tv" && is_new && body.sync_seasons {
         if let Err(e) = store::sync_all_seasons(&state, title_id, &detail).await {

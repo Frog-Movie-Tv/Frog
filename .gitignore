@@ -36,3 +36,7 @@ Thumbs.db
 /frontend/.polish-data
 /frontend/.pwa-data
 /frontend/.verify-data
+/frontend/.stats-data
+/frontend/.push-data
+/frontend/.shelves-data
+/frontend/.because-data

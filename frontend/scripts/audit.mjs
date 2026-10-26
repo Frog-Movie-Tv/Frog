@@ -129,6 +129,8 @@ const ROUTES = [
 	'/calendar',
 	'/diary',
 	'/stats',
+	'/stats?year=2026',
+	'/shelves',
 	'/settings',
 	'/import',
 	'/about',
@@ -217,3 +219,6 @@ if (problems.length) {
 } else {
 	console.log('(none)');
 }
+
+// The 'exit' handler never runs while the server keeps Node alive.
+server.kill();

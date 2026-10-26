@@ -5,10 +5,32 @@ What changed in each release of Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Lily Pad —
+## Upcoming — Ribbit —
+
+In progress.
+
+## [0.4.0] — Lily Pad — 2026-10-26
+
+Your year in numbers, shelves of your own, and a nudge when a new episode is
+out.
+
+![Home in the Pond theme](docs/screenshots/home-desktop-pond.png)
 
 ### Highlights
 
+- **Your stats, in full.** Time watched, streaks, genres, decades, how you
+  rate, and the actors, directors and studios you watch most, for all time or
+  for any year.
+- **Year in review.** A card of your year in film and TV, ready to share from
+  your phone or save as an image.
+- **New-episode alerts.** Turn on notifications in Settings and Frog tells you
+  when a show you follow has a new episode out. Mute any show with the bell on
+  its page. Needs Frog opened over HTTPS, such as through Tailscale Serve.
+- **Shelves.** Hand-pick titles into shelves and drag them into your own
+  order, or make a smart shelf that fills itself, such as shows in progress
+  rated 8 or more.
+- **Because you watched.** Home suggests titles like the ones you rated
+  highest, leaving out anything already in your library.
 - **Import from AniList and MyAnimeList.** Enter an AniList username or choose
   a MyAnimeList export. Each season on your list lands on the right season on
   TMDB, parts and long-running seasons included, with the episodes you have
@@ -36,6 +58,9 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 - Calendar and Diary can be your start page.
 - Mark a whole show watched from its page.
 - Sign-in remembers this device unless you untick Keep me signed in.
+- Add any title to a shelf from its page.
+- A film you mark as watched appears in your diary and stats.
+- Stats and Shelves open offline, like the rest of the app.
 
 ### Fixes
 
@@ -43,6 +68,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 - The command palette's search field sits on one line.
 - Season headers fit on narrow phones.
 - Every dropdown uses Frog's own menu.
+- With nothing in progress, Home's hero shows your newest addition as
+  Recently added.
 
 ## [0.3.0] — Tadpole — 2026-10-24
 
@@ -160,6 +187,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[0.4.0]: https://github.com/MihCons/Frog/releases/tag/v0.4.0
 [0.3.0]: https://github.com/MihCons/Frog/releases/tag/v0.3.0
 [0.2.0]: https://github.com/MihCons/Frog/releases/tag/v0.2.0
 [0.1.0]: https://github.com/MihCons/Frog/releases/tag/v0.1.0

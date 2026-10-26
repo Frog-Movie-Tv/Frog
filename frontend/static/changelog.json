@@ -1,5 +1,55 @@
 [
 	{
+		"version": "0.4.0",
+		"codename": "Lily Pad",
+		"date": "2026-10-26",
+		"intro": "Your year in numbers, shelves of your own, and a nudge when a new episode is out.",
+		"groups": [
+			{
+				"title": "Highlights",
+				"items": [
+					"**Your stats, in full.** Time watched, streaks, genres, decades, how you rate, and the actors, directors and studios you watch most, for all time or for any year.",
+					"**Year in review.** A card of your year in film and TV, ready to share from your phone or save as an image.",
+					"**New-episode alerts.** Turn on notifications in Settings and Frog tells you when a show you follow has a new episode out. Mute any show with the bell on its page. Needs Frog opened over HTTPS, such as through Tailscale Serve.",
+					"**Shelves.** Hand-pick titles into shelves and drag them into your own order, or make a smart shelf that fills itself, such as shows in progress rated 8 or more.",
+					"**Because you watched.** Home suggests titles like the ones you rated highest, leaving out anything already in your library.",
+					"**Import from AniList and MyAnimeList.** Enter an AniList username or choose a MyAnimeList export. Each season on your list lands on the right season on TMDB, parts and long-running seasons included, with the episodes you have seen already ticked. Anything Frog is unsure of asks you first.",
+					"**When did you watch this?** Marking a season or a whole show asks: today, on release, on a date you pick, or you don't know. Undated episodes count towards your progress and stay out of the diary.",
+					"**A tidier diary.** A day of one show is one entry, such as \"S04E08–E16 · 9 episodes\", that opens to show each episode. Change the date of any entry.",
+					"**Two-factor sign-in.** Turn it on in Settings → Security, scan the code with any authenticator app, and keep ten recovery codes for a lost phone.",
+					"**Choose your tabs.** On phones, pick four tabs and find the rest under More. Reorder or hide pages in Settings → Navigation."
+				]
+			},
+			{
+				"title": "Improvements",
+				"items": [
+					"Import and export live in Settings → Your data, in the Library menu and on an empty library.",
+					"Each status has its own colour, everywhere it appears.",
+					"The calendar shows what is on inside each day, with a legend, and the chosen day opens beside the month.",
+					"Home's hero reads clearly on light themes and says Start watching for a show you have not begun.",
+					"Data saver loads smaller images.",
+					"Calendar and Diary can be your start page.",
+					"Mark a whole show watched from its page.",
+					"Sign-in remembers this device unless you untick Keep me signed in.",
+					"Add any title to a shelf from its page.",
+					"A film you mark as watched appears in your diary and stats.",
+					"Stats and Shelves open offline, like the rest of the app."
+				]
+			},
+			{
+				"title": "Fixes",
+				"items": [
+					"Frog opens and works offline once installed, signed in.",
+					"The command palette's search field sits on one line.",
+					"Season headers fit on narrow phones.",
+					"Every dropdown uses Frog's own menu.",
+					"With nothing in progress, Home's hero shows your newest addition as Recently added."
+				]
+			}
+		],
+		"image": "docs/screenshots/home-desktop-pond.png"
+	},
+	{
 		"version": "0.3.0",
 		"codename": "Tadpole",
 		"date": "2026-10-24",

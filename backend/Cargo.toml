@@ -1,6 +1,6 @@
 [package]
 name = "frog"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.82"
 description = "Frog — a self-hosted personal cinema: movie & TV tracking"
@@ -34,6 +34,9 @@ futures = "0.3"
 hmac = "0.12"
 sha1 = "0.10"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+# Already in the tree through rustls; used directly for Web Push encryption.
+ring = "0.17"
+base64 = "0.22"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

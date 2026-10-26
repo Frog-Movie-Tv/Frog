@@ -551,12 +551,13 @@ dependencies = [
 
 [[package]]
 name = "frog"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "argon2",
  "axum",
  "axum-extra",
+ "base64 0.22.1",
  "chrono",
  "dotenvy",
  "futures",
@@ -567,6 +568,7 @@ dependencies = [
  "qrcode",
  "rand 0.8.8",
  "reqwest",
+ "ring",
  "serde",
  "serde_json",
  "sha1",

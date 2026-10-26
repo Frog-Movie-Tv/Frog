@@ -13,6 +13,8 @@ pub struct AppState {
     /// Timestamps of recent failed sign-ins. In memory is the right place for
     /// this: one process, one user, and a restart clearing it is harmless.
     pub login_failures: Arc<Mutex<Vec<Instant>>>,
+    /// For everything that is not TMDB: push services, for now.
+    pub http: reqwest::Client,
 }
 
 impl AppState {
@@ -28,6 +30,11 @@ impl AppState {
             tmdb,
             config: Arc::new(config),
             login_failures: Arc::new(Mutex::new(Vec::new())),
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
+                .user_agent(concat!("Frog/", env!("CARGO_PKG_VERSION")))
+                .build()
+                .unwrap_or_default(),
         }
     }
 }

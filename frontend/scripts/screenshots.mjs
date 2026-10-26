@@ -288,3 +288,5 @@ try {
 	console.error(error);
 	process.exitCode = 1;
 }
+// The 'exit' handler never runs while the server keeps Node alive.
+server.kill();

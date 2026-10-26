@@ -164,4 +164,6 @@ check('no page errors', errors.length === 0, errors.slice(0, 2).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r).length;
 console.log(`\nscreenshots in ${out}\n${failed ? failed + ' check(s) failed' : 'all checks passed'}`);
+// The 'exit' handler never runs while the server keeps Node alive.
+server.kill();
 process.exitCode = failed ? 1 : 0;

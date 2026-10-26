@@ -48,6 +48,8 @@ pub struct LibraryEntry {
     pub rewatch_count: i64,
     pub added_at: String,
     pub updated_at: String,
+    /// New-episode notifications for this show.
+    pub notify: bool,
 }
 
 /// A title as the grid and the rows draw it: metadata, my state, my progress.
@@ -70,6 +72,7 @@ pub struct LibraryPatch {
     pub rating: Option<Option<f64>>,
     pub favourite: Option<bool>,
     pub notes: Option<Option<String>>,
+    pub notify: Option<bool>,
 }
 
 pub fn parse_accent(raw: Option<&str>) -> Palette {
@@ -172,7 +175,43 @@ pub async fn ensure_title(state: &AppState, kind: &str, tmdb_id: i64) -> AppResu
     let id = upsert_title(&state.pool, &core).await?;
 
     ensure_palette(state, id, poster.as_deref()).await;
+    // Stats are a nice-to-have on top of the title; never fail the page for them.
+    if let Err(e) = store_credits(&state.pool, id, &detail).await {
+        tracing::warn!(title_id = id, error = %e, "could not store credits");
+    }
     Ok((id, detail))
+}
+
+/// Replace the credits stats rank by. Marks the title as synced even when TMDB
+/// lists nobody, so the worker does not keep asking.
+pub async fn store_credits(pool: &SqlitePool, title_id: i64, detail: &Value) -> AppResult<()> {
+    let credits = models::stat_credits(detail);
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM title_person WHERE title_id = ?")
+        .bind(title_id)
+        .execute(&mut *tx)
+        .await?;
+    for c in &credits {
+        sqlx::query(
+            "INSERT INTO title_person (title_id, role, tmdb_id, name, profile_path, ord)
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(title_id)
+        .bind(c.role)
+        .bind(c.tmdb_id)
+        .bind(&c.name)
+        .bind(&c.profile_path)
+        .bind(c.ord)
+        .execute(&mut *tx)
+        .await?;
+    }
+    sqlx::query("UPDATE title SET people_synced_at = ? WHERE id = ?")
+        .bind(Utc::now().to_rfc3339())
+        .bind(title_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Derive the page tint from the poster once, then keep it. A tiny w92 thumb is
@@ -267,7 +306,7 @@ pub async fn sync_all_seasons(state: &AppState, title_id: i64, detail: &Value) -
 pub async fn get_entry(pool: &SqlitePool, title_id: i64) -> AppResult<Option<LibraryEntry>> {
     let row = sqlx::query_as::<_, LibraryEntry>(
         "SELECT status, rating, favourite, notes, started_at, finished_at,
-                rewatch_count, added_at, updated_at
+                rewatch_count, added_at, updated_at, notify
            FROM library_entry WHERE title_id = ?",
     )
     .bind(title_id)
@@ -318,6 +357,10 @@ pub async fn apply_patch(
         Some(v) => v.clone(),
         None => existing.as_ref().and_then(|e| e.notes.clone()),
     };
+    let notify = patch
+        .notify
+        .or_else(|| existing.as_ref().map(|e| e.notify))
+        .unwrap_or(true);
 
     // Dates follow the status automatically; nobody wants to fill those in.
     let started_at = existing
@@ -334,9 +377,10 @@ pub async fn apply_patch(
 
     sqlx::query(
         "INSERT INTO library_entry (title_id, status, rating, favourite, notes, started_at,
-                                    finished_at, rewatch_count, added_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT rewatch_count FROM library_entry WHERE title_id = ?), 0), ?, ?)
+                                    finished_at, rewatch_count, added_at, updated_at, notify)
+         VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT rewatch_count FROM library_entry WHERE title_id = ?), 0), ?, ?, ?)
          ON CONFLICT (title_id) DO UPDATE SET
+            notify = excluded.notify,
             status = excluded.status,
             rating = excluded.rating,
             favourite = excluded.favourite,
@@ -355,6 +399,7 @@ pub async fn apply_patch(
     .bind(title_id)
     .bind(existing.as_ref().map(|e| e.added_at.clone()).unwrap_or_else(|| now.clone()))
     .bind(&now)
+    .bind(notify)
     .execute(pool)
     .await?;
 

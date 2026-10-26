@@ -4,6 +4,7 @@
 	import Logo from '#lib/components/Logo.svelte';
 	import Rating from '#lib/components/Rating.svelte';
 	import Select from '#lib/components/Select.svelte';
+	import Notifications from '#lib/components/Notifications.svelte';
 	import TwoFactor from '#lib/components/TwoFactor.svelte';
 	import { SCORE_FORMATS, type ScoreFormat } from '#lib/format';
 	import { session } from '#lib/session.svelte';
@@ -665,6 +666,11 @@
 				/>
 			</label>
 		</div>
+	</section>
+
+	<section class="block">
+		<div class="section-head"><h2>Notifications</h2></div>
+		<Notifications />
 	</section>
 
 	<section class="block">

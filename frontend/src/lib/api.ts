@@ -2,6 +2,7 @@ import { settings } from './settings.svelte';
 import type { WhenAnswer } from './when.svelte';
 import type {
 	AuthStatus,
+	BecauseRow,
 	HomeData,
 	ImportSummary,
 	MatchResult,
@@ -10,6 +11,9 @@ import type {
 	PersonDetail,
 	SearchItem,
 	SeasonDetail,
+	FullStats,
+	Shelf,
+	ShelfRules,
 	Stats,
 	Status,
 	TitleDetail
@@ -142,6 +146,7 @@ export const api = {
 	trending: () => get<{ results: SearchItem[] }>('/api/discover/trending'),
 
 	home: () => get<HomeData>('/api/home'),
+	because: () => get<{ rows: BecauseRow[] }>('/api/home/because'),
 
 	matchImport: (items: unknown[]) =>
 		send<{ results: MatchResult[] }>('POST', '/api/import/match', { items }),
@@ -152,6 +157,34 @@ export const api = {
 	library: (query: LibraryQuery = {}) =>
 		get<{ items: LibraryItem[] }>(`/api/library${qs(query as Record<string, unknown>)}`),
 	stats: () => get<Stats>('/api/library/stats'),
+	shelves: () => get<{ shelves: Shelf[] }>('/api/shelves'),
+	shelf: (id: number) => get<{ shelf: Shelf; items: LibraryItem[] }>(`/api/shelves/${id}`),
+	createShelf: (body: { name: string; kind: Shelf['kind']; rules?: ShelfRules; title_ids?: number[] }) =>
+		send<{ shelf: Shelf }>('POST', '/api/shelves', body),
+	updateShelf: (id: number, body: { name?: string; rules?: ShelfRules }) =>
+		send<{ shelf: Shelf }>('PUT', `/api/shelves/${id}`, body),
+	/** Returns what it takes to put the shelf back. */
+	deleteShelf: (id: number) =>
+		send<{ name: string; kind: Shelf['kind']; rules: ShelfRules; title_ids: number[] }>(
+			'DELETE',
+			`/api/shelves/${id}`
+		),
+	reorderShelves: (ids: number[]) => send<{ ok: true }>('PUT', '/api/shelves/order', { ids }),
+	addToShelf: (id: number, kind: Kind, tmdbId: number) =>
+		send<{ ok: true }>('POST', `/api/shelves/${id}/items`, { kind, tmdb_id: tmdbId }),
+	removeFromShelf: (id: number, kind: Kind, tmdbId: number) =>
+		send<{ ok: true }>('DELETE', `/api/shelves/${id}/items/${kind}/${tmdbId}`),
+	reorderShelf: (id: number, titleIds: number[]) =>
+		send<{ ok: true }>('PUT', `/api/shelves/${id}/items/order`, { title_ids: titleIds }),
+	titleShelves: (kind: Kind, tmdbId: number) =>
+		get<{ shelves: { id: number; name: string; on: boolean }[] }>(`/api/titles/${kind}/${tmdbId}/shelves`),
+	pushStatus: () => get<{ public_key: string; devices: number }>('/api/push'),
+	pushSubscribe: (subscription: PushSubscriptionJSON) =>
+		send<{ ok: true }>('POST', '/api/push/subscribe', subscription),
+	pushUnsubscribe: (endpoint: string) =>
+		send<{ ok: true }>('POST', '/api/push/unsubscribe', { endpoint }),
+	pushTest: () => send<{ sent: number; gone: number; failed: number }>('POST', '/api/push/test', {}),
+	fullStats: (year?: number) => get<FullStats>(`/api/stats${qs({ year })}`),
 
 	title: (kind: Kind, id: number) => get<TitleDetail>(`/api/titles/${kind}/${id}`),
 	season: (kind: Kind, id: number, season: number) =>
@@ -161,7 +194,13 @@ export const api = {
 	track: (
 		kind: Kind,
 		id: number,
-		patch: { status?: Status; rating?: number | null; favourite?: boolean; notes?: string | null }
+		patch: {
+			status?: Status;
+			rating?: number | null;
+			favourite?: boolean;
+			notes?: string | null;
+			notify?: boolean;
+		}
 	) => send<{ item: LibraryItem }>('PUT', `/api/titles/${kind}/${id}/library`, patch),
 
 	untrack: (kind: Kind, id: number) =>

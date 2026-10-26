@@ -80,6 +80,8 @@ export interface Settings {
 
 	landingPage: string;
 	homeRows: string[];
+	/** Row ids this layout has been offered, so a new row appears once. */
+	homeRowsSeen?: string[];
 
 	dateStyle: 'friendly' | 'iso' | 'long';
 	clock24: boolean;
@@ -131,14 +133,14 @@ export const DEFAULTS: Settings = {
 	autoComplete: true,
 
 	landingPage: '/',
-	homeRows: ['continue', 'upnext', 'thisweek', 'recent', 'favourites'],
+	homeRows: ['continue', 'upnext', 'thisweek', 'because', 'recent', 'favourites'],
 
 	dateStyle: 'friendly',
 	clock24: true,
 
 	customCss: '',
 	dataSaver: false,
-	navOrder: ['/', '/library', '/search', '/calendar', '/diary', '/stats', '/settings'],
+	navOrder: ['/', '/library', '/shelves', '/search', '/calendar', '/diary', '/stats', '/settings'],
 	navHidden: [],
 	navTabs: ['/', '/library', '/search', '/calendar'],
 	lastSeenVersion: ''
@@ -147,6 +149,7 @@ export const DEFAULTS: Settings = {
 export const NAV_PAGES: { href: string; label: string; icon: string; fixed?: boolean }[] = [
 	{ href: '/', label: 'Home', icon: 'home', fixed: true },
 	{ href: '/library', label: 'Library', icon: 'grid' },
+	{ href: '/shelves', label: 'Shelves', icon: 'layers' },
 	{ href: '/search', label: 'Search', icon: 'search' },
 	{ href: '/calendar', label: 'Calendar', icon: 'calendar' },
 	{ href: '/diary', label: 'Diary', icon: 'book' },
@@ -161,11 +164,33 @@ export const HOME_ROWS: { id: string; label: string; hint: string }[] = [
 	{ id: 'continue', label: 'Continue watching', hint: 'Shows you are part-way through' },
 	{ id: 'upnext', label: 'Up next', hint: 'The exact next episode' },
 	{ id: 'thisweek', label: 'Airing this week', hint: 'Episodes due in the next seven days' },
+	{ id: 'because', label: 'Because you watched', hint: 'More like what you rated highly' },
 	{ id: 'recent', label: 'Recently added', hint: 'The newest things in your library' },
 	{ id: 'favourites', label: 'Favourites', hint: 'Everything you hearted' }
 ];
 
 const KEY = 'frog.settings.v2';
+
+/** The rows every layout saved before `homeRowsSeen` existed already knew. */
+const FIRST_ROWS = ['continue', 'upnext', 'thisweek', 'recent', 'favourites'];
+
+/**
+ * Give a saved layout the rows added since it was saved, once, just after
+ * "Airing this week". A row turned off afterwards stays off.
+ */
+function introduceRows(s: Settings): Settings {
+	const seen = s.homeRowsSeen ?? FIRST_ROWS;
+	const all = HOME_ROWS.map((r) => r.id);
+	const fresh = all.filter((id) => !seen.includes(id));
+	if (!fresh.length && s.homeRowsSeen) return s;
+	const rows = [...s.homeRows];
+	for (const id of fresh) {
+		if (rows.includes(id)) continue;
+		const after = rows.indexOf('thisweek');
+		rows.splice(after >= 0 ? after + 1 : rows.length, 0, id);
+	}
+	return { ...s, homeRows: rows, homeRowsSeen: all };
+}
 
 function readLocal(): Partial<Settings> {
 	if (!browser) return {};
@@ -182,7 +207,7 @@ function readLocal(): Partial<Settings> {
  * flashing before the fetch lands.
  */
 class SettingsStore {
-	current = $state<Settings>({ ...DEFAULTS, ...readLocal() });
+	current = $state<Settings>(introduceRows({ ...DEFAULTS, ...readLocal() }));
 	loaded = $state(false);
 
 	private timer: ReturnType<typeof setTimeout> | null = null;
@@ -217,7 +242,7 @@ class SettingsStore {
 			if (res.ok) {
 				const remote = (await res.json()) as Partial<Settings>;
 				if (remote && typeof remote === 'object' && Object.keys(remote).length) {
-					this.current = { ...DEFAULTS, ...remote };
+					this.current = introduceRows({ ...DEFAULTS, ...remote });
 				}
 			}
 		} catch {

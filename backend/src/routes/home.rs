@@ -203,6 +203,106 @@ async fn airing_this_week(pool: &SqlitePool) -> AppResult<Vec<Airing>> {
     Ok(out)
 }
 
+/// How many "Because you watched" rows Home shows, and how many titles each.
+const BECAUSE_ROWS: usize = 3;
+const BECAUSE_ITEMS: usize = 14;
+/// A row with fewer picks than this left after filtering is not worth a rail.
+const BECAUSE_MIN: usize = 4;
+
+/// (kind, tmdb_id, name)
+type SeedRow = (String, i64, String);
+
+/// The titles recommendations grow from: what you rated well (7 and up, or a
+/// heart), best first, with recent watching breaking ties.
+pub async fn seeds(pool: &SqlitePool) -> AppResult<Vec<SeedRow>> {
+    Ok(sqlx::query_as(
+        "SELECT t.kind, t.tmdb_id, t.name
+           FROM library_entry l
+           JOIN title t ON t.id = l.title_id
+          WHERE l.rating >= 70 OR l.favourite = 1
+          ORDER BY COALESCE(l.rating, 75) DESC,
+                   (SELECT MAX(w.watched_at) FROM watch_event w WHERE w.title_id = t.id) DESC,
+                   l.updated_at DESC
+          LIMIT 12",
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Which seeds get a row today. The best one always does; the rest rotate
+/// daily through the other highly rated titles, so Home does not show the
+/// same three rows for months.
+pub fn pick_seeds<T: Clone>(seeds: &[T], day: i64) -> Vec<T> {
+    let Some((first, rest)) = seeds.split_first() else {
+        return Vec::new();
+    };
+    let mut out = vec![first.clone()];
+    if !rest.is_empty() {
+        let start = day.rem_euclid(rest.len() as i64) as usize;
+        out.extend(
+            rest.iter()
+                .cycle()
+                .skip(start)
+                .take((BECAUSE_ROWS - 1).min(rest.len()))
+                .cloned(),
+        );
+    }
+    out
+}
+
+/// "Because you watched X": TMDB's recommendations for titles you rated
+/// highly, minus everything already in your library and anything an earlier
+/// row already offered. Separate from `/home` because it may need TMDB, and
+/// Home itself must stay instant.
+pub async fn because(_: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
+    if !state.tmdb.is_configured() {
+        return Ok(Json(json!({ "rows": [] })));
+    }
+    let pool = &state.pool;
+    let tracked: std::collections::HashSet<(String, i64)> = sqlx::query_as::<_, (String, i64)>(
+        "SELECT t.kind, t.tmdb_id FROM library_entry l JOIN title t ON t.id = l.title_id",
+    )
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .collect();
+
+    let day = chrono::Utc::now().timestamp() / 86_400;
+    let mut offered = std::collections::HashSet::new();
+    let mut rows = Vec::new();
+    for (kind, tmdb_id, name) in pick_seeds(&seeds(pool).await?, day) {
+        let detail = match kind.as_str() {
+            "movie" => state.tmdb.movie(tmdb_id).await,
+            _ => state.tmdb.tv(tmdb_id).await,
+        };
+        let detail = match detail {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::debug!(tmdb_id, error = %e, "no recommendations for this seed");
+                continue;
+            }
+        };
+        let mut picks = crate::tmdb::models::related(&detail, "recommendations", 40);
+        if picks.len() < BECAUSE_MIN {
+            picks.extend(crate::tmdb::models::related(&detail, "similar", 40));
+        }
+        let picks: Vec<_> = picks
+            .into_iter()
+            .filter(|p| p.poster_path.is_some())
+            .filter(|p| !tracked.contains(&(p.kind.clone(), p.tmdb_id)))
+            .filter(|p| offered.insert((p.kind.clone(), p.tmdb_id)))
+            .take(BECAUSE_ITEMS)
+            .collect();
+        if picks.len() >= BECAUSE_MIN {
+            rows.push(json!({
+                "seed": { "kind": kind, "tmdb_id": tmdb_id, "name": name },
+                "items": picks,
+            }));
+        }
+    }
+    Ok(Json(json!({ "rows": rows })))
+}
+
 async fn rows(pool: &SqlitePool, sql: &str) -> AppResult<Vec<TitleRow>> {
     Ok(sqlx::query_as::<_, TitleRow>(sql).fetch_all(pool).await?)
 }
@@ -245,4 +345,20 @@ async fn next_episode(pool: &SqlitePool, title_id: i64) -> AppResult<Option<Next
             aired: aired == 1,
         },
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pick_seeds;
+
+    #[test]
+    fn the_best_seed_stays_and_the_rest_rotate_daily() {
+        let seeds = ["best", "b", "c", "d", "e"];
+        assert_eq!(pick_seeds(&seeds, 0), ["best", "b", "c"]);
+        assert_eq!(pick_seeds(&seeds, 1), ["best", "c", "d"]);
+        assert_eq!(pick_seeds(&seeds, 3), ["best", "e", "b"], "wraps around");
+        assert_eq!(pick_seeds(&seeds[..2], 7), ["best", "b"]);
+        assert_eq!(pick_seeds(&["only"], 9), ["only"]);
+        assert!(pick_seeds::<&str>(&[], 0).is_empty());
+    }
 }
