@@ -300,7 +300,9 @@ test('score format changes how a rating reads without touching the value', async
 test('signing out closes the door behind you', async ({ page }) => {
 	await signIn(page);
 	await page.goto('/settings');
-	await page.getByRole('button', { name: 'Sign out' }).click();
+	// Each signed-in device has its own Sign out too, and the header menu
+	// carries one; this is the one that ends the session you are using.
+	await page.getByRole('main').getByRole('button', { name: 'Sign out', exact: true }).click();
 
 	await expect(page).toHaveURL(/\/login/);
 
