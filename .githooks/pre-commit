@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Fast checks only, so committing stays instant. The slow ones (clippy, types,
+# tests) run on push — see .githooks/pre-push. CI runs all of them again.
+#
+# Skip once with:  FROG_SKIP_HOOKS=1 git commit ...
+set -euo pipefail
+[ "${FROG_SKIP_HOOKS:-0}" = "1" ] && exit 0
+
+repo="$(git rev-parse --show-toplevel)"
+staged="$(git diff --cached --name-only --diff-filter=ACMR)"
+fail=0
+
+has() { echo "$staged" | grep -qE "$1"; }
+
+# Never let a secret or a database in, whatever else is wrong.
+if has '(^|/)\.env$|\.env\.(local|production)$'; then
+	echo "pre-commit: refusing to commit a .env file"
+	fail=1
+fi
+if has '\.db$|\.db-wal$|\.db-shm$'; then
+	echo "pre-commit: refusing to commit a database file"
+	fail=1
+fi
+if echo "$staged" | grep -qE '^data/'; then
+	echo "pre-commit: refusing to commit anything under data/"
+	fail=1
+fi
+
+if has '^backend/.*\.rs$'; then
+	echo "pre-commit: rustfmt"
+	( cd "$repo/backend" && cargo fmt --all -- --check ) || {
+		echo "  run: cd backend && cargo fmt --all"
+		fail=1
+	}
+fi
+
+if has '^frontend/.*\.(ts|js|svelte|json|md|css|yml|yaml)$'; then
+	echo "pre-commit: prettier"
+	( cd "$repo/frontend" && npx prettier --check . ) || {
+		echo "  run: cd frontend && npm run format"
+		fail=1
+	}
+fi
+
+# An applied migration must never change: sqlx compares checksums and refuses
+# to start, which would take a running instance down on its next deploy.
+changed_migrations="$(git diff --cached --name-only --diff-filter=MD -- backend/migrations || true)"
+if [ -n "$changed_migrations" ]; then
+	echo "pre-commit: a migration that already exists was edited or deleted:"
+	echo "$changed_migrations" | sed 's/^/  /'
+	echo "  Add a new migration instead; sqlx refuses to start on a changed checksum."
+	fail=1
+fi
+
+exit "$fail"

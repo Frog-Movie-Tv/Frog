@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# The slow checks, so a red CI is the exception rather than the routine. This
+# is the same set CI runs, minus the end-to-end suite and the image build.
+#
+# Skip once with:  FROG_SKIP_HOOKS=1 git push ...
+set -euo pipefail
+[ "${FROG_SKIP_HOOKS:-0}" = "1" ] && exit 0
+
+repo="$(git rev-parse --show-toplevel)"
+fail=0
+
+echo "pre-push: clippy"
+( cd "$repo/backend" && cargo clippy --all-targets -- -D warnings ) || fail=1
+
+echo "pre-push: backend tests"
+( cd "$repo/backend" && cargo test --locked ) || fail=1
+
+echo "pre-push: svelte-check"
+( cd "$repo/frontend" && npm run check ) || fail=1
+
+if [ "$fail" != "0" ]; then
+	echo
+	echo "pre-push: not pushing. Fix the above, or FROG_SKIP_HOOKS=1 git push to override."
+fi
+exit "$fail"
