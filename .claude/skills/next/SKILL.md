@@ -44,7 +44,8 @@ both desktop and phone width before calling it done.
 - In `ROADMAP.md`: remove the item from **Next**, add a line under an
   **Unreleased** heading in **Shipped** (create it if missing), and add any
   follow-ups you discovered to **Next** or **Known issues**.
-- Add a line to the `[Unreleased]` section of `CHANGELOG.md` in product voice.
+- Add a line under the `## Upcoming — … —` heading at the top of
+  `CHANGELOG.md`, in product voice.
 
 ## 5. Report
 

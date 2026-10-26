@@ -125,7 +125,6 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
-[Unreleased]: https://github.com/MihCons/Frog/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/MihCons/Frog/releases/tag/v0.3.0
 [0.2.0]: https://github.com/MihCons/Frog/releases/tag/v0.2.0
 [0.1.0]: https://github.com/MihCons/Frog/releases/tag/v0.1.0

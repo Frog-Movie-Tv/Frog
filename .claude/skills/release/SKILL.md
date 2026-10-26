@@ -17,8 +17,16 @@ release with a red test.
 
 ## 2. Write the changelog entry
 
-Edit `CHANGELOG.md`. The heading format is parsed by
-`frontend/scripts/changelog.mjs`, so keep it exact:
+Work in progress collects under the heading at the top of `CHANGELOG.md`:
+
+```
+## Upcoming — Lily Pad —
+```
+
+The in-app release notes skip that heading, because
+`frontend/scripts/changelog.mjs` only reads headings with a bracketed version.
+To release, turn it into a versioned heading in exactly this shape, keeping the
+codename, and fold its entries into the sections below:
 
 ```
 ## [0.4.0] — Lily Pad — 2026-11-02
@@ -44,7 +52,12 @@ Voice rules — these are strict:
   "Error messages say what went wrong" is right).
 - No developer terms: no SQL, endpoints, components, refactors.
 - Short, complete sentences. British spelling, matching the rest of the file.
-- Update the `[Unreleased]` heading and the link references at the bottom.
+- Above the new release, start a fresh `## Upcoming — <next codename> —`
+  heading with the line `In progress.` under it. The codename order is in
+  ROADMAP.md.
+- At the bottom, add a link reference for the new version only, for example
+  `[0.4.0]: https://github.com/MihCons/Frog/releases/tag/v0.4.0`. The Upcoming
+  heading has no brackets, so it gets no link reference.
 
 ## 3. Verify everything
 
