@@ -2135,3 +2135,330 @@ async fn signing_in_is_throttled_per_account_and_per_address() {
         .await;
     assert_eq!(code, StatusCode::OK, "{body:?}");
 }
+
+/// Sign in again as someone, from a fresh device.
+async fn sign_in(h: &Harness, username: &str, password: &str) -> (StatusCode, Option<String>) {
+    let (code, _, cookie) = h
+        .post(
+            "/api/auth/login",
+            json!({ "username": username, "password": password, "remember": true }),
+            None,
+        )
+        .await;
+    (code, cookie)
+}
+
+#[tokio::test]
+async fn changing_the_password_signs_out_every_other_device() {
+    let h = Harness::new().await;
+    let (_, guest) = two_accounts(&h).await;
+    let (_, laptop) = sign_in(&h, "zjef", "another-long-pass").await;
+    let laptop = laptop.unwrap();
+
+    let (code, body, _) = h
+        .put(
+            "/api/account/password",
+            json!({ "current": "wrong-password", "password": "brand-new-password" }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{body}");
+
+    let (code, body, _) = h
+        .put(
+            "/api/account/password",
+            json!({ "current": "another-long-pass", "password": "short" }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{body}");
+
+    let (code, body, _) = h
+        .put(
+            "/api/account/password",
+            json!({ "current": "another-long-pass", "password": "brand-new-password" }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["signed_out"], json!(1));
+
+    let (code, _) = h.get("/api/account", Some(&guest)).await;
+    assert_eq!(code, StatusCode::OK, "this device stays signed in");
+    let (code, _) = h.get("/api/account", Some(&laptop)).await;
+    assert_eq!(code, StatusCode::UNAUTHORIZED, "the other device is out");
+
+    assert_eq!(
+        sign_in(&h, "zjef", "another-long-pass").await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        sign_in(&h, "zjef", "brand-new-password").await.0,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn your_devices_are_listed_and_can_be_signed_out() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    let (_, second) = sign_in(&h, "zjef", "another-long-pass").await;
+    let second = second.unwrap();
+
+    let (code, body) = h.get("/api/account/sessions", Some(&guest)).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    let sessions = body["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 2, "only my own devices: {body}");
+    assert_eq!(
+        sessions
+            .iter()
+            .filter(|s| s["current"] == json!(true))
+            .count(),
+        1
+    );
+    let other = sessions
+        .iter()
+        .find(|s| s["current"] == json!(false))
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Another account cannot end my session, even knowing its id.
+    let (code, _, _) = h
+        .delete(&format!("/api/account/sessions/{other}"), Some(&owner))
+        .await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+    let (code, _) = h.get("/api/account", Some(&second)).await;
+    assert_eq!(code, StatusCode::OK);
+
+    let (code, _, _) = h
+        .delete(&format!("/api/account/sessions/{other}"), Some(&guest))
+        .await;
+    assert_eq!(code, StatusCode::OK);
+    let (code, _) = h.get("/api/account", Some(&second)).await;
+    assert_eq!(code, StatusCode::UNAUTHORIZED);
+
+    // "Sign out everywhere else" spares this device.
+    let (_, third) = sign_in(&h, "zjef", "another-long-pass").await;
+    let (code, body, _) = h.delete("/api/account/sessions/others", Some(&guest)).await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(body["signed_out"], json!(1));
+    assert_eq!(h.get("/api/account", Some(&guest)).await.0, StatusCode::OK);
+    assert_eq!(
+        h.get("/api/account", third.as_deref()).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn leaving_deletes_your_data_and_only_yours() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    seed_owner_history(&h).await;
+
+    // The guest tracks something of their own.
+    let guest_id: (i64,) = sqlx::query_as("SELECT id FROM app_user WHERE username = 'zjef'")
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (?, 1, 'planned', 'x', 'x')",
+    )
+    .bind(guest_id.0)
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let (code, _) = h
+        .send(
+            "DELETE",
+            "/api/account",
+            json!({ "password": "wrong-password" }),
+            &guest,
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+
+    let (code, body) = h
+        .send(
+            "DELETE",
+            "/api/account",
+            json!({ "password": "another-long-pass" }),
+            &guest,
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(
+        h.get("/api/account", Some(&guest)).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (left,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM library_entry WHERE user_id = ?")
+        .bind(guest_id.0)
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0, "the account's rows went with it");
+    let (_, library) = h.get("/api/library", Some(&owner)).await;
+    assert!(
+        !library["items"].as_array().unwrap().is_empty(),
+        "the owner's library is untouched"
+    );
+
+    // The owner cannot leave their own instance.
+    let (code, _) = h
+        .send(
+            "DELETE",
+            "/api/account",
+            json!({ "password": "a-long-enough-pass" }),
+            &owner,
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn administrators_manage_accounts_within_their_rank() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+
+    let (code, body) = h.get("/api/admin/users", Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    let users = body["users"].as_array().unwrap();
+    assert_eq!(users[0]["role"], json!("owner"), "owner listed first");
+    let owner_id = users[0]["id"].as_i64().unwrap();
+    let guest_id = users[1]["id"].as_i64().unwrap();
+
+    assert_eq!(
+        h.get("/api/admin/users", Some(&guest)).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        h.get("/api/admin/instance", Some(&guest)).await.0,
+        StatusCode::FORBIDDEN
+    );
+
+    // Promote the guest; as an administrator they still cannot touch the owner,
+    // themselves, or another administrator's rank.
+    let (code, body, _) = h
+        .put(
+            &format!("/api/admin/users/{guest_id}"),
+            json!({ "role": "admin" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["role"], json!("admin"));
+
+    let (code, _, _) = h
+        .put(
+            &format!("/api/admin/users/{owner_id}"),
+            json!({ "disabled": true }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    let (code, _, _) = h
+        .put(
+            &format!("/api/admin/users/{guest_id}"),
+            json!({ "role": "user" }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "not on yourself");
+
+    // A third account, joined as a user: the new administrator may disable it,
+    // which signs it out at once, but may not promote it.
+    let (_, invite, _) = h
+        .post("/api/invites", json!({ "role": "user" }), Some(&owner))
+        .await;
+    let (_, _, third) = h
+        .post(
+            "/api/auth/register",
+            json!({ "username": "third", "password": "third-long-pass", "invite": invite["code"] }),
+            None,
+        )
+        .await;
+    let third = third.unwrap();
+    let (_, body) = h.get("/api/admin/users", Some(&guest)).await;
+    let third_id = body["users"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["username"] == json!("third"))
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    let (code, _, _) = h
+        .put(
+            &format!("/api/admin/users/{third_id}"),
+            json!({ "role": "admin" }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::FORBIDDEN, "only the owner makes admins");
+    let (code, _, _) = h
+        .put(
+            &format!("/api/admin/users/{third_id}"),
+            json!({ "disabled": true }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(
+        h.get("/api/account", Some(&third)).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    // Sign-in says the account is switched off, as it does for any disabled one.
+    assert_eq!(
+        sign_in(&h, "third", "third-long-pass").await.0,
+        StatusCode::FORBIDDEN
+    );
+
+    let (code, body) = h.get("/api/admin/instance", Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["accounts"], json!(3));
+    assert!(body["database_bytes"].as_i64().unwrap() > 0);
+    assert_eq!(body["last_backup"], Value::Null, "no backup script here");
+}
+
+#[tokio::test]
+async fn a_profile_is_only_seen_when_its_owner_turns_it_on() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    seed_owner_history(&h).await;
+
+    // Off by default: not listed, and looking answers like a missing account.
+    let (_, body) = h.get("/api/profiles", Some(&guest)).await;
+    let names: Vec<_> = body["profiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["username"].clone())
+        .collect();
+    assert_eq!(names, vec![json!("zjef")], "only yourself: {body}");
+    let (code, hidden) = h.get("/api/profiles/mihai", Some(&guest)).await;
+    let (code_missing, missing) = h.get("/api/profiles/nobody", Some(&guest)).await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+    assert_eq!((code, hidden), (code_missing, missing));
+
+    let (code, _, _) = h
+        .put(
+            "/api/account/profile",
+            json!({ "public": true }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK);
+    let (code, body) = h.get("/api/profiles/MIHAI", Some(&guest)).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["username"], json!("mihai"));
+    assert!(body["stats"]["films"].as_i64().unwrap() >= 1, "{body}");
+
+    // Never visible without an account on this instance.
+    assert_eq!(
+        h.get("/api/profiles/mihai", None).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+}

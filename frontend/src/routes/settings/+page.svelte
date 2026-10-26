@@ -5,6 +5,7 @@
 	import Rating from '#lib/components/Rating.svelte';
 	import Select from '#lib/components/Select.svelte';
 	import Notifications from '#lib/components/Notifications.svelte';
+	import AccountSettings from '#lib/components/AccountSettings.svelte';
 	import TwoFactor from '#lib/components/TwoFactor.svelte';
 	import { SCORE_FORMATS, type ScoreFormat } from '#lib/format';
 	import { session } from '#lib/session.svelte';
@@ -229,6 +230,11 @@
 
 <div class="page">
 	<h1 class="title">Settings</h1>
+
+	<section class="block">
+		<div class="section-head"><h2>Account</h2></div>
+		<AccountSettings />
+	</section>
 
 	<section class="block">
 		<div class="section-head"><h2>Theme</h2></div>
@@ -840,7 +846,7 @@
 		</div>
 	</section>
 
-	<section class="block">
+	<section class="block" id="this-instance">
 		<div class="section-head"><h2>This instance</h2></div>
 
 		<div class="instance card">

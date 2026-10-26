@@ -223,8 +223,10 @@ test('settings shows the instance facts and switches theme', async ({ page }) =>
 	await signIn(page);
 	await page.goto('/settings');
 
-	await expect(page.getByText(USER)).toBeVisible();
-	await expect(page.getByText('missing')).toBeVisible();
+	// The name shows in Account too; the facts live in This instance.
+	const facts = page.locator('#this-instance');
+	await expect(facts.getByText(USER)).toBeVisible();
+	await expect(facts.getByText('missing')).toBeVisible();
 
 	// Pond is the default now.
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'pond');
@@ -320,6 +322,12 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/shelves/1',
 		'/api/titles/movie/1/shelves',
 		'/api/home/because',
+		'/api/account',
+		'/api/account/sessions',
+		'/api/admin/users',
+		'/api/admin/instance',
+		'/api/profiles',
+		'/api/profiles/someone',
 		'/api/invites',
 		'/img/w342/nope.jpg'
 	]) {

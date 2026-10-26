@@ -5,7 +5,8 @@
 	import Select from '#lib/components/Select.svelte';
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
-	import type { Invite, NewInvite } from '#lib/types';
+	import { relativeDate } from '#lib/format';
+	import type { AdminUser, InstanceInfo, Invite, NewInvite } from '#lib/types';
 
 	let invites = $state<Invite[]>([]);
 	let loading = $state(true);
@@ -18,6 +19,67 @@
 	let fresh = $state<NewInvite | null>(null);
 
 	const owner = $derived(session.status?.role === 'owner');
+
+	let users = $state<AdminUser[]>([]);
+	let instance = $state<InstanceInfo | null>(null);
+
+	const ROLE: Record<AdminUser['role'], string> = {
+		owner: 'Owner',
+		admin: 'Administrator',
+		user: 'Member'
+	};
+
+	async function loadPeople() {
+		try {
+			[users, instance] = await Promise.all([
+				api.adminUsers().then((r) => r.users),
+				api.instance()
+			]);
+		} catch {
+			// The invites request already reports a refusal.
+		}
+	}
+
+	/** Whether this administrator may change that account at all. */
+	function manageable(user: AdminUser): boolean {
+		if (user.username === session.status?.username || user.role === 'owner') return false;
+		return owner || user.role === 'user';
+	}
+
+	async function setRole(user: AdminUser, role: 'admin' | 'user') {
+		try {
+			const r = await api.updateUser(user.id, { role });
+			user.role = r.role;
+			toasts.push(
+				role === 'admin' ? `${user.username} is an administrator` : `${user.username} is a member`
+			);
+		} catch (e) {
+			toasts.error(e);
+		}
+	}
+
+	async function setDisabled(user: AdminUser, disabled: boolean) {
+		try {
+			const r = await api.updateUser(user.id, { disabled });
+			user.disabled = r.disabled;
+			if (disabled) {
+				toasts.undoable(`${user.username} is switched off`, async () => {
+					const back = await api.updateUser(user.id, { disabled: false });
+					user.disabled = back.disabled;
+				});
+			} else {
+				toasts.push(`${user.username} can sign in again`);
+			}
+		} catch (e) {
+			toasts.error(e);
+		}
+	}
+
+	function size(bytes: number): string {
+		if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+		if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+		return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+	}
 
 	async function load() {
 		loading = true;
@@ -34,6 +96,7 @@
 
 	$effect(() => {
 		load();
+		loadPeople();
 	});
 
 	async function create() {
@@ -98,6 +161,51 @@
 			hint="Ask whoever runs this instance if you need it."
 		/>
 	{:else}
+		<section class="block">
+			<h2>People</h2>
+			<ul class="users">
+				{#each users as user (user.id)}
+					<li class="card" class:off={user.disabled}>
+						<div class="who">
+							<span class="avatar" aria-hidden="true"
+								>{user.username.slice(0, 1).toUpperCase()}</span
+							>
+							<span class="label">
+								<strong>{user.username}</strong>
+								<span class="faint">
+									{ROLE[user.role]}
+									· {user.titles === 1 ? '1 title' : `${user.titles} titles`}
+									· {user.last_sign_in
+										? `signed in ${relativeDate(user.last_sign_in)}`
+										: 'not signed in yet'}
+									{#if user.disabled}· <span class="off-label">switched off</span>{/if}
+								</span>
+							</span>
+						</div>
+						{#if manageable(user)}
+							<div class="controls">
+								{#if owner}
+									<Select
+										label="Role for {user.username}"
+										compact
+										value={user.role}
+										options={[
+											{ value: 'user', label: 'Member' },
+											{ value: 'admin', label: 'Administrator' }
+										]}
+										onchange={(v) => setRole(user, v as 'admin' | 'user')}
+									/>
+								{/if}
+								<button class="btn ghost" onclick={() => setDisabled(user, !user.disabled)}>
+									{user.disabled ? 'Switch on' : 'Switch off'}
+								</button>
+							</div>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		</section>
+
 		<section class="block">
 			<h2>Invite someone</h2>
 			<p class="muted">
@@ -192,12 +300,32 @@
 					<dd>{session.status?.version ?? '—'}</dd>
 				</div>
 				<div>
-					<dt>Signed in as</dt>
-					<dd>{session.status?.username ?? '—'}</dd>
+					<dt>Accounts</dt>
+					<dd>{instance?.accounts ?? '—'}</dd>
 				</div>
 				<div>
-					<dt>Your role</dt>
-					<dd>{session.status?.role ?? '—'}</dd>
+					<dt>Database</dt>
+					<dd>{instance ? size(instance.database_bytes) : '—'}</dd>
+				</div>
+				<div>
+					<dt>Artwork kept offline</dt>
+					<dd>{instance ? size(instance.image_cache_bytes) : '—'}</dd>
+				</div>
+				<div>
+					<dt>Last backup</dt>
+					<dd>
+						{#if instance?.last_backup}
+							{relativeDate(instance.last_backup.at)}{instance.last_backup.pushed
+								? ''
+								: ' · kept on the server only'}
+						{:else}
+							None recorded on this server
+						{/if}
+					</dd>
+				</div>
+				<div>
+					<dt>Updates</dt>
+					<dd><a href="/settings#this-instance">Check in Settings</a></dd>
 				</div>
 			</dl>
 		</section>
@@ -207,8 +335,6 @@
 <style>
 	.page {
 		max-width: 760px;
-		margin: 0 auto;
-		padding: 24px 16px 64px;
 		display: grid;
 		gap: 28px;
 	}
@@ -259,8 +385,8 @@
 		word-break: break-all;
 		font-size: 0.85rem;
 		padding: 10px;
-		border-radius: var(--radius-sm, 8px);
-		background: var(--surface-2, rgba(255, 255, 255, 0.05));
+		border-radius: var(--radius-sm);
+		background: var(--bg-elev-2);
 	}
 
 	.fresh .btn {
@@ -303,15 +429,15 @@
 		letter-spacing: 0.04em;
 		padding: 2px 8px;
 		border-radius: 999px;
-		background: var(--surface-2, rgba(255, 255, 255, 0.07));
+		background: var(--bg-elev-2);
 	}
 
 	.state.open {
-		color: var(--ok, #30a46c);
+		color: var(--good);
 	}
 
 	.state.expired {
-		color: var(--muted, #8b8b8b);
+		color: var(--text-faint);
 	}
 
 	.facts {
@@ -326,7 +452,7 @@
 		justify-content: space-between;
 		gap: 16px;
 		padding: 10px 0;
-		border-bottom: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+		border-bottom: 1px solid var(--line);
 	}
 
 	.facts > div:last-child {
@@ -338,7 +464,72 @@
 		margin: 0;
 	}
 
+	.users {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 10px;
+	}
+
+	.users li {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		flex-wrap: wrap;
+		gap: 12px;
+		padding: 12px 16px;
+	}
+
+	.users li.off {
+		opacity: 0.7;
+	}
+
+	.who {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		min-width: 0;
+	}
+
+	.avatar {
+		width: 36px;
+		height: 36px;
+		border-radius: 50%;
+		display: grid;
+		place-items: center;
+		background: var(--accent-soft);
+		color: var(--accent);
+		font-weight: 700;
+		flex: none;
+	}
+
+	.label {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+	}
+
+	.label .faint {
+		font-size: 0.8rem;
+	}
+
+	.off-label {
+		color: var(--bad);
+	}
+
+	.controls {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.facts dd a {
+		color: var(--accent);
+	}
+
 	.facts dt {
-		color: var(--muted, #8b8b8b);
+		color: var(--text-faint);
 	}
 </style>

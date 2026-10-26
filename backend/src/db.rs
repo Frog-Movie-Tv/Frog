@@ -76,7 +76,7 @@ pub async fn heal_line_endings(pool: &SqlitePool, migrator: &Migrator) -> anyhow
 }
 
 /// Pull the filesystem path out of a `sqlite:` URL so we can mkdir -p for it.
-fn sqlite_path(url: &str) -> Option<String> {
+pub fn sqlite_path(url: &str) -> Option<String> {
     let rest = url
         .strip_prefix("sqlite://")
         .or_else(|| url.strip_prefix("sqlite:"))?;

@@ -23,6 +23,7 @@ KEEP_DAYS=30
 
 cd "$DIR"
 mkdir -p "$STORE"
+PUSHED=local
 log() { echo "[$(date -Is)] $*"; }
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -71,11 +72,13 @@ if [ -n "${BACKUP_REPO_DIR:-}" ] && [ -d "$BACKUP_REPO_DIR/.git" ]; then
 	git add -A
 	if git diff --cached --quiet; then
 		log "nothing new to push"
+		PUSHED=pushed
 	else
 		git -c user.name='frog-backup' -c user.email='backup@frog.invalid' \
 			commit -q -m "backup: $INSTANCE $STAMP ($LABEL)"
 		if git push -q origin HEAD 2>/dev/null; then
 			log "pushed to the backup repository"
+			PUSHED=pushed
 		else
 			log "WARNING: could not push the backup; the local copy is kept"
 		fi
@@ -83,3 +86,7 @@ if [ -n "${BACKUP_REPO_DIR:-}" ] && [ -d "$BACKUP_REPO_DIR/.git" ]; then
 else
 	log "BACKUP_REPO_DIR is not set up; keeping the local copy only"
 fi
+
+# One line beside the database, read by the admin page: when, why, and whether
+# the copy reached the backup repository.
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $LABEL $PUSHED" > "$VOLUME/last-backup"

@@ -78,6 +78,8 @@ class Session {
 		if (!browser) return;
 		try {
 			localStorage.removeItem(REMEMBERED);
+			// Preferences belong to the account, not the device.
+			localStorage.removeItem('frog.settings.v2');
 		} catch {
 			// Nothing to forget.
 		}

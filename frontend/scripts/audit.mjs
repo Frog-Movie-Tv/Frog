@@ -133,6 +133,8 @@ const ROUTES = [
 	'/stats',
 	'/stats?year=2026',
 	'/shelves',
+	'/people',
+	'/people/audit',
 	'/settings',
 	'/import',
 	'/about',
