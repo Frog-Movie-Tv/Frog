@@ -87,7 +87,6 @@
 	<title>Search · Frog</title>
 </svelte:head>
 
-
 <div class="page">
 	<h1 class="title">Search</h1>
 
@@ -121,7 +120,11 @@
 		<Spinner label="Searching" />
 	{:else if !shown.length}
 		{#if searched}
-			<Empty art="search" title="Nothing found" hint="Try a shorter title, or the original language." />
+			<Empty
+				art="search"
+				title="Nothing found"
+				hint="Try a shorter title, or the original language."
+			/>
 		{:else}
 			<Empty art="search" title="Find something to watch" hint="Start typing." />
 		{/if}
@@ -267,6 +270,4 @@
 		background: var(--accent);
 		border-color: transparent;
 	}
-
-
 </style>

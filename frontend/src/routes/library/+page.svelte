@@ -174,12 +174,7 @@
 				onchange={(v) => (kind = v as Kind | 'all')}
 			/>
 
-			<Select
-				label="Genre"
-				value={genre}
-				options={genreOptions}
-				onchange={(v) => (genre = v)}
-			/>
+			<Select label="Genre" value={genre} options={genreOptions} onchange={(v) => (genre = v)} />
 
 			<Select
 				label="Sort by"
@@ -232,7 +227,12 @@
 						All
 					</button>
 					{#each STATUSES as s (s)}
-						<button class="chip" data-status={s} class:on={status === s} onclick={() => (status = s)}>
+						<button
+							class="chip"
+							data-status={s}
+							class:on={status === s}
+							onclick={() => (status = s)}
+						>
 							<i class="sdot" aria-hidden="true"></i>
 							{STATUS_LABEL[s]}
 							{#if counts[s]}<span class="n">{counts[s]}</span>{/if}
@@ -247,20 +247,35 @@
 
 				<div class="field">
 					<span>Type</span>
-					<Select full label="Type" value={kind} options={kindOptions}
-						onchange={(v) => (kind = v as Kind | 'all')} />
+					<Select
+						full
+						label="Type"
+						value={kind}
+						options={kindOptions}
+						onchange={(v) => (kind = v as Kind | 'all')}
+					/>
 				</div>
 
 				<div class="field">
 					<span>Genre</span>
-					<Select full label="Genre" value={genre} options={genreOptions}
-						onchange={(v) => (genre = v)} />
+					<Select
+						full
+						label="Genre"
+						value={genre}
+						options={genreOptions}
+						onchange={(v) => (genre = v)}
+					/>
 				</div>
 
 				<div class="field">
 					<span>Sort</span>
-					<Select full label="Sort" value={sort} options={sortOptions}
-						onchange={(v) => (sort = v as NonNullable<LibraryQuery['sort']>)} />
+					<Select
+						full
+						label="Sort"
+						value={sort}
+						options={sortOptions}
+						onchange={(v) => (sort = v as NonNullable<LibraryQuery['sort']>)}
+					/>
 				</div>
 
 				<div class="sheet-row">
@@ -329,7 +344,11 @@
 				<a class="land" href="/title/{item.kind}/{item.tmdb_id}">
 					<div class="art">
 						{#if item.backdrop_path || item.poster_path}
-							<img src={img(item.backdrop_path ?? item.poster_path, 'w500')} alt="" loading="lazy" />
+							<img
+								src={img(item.backdrop_path ?? item.poster_path, 'w500')}
+								alt=""
+								loading="lazy"
+							/>
 						{/if}
 						{#if item.total_episodes > 0 && settings.current.showProgress}
 							<div class="bar"><i style:width="{progressOf(item)}%"></i></div>
@@ -392,9 +411,7 @@
 							<td>{item.kind === 'tv' ? 'Show' : 'Film'}</td>
 							<td>{item.entry ? STATUS_LABEL[item.entry.status] : '—'}</td>
 							<td class="num">
-								{item.total_episodes > 0
-									? `${item.watched_episodes}/${item.total_episodes}`
-									: '—'}
+								{item.total_episodes > 0 ? `${item.watched_episodes}/${item.total_episodes}` : '—'}
 							</td>
 							<td class="num">{formatScore(item.entry?.rating ?? null, fmt)}</td>
 							<td>{relativeDate(item.last_watched_at) || '—'}</td>

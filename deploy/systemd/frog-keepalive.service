@@ -1,0 +1,13 @@
+[Unit]
+Description=Hold enough memory that Oracle does not reclaim this instance
+Documentation=https://docs.oracle.com/en-us/iaas/Content/FreeTier/resourceref.htm
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/frog/deploy/keepalive.sh start
+ExecStop=/opt/frog/deploy/keepalive.sh stop
+
+[Install]
+WantedBy=multi-user.target

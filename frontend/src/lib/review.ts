@@ -232,14 +232,17 @@ export async function renderReview(stats: FullStats, year: number): Promise<HTML
 		const gap = 28;
 		const w = (REVIEW_WIDTH - PAD * 2 - gap * 3) / 4;
 		const h = w * 1.5;
-		films.forEach((film, i) => drawPoster(ctx, filmImages[i], film, PAD + i * (w + gap), y + 56, w, h, p));
+		films.forEach((film, i) =>
+			drawPoster(ctx, filmImages[i], film, PAD + i * (w + gap), y + 56, w, h, p)
+		);
 		y += 56 + h + 64;
 	}
 
 	// Three facts along the bottom, each allowed two lines for long names.
 	const facts: [string, string][] = [];
 	if (stats.genres[0]) facts.push(['Top genre', stats.genres[0].name]);
-	if (stats.streaks.longest.days > 1) facts.push(['Longest streak', `${stats.streaks.longest.days} days`]);
+	if (stats.streaks.longest.days > 1)
+		facts.push(['Longest streak', `${stats.streaks.longest.days} days`]);
 	if (stats.people.actors[0] && stats.people.actors[0].titles > 1)
 		facts.push(['Most seen', stats.people.actors[0].name]);
 	const factY = Math.min(y, REVIEW_HEIGHT - 190);
@@ -256,6 +259,9 @@ export async function renderReview(stats: FullStats, year: number): Promise<HTML
 
 export function toBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 	return new Promise((resolve, reject) =>
-		canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not create the image.'))), 'image/png')
+		canvas.toBlob(
+			(b) => (b ? resolve(b) : reject(new Error('Could not create the image.'))),
+			'image/png'
+		)
 	);
 }

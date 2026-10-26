@@ -1,0 +1,14 @@
+[Unit]
+Description=Check for a new Frog image for the %i instance
+
+[Timer]
+# Staging follows main and wants to be current; production follows release
+# tags and changes rarely, so the same cadence costs nothing either way.
+OnBootSec=3min
+OnUnitActiveSec=15min
+# Spread the two instances so they never pull at the same moment.
+RandomizedDelaySec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target

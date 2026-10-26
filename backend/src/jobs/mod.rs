@@ -1,6 +1,6 @@
 //! Background worker.
 //!
-//! Phase 1 keeps it deliberately small: expire sessions, drop stale TMDB cache
+//! Deliberately small: expire sessions, drop stale TMDB cache
 //! rows, and re-pull episodes for shows that are still airing so new episodes
 //! appear without anyone opening the page. Phases 2 and 4 hang the calendar,
 //! notification and scrobble-pull jobs off the same loop.

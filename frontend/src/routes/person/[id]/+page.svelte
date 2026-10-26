@@ -71,7 +71,11 @@
 					{#if person.known_for_department}<span>{person.known_for_department}</span>{/if}
 					{#if person.birthday}
 						<span class="dot" aria-hidden="true">•</span>
-						<span>{prettyDate(person.birthday)}{person.deathday ? ` – ${prettyDate(person.deathday)}` : ''}</span>
+						<span
+							>{prettyDate(person.birthday)}{person.deathday
+								? ` – ${prettyDate(person.deathday)}`
+								: ''}</span
+						>
 					{/if}
 					{#if person.place_of_birth}
 						<span class="dot" aria-hidden="true">•</span>

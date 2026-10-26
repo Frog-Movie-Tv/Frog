@@ -146,9 +146,7 @@
 
 	{#if step === 'codes'}
 		<div class="codes">
-			<p>
-				Keep these somewhere safe. Each one signs you in once if you lose your phone.
-			</p>
+			<p>Keep these somewhere safe. Each one signs you in once if you lose your phone.</p>
 			<ol>
 				{#each codes as c (c)}<li><code>{c}</code></li>{/each}
 			</ol>

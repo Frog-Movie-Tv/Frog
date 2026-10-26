@@ -1,0 +1,9 @@
+[Unit]
+Description=Back up the %i instance of Frog
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/frog/deploy/backup.sh %i nightly
+TimeoutStartSec=600

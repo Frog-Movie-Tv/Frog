@@ -230,7 +230,9 @@
 				{#if stats.streaks.current.days > 0}
 					<div class="tile card">
 						<span class="eyebrow">Current streak</span>
-						<strong class="streak"><Icon name="flame" size={22} />{plural(stats.streaks.current.days, 'day')}</strong>
+						<strong class="streak"
+							><Icon name="flame" size={22} />{plural(stats.streaks.current.days, 'day')}</strong
+						>
 					</div>
 				{/if}
 				<div class="tile card">
@@ -243,13 +245,23 @@
 			{#if stats.timeline.some((t) => t.minutes > 0)}
 				<section class="block card panel">
 					<h2>{stats.year ? 'Watch time by month' : 'Watch time by year'}</h2>
-					<div class="columns" class:wide={!stats.year} role="img" aria-label="Watch time over time">
+					<div
+						class="columns"
+						class:wide={!stats.year}
+						role="img"
+						aria-label="Watch time over time"
+					>
 						{#each stats.timeline as point (point.unit)}
 							<div
 								class="column"
-								title="{unitLabel(point.unit)}: {longRuntime(point.minutes)} · {plural(point.films, 'film')} · {plural(point.episodes, 'episode')}"
+								title="{unitLabel(point.unit)}: {longRuntime(point.minutes)} · {plural(
+									point.films,
+									'film'
+								)} · {plural(point.episodes, 'episode')}"
 							>
-								<span class="value faint">{point.minutes ? Math.round(point.minutes / 60) : ''}</span>
+								<span class="value faint"
+									>{point.minutes ? Math.round(point.minutes / 60) : ''}</span
+								>
 								<span class="bar-v" style:height="{(point.minutes / timelineMax) * 100}%"></span>
 								<span class="label faint">{unitLabel(point.unit)}</span>
 							</div>
@@ -272,7 +284,9 @@
 							{#each stats.genres.slice(0, 10) as g (g.name)}
 								<li>
 									<span class="hname">{g.name}</span>
-									<span class="track"><span class="fill" style:width="{(g.titles / genreMax) * 100}%"></span></span>
+									<span class="track"
+										><span class="fill" style:width="{(g.titles / genreMax) * 100}%"></span></span
+									>
 									<span class="faint hcount">{g.titles}</span>
 								</li>
 							{/each}
@@ -285,10 +299,18 @@
 						<h2>Ratings</h2>
 						<div class="columns" role="img" aria-label="How you rate">
 							{#each stats.ratings as n, i (i)}
-								<div class="column" title="{formatScore(i * 10, settings.current.scoreFormat)}–{formatScore(i === 9 ? 100 : i * 10 + 9, settings.current.scoreFormat)}: {n}">
+								<div
+									class="column"
+									title="{formatScore(i * 10, settings.current.scoreFormat)}–{formatScore(
+										i === 9 ? 100 : i * 10 + 9,
+										settings.current.scoreFormat
+									)}: {n}"
+								>
 									<span class="value faint">{n || ''}</span>
 									<span class="bar-v" style:height="{(n / ratingMax) * 100}%"></span>
-									<span class="label faint">{formatScore((i + 1) * 10, settings.current.scoreFormat)}</span>
+									<span class="label faint"
+										>{formatScore((i + 1) * 10, settings.current.scoreFormat)}</span
+									>
 								</div>
 							{/each}
 						</div>
@@ -316,7 +338,9 @@
 			</div>
 
 			{#if stats.credits_pending > 0}
-				<p class="faint note">Cast and crew for {plural(stats.credits_pending, 'more title')} are on their way.</p>
+				<p class="faint note">
+					Cast and crew for {plural(stats.credits_pending, 'more title')} are on their way.
+				</p>
 			{/if}
 
 			{#if !stats.year && library && statusTotal > 0}
@@ -326,7 +350,8 @@
 						{#each STATUSES as s (s)}
 							{@const n = library.by_status[s] ?? 0}
 							{#if n > 0}
-								<span class="seg" data-status={s} style:flex-grow={n} title="{STATUS_LABEL[s]}: {n}"></span>
+								<span class="seg" data-status={s} style:flex-grow={n} title="{STATUS_LABEL[s]}: {n}"
+								></span>
 							{/if}
 						{/each}
 					</div>

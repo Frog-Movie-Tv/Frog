@@ -20,7 +20,7 @@ release with a red test.
 
 ## 2. Write the changelog entry
 
-Work in progress collects under the heading at the top of `CHANGELOG.md`:
+Work in progress collects under the heading at the top of `RELEASE-NOTES.md`:
 
 ```
 ## Upcoming — Lily Pad —
@@ -118,5 +118,5 @@ git push origin main --follow-tags
 - What was not finished (and that it is now in ROADMAP.md).
 - That the GitHub Release needs creating by hand from the tag at
   `https://github.com/Frog-Movie-Tv/Frog/releases/new?tag=v0.4.0`, with the
-  CHANGELOG.md section as the notes — unless `gh` is installed and signed in.
+  RELEASE-NOTES.md section as the notes — unless `gh` is installed and signed in.
 - Restart their server: `.\scripts\run-local.ps1`.

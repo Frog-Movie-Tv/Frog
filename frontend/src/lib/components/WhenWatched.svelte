@@ -24,9 +24,19 @@
 	const options = $derived(
 		[
 			{ id: 'today', label: 'Today', hint: 'Just now', icon: 'clock' },
-			{ id: 'release', label: 'On release dates', hint: 'Each episode on the day it aired', icon: 'calendar' },
+			{
+				id: 'release',
+				label: 'On release dates',
+				hint: 'Each episode on the day it aired',
+				icon: 'calendar'
+			},
 			{ id: 'date', label: 'On a date', hint: 'Pick one day for all of them', icon: 'calendar' },
-			{ id: 'unknown', label: "I don't know", hint: 'Counted as watched, left out of the diary', icon: 'eye-off' }
+			{
+				id: 'unknown',
+				label: "I don't know",
+				hint: 'Counted as watched, left out of the diary',
+				icon: 'eye-off'
+			}
 		].filter((o) => pending?.allowToday !== false || o.id !== 'today') as {
 			id: WhenMode;
 			label: string;
@@ -52,7 +62,11 @@
 
 {#if pending}
 	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-	<div class="scrim" transition:fade={{ duration: 120 }} onclick={() => whenWatched.answer(null)}></div>
+	<div
+		class="scrim"
+		transition:fade={{ duration: 120 }}
+		onclick={() => whenWatched.answer(null)}
+	></div>
 
 	<div
 		bind:this={dialog}

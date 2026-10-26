@@ -27,7 +27,11 @@
 
 	function toggle() {
 		open = !open;
-		if (open) cursor = Math.max(0, options.findIndex((o) => o.value === value));
+		if (open)
+			cursor = Math.max(
+				0,
+				options.findIndex((o) => o.value === value)
+			);
 	}
 
 	function pick(option: Option) {

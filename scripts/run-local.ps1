@@ -1,6 +1,10 @@
 <#
 .SYNOPSIS
-    Runs Frog directly on Windows, without Docker.
+    DEVELOPMENT ONLY. Runs Frog directly on Windows, without Docker.
+
+    Docker is how Frog actually runs, and the image CI builds is what is
+    deployed. This script exists so you can work on Frog without Docker
+    installed; never use it to run an instance anyone else depends on.
 
 .DESCRIPTION
     Builds the frontend if it is missing, builds the Rust binary if it is

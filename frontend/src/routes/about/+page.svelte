@@ -24,7 +24,11 @@
 			href: 'https://www.themoviedb.org'
 		},
 		{ name: 'Lucide', role: 'Icons, ISC licence', href: 'https://lucide.dev' },
-		{ name: 'Inter', role: 'Interface type, SIL Open Font Licence', href: 'https://rsms.me/inter/' },
+		{
+			name: 'Inter',
+			role: 'Interface type, SIL Open Font Licence',
+			href: 'https://rsms.me/inter/'
+		},
 		{
 			name: 'Outfit',
 			role: 'Display type, SIL Open Font Licence',
@@ -44,7 +48,11 @@
 		{ name: 'Axum', role: 'HTTP server, MIT', href: 'https://github.com/tokio-rs/axum' },
 		{ name: 'SQLx', role: 'Database access, MIT', href: 'https://github.com/launchbadge/sqlx' },
 		{ name: 'SQLite', role: 'Storage, public domain', href: 'https://sqlite.org' },
-		{ name: 'fflate', role: 'Reading ZIP exports, MIT', href: 'https://github.com/101arrowz/fflate' }
+		{
+			name: 'fflate',
+			role: 'Reading ZIP exports, MIT',
+			href: 'https://github.com/101arrowz/fflate'
+		}
 	];
 </script>
 
@@ -62,16 +70,25 @@
 	</header>
 
 	<p class="lede">
-		A private film and television diary that runs on your own machine. Your library is one file
-		on your own disk, and nothing about it leaves the house.
+		A private film and television diary that runs on your own machine. Your library is one file on
+		your own disk, and nothing about it leaves the house.
 	</p>
 
 	<section class="block">
 		<h2>This instance</h2>
 		<dl class="facts card">
-			<div><dt>Signed in as</dt><dd>{session.status?.username ?? '—'}</dd></div>
-			<div><dt>Version</dt><dd>{session.status?.version ?? '—'}</dd></div>
-			<div><dt>Region</dt><dd>{session.status?.region ?? '—'}</dd></div>
+			<div>
+				<dt>Signed in as</dt>
+				<dd>{session.status?.username ?? '—'}</dd>
+			</div>
+			<div>
+				<dt>Version</dt>
+				<dd>{session.status?.version ?? '—'}</dd>
+			</div>
+			<div>
+				<dt>Region</dt>
+				<dd>{session.status?.region ?? '—'}</dd>
+			</div>
 			<div>
 				<dt>Metadata</dt>
 				<dd class={session.status?.tmdb_configured ? 'ok' : 'bad'}>
@@ -106,8 +123,7 @@
 		<p class="muted">
 			Films, shows, artwork and episode listings come from
 			<a href="https://www.themoviedb.org" target="_blank" rel="noreferrer noopener">TMDB</a>
-			and are cached locally. This product uses the TMDB API but is not endorsed or certified by
-			TMDB.
+			and are cached locally. This product uses the TMDB API but is not endorsed or certified by TMDB.
 		</p>
 		<a class="tmdb" href="https://www.themoviedb.org" target="_blank" rel="noreferrer noopener">
 			<Icon name="external" size={14} />
@@ -148,8 +164,8 @@
 	<section class="block">
 		<h2>Licence</h2>
 		<p class="muted">
-			Frog is open source under the MIT licence. The frog is original artwork, drawn from
-			geometry that lives in the repository.
+			Frog is open source under the MIT licence. The frog is original artwork, drawn from geometry
+			that lives in the repository.
 		</p>
 		<div class="actions">
 			<a class="btn" href="/whats-new">Release notes</a>

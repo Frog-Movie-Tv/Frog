@@ -71,7 +71,10 @@
 		{#if format === 'star5' && value !== null}
 			<span class="stars" aria-hidden="true">
 				{#each [1, 2, 3, 4, 5] as s (s)}
-					<i class:on={shown !== null && shown >= s - 0.5} class:half={shown !== null && shown >= s - 0.5 && shown < s}>★</i>
+					<i
+						class:on={shown !== null && shown >= s - 0.5}
+						class:half={shown !== null && shown >= s - 0.5 && shown < s}>★</i
+					>
 				{/each}
 			</span>
 			<span class="sr">{label}</span>
@@ -96,7 +99,13 @@
 				{/each}
 			</div>
 			{#if value !== null}
-				<button class="clear" onclick={() => { onchange(null); open = false; }}>Clear rating</button>
+				<button
+					class="clear"
+					onclick={() => {
+						onchange(null);
+						open = false;
+					}}>Clear rating</button
+				>
 			{/if}
 		</div>
 	{/if}

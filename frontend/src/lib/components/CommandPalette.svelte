@@ -91,7 +91,13 @@
 		{ id: 'p-set', group: GO, label: 'Settings', icon: 'settings', run: () => goto('/settings') },
 		{ id: 'p-imp', group: GO, label: 'Import', icon: 'upload', run: () => goto('/import') },
 		{ id: 'p-about', group: GO, label: 'About', icon: 'info', run: () => goto('/about') },
-		{ id: 'p-new', group: GO, label: 'Release notes', icon: 'sparkle', run: () => goto('/whats-new') }
+		{
+			id: 'p-new',
+			group: GO,
+			label: 'Release notes',
+			icon: 'sparkle',
+			run: () => goto('/whats-new')
+		}
 	];
 
 	const DO = 'Actions';

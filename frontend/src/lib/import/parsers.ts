@@ -464,7 +464,14 @@ function fromAnime(a: AnimeRow): Incoming {
 	row.rating = a.score100;
 	row.rewatch = a.rewatching;
 	row.episode_total = a.episodes;
-	row.alt_titles = [...new Set(parsed.slice(1).map((t) => t.base).concat(a.titles.slice(1)))];
+	row.alt_titles = [
+		...new Set(
+			parsed
+				.slice(1)
+				.map((t) => t.base)
+				.concat(a.titles.slice(1))
+		)
+	];
 
 	const format = a.format.toUpperCase();
 	if (format === 'MOVIE') {
@@ -589,8 +596,11 @@ export async function readAniList(username: string): Promise<ParsedFile[]> {
 				c?.year && c.month && c.day
 					? `${c.year}-${String(c.month).padStart(2, '0')}-${String(c.day).padStart(2, '0')}`
 					: null;
-			const titles = [e.media.title.english, e.media.title.romaji, ...(e.media.synonyms ?? [])]
-				.filter((t): t is string => !!t && t.trim() !== '');
+			const titles = [
+				e.media.title.english,
+				e.media.title.romaji,
+				...(e.media.synonyms ?? [])
+			].filter((t): t is string => !!t && t.trim() !== '');
 			return fromAnime({
 				titles,
 				format: e.media.format ?? 'TV',
@@ -615,7 +625,8 @@ function readMalXml(text: string): Incoming[] {
 	const doc = new DOMParser().parseFromString(text, 'application/xml');
 	if (doc.querySelector('parsererror')) throw new Error('That file is not a MyAnimeList export.');
 
-	const get = (el: Element, tag: string) => el.getElementsByTagName(tag)[0]?.textContent?.trim() ?? '';
+	const get = (el: Element, tag: string) =>
+		el.getElementsByTagName(tag)[0]?.textContent?.trim() ?? '';
 	const anime = Array.from(doc.getElementsByTagName('anime'));
 	if (!anime.length) throw new Error('No anime found in that file.');
 

@@ -1,0 +1,23 @@
+name: Release
+
+# release-please keeps a pull request open that bumps the version and writes
+# CHANGELOG.md from the Conventional Commit messages on main. Merging that pull
+# request tags the release, which is what production follows.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    name: Release pull request
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

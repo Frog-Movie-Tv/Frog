@@ -9,10 +9,7 @@
 	"orientation": "portrait-primary",
 	"background_color": "#07120e",
 	"theme_color": "#07120e",
-	"categories": [
-		"entertainment",
-		"utilities"
-	],
+	"categories": ["entertainment", "utilities"],
 	"icons": [
 		{
 			"src": "/mascots/sleepy-192.png",

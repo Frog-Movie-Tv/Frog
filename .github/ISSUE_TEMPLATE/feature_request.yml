@@ -1,0 +1,30 @@
+name: Feature request
+description: Something Frog should be able to do.
+labels: ['feature']
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What you want to be able to do
+      description: Describe it as the person using Frog, not as the change to make.
+      placeholder: I want to see which of my friends on this instance have watched a film.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What is awkward or impossible today.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Does it fit Frog?
+      options:
+        - label: It costs nothing to run — no paid API, no service that needs a card.
+          required: true
+        - label: It needs no account on anyone else's computer.
+          required: true

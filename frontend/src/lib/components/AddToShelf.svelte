@@ -73,7 +73,9 @@
 					aria-checked={shelf.on}
 					onclick={() => toggle(shelf)}
 				>
-					<span class="tick">{#if shelf.on}<Icon name="check" size={15} />{/if}</span>
+					<span class="tick"
+						>{#if shelf.on}<Icon name="check" size={15} />{/if}</span
+					>
 					<span class="label">{shelf.name}</span>
 				</button>
 			{/each}

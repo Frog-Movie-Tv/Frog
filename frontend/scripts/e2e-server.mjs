@@ -4,7 +4,7 @@
  * that ships in the Docker image.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, rmSync, mkdirSync } from 'node:fs';
+import { existsSync, statSync, rmSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,16 +12,16 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..', '..');
 
 const exe = process.platform === 'win32' ? 'frog.exe' : 'frog';
-const candidates = [
-	join(repo, 'backend', 'target', 'release', exe),
-	join(repo, 'backend', 'target', 'debug', exe)
-];
-const binary = candidates.find(existsSync);
+// Whichever build is newer, not whichever profile is listed first. Preferring
+// release meant that changing the backend and running the suite without
+// rebuilding release silently tested the previous version.
+const binary = ['release', 'debug']
+	.map((profile) => join(repo, 'backend', 'target', profile, exe))
+	.filter(existsSync)
+	.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
 
 if (!binary) {
-	console.error(
-		`No frog binary found. Build it first:\n  cd backend && cargo build --release`
-	);
+	console.error(`No frog binary found. Build it first:\n  cd backend && cargo build --release`);
 	process.exit(1);
 }
 

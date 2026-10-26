@@ -62,46 +62,54 @@
 	aria-labelledby="new-shelf-title"
 	transition:fly={{ y: 16, duration: 180 }}
 >
-<form onsubmit={create}>
-	<h2 id="new-shelf-title">New shelf</h2>
+	<form onsubmit={create}>
+		<h2 id="new-shelf-title">New shelf</h2>
 
-	<label class="field">
-		<span>Name</span>
-		<input bind:this={input} class="input" bind:value={name} maxlength="60" placeholder="Comfort watches" />
-	</label>
+		<label class="field">
+			<span>Name</span>
+			<input
+				bind:this={input}
+				class="input"
+				bind:value={name}
+				maxlength="60"
+				placeholder="Comfort watches"
+			/>
+		</label>
 
-	{#if !title}
-		<div class="kinds" role="radiogroup" aria-label="Kind of shelf">
-			<button
-				type="button"
-				class="kind"
-				class:on={kind === 'manual'}
-				role="radio"
-				aria-checked={kind === 'manual'}
-				onclick={() => (kind = 'manual')}
-			>
-				<Icon name="grip" size={18} />
-				<span><strong>Hand-picked</strong><small>Add titles yourself, in your own order</small></span>
-			</button>
-			<button
-				type="button"
-				class="kind"
-				class:on={kind === 'smart'}
-				role="radio"
-				aria-checked={kind === 'smart'}
-				onclick={() => (kind = 'smart')}
-			>
-				<Icon name="sparkle" size={18} />
-				<span><strong>Smart</strong><small>Fills itself from rules you set</small></span>
-			</button>
+		{#if !title}
+			<div class="kinds" role="radiogroup" aria-label="Kind of shelf">
+				<button
+					type="button"
+					class="kind"
+					class:on={kind === 'manual'}
+					role="radio"
+					aria-checked={kind === 'manual'}
+					onclick={() => (kind = 'manual')}
+				>
+					<Icon name="grip" size={18} />
+					<span
+						><strong>Hand-picked</strong><small>Add titles yourself, in your own order</small></span
+					>
+				</button>
+				<button
+					type="button"
+					class="kind"
+					class:on={kind === 'smart'}
+					role="radio"
+					aria-checked={kind === 'smart'}
+					onclick={() => (kind = 'smart')}
+				>
+					<Icon name="sparkle" size={18} />
+					<span><strong>Smart</strong><small>Fills itself from rules you set</small></span>
+				</button>
+			</div>
+		{/if}
+
+		<div class="actions">
+			<button type="button" class="btn ghost" onclick={onclose}>Cancel</button>
+			<button class="btn primary" disabled={busy || !name.trim()}>Create</button>
 		</div>
-	{/if}
-
-	<div class="actions">
-		<button type="button" class="btn ghost" onclick={onclose}>Cancel</button>
-		<button class="btn primary" disabled={busy || !name.trim()}>Create</button>
-	</div>
-</form>
+	</form>
 </div>
 
 <style>

@@ -39,7 +39,9 @@
 
 	const src = $derived(img(posterPath, size));
 	const progress = $derived(total > 0 ? Math.min(100, (watched / total) * 100) : 0);
-	const scored = $derived(rating === null ? null : formatScore(rating, settings.current.scoreFormat));
+	const scored = $derived(
+		rating === null ? null : formatScore(rating, settings.current.scoreFormat)
+	);
 	const show = $derived(settings.current);
 </script>
 

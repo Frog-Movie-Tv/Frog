@@ -108,6 +108,7 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .nest("/api", api)
         .route("/img/{size}/{*path}", get(images::proxy))
+        .route("/healthz", get(meta::healthz))
         .route("/robots.txt", get(robots))
         .fallback_service(spa(&state))
         // This is one person's private watch history. Even behind Tailscale,

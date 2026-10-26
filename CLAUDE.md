@@ -39,7 +39,7 @@ frontend/           SvelteKit 3 + Svelte 5 runes, adapter-static SPA, Vite 8
   e2e/smoke.spec.ts Playwright, desktop + Pixel 7
 scripts/run-local.ps1   run without Docker
 docs/INSTALL.md     install, Tailscale, updating, backups
-CHANGELOG.md        source of truth for release notes (parsed into the app)
+RELEASE-NOTES.md        source of truth for release notes (parsed into the app)
 ```
 
 ## Commands
@@ -103,11 +103,40 @@ each with its own throwaway database.
   auth-wall test in `e2e/smoke.spec.ts`.
 - Rails use fixed card widths; never `1fr` (one card would stretch to full width).
 
+## Working together
+
+Two owners work on this in parallel, often both with Claude Code.
+`docs/CONTRIBUTING.md` is the full version; the rules that matter here:
+
+- **Never commit to `main`.** It is protected. Branch `feat/…`, `fix/…`,
+  `docs/…`, `chore/…`, open a pull request, get CI green and the other owner's
+  approval.
+- **Conventional Commits**, because release-please reads them. `feat`, `fix`,
+  `perf`, `refactor` and `docs` reach the changelog; `test`, `build`, `ci`,
+  `chore` and `style` do not. On `0.x` a `feat` bumps the **patch**.
+- **Never edit a version or `CHANGELOG.md`.** Both are generated.
+  `RELEASE-NOTES.md` is the hand-written, product-voice file the app reads.
+- **New migrations get timestamped names** (`20261026T1730_thing.sql`), and an
+  applied migration is never edited — sqlx refuses to start on a changed
+  checksum. Add another one.
+- **Every query touching personal data names its owner.**
+  `backend/tests/scoping.rs` fails the build otherwise. Genuinely shared
+  statements go in its `ALLOWED` list with a reason.
+- **Install the hooks once per clone:** `git config core.hooksPath .githooks`.
+  pre-commit runs rustfmt and prettier and blocks `.env`, databases and edited
+  migrations; pre-push runs clippy, tests and svelte-check.
+- **Rebuild `--release` before Playwright.** The e2e server prefers the release
+  binary, so a stale one silently tests old code.
+
 ## Shipping
 
-Use the `/release` skill. It bumps the version, writes the changelog in product
-voice with a pond codename, runs every check, regenerates screenshots, commits,
-tags and pushes. Commit or push only when the owner asks.
+Releases are automatic. Merging to `main` deploys to staging; release-please
+keeps a release pull request open, and merging that one tags the release, which
+is what production follows.
+
+The `/release` skill is now only for the part a person has to do: writing the
+`RELEASE-NOTES.md` entry in product voice with a pond codename, and checking
+the screenshots. Commit or push only when the owner asks.
 
 ## Working style the owner expects
 

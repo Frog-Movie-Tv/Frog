@@ -41,7 +41,13 @@ const check = (label, ok, detail = '') => {
 	console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${label}${detail ? ' — ' + detail : ''}`);
 };
 
-const binary = join(repo, 'backend', 'target', 'release', process.platform === 'win32' ? 'frog.exe' : 'frog');
+const binary = join(
+	repo,
+	'backend',
+	'target',
+	'release',
+	process.platform === 'win32' ? 'frog.exe' : 'frog'
+);
 const dataDir = join(repo, 'frontend', '.because-data');
 rmSync(dataDir, { recursive: true, force: true });
 mkdirSync(dataDir, { recursive: true });
@@ -102,14 +108,24 @@ for (const [kind, id, rating] of library) {
 	await call('PUT', `/api/titles/${kind}/${id}/library`, { status: 'completed', rating });
 }
 // A Home layout saved before this row existed.
-await call('PUT', '/api/settings', { homeRows: ['continue', 'upnext', 'thisweek', 'recent', 'favourites'] });
+await call('PUT', '/api/settings', {
+	homeRows: ['continue', 'upnext', 'thisweek', 'recent', 'favourites']
+});
 
 const api = await call('GET', '/api/home/because');
 check('there are rows', api.rows.length >= 2, `${api.rows.length} rows`);
-check('the best rated title leads', api.rows[0]?.seed.name === 'Interstellar', api.rows[0]?.seed.name);
+check(
+	'the best rated title leads',
+	api.rows[0]?.seed.name === 'Interstellar',
+	api.rows[0]?.seed.name
+);
 const tracked = new Set(library.map(([k, id]) => `${k}${id}`));
 const all = api.rows.flatMap((r) => r.items.map((i) => `${i.kind}${i.tmdb_id}`));
-check('nothing in the library is offered', all.every((k) => !tracked.has(k)), all.filter((k) => tracked.has(k)).join(','));
+check(
+	'nothing in the library is offered',
+	all.every((k) => !tracked.has(k)),
+	all.filter((k) => tracked.has(k)).join(',')
+);
 check('no pick repeats across rows', new Set(all).size === all.length);
 check('a title rated 4 is never a seed', !api.rows.some((r) => r.seed.tmdb_id === 680));
 
@@ -135,12 +151,23 @@ for (const [label, viewport, extra] of [
 	await heading.waitFor({ timeout: 30000 }).catch(() => undefined);
 	check('an older saved layout gains the row', (await heading.count()) === 1);
 	const heroLabel = (await page.locator('.hero-label').textContent())?.trim();
-	check('with nothing in progress the hero says what it is', heroLabel === 'Recently added', heroLabel);
+	check(
+		'with nothing in progress the hero says what it is',
+		heroLabel === 'Recently added',
+		heroLabel
+	);
 	const rail = page.locator('section', { has: heading });
-	const links = await rail.locator('a[href^="/title/"]').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+	const links = await rail
+		.locator('a[href^="/title/"]')
+		.evaluateAll((as) => as.map((a) => a.getAttribute('href')));
 	check('the row shows the picks', links.length >= 4, `${links.length} posters`);
-	check('the row offers nothing from the library', links.every((h) => !library.some(([k, id]) => h === `/title/${k}/${id}`)));
-	const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+	check(
+		'the row offers nothing from the library',
+		links.every((h) => !library.some(([k, id]) => h === `/title/${k}/${id}`))
+	);
+	const overflow = await page.evaluate(
+		() => document.documentElement.scrollWidth - window.innerWidth
+	);
 	check('Home fits the viewport', overflow <= 0, `${overflow}px too wide`);
 	await heading.scrollIntoViewIfNeeded();
 	await page.screenshot({ path: join(out, `1-home-${label}.png`) });
@@ -160,9 +187,15 @@ for (const [label, viewport, extra] of [
 		await page.goto(`${BASE}/`);
 		await page.getByRole('heading', { name: 'Recently added' }).waitFor();
 		await page.waitForTimeout(1500);
-		check('turned off, it stays off', (await page.getByRole('heading', { name: /Because you watched/ }).count()) === 0);
+		check(
+			'turned off, it stays off',
+			(await page.getByRole('heading', { name: /Because you watched/ }).count()) === 0
+		);
 		// Put it back for the phone run.
-		await call('PUT', '/api/settings', { ...(await call('GET', '/api/settings')), homeRows: ['continue', 'upnext', 'thisweek', 'because', 'recent', 'favourites'] });
+		await call('PUT', '/api/settings', {
+			...(await call('GET', '/api/settings')),
+			homeRows: ['continue', 'upnext', 'thisweek', 'because', 'recent', 'favourites']
+		});
 	}
 	check('no errors in the console', errors.length === 0, errors.join(' | '));
 	await context.close();
@@ -171,5 +204,7 @@ for (const [label, viewport, extra] of [
 await browser.close();
 server.kill();
 const failed = results.filter((r) => !r).length;
-console.log(`\nscreenshots in ${out}\n${failed ? failed + ' check(s) failed' : 'all checks passed'}`);
+console.log(
+	`\nscreenshots in ${out}\n${failed ? failed + ' check(s) failed' : 'all checks passed'}`
+);
 process.exitCode = failed ? 1 : 0;

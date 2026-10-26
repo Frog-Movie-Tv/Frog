@@ -64,7 +64,9 @@
 	function collapse(list: Entry[]) {
 		const out: { entry: Entry; count: number }[] = [];
 		for (const entry of list) {
-			const same = out.find((o) => o.entry.tmdb_id === entry.tmdb_id && o.entry.kind === entry.kind);
+			const same = out.find(
+				(o) => o.entry.tmdb_id === entry.tmdb_id && o.entry.kind === entry.kind
+			);
 			if (same) same.count++;
 			else out.push({ entry, count: 1 });
 		}
@@ -94,7 +96,9 @@
 	});
 
 	const upcoming = $derived(entries.filter((e) => e.date >= today));
-	const monthLabel = $derived(cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }));
+	const monthLabel = $derived(
+		cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+	);
 	const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 	const selectedEntries = $derived(byDate.get(selected) ?? []);
 
@@ -159,7 +163,9 @@
 								class:today={cell.date === today}
 								class:has={items.length > 0}
 								class:picked={selected === cell.date}
-								aria-label="{prettyDate(cell.date)}: {items.length ? plural(items.length, 'title') : 'nothing'}"
+								aria-label="{prettyDate(cell.date)}: {items.length
+									? plural(items.length, 'title')
+									: 'nothing'}"
 								onclick={() => (selected = cell.date)}
 							>
 								<span class="num">{Number(cell.date.slice(8, 10))}</span>
@@ -168,7 +174,11 @@
 								{#if items.length}
 									<span class="titles">
 										{#each items.slice(0, 2) as { entry, count } (`${entry.kind}-${entry.tmdb_id}`)}
-											<span class="mini" class:film={entry.kind === 'movie'} class:seen={entry.watched}>
+											<span
+												class="mini"
+												class:film={entry.kind === 'movie'}
+												class:seen={entry.watched}
+											>
 												{#if entry.poster_path}
 													<img src={img(entry.poster_path, 'w92')} alt="" loading="lazy" />
 												{/if}
@@ -181,7 +191,9 @@
 										{#each items.slice(0, 4) as { entry } (`${entry.kind}-${entry.tmdb_id}`)}
 											<i
 												class:film={entry.kind === 'movie'}
-												style:background={entry.kind === 'movie' ? 'transparent' : (entry.accent ?? 'var(--accent)')}
+												style:background={entry.kind === 'movie'
+													? 'transparent'
+													: (entry.accent ?? 'var(--accent)')}
 												style:border-color={entry.accent ?? 'var(--accent)'}
 											></i>
 										{/each}

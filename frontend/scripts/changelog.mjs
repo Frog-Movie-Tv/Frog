@@ -1,5 +1,5 @@
 /**
- * Turns CHANGELOG.md into the JSON the "What's new" page renders, so the
+ * Turns RELEASE-NOTES.md into the JSON the "What's new" page renders, so the
  * changelog has exactly one source of truth and cannot drift from the app.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const source = join(here, '..', '..', 'CHANGELOG.md');
+const source = join(here, '..', '..', 'RELEASE-NOTES.md');
 const target = join(here, '..', 'static', 'changelog.json');
 
 const text = readFileSync(source, 'utf8');

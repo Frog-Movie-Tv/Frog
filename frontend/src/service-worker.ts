@@ -127,7 +127,8 @@ sw.addEventListener('push', (event) => {
 
 sw.addEventListener('notificationclick', (event) => {
 	event.notification.close();
-	const url = new URL((event.notification.data as { url?: string })?.url ?? '/', sw.location.origin).href;
+	const url = new URL((event.notification.data as { url?: string })?.url ?? '/', sw.location.origin)
+		.href;
 	event.waitUntil(
 		sw.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
 			const open = windows.find((w) => new URL(w.url).origin === sw.location.origin);
@@ -152,7 +153,12 @@ sw.addEventListener('pushsubscriptionchange', (event) => {
 			const key = change.oldSubscription?.options.applicationServerKey;
 			const next =
 				change.newSubscription ??
-				(key ? await sw.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }) : null);
+				(key
+					? await sw.registration.pushManager.subscribe({
+							userVisibleOnly: true,
+							applicationServerKey: key
+						})
+					: null);
 			if (!next) return;
 			await fetch('/api/push/subscribe', {
 				method: 'POST',

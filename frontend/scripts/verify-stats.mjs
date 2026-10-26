@@ -43,7 +43,13 @@ const check = (label, ok, detail = '') => {
 	console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${label}${detail ? ' — ' + detail : ''}`);
 };
 
-const binary = join(repo, 'backend', 'target', 'release', process.platform === 'win32' ? 'frog.exe' : 'frog');
+const binary = join(
+	repo,
+	'backend',
+	'target',
+	'release',
+	process.platform === 'win32' ? 'frog.exe' : 'frog'
+);
 const dataDir = join(repo, 'frontend', '.stats-data');
 rmSync(dataDir, { recursive: true, force: true });
 mkdirSync(dataDir, { recursive: true });
@@ -125,12 +131,28 @@ for (let e = 1; e <= 7; e++) {
 await call('PUT', '/api/titles/movie/438631/library', { status: 'completed' });
 
 const all = await call('GET', '/api/stats');
-check('every film counts, the one marked in the app included', all.totals.films === 7, `films ${all.totals.films}`);
+check(
+	'every film counts, the one marked in the app included',
+	all.totals.films === 7,
+	`films ${all.totals.films}`
+);
 check('episodes count', all.totals.episodes === 7, `episodes ${all.totals.episodes}`);
-check('the November run is the longest streak', all.streaks.longest.days === 9, JSON.stringify(all.streaks.longest));
+check(
+	'the November run is the longest streak',
+	all.streaks.longest.days === 9,
+	JSON.stringify(all.streaks.longest)
+);
 check('a film watched today starts a current streak', all.streaks.current.days >= 1);
-check('Nolan leads directors', all.people.directors[0]?.name === 'Christopher Nolan' && all.people.directors[0]?.titles === 3, JSON.stringify(all.people.directors[0]));
-check('an actor shared by several films leads actors', all.people.actors[0]?.titles >= 2, JSON.stringify(all.people.actors[0]));
+check(
+	'Nolan leads directors',
+	all.people.directors[0]?.name === 'Christopher Nolan' && all.people.directors[0]?.titles === 3,
+	JSON.stringify(all.people.directors[0])
+);
+check(
+	'an actor shared by several films leads actors',
+	all.people.actors[0]?.titles >= 2,
+	JSON.stringify(all.people.actors[0])
+);
 check('studios are ranked', all.people.studios.length > 0, all.people.studios[0]?.name);
 check('no credits are left to fetch', all.credits_pending === 0, String(all.credits_pending));
 
@@ -158,20 +180,48 @@ async function signedIn(viewport, extra = {}) {
 	await page.goto(`${BASE}/stats`);
 	await page.getByRole('heading', { name: 'Watch time by year' }).waitFor();
 	check('the tab is named', (await page.title()) === 'Stats · Frog');
-	for (const name of ['Most watched shows', 'Top films', 'Genres', 'Ratings', 'Release decades', 'Actors', 'Directors and creators', 'Studios', 'Library']) {
+	for (const name of [
+		'Most watched shows',
+		'Top films',
+		'Genres',
+		'Ratings',
+		'Release decades',
+		'Actors',
+		'Directors and creators',
+		'Studios',
+		'Library'
+	]) {
 		check(`shows ${name}`, (await page.getByRole('heading', { name, exact: true }).count()) === 1);
 	}
-	const directors = page.locator('section', { has: page.getByRole('heading', { name: 'Directors and creators' }) });
-	check('Christopher Nolan is first, linked to his page', (await directors.locator('a.person').first().getAttribute('href')) === `/person/${all.people.directors[0].tmdb_id}`);
+	const directors = page.locator('section', {
+		has: page.getByRole('heading', { name: 'Directors and creators' })
+	});
+	check(
+		'Christopher Nolan is first, linked to his page',
+		(await directors.locator('a.person').first().getAttribute('href')) ===
+			`/person/${all.people.directors[0].tmdb_id}`
+	);
 	// Headshots are lazy and come through the proxy from TMDB on first view.
 	await page.locator('.people').last().scrollIntoViewIfNeeded();
 	await page
-		.waitForFunction(() => [...document.querySelectorAll('.people img')].every((i) => i.complete), null, { timeout: 30000 })
+		.waitForFunction(
+			() => [...document.querySelectorAll('.people img')].every((i) => i.complete),
+			null,
+			{ timeout: 30000 }
+		)
 		.catch(() => undefined);
 	for (const name of ['Actors', 'Directors and creators', 'Studios']) {
-		const section = page.locator('section', { has: page.getByRole('heading', { name, exact: true }) });
-		const imgs = await section.locator('img').evaluateAll((list) => list.map((i) => i.naturalWidth > 0));
-		check(`${name} images load through the proxy`, imgs.length > 0 && imgs.every(Boolean), `${imgs.filter(Boolean).length}/${imgs.length}`);
+		const section = page.locator('section', {
+			has: page.getByRole('heading', { name, exact: true })
+		});
+		const imgs = await section
+			.locator('img')
+			.evaluateAll((list) => list.map((i) => i.naturalWidth > 0));
+		check(
+			`${name} images load through the proxy`,
+			imgs.length > 0 && imgs.every(Boolean),
+			`${imgs.filter(Boolean).length}/${imgs.length}`
+		);
 	}
 	await page.evaluate(() => window.scrollTo(0, 0));
 	await page.screenshot({ path: join(out, '1-all-time-desktop.png'), fullPage: true });
@@ -180,11 +230,20 @@ async function signedIn(viewport, extra = {}) {
 	await page.getByRole('option', { name: '2025' }).click();
 	await page.waitForURL(/year=2025/);
 	await page.getByRole('heading', { name: 'Watch time by month' }).waitFor();
-	const months = await page.locator('section', { has: page.getByRole('heading', { name: 'Watch time by month' }) }).locator('.column').count();
+	const months = await page
+		.locator('section', { has: page.getByRole('heading', { name: 'Watch time by month' }) })
+		.locator('.column')
+		.count();
 	check('a year is drawn month by month', months === 12, `${months} columns`);
-	const filmsTile = await page.locator('.tile', { hasText: 'Films' }).locator('strong').textContent();
+	const filmsTile = await page
+		.locator('.tile', { hasText: 'Films' })
+		.locator('strong')
+		.textContent();
 	check('the year counts its own films', filmsTile?.trim() === '5', `films tile ${filmsTile}`);
-	check('the library breakdown stays with all time', (await page.getByRole('heading', { name: 'Library', exact: true }).count()) === 0);
+	check(
+		'the library breakdown stays with all time',
+		(await page.getByRole('heading', { name: 'Library', exact: true }).count()) === 0
+	);
 	await page.screenshot({ path: join(out, '2-year-desktop.png'), fullPage: true });
 
 	await page.reload();
@@ -201,7 +260,11 @@ async function signedIn(viewport, extra = {}) {
 	await page.waitForFunction(() => document.querySelector('[role=dialog] img')?.complete);
 	const size = await image.evaluate((i) => [i.naturalWidth, i.naturalHeight]);
 	check('the card is 1080 by 1920', size[0] === 1080 && size[1] === 1920, size.join('x'));
-	check('posters were drawn from the proxy', posters.length >= 3 && posters.every((s) => s === 200), posters.join(','));
+	check(
+		'posters were drawn from the proxy',
+		posters.length >= 3 && posters.every((s) => s === 200),
+		posters.join(',')
+	);
 	const png = await image.evaluate(async (i) => {
 		const b = await (await fetch(i.src)).blob();
 		const bytes = new Uint8Array(await b.arrayBuffer());
@@ -210,11 +273,21 @@ async function signedIn(viewport, extra = {}) {
 		return btoa(s);
 	});
 	writeFileSync(join(out, 'review-2025.png'), Buffer.from(png, 'base64'));
-	const [download] = await Promise.all([page.waitForEvent('download'), dialog.getByRole('button', { name: /Save/ }).click()]);
-	check('saving downloads a named PNG', download.suggestedFilename() === 'frog-2025-in-review.png', download.suggestedFilename());
+	const [download] = await Promise.all([
+		page.waitForEvent('download'),
+		dialog.getByRole('button', { name: /Save/ }).click()
+	]);
+	check(
+		'saving downloads a named PNG',
+		download.suggestedFilename() === 'frog-2025-in-review.png',
+		download.suggestedFilename()
+	);
 	await page.screenshot({ path: join(out, '3-review-dialog.png') });
 	await page.keyboard.press('Escape');
-	const closed = await dialog.waitFor({ state: 'detached', timeout: 2000 }).then(() => true, () => false);
+	const closed = await dialog.waitFor({ state: 'detached', timeout: 2000 }).then(
+		() => true,
+		() => false
+	);
 	check('Escape closes it', closed);
 
 	check('no errors in the console', errors.length === 0, errors.join(' | '));
@@ -223,18 +296,27 @@ async function signedIn(viewport, extra = {}) {
 
 {
 	console.log('\n== phone ==');
-	const { page, context, errors } = await signedIn({ width: 375, height: 812 }, { isMobile: true, hasTouch: true });
+	const { page, context, errors } = await signedIn(
+		{ width: 375, height: 812 },
+		{ isMobile: true, hasTouch: true }
+	);
 	for (const path of ['/stats', '/stats?year=2025']) {
 		await page.goto(`${BASE}${path}`);
 		await page.getByRole('heading', { name: /Watch time by/ }).waitFor();
-		const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+		const overflow = await page.evaluate(
+			() => document.documentElement.scrollWidth - window.innerWidth
+		);
 		check(`${path} fits 375px`, overflow <= 0, `${overflow}px too wide`);
 	}
 	await page.screenshot({ path: join(out, '4-year-375.png'), fullPage: true });
 	await page.getByRole('button', { name: '2025 in review' }).click();
 	await page.getByRole('dialog').locator('img').waitFor({ timeout: 20000 });
 	const box = await page.getByRole('dialog').boundingBox();
-	check('the review dialog fits the phone', box && box.width <= 375 && box.y >= 0 && box.y + box.height <= 812, JSON.stringify(box));
+	check(
+		'the review dialog fits the phone',
+		box && box.width <= 375 && box.y >= 0 && box.y + box.height <= 812,
+		JSON.stringify(box)
+	);
 	await page.screenshot({ path: join(out, '5-review-375.png') });
 	check('no errors in the console', errors.length === 0, errors.join(' | '));
 	await context.close();
@@ -243,5 +325,7 @@ async function signedIn(viewport, extra = {}) {
 await browser.close();
 server.kill();
 const failed = results.filter((r) => !r).length;
-console.log(`\nscreenshots in ${out}\n${failed ? failed + ' check(s) failed' : 'all checks passed'}`);
+console.log(
+	`\nscreenshots in ${out}\n${failed ? failed + ' check(s) failed' : 'all checks passed'}`
+);
 process.exitCode = failed ? 1 : 0;

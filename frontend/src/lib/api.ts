@@ -125,8 +125,7 @@ export const api = {
 		send<{ ok: true }>('POST', '/api/auth/setup', { username, password }),
 	login: (username: string, password: string, remember: boolean, code?: string) =>
 		send<{ ok: true }>('POST', '/api/auth/login', { username, password, remember, code }),
-	twoFactor: () =>
-		get<{ enabled: boolean; recovery_codes_left: number }>('/api/auth/two-factor'),
+	twoFactor: () => get<{ enabled: boolean; recovery_codes_left: number }>('/api/auth/two-factor'),
 	startTwoFactor: () =>
 		send<{ secret: string; uri: string; qr_svg: string }>('POST', '/api/auth/two-factor/start', {}),
 	confirmTwoFactor: (code: string) =>
@@ -159,8 +158,12 @@ export const api = {
 	stats: () => get<Stats>('/api/library/stats'),
 	shelves: () => get<{ shelves: Shelf[] }>('/api/shelves'),
 	shelf: (id: number) => get<{ shelf: Shelf; items: LibraryItem[] }>(`/api/shelves/${id}`),
-	createShelf: (body: { name: string; kind: Shelf['kind']; rules?: ShelfRules; title_ids?: number[] }) =>
-		send<{ shelf: Shelf }>('POST', '/api/shelves', body),
+	createShelf: (body: {
+		name: string;
+		kind: Shelf['kind'];
+		rules?: ShelfRules;
+		title_ids?: number[];
+	}) => send<{ shelf: Shelf }>('POST', '/api/shelves', body),
 	updateShelf: (id: number, body: { name?: string; rules?: ShelfRules }) =>
 		send<{ shelf: Shelf }>('PUT', `/api/shelves/${id}`, body),
 	/** Returns what it takes to put the shelf back. */
@@ -177,13 +180,16 @@ export const api = {
 	reorderShelf: (id: number, titleIds: number[]) =>
 		send<{ ok: true }>('PUT', `/api/shelves/${id}/items/order`, { title_ids: titleIds }),
 	titleShelves: (kind: Kind, tmdbId: number) =>
-		get<{ shelves: { id: number; name: string; on: boolean }[] }>(`/api/titles/${kind}/${tmdbId}/shelves`),
+		get<{ shelves: { id: number; name: string; on: boolean }[] }>(
+			`/api/titles/${kind}/${tmdbId}/shelves`
+		),
 	pushStatus: () => get<{ public_key: string; devices: number }>('/api/push'),
 	pushSubscribe: (subscription: PushSubscriptionJSON) =>
 		send<{ ok: true }>('POST', '/api/push/subscribe', subscription),
 	pushUnsubscribe: (endpoint: string) =>
 		send<{ ok: true }>('POST', '/api/push/unsubscribe', { endpoint }),
-	pushTest: () => send<{ sent: number; gone: number; failed: number }>('POST', '/api/push/test', {}),
+	pushTest: () =>
+		send<{ sent: number; gone: number; failed: number }>('POST', '/api/push/test', {}),
 	fullStats: (year?: number) => get<FullStats>(`/api/stats${qs({ year })}`),
 
 	title: (kind: Kind, id: number) => get<TitleDetail>(`/api/titles/${kind}/${id}`),
@@ -213,13 +219,7 @@ export const api = {
 			{ watched }
 		),
 
-	setSeasonWatched: (
-		kind: Kind,
-		id: number,
-		season: number,
-		watched: boolean,
-		when?: WhenAnswer
-	) =>
+	setSeasonWatched: (kind: Kind, id: number, season: number, watched: boolean, when?: WhenAnswer) =>
 		send<{ item: LibraryItem }>('POST', `/api/titles/${kind}/${id}/episodes/${season}/watch`, {
 			watched,
 			...when
