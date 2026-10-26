@@ -236,3 +236,14 @@ jobs:
           docker logs frog-ci
           docker rm -f frog-ci
           exit 1
+
+      # FROG_NOTIFY_HOUR is local time, so TZ has to mean something in there.
+      - name: The image knows the owners' time zone
+        if: github.event_name == 'pull_request'
+        run: |
+          zone="$(docker run --rm -e TZ=Europe/Brussels --entrypoint date frog:ci +%Z)"
+          echo "Europe/Brussels reads as $zone"
+          case "$zone" in
+            CET|CEST) ;;
+            *) echo "the image has no time zone data"; exit 1 ;;
+          esac
