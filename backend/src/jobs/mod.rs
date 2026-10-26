@@ -164,12 +164,25 @@ impl Announcement {
     }
 }
 
+/// The hour, in the server's local time, from which this account hears about
+/// new episodes: its own choice in Settings, else FROG_NOTIFY_HOUR.
+pub async fn notify_hour(pool: &sqlx::SqlitePool, user_id: i64, default: u32) -> u32 {
+    let raw: Option<(String,)> =
+        sqlx::query_as("SELECT value FROM app_setting WHERE user_id = ? AND key = 'preferences'")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+    raw.and_then(|(json,)| serde_json::from_str::<serde_json::Value>(&json).ok())
+        .and_then(|prefs| prefs.get("notifyHour").and_then(serde_json::Value::as_u64))
+        .filter(|hour| *hour < 24)
+        .map(|hour| hour as u32)
+        .unwrap_or(default)
+}
+
 async fn announce_new_episodes(state: &AppState, now: chrono::NaiveDateTime) -> anyhow::Result<()> {
     use chrono::Timelike;
-    // Evening by default (FROG_NOTIFY_HOUR): when most episodes are watchable.
-    if now.hour() < state.config.notify_hour {
-        return Ok(());
-    }
     // Only accounts with a subscribed browser can be told anything, and each
     // is told about its own shows from its own library.
     let listeners: Vec<(i64,)> = sqlx::query_as("SELECT DISTINCT user_id FROM push_subscription")
@@ -177,6 +190,10 @@ async fn announce_new_episodes(state: &AppState, now: chrono::NaiveDateTime) -> 
         .await?;
 
     for (user_id,) in listeners {
+        // Evening by default: when most episodes are watchable.
+        if now.hour() < notify_hour(&state.pool, user_id, state.config.notify_hour).await {
+            continue;
+        }
         for a in due_announcements(&state.pool, user_id, now.date()).await? {
             let result = crate::push::broadcast(state, user_id, &a.payload()).await?;
             // Nobody reached because the network is down: try again next tick.

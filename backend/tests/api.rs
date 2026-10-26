@@ -1110,6 +1110,44 @@ async fn the_worker_backfills_credits_for_older_titles() {
     assert_eq!(n, 1);
 }
 
+/// Each account picks the hour it hears about new episodes; anything
+/// missing or out of range falls back to the server's FROG_NOTIFY_HOUR.
+#[tokio::test]
+async fn each_account_chooses_its_notification_hour() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    let pool = &h.state.pool;
+    let id = |name: &'static str| async move {
+        sqlx::query_as::<_, (i64,)>("SELECT id FROM app_user WHERE username = ?")
+            .bind(name)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+            .0
+    };
+    let (owner_id, guest_id) = (id("mihai").await, id("zjef").await);
+
+    assert_eq!(
+        frog::jobs::notify_hour(pool, owner_id, 18).await,
+        18,
+        "nothing chosen"
+    );
+
+    h.put("/api/settings", json!({ "notifyHour": 7 }), Some(&owner))
+        .await;
+    h.put("/api/settings", json!({ "notifyHour": 99 }), Some(&guest))
+        .await;
+    assert_eq!(frog::jobs::notify_hour(pool, owner_id, 18).await, 7);
+    assert_eq!(
+        frog::jobs::notify_hour(pool, guest_id, 18).await,
+        18,
+        "an impossible hour falls back"
+    );
+
+    let (_, status) = h.get("/api/push", Some(&owner)).await;
+    assert_eq!(status["default_hour"], json!(18));
+}
+
 /// A browser subscription with real P-256 keys, as `PushSubscription.toJSON()`.
 fn browser_subscription(endpoint: &str) -> Value {
     use base64::Engine;

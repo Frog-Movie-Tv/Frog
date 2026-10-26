@@ -1,12 +1,16 @@
 <script lang="ts">
 	import { api } from '#lib/api';
 	import Icon from '#lib/components/Icon.svelte';
+	import Select from '#lib/components/Select.svelte';
+	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 
 	type Step = 'loading' | 'unsupported' | 'insecure' | 'blocked' | 'off' | 'on';
 
 	let step = $state<Step>('loading');
 	let devices = $state(0);
+	/** FROG_NOTIFY_HOUR on this server: what "the usual time" means. */
+	let defaultHour = $state(18);
 	let busy = $state(false);
 
 	function keyBytes(base64url: string): Uint8Array<ArrayBuffer> {
@@ -43,6 +47,7 @@
 		try {
 			const [status, reg] = await Promise.all([api.pushStatus(), worker()]);
 			devices = status.devices;
+			defaultHour = status.default_hour;
 			if (!reg) {
 				step = 'unsupported';
 				return;
@@ -127,6 +132,17 @@
 		}
 	}
 
+	function clock(hour: number): string {
+		if (settings.current.clock24) return `${String(hour).padStart(2, '0')}:00`;
+		const h = hour % 12 || 12;
+		return `${h} ${hour < 12 ? 'am' : 'pm'}`;
+	}
+
+	const hours = $derived([
+		{ value: 'usual', label: `Usual time (${clock(defaultHour)})` },
+		...Array.from({ length: 24 }, (_, h) => ({ value: String(h), label: clock(h) }))
+	]);
+
 	const hint = $derived(
 		{
 			loading: '',
@@ -158,11 +174,36 @@
 			</div>
 		{/if}
 	</div>
+	{#if step === 'on'}
+		<div class="when">
+			<span class="label">
+				<strong>Send from</strong>
+				<span class="faint">On the day an episode airs</span>
+			</span>
+			<Select
+				label="Send alerts from"
+				value={settings.current.notifyHour == null ? 'usual' : String(settings.current.notifyHour)}
+				options={hours}
+				onchange={(v) => settings.set('notifyHour', v === 'usual' ? null : Number(v))}
+			/>
+		</div>
+	{/if}
 </div>
 
 <style>
 	.notifications {
 		padding: 15px 18px;
+	}
+
+	.when {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		flex-wrap: wrap;
+		gap: 12px 16px;
+		margin-top: 14px;
+		padding-top: 14px;
+		border-top: 1px solid var(--line);
 	}
 
 	.top {
