@@ -108,7 +108,7 @@ interface PushMessage {
  * and complete, so it shows even when Frog itself cannot be reached.
  */
 sw.addEventListener('push', (event) => {
-	let message: PushMessage = {};
+	let message: PushMessage;
 	try {
 		message = event.data?.json() ?? {};
 	} catch {

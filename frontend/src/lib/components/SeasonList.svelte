@@ -7,7 +7,6 @@
 	import { whenWatched, type WhenAnswer } from '#lib/when.svelte';
 	import type { EpisodeView, Kind, LibraryItem, SeasonDetail, SeasonSummary } from '#lib/types';
 	import Rating from './Rating.svelte';
-	import Spinner from './Spinner.svelte';
 
 	interface Props {
 		kind: Kind;

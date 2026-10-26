@@ -42,6 +42,18 @@ if has '^frontend/.*\.(ts|js|svelte|json|md|css|yml|yaml)$'; then
 	}
 fi
 
+# Only the staged scripts and components: linting the whole tree on every
+# commit would make committing slow, and CI lints all of it anyway.
+lintable="$(echo "$staged" | grep -E '^frontend/.*\.(ts|js|mjs|svelte)$' | sed 's#^frontend/##' || true)"
+if [ -n "$lintable" ]; then
+	echo "pre-commit: eslint"
+	# shellcheck disable=SC2086
+	( cd "$repo/frontend" && npx eslint --no-warn-ignored $lintable ) || {
+		echo "  run: cd frontend && npm run lint"
+		fail=1
+	}
+fi
+
 # An applied migration must never change: sqlx compares checksums and refuses
 # to start, which would take a running instance down on its next deploy.
 changed_migrations="$(git diff --cached --name-only --diff-filter=MD -- backend/migrations || true)"
