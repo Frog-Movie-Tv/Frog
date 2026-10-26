@@ -38,8 +38,25 @@ test('creating the account signs you straight in', async ({ page }) => {
 	await page.getByLabel('Password').fill(PASS);
 	await page.getByRole('button', { name: isSetup ? 'Create account' : 'Sign in' }).click();
 
+	// A new account with nothing tracked is welcomed first. Either project may
+	// have been through it already on this shared database.
+	await expect(page).toHaveURL(/\/(welcome)?$/);
+	if (page.url().endsWith('/welcome')) {
+		await expect(page.getByRole('heading', { name: /^Welcome/ })).toBeVisible();
+		await page.getByRole('button', { name: 'Continue' }).click();
+		await expect(page.getByRole('heading', { name: 'Fill your library' })).toBeVisible();
+		await page.getByRole('button', { name: 'Later' }).click();
+	}
 	await expect(page).toHaveURL('/');
 	await expect(page.getByText('Nothing here yet')).toBeVisible();
+});
+
+test('once welcomed, an empty home stays home', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/');
+	await expect(page.getByText('Nothing here yet')).toBeVisible();
+	await page.waitForTimeout(500);
+	await expect(page).toHaveURL('/');
 });
 
 test('an empty home and library explain themselves instead of showing blank grids', async ({
