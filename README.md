@@ -12,7 +12,7 @@ nothing at all.
 
 [**Get started →**](docs/INSTALL.md)
 &nbsp;·&nbsp;
-[What's new](CHANGELOG.md)
+[What's new](RELEASE-NOTES.md)
 &nbsp;·&nbsp;
 [How it works](ARCHITECTURE.md)
 

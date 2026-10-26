@@ -17,7 +17,7 @@ Frog now has two owners: Mihai Constantin (GitHub: MihCons) and Zjef Schaeken
 organisation: `https://github.com/Frog-Movie-Tv/Frog`.
 
 **Done in this session** (collecting under `## Upcoming — 0.4.1 Lily Pad —` in
-CHANGELOG.md; the owners asked for everything new to be named 0.4.1):
+RELEASE-NOTES.md; the owners asked for everything new to be named 0.4.1):
 
 - Remote and every in-repo reference moved to the new organisation, including
   the GHCR image name in `docs/INSTALL.md` and the update check in Settings.
@@ -117,13 +117,13 @@ Left for Part 1:
    right, but backups, imports and the screenshot and verify scripts all still
    assume one account.
 
-Nothing about accounts is in CHANGELOG.md yet, on purpose: there is no
+Nothing about accounts is in RELEASE-NOTES.md yet, on purpose: there is no
 interface for it, so there is nothing a user can do with it.
 
 **Part 2 — two developers at once.** Not started. Protect main (no direct
 pushes, PRs only, CI green plus one approval from the other owner, admin
 override for emergencies); conventional commits; release-please for versions
-and CHANGELOG.md so neither of us edits it by hand; timestamped migration
+and RELEASE-NOTES.md so neither of us edits it by hand; timestamped migration
 filenames plus a CI check that migrations apply on a fresh database and on a
 copy of the previous version's; pre-commit hooks for rustfmt, clippy,
 prettier, eslint and svelte-check, with CI running the same; CODEOWNERS, PR
@@ -197,7 +197,7 @@ The interface stays English only.
 - The Docker image has never been built locally (no Docker on the laptop).
   CI builds it; check the latest run on GitHub Actions.
 - GitHub Releases for v0.2.0, v0.3.0 and v0.4.0 have not been created; the
-  tags exist. Create them from the tags with the notes in CHANGELOG.md.
+  tags exist. Create them from the tags with the notes in RELEASE-NOTES.md.
 - The calendar screenshot comes out empty, because the demo titles have no
   upcoming episodes. Seed a currently airing show in `scripts/screenshots.mjs`.
 

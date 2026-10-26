@@ -94,7 +94,12 @@ function bounds(shape) {
 			const xs = shape.points.map((p) => p[0]);
 			const ys = shape.points.map((p) => p[1]);
 			const pad = shape.width / 2 + 1;
-			return [Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad];
+			return [
+				Math.min(...xs) - pad,
+				Math.min(...ys) - pad,
+				Math.max(...xs) + pad,
+				Math.max(...ys) + pad
+			];
 		}
 		default:
 			return [0, 0, 0, 0];
@@ -103,11 +108,7 @@ function bounds(shape) {
 
 function parseHex(hex) {
 	const v = hex.replace('#', '');
-	return [
-		parseInt(v.slice(0, 2), 16),
-		parseInt(v.slice(2, 4), 16),
-		parseInt(v.slice(4, 6), 16)
-	];
+	return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)];
 }
 
 /**
@@ -296,7 +297,10 @@ emit(join(staticDir, 'icon-512.png'), renderIcon(classic, 512));
 emit(join(staticDir, 'icon-maskable-512.png'), renderIcon(classic, 512, { maskable: true }));
 emit(join(staticDir, 'icon-mono.svg'), toSvg(classic, { monochrome: 'currentColor' }));
 emit(join(staticDir, 'badge-96.png'), renderBadge(classic, 96));
-emit(join(staticDir, 'manifest.webmanifest'), Buffer.from(JSON.stringify(manifest('classic'), null, '\t') + '\n'));
+emit(
+	join(staticDir, 'manifest.webmanifest'),
+	Buffer.from(JSON.stringify(manifest('classic'), null, '\t') + '\n')
+);
 emit(join(staticDir, 'wordmark.svg'), Buffer.from(wordmark()));
 
 function manifest(id) {

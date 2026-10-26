@@ -36,9 +36,10 @@ const check = (label, ok, detail = '') => {
 
 console.log('== AniList schema ==');
 {
-	const query = readFileSync(join(repo, 'frontend', 'src', 'lib', 'import', 'parsers.ts'), 'utf8').match(
-		/const ANILIST_QUERY = `([\s\S]*?)`;/
-	)[1];
+	const query = readFileSync(
+		join(repo, 'frontend', 'src', 'lib', 'import', 'parsers.ts'),
+		'utf8'
+	).match(/const ANILIST_QUERY = `([\s\S]*?)`;/)[1];
 	const res = await fetch('https://graphql.anilist.co', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', accept: 'application/json' },
@@ -47,10 +48,20 @@ console.log('== AniList schema ==');
 	const body = await res.json();
 	const message = body?.errors?.[0]?.message ?? '';
 	// An unknown user means the query itself was accepted.
-	check('AniList accepts the query', /not found/i.test(message) && !/Cannot query field|Unknown argument/i.test(message), message);
+	check(
+		'AniList accepts the query',
+		/not found/i.test(message) && !/Cannot query field|Unknown argument/i.test(message),
+		message
+	);
 }
 
-const binary = join(repo, 'backend', 'target', 'release', process.platform === 'win32' ? 'frog.exe' : 'frog');
+const binary = join(
+	repo,
+	'backend',
+	'target',
+	'release',
+	process.platform === 'win32' ? 'frog.exe' : 'frog'
+);
 const dataDir = join(repo, 'frontend', '.anime-data');
 rmSync(dataDir, { recursive: true, force: true });
 mkdirSync(dataDir, { recursive: true });
@@ -125,12 +136,18 @@ check('Season 2 matches the TMDB show', s2Match === 'Attack on Titan', s2Match);
 check('...as its season 2', s2Season === '2', `season ${s2Season}`);
 
 const final = page.locator('ul.rows > li').filter({ hasText: 'The Final Season' });
-check('"The Final Season" asks which season it is', (await final.getByText('Choose which season this is').count()) === 1);
+check(
+	'"The Final Season" asks which season it is',
+	(await final.getByText('Choose which season this is').count()) === 1
+);
 await final.locator('.season input').fill('4');
 await final.locator('.season input').dispatchEvent('change');
 
 const film = page.locator('ul.rows > li').filter({ hasText: 'Your Name.' });
-check('the film is matched as a film', (await film.locator('.pill').textContent())?.trim() === 'Film');
+check(
+	'the film is matched as a film',
+	(await film.locator('.pill').textContent())?.trim() === 'Film'
+);
 await page.screenshot({ path: join(out, '1-mal-review.png'), fullPage: true });
 
 await page.getByRole('button', { name: /^Import \d+/ }).click();
@@ -142,11 +159,19 @@ const aot = search.items.find((i) => i.name === 'Attack on Titan');
 check('Attack on Titan is in the library', !!aot);
 if (aot) {
 	check('25 + 7 episodes ticked', aot.watched_episodes === 32, `${aot.watched_episodes} watched`);
-	check('still Watching, not sent back to the watchlist', aot.entry?.status === 'watching', aot.entry?.status);
+	check(
+		'still Watching, not sent back to the watchlist',
+		aot.entry?.status === 'watching',
+		aot.entry?.status
+	);
 }
 const diary = await (await page.request.get(`${BASE}/api/diary`)).json();
 const filmEntries = diary.entries.filter((e) => e.film).length;
-check('ticked episodes stay out of the diary; the film is in it', diary.entries.length === filmEntries && filmEntries === 1, `${diary.entries.length} entries, ${diary.undated} undated`);
+check(
+	'ticked episodes stay out of the diary; the film is in it',
+	diary.entries.length === filmEntries && filmEntries === 1,
+	`${diary.entries.length} entries, ${diary.undated} undated`
+);
 
 console.log('\n== AniList list (fixture) ==');
 await page.route('https://graphql.anilist.co/**', (route) =>
@@ -182,7 +207,10 @@ await page.route('https://graphql.anilist.co/**', (route) =>
 										episodes: 24,
 										seasonYear: 2023,
 										startDate: { year: 2023 },
-										title: { english: 'JUJUTSU KAISEN Season 2', romaji: 'Jujutsu Kaisen 2nd Season' },
+										title: {
+											english: 'JUJUTSU KAISEN Season 2',
+											romaji: 'Jujutsu Kaisen 2nd Season'
+										},
 										synonyms: []
 									}
 								},
@@ -220,26 +248,39 @@ check('AniList rows read', (await page.locator('ul.rows > li').count()) === 3);
 check('its progress is carried', (await jjk.getByText('5 watched').count()) === 1);
 // TMDB keeps Jujutsu Kaisen as one long season; season 2 starts at its episode 25.
 const jjkSeason = await jjk.locator('.season input').inputValue();
-const jjkInfo = (await jjk.locator('.info-line').textContent().catch(() => ''))?.trim() ?? '';
+const jjkInfo =
+	(
+		await jjk
+			.locator('.info-line')
+			.textContent()
+			.catch(() => '')
+	)?.trim() ?? '';
 const jjkNote = (await jjk.locator('.note-line').count()) > 0;
 check(
 	'Season 2 lands where TMDB numbers it',
-	(jjkSeason === '1' && jjkInfo.includes('from episode 25') && !jjkNote) || (jjkSeason === '2' && !jjkNote),
+	(jjkSeason === '1' && jjkInfo.includes('from episode 25') && !jjkNote) ||
+		(jjkSeason === '2' && !jjkNote),
 	`season ${jjkSeason}${jjkInfo ? ', ' + jjkInfo : ''}`
 );
 await page.screenshot({ path: join(out, '3-anilist-review.png'), fullPage: true });
 
 await page.getByRole('button', { name: /^Import \d+/ }).click();
 await page.getByRole('heading', { name: 'Import finished' }).waitFor({ timeout: 180000 });
-const jjkLib = (await (await page.request.get(`${BASE}/api/library?q=Jujutsu`)).json()).items.find((i) =>
-	/jujutsu/i.test(i.name)
+const jjkLib = (await (await page.request.get(`${BASE}/api/library?q=Jujutsu`)).json()).items.find(
+	(i) => /jujutsu/i.test(i.name)
 );
-check('24 + 5 Jujutsu Kaisen episodes ticked', jjkLib?.watched_episodes === 29, `${jjkLib?.watched_episodes} watched`);
+check(
+	'24 + 5 Jujutsu Kaisen episodes ticked',
+	jjkLib?.watched_episodes === 29,
+	`${jjkLib?.watched_episodes} watched`
+);
 
 check('no page errors', errors.length === 0, errors.slice(0, 2).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r).length;
-console.log(`\nscreenshots in ${out}\n${failed ? failed + ' check(s) failed' : 'all checks passed'}`);
+console.log(
+	`\nscreenshots in ${out}\n${failed ? failed + ' check(s) failed' : 'all checks passed'}`
+);
 // The 'exit' handler never runs while the server keeps Node alive.
 server.kill();
 process.exitCode = failed ? 1 : 0;

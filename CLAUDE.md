@@ -39,7 +39,7 @@ frontend/           SvelteKit 3 + Svelte 5 runes, adapter-static SPA, Vite 8
   e2e/smoke.spec.ts Playwright, desktop + Pixel 7
 scripts/run-local.ps1   run without Docker
 docs/INSTALL.md     install, Tailscale, updating, backups
-CHANGELOG.md        source of truth for release notes (parsed into the app)
+RELEASE-NOTES.md        source of truth for release notes (parsed into the app)
 ```
 
 ## Commands

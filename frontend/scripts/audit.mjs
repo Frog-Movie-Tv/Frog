@@ -21,7 +21,7 @@ const BASE = `http://127.0.0.1:${PORT}`;
 
 const SEED = [
 	{ kind: 'tv', id: 95396, status: 'watching', rating: 92, favourite: true, seasons: [1] },
-	
+
 	{ kind: 'movie', id: 157336, status: 'completed', rating: 95, favourite: true },
 	{ kind: 'movie', id: 496243, status: 'planned' }
 ];
@@ -36,7 +36,9 @@ function tmdbKey() {
 }
 
 const binary = ['release', 'debug']
-	.map((p) => join(repo, 'backend', 'target', p, process.platform === 'win32' ? 'frog.exe' : 'frog'))
+	.map((p) =>
+		join(repo, 'backend', 'target', p, process.platform === 'win32' ? 'frog.exe' : 'frog')
+	)
 	.find(existsSync);
 
 if (!binary) {

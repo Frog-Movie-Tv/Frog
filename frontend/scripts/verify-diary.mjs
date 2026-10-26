@@ -29,7 +29,9 @@ const SHOW = 95396; // Severance
 const key = (() => {
 	const env = join(repo, '.env');
 	if (!existsSync(env)) return '';
-	const line = readFileSync(env, 'utf8').split(/\r?\n/).find((l) => l.startsWith('TMDB_API_KEY='));
+	const line = readFileSync(env, 'utf8')
+		.split(/\r?\n/)
+		.find((l) => l.startsWith('TMDB_API_KEY='));
 	return line ? line.slice('TMDB_API_KEY='.length).trim() : '';
 })();
 if (!key) {
@@ -38,7 +40,9 @@ if (!key) {
 }
 
 const binary = ['release', 'debug']
-	.map((p) => join(repo, 'backend', 'target', p, process.platform === 'win32' ? 'frog.exe' : 'frog'))
+	.map((p) =>
+		join(repo, 'backend', 'target', p, process.platform === 'win32' ? 'frog.exe' : 'frog')
+	)
 	.find(existsSync);
 
 const dataDir = join(repo, 'frontend', '.verify-data');
@@ -117,7 +121,11 @@ check(
 const meta = card.locator('.meta');
 const metaBox = await meta.boundingBox();
 const lineHeight = await meta.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight) || 18);
-check('"episodes · year" sits on one line', metaBox.height <= lineHeight * 1.4, `${Math.round(metaBox.height)}px tall`);
+check(
+	'"episodes · year" sits on one line',
+	metaBox.height <= lineHeight * 1.4,
+	`${Math.round(metaBox.height)}px tall`
+);
 await card.screenshot({ path: join(out, '1-season-header-375.png') });
 
 console.log('\n== marking a season asks when ==');
@@ -126,7 +134,10 @@ const dialog = page.getByRole('dialog', { name: 'When did you watch this?' });
 await dialog.waitFor();
 check('the "When did you watch this?" dialog opens', await dialog.isVisible());
 for (const option of ['Today', 'On release dates', 'On a date', "I don't know"]) {
-	check(`offers "${option}"`, (await dialog.getByRole('radio', { name: new RegExp(option) }).count()) === 1);
+	check(
+		`offers "${option}"`,
+		(await dialog.getByRole('radio', { name: new RegExp(option) }).count()) === 1
+	);
 }
 await page.screenshot({ path: join(out, '2-when-dialog-375.png') });
 await dialog.getByRole('radio', { name: /I don't know/ }).click();
@@ -139,7 +150,11 @@ await page.goto(`${BASE}/diary`);
 await page.waitForTimeout(800);
 check('the diary lists nothing', (await page.getByText('Nothing watched yet').count()) === 1);
 const note = await page.getByText(/without a date are counted/).textContent();
-check('it says how many undated watches exist', /\d+ watches without a date/.test(note ?? ''), note?.trim());
+check(
+	'it says how many undated watches exist',
+	/\d+ watches without a date/.test(note ?? ''),
+	note?.trim()
+);
 
 console.log('\n== a whole show on one date is one diary entry ==');
 await page.goto(`${BASE}/title/tv/${SHOW}`);
@@ -158,7 +173,11 @@ const groupCount = await groups.count();
 const subtitle = await groups.first().locator('.sub').textContent();
 // Season 1 is undated; only the other seasons land on the chosen date.
 check('the day shows one entry for the show', groupCount === 1, `${groupCount} entries`);
-check('the entry reads as a range with a count', /S\d\dE\d\d–S?\d*E?\d\d · \d+ episodes/.test(subtitle ?? ''), subtitle?.trim());
+check(
+	'the entry reads as a range with a count',
+	/S\d\dE\d\d–S?\d*E?\d\d · \d+ episodes/.test(subtitle ?? ''),
+	subtitle?.trim()
+);
 await groups.first().locator('.what').click();
 await page.waitForTimeout(300);
 const expanded = await groups.first().locator('.episodes li').count();
@@ -166,9 +185,15 @@ check('it expands to its episodes', expanded > 1, `${expanded} episodes`);
 await page.screenshot({ path: join(out, '3-diary-grouped-375.png'), fullPage: true });
 
 console.log('\n== the group can be taken out of the diary ==');
-await groups.first().getByRole('button', { name: /Change date/ }).click();
+await groups
+	.first()
+	.getByRole('button', { name: /Change date/ })
+	.click();
 await dialog.waitFor();
-check('"Today" is not offered when redating', (await dialog.getByRole('radio', { name: /^Today/ }).count()) === 0);
+check(
+	'"Today" is not offered when redating',
+	(await dialog.getByRole('radio', { name: /^Today/ }).count()) === 0
+);
 await dialog.getByRole('radio', { name: /I don't know/ }).click();
 await dialog.getByRole('button', { name: 'Mark watched' }).click();
 await page.waitForTimeout(1200);
@@ -177,7 +202,9 @@ check('the diary is empty again', (await page.getByText('Nothing watched yet').c
 const progress = await (await page.request.get(`${BASE}/api/titles/tv/${SHOW}`)).json();
 check(
 	'every episode still counts as watched',
-	progress.item.watched_episodes > 0 && progress.item.watched_episodes === progress.item.total_episodes - (progress.next_up ? 1 : 0) || progress.item.watched_episodes > 15,
+	(progress.item.watched_episodes > 0 &&
+		progress.item.watched_episodes === progress.item.total_episodes - (progress.next_up ? 1 : 0)) ||
+		progress.item.watched_episodes > 15,
 	`${progress.item.watched_episodes} of ${progress.item.total_episodes}`
 );
 

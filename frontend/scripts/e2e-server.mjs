@@ -19,9 +19,7 @@ const candidates = [
 const binary = candidates.find(existsSync);
 
 if (!binary) {
-	console.error(
-		`No frog binary found. Build it first:\n  cd backend && cargo build --release`
-	);
+	console.error(`No frog binary found. Build it first:\n  cd backend && cargo build --release`);
 	process.exit(1);
 }
 

@@ -42,7 +42,13 @@ function totp(secret, step) {
 }
 const stepNow = () => Math.floor(Date.now() / 1000 / 30);
 
-const binary = join(repo, 'backend', 'target', 'release', process.platform === 'win32' ? 'frog.exe' : 'frog');
+const binary = join(
+	repo,
+	'backend',
+	'target',
+	'release',
+	process.platform === 'win32' ? 'frog.exe' : 'frog'
+);
 const dataDir = join(repo, 'frontend', '.2fa-data');
 rmSync(dataDir, { recursive: true, force: true });
 mkdirSync(dataDir, { recursive: true });
@@ -99,7 +105,11 @@ await card.getByRole('button', { name: 'Turn on' }).click();
 await card.locator('.qr svg').waitFor();
 check('a QR code is shown', (await card.locator('.qr svg').count()) === 1);
 const secretText = (await card.locator('.secret').textContent()).trim();
-check('the key is shown for typing by hand', /^[A-Z2-7]{4}( [A-Z2-7]{4}){7}$/.test(secretText), secretText.slice(0, 9) + '…');
+check(
+	'the key is shown for typing by hand',
+	/^[A-Z2-7]{4}( [A-Z2-7]{4}){7}$/.test(secretText),
+	secretText.slice(0, 9) + '…'
+);
 const secret = base32(secretText);
 await page.screenshot({ path: join(out, '1-scan.png'), fullPage: false });
 
@@ -123,8 +133,14 @@ console.log('\n== Sign in ==');
 page = await fresh({ width: 412, height: 915 });
 await password(page);
 await page.getByLabel('Code').waitFor();
-check('after the password, the code is asked for', await page.getByText('Enter the code from your authenticator app.').isVisible());
-check('the first ask is not shown as an error', (await page.locator('.notice.error').count()) === 0);
+check(
+	'after the password, the code is asked for',
+	await page.getByText('Enter the code from your authenticator app.').isVisible()
+);
+check(
+	'the first ask is not shown as an error',
+	(await page.locator('.notice.error').count()) === 0
+);
 await page.screenshot({ path: join(out, '3-code-phone.png') });
 
 await page.getByLabel('Code').fill('123456');
@@ -150,7 +166,10 @@ await page.goto(`${BASE}/settings`);
 await page.locator('.two-factor').getByText('On · 9 recovery codes left').waitFor();
 check('the used recovery code is counted', true);
 await page.locator('.two-factor').getByRole('button', { name: 'Turn off' }).click();
-await page.locator('.two-factor').getByLabel(/Enter your password/).fill('owner-password');
+await page
+	.locator('.two-factor')
+	.getByLabel(/Enter your password/)
+	.fill('owner-password');
 await page.locator('.two-factor form').getByRole('button', { name: 'Turn off' }).click();
 await page.locator('.two-factor').getByRole('button', { name: 'Turn on' }).waitFor();
 check('turned off with the password', true);
@@ -163,7 +182,9 @@ check('the password alone signs in again', page.url() === `${BASE}/`);
 check('no page errors', errors.length === 0, errors.slice(0, 2).join(' | '));
 await browser.close();
 const failed = results.filter((r) => !r).length;
-console.log(`\nscreenshots in ${out}\n${failed ? failed + ' check(s) failed' : 'all checks passed'}`);
+console.log(
+	`\nscreenshots in ${out}\n${failed ? failed + ' check(s) failed' : 'all checks passed'}`
+);
 // The 'exit' handler never runs while the server keeps Node alive.
 server.kill();
 process.exitCode = failed ? 1 : 0;

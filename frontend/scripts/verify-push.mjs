@@ -48,7 +48,13 @@ const check = (label, ok, detail = '') => {
 	console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${label}${detail ? ' — ' + detail : ''}`);
 };
 
-const binary = join(repo, 'backend', 'target', 'release', process.platform === 'win32' ? 'frog.exe' : 'frog');
+const binary = join(
+	repo,
+	'backend',
+	'target',
+	'release',
+	process.platform === 'win32' ? 'frog.exe' : 'frog'
+);
 const dataDir = join(repo, 'frontend', '.push-data');
 const dbFile = join(dataDir, 'p.db');
 rmSync(dataDir, { recursive: true, force: true });
@@ -146,7 +152,12 @@ async function shown() {
 				self.__frogShown = [];
 				const original = reg.showNotification.bind(reg);
 				reg.showNotification = (title, options = {}) => {
-					self.__frogShown.push({ tag: options.tag, title, body: options.body, url: options.data?.url });
+					self.__frogShown.push({
+						tag: options.tag,
+						title,
+						body: options.body,
+						url: options.data?.url
+					});
 					return original(title, options);
 				};
 			}
@@ -175,33 +186,62 @@ await page.goto(`${BASE}/settings`);
 const card = page.locator('.notifications');
 await card.getByRole('button', { name: 'Turn on' }).click();
 // Registering with FCM from a fresh profile can take most of a minute.
-await card.getByText('On for this device').waitFor({ timeout: 90000 }).catch(() => undefined);
-check('Settings says it is on', (await card.getByText('On for this device').count()) === 1, await card.innerText());
+await card
+	.getByText('On for this device')
+	.waitFor({ timeout: 90000 })
+	.catch(() => undefined);
+check(
+	'Settings says it is on',
+	(await card.getByText('On for this device').count()) === 1,
+	await card.innerText()
+);
 const status = await api('GET', '/api/push');
 check('the server stored the device', status.body?.devices === 1, JSON.stringify(status.body));
-const endpoint = await page.evaluate(async () => (await (await navigator.serviceWorker.ready).pushManager.getSubscription())?.endpoint);
-check('the browser subscribed with a real push service', /^https:\/\/\S+googleapis\.com\//.test(endpoint ?? ''), endpoint?.slice(0, 50));
+const endpoint = await page.evaluate(
+	async () => (await (await navigator.serviceWorker.ready).pushManager.getSubscription())?.endpoint
+);
+check(
+	'the browser subscribed with a real push service',
+	/^https:\/\/\S+googleapis\.com\//.test(endpoint ?? ''),
+	endpoint?.slice(0, 50)
+);
 await page.screenshot({ path: join(out, '1-settings-on.png') });
 
 console.log('\n== test notification ==');
 await shown();
 await card.getByRole('button', { name: 'Send a test' }).click();
-await page.getByText('Sent to 1 device').waitFor({ timeout: 20000 }).catch(() => undefined);
+await page
+	.getByText('Sent to 1 device')
+	.waitFor({ timeout: 20000 })
+	.catch(() => undefined);
 check('FCM accepted it', (await page.getByText('Sent to 1 device').count()) > 0);
 // A brand-new registration can take a while to start receiving.
 const test = await waitForNotification('frog-test', 120000);
-check('it arrived, decrypted, and the worker showed it', test?.title === 'Frog' && /Notifications are on/.test(test?.body ?? '') && test?.url === '/calendar', JSON.stringify(test));
+check(
+	'it arrived, decrypted, and the worker showed it',
+	test?.title === 'Frog' &&
+		/Notifications are on/.test(test?.body ?? '') &&
+		test?.url === '/calendar',
+	JSON.stringify(test)
+);
 
 console.log('\n== per-show switch ==');
 await page.goto(`${BASE}/title/tv/${THE_OFFICE}`);
 const bell = page.getByRole('button', { name: /New episode alerts/ });
 await bell.waitFor();
-check('a followed show starts with alerts on', (await bell.getAttribute('aria-pressed')) === 'true');
+check(
+	'a followed show starts with alerts on',
+	(await bell.getAttribute('aria-pressed')) === 'true'
+);
 await bell.click();
 await page.getByRole('button', { name: 'New episode alerts off' }).waitFor();
 await page.reload();
 await page.getByRole('button', { name: /New episode alerts/ }).waitFor();
-check('switching it off survives a reload', (await page.getByRole('button', { name: /New episode alerts/ }).getAttribute('aria-pressed')) === 'false');
+check(
+	'switching it off survives a reload',
+	(await page.getByRole('button', { name: /New episode alerts/ }).getAttribute('aria-pressed')) ===
+		'false'
+);
 await page.screenshot({ path: join(out, '2-bell-off.png') });
 
 console.log('\n== episode announcement ==');
@@ -224,8 +264,16 @@ const localDay = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart
 await start();
 await shown();
 const announced = await waitForNotification(`frog-tv-${BREAKING_BAD}`, 120000);
-check('the followed show is announced', announced?.title === 'Breaking Bad' && announced?.url === `/title/tv/${BREAKING_BAD}`, JSON.stringify(announced));
-check('it names the episode', /^S01E01 · Pilot is out today$/.test(announced?.body ?? ''), announced?.body);
+check(
+	'the followed show is announced',
+	announced?.title === 'Breaking Bad' && announced?.url === `/title/tv/${BREAKING_BAD}`,
+	JSON.stringify(announced)
+);
+check(
+	'it names the episode',
+	/^S01E01 · Pilot is out today$/.test(announced?.body ?? ''),
+	announced?.body
+);
 const muted = (await shown()).find((n) => n.tag === `frog-tv-${THE_OFFICE}`);
 check('the muted show stays silent', !muted, JSON.stringify(muted));
 
@@ -259,5 +307,7 @@ if (failed) {
 		.filter((l) => !/database ready/.test(l));
 	console.log(lines.join('\n'));
 }
-console.log(`\nscreenshots in ${out}\n${failed ? failed + ' check(s) failed' : 'all checks passed'}`);
+console.log(
+	`\nscreenshots in ${out}\n${failed ? failed + ' check(s) failed' : 'all checks passed'}`
+);
 process.exitCode = failed ? 1 : 0;

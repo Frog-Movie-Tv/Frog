@@ -27,7 +27,9 @@ const PORT = 8094;
 const BASE = `http://127.0.0.1:${PORT}`;
 
 const binary = ['release', 'debug']
-	.map((p) => join(repo, 'backend', 'target', p, process.platform === 'win32' ? 'frog.exe' : 'frog'))
+	.map((p) =>
+		join(repo, 'backend', 'target', p, process.platform === 'win32' ? 'frog.exe' : 'frog')
+	)
 	.find(existsSync);
 if (!binary) {
 	console.error('Build the server first.');
@@ -82,7 +84,9 @@ context = await chromium.launchPersistentContext(profile, {
 	headless: true
 });
 const page = context.pages()[0] ?? (await context.newPage());
-console.log(`browser: ${chrome ? 'Google Chrome' : 'Playwright Chromium'} ${context.browser()?.version() ?? ''}`);
+console.log(
+	`browser: ${chrome ? 'Google Chrome' : 'Playwright Chromium'} ${context.browser()?.version() ?? ''}`
+);
 
 const consoleErrors = [];
 page.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()));
@@ -124,7 +128,11 @@ const shellCached = await page.evaluate(async () => {
 	const keys = await cache.keys();
 	return { shell, count: keys.length, root: !!(await cache.match('/')) };
 });
-check('app shell precached', shellCached.root && shellCached.count > 50, `${shellCached.count} files in ${shellCached.shell}`);
+check(
+	'app shell precached',
+	shellCached.root && shellCached.count > 50,
+	`${shellCached.count} files in ${shellCached.shell}`
+);
 
 console.log('\n== installability ==');
 const cdp = await context.newCDPSession(page);
@@ -174,7 +182,11 @@ for (const [path, heading] of [
 	const found = heading
 		? (await page.getByRole('heading', { name: heading, level: 1 }).count()) > 0
 		: !onLogin && title.length > 0;
-	check(`${path} works offline`, found && !onLogin, onLogin ? 'sent to sign-in' : `title: ${title}`);
+	check(
+		`${path} works offline`,
+		found && !onLogin,
+		onLogin ? 'sent to sign-in' : `title: ${title}`
+	);
 }
 
 console.log('\n== console ==');

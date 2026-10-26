@@ -45,7 +45,7 @@ both desktop and phone width before calling it done.
   **Unreleased** heading in **Shipped** (create it if missing), and add any
   follow-ups you discovered to **Next** or **Known issues**.
 - Add a line under the `## Upcoming — … —` heading at the top of
-  `CHANGELOG.md`, in product voice.
+  `RELEASE-NOTES.md`, in product voice.
 
 ## 5. Report
 
@@ -55,6 +55,6 @@ commit or push unless asked.
 
 ## If the session is getting long
 
-Finish the piece in hand, make sure ROADMAP.md and CHANGELOG.md reflect it,
+Finish the piece in hand, make sure ROADMAP.md and RELEASE-NOTES.md reflect it,
 and suggest a fresh session for the next item. A new session that reads
 CLAUDE.md and ROADMAP.md picks up exactly where this one stopped.

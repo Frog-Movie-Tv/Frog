@@ -43,7 +43,13 @@ const check = (label, ok, detail = '') => {
 	console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${label}${detail ? ' — ' + detail : ''}`);
 };
 
-const binary = join(repo, 'backend', 'target', 'release', process.platform === 'win32' ? 'frog.exe' : 'frog');
+const binary = join(
+	repo,
+	'backend',
+	'target',
+	'release',
+	process.platform === 'win32' ? 'frog.exe' : 'frog'
+);
 const dataDir = join(repo, 'frontend', '.shelves-data');
 rmSync(dataDir, { recursive: true, force: true });
 mkdirSync(dataDir, { recursive: true });
@@ -137,7 +143,10 @@ async function mouseDrag(page, from, to) {
 	await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
 	await page.mouse.down();
 	for (let i = 1; i <= 12; i++) {
-		await page.mouse.move(a.x + a.width / 2 + ((b.x - a.x) * i) / 12, a.y + a.height / 2 + ((b.y - a.y) * i) / 12);
+		await page.mouse.move(
+			a.x + a.width / 2 + ((b.x - a.x) * i) / 12,
+			a.y + a.height / 2 + ((b.y - a.y) * i) / 12
+		);
 	}
 	await page.mouse.up();
 }
@@ -150,7 +159,10 @@ let comfort;
 	await page.getByText('No shelves yet').waitFor();
 	check('the tab is named', (await page.title()) === 'Shelves · Frog');
 	check('an empty page offers a first shelf', true);
-	check('Shelves is in the navigation', (await page.locator('header a[href="/shelves"], nav a[href="/shelves"]').count()) > 0);
+	check(
+		'Shelves is in the navigation',
+		(await page.locator('header a[href="/shelves"], nav a[href="/shelves"]').count()) > 0
+	);
 
 	await page.getByRole('button', { name: 'New shelf' }).first().click();
 	await page.getByLabel('Name').fill('Comfort');
@@ -171,7 +183,8 @@ let comfort;
 	// The menu stays open, so several shelves can be ticked in one go.
 	check(
 		'the menu shows the title is on the shelf',
-		(await page.getByRole('menuitemcheckbox', { name: 'Comfort' }).getAttribute('aria-checked')) === 'true'
+		(await page.getByRole('menuitemcheckbox', { name: 'Comfort' }).getAttribute('aria-checked')) ===
+			'true'
 	);
 	await page.screenshot({ path: join(out, '1-add-to-shelf-menu.png') });
 	await page.keyboard.press('Escape');
@@ -184,14 +197,23 @@ let comfort;
 	await page.getByText('Added Interstellar to Nolan').waitFor();
 	check('a shelf can be made from a title page, with the title on it', true);
 
-	check('titles are on the shelf in the order added', JSON.stringify(await shelfNames(comfort)) === JSON.stringify(['The Shawshank Redemption', 'Pulp Fiction', 'The Dark Knight']), (await shelfNames(comfort)).join(', '));
+	check(
+		'titles are on the shelf in the order added',
+		JSON.stringify(await shelfNames(comfort)) ===
+			JSON.stringify(['The Shawshank Redemption', 'Pulp Fiction', 'The Dark Knight']),
+		(await shelfNames(comfort)).join(', ')
+	);
 
 	await page.goto(`${BASE}/shelves/${comfort}`);
 	await page.getByRole('button', { name: 'Edit' }).click();
 	await mouseDrag(page, 2, 0);
 	await page.waitForTimeout(400);
 	const afterDrag = await shelfNames(comfort);
-	check('dragging with a mouse reorders and saves', afterDrag[0] === 'The Dark Knight', afterDrag.join(', '));
+	check(
+		'dragging with a mouse reorders and saves',
+		afterDrag[0] === 'The Dark Knight',
+		afterDrag.join(', ')
+	);
 	await page.screenshot({ path: join(out, '2-edit-desktop.png') });
 
 	await page.locator('[data-sort-handle]').nth(0).focus();
@@ -202,7 +224,9 @@ let comfort;
 
 	await page.reload();
 	await page.getByRole('heading', { name: 'Comfort' }).waitFor();
-	const shown = await page.locator('.grid a').evaluateAll((links) => links.map((a) => a.getAttribute('href')));
+	const shown = await page
+		.locator('.grid a')
+		.evaluateAll((links) => links.map((a) => a.getAttribute('href')));
 	check('the order survives a reload', shown[1] === '/title/movie/155', shown.join(' '));
 
 	await page.getByRole('button', { name: 'Edit' }).click();
@@ -213,13 +237,20 @@ let comfort;
 	await page.getByRole('button', { name: 'Undo' }).click();
 	await page.waitForTimeout(600);
 	const restored = await shelfNames(comfort);
-	check('undo puts it back where it was', JSON.stringify(restored) === JSON.stringify(afterKey), restored.join(', '));
+	check(
+		'undo puts it back where it was',
+		JSON.stringify(restored) === JSON.stringify(afterKey),
+		restored.join(', ')
+	);
 
 	await page.getByRole('button', { name: 'Rename' }).click();
 	await page.getByLabel('Shelf name').fill('Comfort films');
 	await page.getByRole('button', { name: 'Save' }).click();
 	await page.getByRole('heading', { name: 'Comfort films' }).waitFor();
-	check('renaming saves', (await call('GET', `/api/shelves/${comfort}`)).shelf.name === 'Comfort films');
+	check(
+		'renaming saves',
+		(await call('GET', `/api/shelves/${comfort}`)).shelf.name === 'Comfort films'
+	);
 
 	check('no errors in the console', errors.length === 0, errors.join(' | '));
 	await context.close();
@@ -251,10 +282,21 @@ let comfort;
 	await rules.getByRole('button', { name: 'Save rules' }).click();
 	await rules.waitFor({ state: 'detached' });
 	const names = await shelfNames(smart);
-	check('the rules pick exactly the shows in progress rated 8+', JSON.stringify(names) === JSON.stringify(['Breaking Bad']), names.join(', '));
+	check(
+		'the rules pick exactly the shows in progress rated 8+',
+		JSON.stringify(names) === JSON.stringify(['Breaking Bad']),
+		names.join(', ')
+	);
 	const stored = (await call('GET', `/api/shelves/${smart}`)).shelf.rules;
-	check('the rules are stored as chosen', stored.kind === 'tv' && stored.progress === 'started' && stored.min_rating === 80, JSON.stringify(stored));
-	check('the page shows what matched', (await page.locator('.grid a[href="/title/tv/1396"]').count()) === 1);
+	check(
+		'the rules are stored as chosen',
+		stored.kind === 'tv' && stored.progress === 'started' && stored.min_rating === 80,
+		JSON.stringify(stored)
+	);
+	check(
+		'the page shows what matched',
+		(await page.locator('.grid a[href="/title/tv/1396"]').count()) === 1
+	);
 	await page.screenshot({ path: join(out, '4-smart-shelf.png') });
 
 	await page.getByRole('button', { name: 'Rules' }).click();
@@ -283,12 +325,18 @@ let comfort;
 	await page.goto(`${BASE}/shelves/${nolan.id}`);
 	await page.getByRole('button', { name: 'Delete shelf' }).click();
 	await page.waitForURL(`${BASE}/shelves`);
-	check('deleting removes it', !(await call('GET', '/api/shelves')).shelves.some((s) => s.name === 'Nolan'));
+	check(
+		'deleting removes it',
+		!(await call('GET', '/api/shelves')).shelves.some((s) => s.name === 'Nolan')
+	);
 	await page.getByRole('button', { name: 'Undo' }).click();
 	await page.waitForURL(/\/shelves\/\d+$/);
 	await page.getByRole('heading', { name: 'Nolan' }).waitFor();
 	const back = Number(page.url().split('/').pop());
-	check('undo brings the shelf back with its titles', JSON.stringify(await shelfNames(back)) === JSON.stringify(['Interstellar']));
+	check(
+		'undo brings the shelf back with its titles',
+		JSON.stringify(await shelfNames(back)) === JSON.stringify(['Interstellar'])
+	);
 
 	check('no errors in the console', errors.length === 0, errors.join(' | '));
 	await context.close();
@@ -296,11 +344,16 @@ let comfort;
 
 {
 	console.log('\n== phone ==');
-	const { page, context, errors } = await signedIn({ width: 375, height: 812 }, { isMobile: true, hasTouch: true });
+	const { page, context, errors } = await signedIn(
+		{ width: 375, height: 812 },
+		{ isMobile: true, hasTouch: true }
+	);
 	for (const path of ['/shelves', `/shelves/${comfort}`]) {
 		await page.goto(`${BASE}${path}`);
 		await page.locator('h1').waitFor();
-		const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+		const overflow = await page.evaluate(
+			() => document.documentElement.scrollWidth - window.innerWidth
+		);
 		check(`${path} fits 375px`, overflow <= 0, `${overflow}px too wide`);
 	}
 	await page.getByRole('button', { name: 'Edit' }).click();
@@ -312,7 +365,10 @@ let comfort;
 	const a = await handles.nth(before.length - 1).boundingBox();
 	const b = await handles.nth(0).boundingBox();
 	const point = (x, y) => [{ x, y, id: 1 }];
-	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: point(a.x + a.width / 2, a.y + a.height / 2) });
+	await cdp.send('Input.dispatchTouchEvent', {
+		type: 'touchStart',
+		touchPoints: point(a.x + a.width / 2, a.y + a.height / 2)
+	});
 	for (let i = 1; i <= 14; i++) {
 		const x = a.x + a.width / 2 + ((b.x - a.x) * i) / 14;
 		const y = a.y + a.height / 2 + ((b.y - a.y) * i) / 14;
@@ -321,7 +377,11 @@ let comfort;
 	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 	await page.waitForTimeout(500);
 	const after = await shelfNames(comfort);
-	check('a touch drag reorders on a phone', after[0] === before.at(-1), `${before.join(', ')} → ${after.join(', ')}`);
+	check(
+		'a touch drag reorders on a phone',
+		after[0] === before.at(-1),
+		`${before.join(', ')} → ${after.join(', ')}`
+	);
 	const scrolled = await page.evaluate(() => window.scrollY);
 	check('the drag did not scroll the page', scrolled === 0, String(scrolled));
 	await page.screenshot({ path: join(out, '6-edit-375.png') });
@@ -332,5 +392,7 @@ let comfort;
 await browser.close();
 server.kill();
 const failed = results.filter((r) => !r).length;
-console.log(`\nscreenshots in ${out}\n${failed ? failed + ' check(s) failed' : 'all checks passed'}`);
+console.log(
+	`\nscreenshots in ${out}\n${failed ? failed + ' check(s) failed' : 'all checks passed'}`
+);
 process.exitCode = failed ? 1 : 0;

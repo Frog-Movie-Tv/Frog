@@ -57,7 +57,9 @@ if (!key) {
 }
 
 const binary = ['release', 'debug']
-	.map((p) => join(repo, 'backend', 'target', p, process.platform === 'win32' ? 'frog.exe' : 'frog'))
+	.map((p) =>
+		join(repo, 'backend', 'target', p, process.platform === 'win32' ? 'frog.exe' : 'frog')
+	)
 	.find(existsSync);
 
 if (!binary) {
@@ -140,11 +142,9 @@ async function seed() {
 			});
 			// Then un-watch the tail, leaving the show mid-season.
 			for (const ep of [7, 8, 9]) {
-				await call(
-					'POST',
-					`/api/titles/${entry.kind}/${entry.id}/episodes/${season}/${ep}/watch`,
-					{ watched: false }
-				);
+				await call('POST', `/api/titles/${entry.kind}/${entry.id}/episodes/${season}/${ep}/watch`, {
+					watched: false
+				});
 			}
 			for (const [ep, rating] of [
 				[1, 85],
@@ -154,11 +154,10 @@ async function seed() {
 				[5, 88],
 				[6, 92]
 			]) {
-				await call(
-					'PUT',
-					`/api/titles/${entry.kind}/${entry.id}/episodes/${season}/${ep}/state`,
-					{ rating, notes: null }
-				);
+				await call('PUT', `/api/titles/${entry.kind}/${entry.id}/episodes/${season}/${ep}/state`, {
+					rating,
+					notes: null
+				});
 			}
 		}
 	}

@@ -44,10 +44,7 @@ function quad(x0, y0, cx, cy, x1, y1, steps = 14) {
 	for (let i = 0; i <= steps; i++) {
 		const t = i / steps;
 		const u = 1 - t;
-		pts.push([
-			u * u * x0 + 2 * u * t * cx + t * t * x1,
-			u * u * y0 + 2 * u * t * cy + t * t * y1
-		]);
+		pts.push([u * u * x0 + 2 * u * t * cx + t * t * x1, u * u * y0 + 2 * u * t * cy + t * t * y1]);
 	}
 	return pts;
 }
@@ -83,8 +80,18 @@ export const VARIANTS = {
 			{ type: 'circle', cx: 19, cy: 20, r: 8, fill: c.eyeWhite },
 			{ type: 'circle', cx: 45, cy: 20, r: 8, fill: c.eyeWhite },
 			// Closed lids: a downward arc reads as "asleep" even very small.
-			{ type: 'stroke', points: quad(13.5, 19.5, 19, 25.5, 24.5, 19.5), width: 2.8, color: c.pupil },
-			{ type: 'stroke', points: quad(39.5, 19.5, 45, 25.5, 50.5, 19.5), width: 2.8, color: c.pupil },
+			{
+				type: 'stroke',
+				points: quad(13.5, 19.5, 19, 25.5, 24.5, 19.5),
+				width: 2.8,
+				color: c.pupil
+			},
+			{
+				type: 'stroke',
+				points: quad(39.5, 19.5, 45, 25.5, 50.5, 19.5),
+				width: 2.8,
+				color: c.pupil
+			},
 			{ type: 'stroke', points: quad(26, 44, 32, 47.5, 38, 44), width: 2.8, color: c.mouth }
 		]
 	},
@@ -116,8 +123,24 @@ export const VARIANTS = {
 			{ type: 'rect', x: 9, y: 14, w: 20, h: 13, r: 4, fill: c.lensRed, opacity: 0.78 },
 			{ type: 'rect', x: 35, y: 14, w: 20, h: 13, r: 4, fill: c.lensCyan, opacity: 0.78 },
 			{ type: 'rect', x: 28, y: 19, w: 8, h: 2.6, r: 1.3, fill: c.frame },
-			{ type: 'stroke', points: [[9, 20.5], [4, 22]], width: 2.4, color: c.frame },
-			{ type: 'stroke', points: [[55, 20.5], [60, 22]], width: 2.4, color: c.frame }
+			{
+				type: 'stroke',
+				points: [
+					[9, 20.5],
+					[4, 22]
+				],
+				width: 2.4,
+				color: c.frame
+			},
+			{
+				type: 'stroke',
+				points: [
+					[55, 20.5],
+					[60, 22]
+				],
+				width: 2.4,
+				color: c.frame
+			}
 		]
 	}
 };
@@ -148,9 +171,7 @@ export function toSvg(shapes, { size = 64, background = null, monochrome = null 
 		})
 		.join('\n  ');
 
-	const bg = background
-		? `<rect width="64" height="64" rx="14" fill="${background}"/>\n  `
-		: '';
+	const bg = background ? `<rect width="64" height="64" rx="14" fill="${background}"/>\n  ` : '';
 
 	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="${size}" height="${size}" role="img" aria-label="Frog">
   ${bg}${body}
