@@ -96,6 +96,10 @@
 		...ordered.filter((p) => !tabs.includes(p)),
 		{ href: '/import', label: 'Import & export', icon: 'upload' },
 		{ href: '/whats-new', label: 'Release notes', icon: 'sparkle' },
+		// Only an administrator can do anything there, so only they see it.
+		...(session.status?.is_admin
+			? [{ href: '/admin', label: 'Administration', icon: 'shield' }]
+			: []),
 		{ href: '/about', label: 'About', icon: 'info' }
 	]);
 

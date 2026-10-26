@@ -366,3 +366,23 @@ export interface ImportSummary {
 	skipped: number;
 	failed: { tmdb_id: number; error: string }[];
 }
+
+/** An invite link, as the admin page lists them. Never the code itself. */
+export interface Invite {
+	id: string;
+	role: 'admin' | 'user';
+	created_by: string | null;
+	created_at: string;
+	expires_at: string;
+	used_at: string | null;
+	used_by: string | null;
+	state: 'open' | 'used' | 'expired';
+}
+
+/** Shown once, when the link is made. */
+export interface NewInvite {
+	code: string;
+	path: string;
+	role: 'admin' | 'user';
+	expires_at: string;
+}

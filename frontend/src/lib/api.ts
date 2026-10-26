@@ -5,6 +5,8 @@ import type {
 	BecauseRow,
 	HomeData,
 	ImportSummary,
+	Invite,
+	NewInvite,
 	MatchResult,
 	Kind,
 	LibraryItem,
@@ -137,6 +139,15 @@ export const api = {
 			password
 		}),
 	logout: () => send<{ ok: true }>('POST', '/api/auth/logout', {}),
+
+	/** Joining with an invite link. There is no open sign-up. */
+	register: (username: string, password: string, invite: string, remember = true) =>
+		send<{ ok: true }>('POST', '/api/auth/register', { username, password, invite, remember }),
+
+	invites: () => get<{ invites: Invite[] }>('/api/invites'),
+	createInvite: (role: Invite['role'], days?: number) =>
+		send<NewInvite>('POST', '/api/invites', { role, days }),
+	revokeInvite: (id: string) => send<{ ok: true }>('DELETE', `/api/invites/${id}`),
 
 	search: (q: string, page = 1, hideAnimation = false) =>
 		get<{ page: number; total_pages: number; results: SearchItem[] }>(
