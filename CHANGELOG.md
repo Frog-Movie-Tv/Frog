@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.5](https://github.com/Frog-Movie-Tv/Frog/compare/v0.4.4...v0.4.5) (2026-10-26)
+
+
+### Fixes
+
+* **deploy:** work on the micro shape, not just A1 ([43ceb65](https://github.com/Frog-Movie-Tv/Frog/commit/43ceb65b1ff35196e6f36f29a1bb464431b55171))
+* **deploy:** work on the micro shape, not just A1 ([b7d322d](https://github.com/Frog-Movie-Tv/Frog/commit/b7d322de64a1690ac85b33e8cb653b8e54a103dd))
+
+
+### Performance
+
+* **ci:** build each architecture on its own runner ([7baaefb](https://github.com/Frog-Movie-Tv/Frog/commit/7baaefb2c37f49b61c822ac2ea748d7d5136a93c))
+* **ci:** build each architecture on its own runner ([fc26886](https://github.com/Frog-Movie-Tv/Frog/commit/fc26886070ed06ceaf59a56fc8ddbe7f5a41bfa2))
+
 ## [0.4.4](https://github.com/Frog-Movie-Tv/Frog/compare/v0.4.3...v0.4.4) (2026-10-26)
 
 

@@ -13,6 +13,19 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+## [0.4.5] — Lily Pad — 2026-10-26
+
+<!-- Drafted from the commit messages so the release is not blocked.
+     Rewrite it in Frog's voice before merging: say what a person can now
+     do, not what changed in the code. -->
+
+### Changes
+
+- Work on the micro shape, not just A1
+- Work on the micro shape, not just A1
+- Build each architecture on its own runner
+- Build each architecture on its own runner
+
 ## [0.4.4] — Lily Pad — 2026-10-26
 
 <!-- Drafted from the commit messages so the release is not blocked.
@@ -265,6 +278,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[0.4.5]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.5
 [0.4.4]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.4
 [0.4.3]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.3
 [0.4.2]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.2
