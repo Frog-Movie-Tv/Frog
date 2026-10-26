@@ -391,5 +391,7 @@ async function signIn(page: import('@playwright/test').Page) {
 	await page
 		.getByRole('button', { name: heading?.includes('Set up') ? 'Create account' : 'Sign in' })
 		.click();
-	await expect(page).toHaveURL('/');
+	// A brand-new account is shown the welcome before Home, so this lands on
+	// one or the other depending on whether the account already existed.
+	await expect(page).toHaveURL(/\/(welcome)?$/);
 }
