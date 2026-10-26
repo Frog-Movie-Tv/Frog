@@ -38,8 +38,11 @@ RUN touch src/main.rs src/lib.rs && cargo build --release --locked
 
 FROM debian:bookworm-slim AS runtime
 
+# tzdata, because the slim image has none and TZ=Europe/Brussels would quietly
+# mean UTC: new-episode alerts go out at FROG_NOTIFY_HOUR in the server's
+# local time.
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends ca-certificates curl \
+	&& apt-get install -y --no-install-recommends ca-certificates curl tzdata \
 	&& rm -rf /var/lib/apt/lists/* \
 	&& useradd --system --uid 10001 --create-home frog \
 	&& mkdir -p /data && chown frog:frog /data
