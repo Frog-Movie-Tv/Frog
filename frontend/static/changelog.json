@@ -1,5 +1,34 @@
 [
 	{
+		"version": "0.4.1",
+		"codename": "Lily Pad",
+		"date": "2026-10-26",
+		"intro": "Frog holds more than one person now, and everybody's library is their own.",
+		"groups": [
+			{
+				"title": "Highlights",
+				"items": [
+					"**An account each.** Your library, ratings, episodes, diary, notes, favourites, shelves, settings and notifications belong to you. Nobody else on the same Frog can see them or change them.",
+					"**Invitations.** There is no sign-up page. An administrator makes a link that works once and stops working after that; whoever opens it picks a name and a password.",
+					"**Administration.** One page for making invitations, seeing which are still open, which were used and by whom, and withdrawing any nobody took."
+				]
+			},
+			{
+				"title": "Improvements",
+				"items": [
+					"About credits the people who make Frog."
+				]
+			},
+			{
+				"title": "Fixes",
+				"items": [
+					"About shows the name of the release you are running."
+				]
+			}
+		],
+		"image": "docs/screenshots/home-desktop-pond.png"
+	},
+	{
 		"version": "0.4.0",
 		"codename": "Lily Pad",
 		"date": "2026-10-26",
