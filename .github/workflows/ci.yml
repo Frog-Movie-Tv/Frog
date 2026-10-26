@@ -94,7 +94,7 @@ jobs:
       # A fresh database, and a database created by the previous release and
       # then upgraded. The second one is what every existing install does.
       - name: Apply on a fresh database and on the previous version's
-        run: backend/scripts/check-migrations.sh
+        run: bash backend/scripts/check-migrations.sh
 
   e2e:
     name: End to end
