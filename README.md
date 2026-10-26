@@ -43,8 +43,8 @@ nothing at all.
 <p align="center"><b>Your diary</b><br><sub>Everything you have watched, newest first</sub></p>
 </td>
 <td>
-<img src="docs/screenshots/stats-desktop-pond.png" alt="Counts of titles tracked, films, episodes and time watched">
-<p align="center"><b>Your numbers</b><br><sub>How much of your life this has quietly taken</sub></p>
+<img src="docs/screenshots/stats-desktop-pond.png" alt="Time watched, streaks, genres and the people you watch most">
+<p align="center"><b>Your numbers</b><br><sub>Years, genres, streaks, and a card to share</sub></p>
 </td>
 </tr>
 <tr>
@@ -53,8 +53,8 @@ nothing at all.
 <p align="center"><b>Make it yours</b><br><sub>Themes, fonts, shapes, cards and rows — all live</sub></p>
 </td>
 <td>
-<img src="docs/screenshots/import-desktop-pond.png" alt="The import page offering Letterboxd, IMDb, Trakt, TV Time and Frog backups">
-<p align="center"><b>Bring your history</b><br><sub>Letterboxd, Trakt, IMDb and TV Time</sub></p>
+<img src="docs/screenshots/import-desktop-pond.png" alt="The import page offering Letterboxd, IMDb, Trakt, TV Time, AniList, MyAnimeList and Frog backups">
+<p align="center"><b>Bring your history</b><br><sub>Letterboxd, Trakt, IMDb, TV Time, AniList and MyAnimeList</sub></p>
 </td>
 </tr>
 </table>
@@ -87,9 +87,10 @@ nothing at all.
 
 ## A quick tour
 
-**Bring your history with you.** Import from Letterboxd, Trakt, IMDb or TV
-Time. Frog reads the export, matches each title, shows you what it found and
-lets you correct anything it got wrong before a single row is written.
+**Bring your history with you.** Import from Letterboxd, Trakt, IMDb, TV Time,
+AniList or MyAnimeList. Frog reads the export, matches each title, shows you
+what it found and lets you correct anything it got wrong before a single row is
+written. Anime seasons land on the right season, parts and all.
 
 **Find anything.** Search every film and show on TMDB and add it with one tap.
 Results lead with the thing you actually meant, rather than obscure shorts that
@@ -103,6 +104,18 @@ a grid of coloured squares.
 **Know what is next.** Home opens on whatever you are in the middle of and
 names the exact next episode. The calendar shows the month ahead, and the diary
 reads back everything you have watched.
+
+**Hear about it the day it lands.** Turn on notifications and Frog tells you
+when a show you follow has a new episode out. Mute any show with the bell on
+its page.
+
+**See your year.** Time watched, streaks, genres, decades, how you rate, and
+the actors, directors and studios you watch most — for all time or for any
+year. Turn a year into a card you can share from your phone.
+
+**Build shelves.** Hand-pick titles into shelves and drag them into the order
+you want, or write a rule and let a shelf fill itself — shows in progress rated
+8 or more, say.
 
 **Press Ctrl+K.** Jump to any title, page or setting without reaching for the
 mouse.
@@ -140,8 +153,9 @@ keeps working when you have no signal.
 Frog is built for exactly one person, and assumes that person wants to be left
 alone.
 
-- Everything sits behind a password. There is no sign-up page: the account is
-  created once on first run, and that screen closes for good afterwards.
+- Everything sits behind a password, with two-factor sign-in if you want it.
+  There is no sign-up page: the account is created once on first run, and that
+  screen closes for good afterwards.
 - Nothing is public. The app asks search engines not to index it and serves a
   `robots.txt` that refuses everything.
 - Nothing leaves your machine except requests to TMDB for artwork, and those
@@ -179,8 +193,9 @@ keeping it awake.
 
 <br>
 
-Import it. Frog reads exports from Letterboxd, Trakt, IMDb and TV Time, and
-restores its own backups. You see every match before anything is written.
+Import it. Frog reads exports from Letterboxd, Trakt, IMDb, TV Time and
+MyAnimeList, reads an AniList profile by username, and restores its own
+backups. You see every match before anything is written.
 
 </details>
 
@@ -230,6 +245,8 @@ It needed a name, and then the name needed a face.
 ### [Get started →](docs/INSTALL.md)
 
 <sub>
+Made by <a href="https://github.com/MihCons">Mihai Constantin</a>
+and <a href="https://github.com/zschaeken">Zjef Schaeken</a>.<br>
 This product uses the TMDB API but is not endorsed or certified by TMDB.<br>
 MIT licensed.
 </sub>

@@ -196,7 +196,7 @@
 	async function checkForUpdates() {
 		update = { state: 'checking' };
 		try {
-			const res = await fetch('https://api.github.com/repos/MihCons/Frog/releases/latest', {
+			const res = await fetch('https://api.github.com/repos/Frog-Movie-Tv/Frog/releases/latest', {
 				headers: { accept: 'application/vnd.github+json' }
 			});
 			if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
