@@ -193,7 +193,11 @@
 						</span>
 					</span>
 					{#if !device.current}
-						<button class="btn ghost small" onclick={() => endSession(device)}>Sign out</button>
+						<button
+							class="btn ghost small"
+							aria-label="Sign out {device.device ?? 'that browser'}"
+							onclick={() => endSession(device)}>Sign out</button
+						>
 					{/if}
 				</li>
 			{/each}
