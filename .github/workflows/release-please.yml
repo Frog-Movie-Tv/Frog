@@ -115,10 +115,13 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.slug }}
           cache-to: type=gha,mode=max,scope=${{ matrix.slug }}
 
+      # Without the sha256: prefix: an artifact file name cannot contain a
+      # colon, and the prefix goes back on when the manifest is assembled.
       - name: Keep the digest
         run: |
           mkdir -p /tmp/digests
-          touch "/tmp/digests/${{ steps.build.outputs.digest }}"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -155,5 +158,5 @@ jobs:
           IMAGE: ghcr.io/frog-movie-tv/frog
           VERSION: ${{ needs.release-please.outputs.version }}
         run: |
-          docker buildx imagetools create             --tag "$IMAGE:$VERSION"             --tag "$IMAGE:latest"             $(printf "$IMAGE@%s " *)
+          docker buildx imagetools create             --tag "$IMAGE:$VERSION"             --tag "$IMAGE:latest"             $(printf "$IMAGE@sha256:%s " *)
           docker buildx imagetools inspect "$IMAGE:$VERSION"
