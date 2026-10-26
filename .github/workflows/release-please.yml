@@ -97,8 +97,10 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          # Lower case on purpose: a registry refuses a capital letter in a
+          # repository name, and the organisation has them.
           tags: |
-            ghcr.io/${{ github.repository }}:${{ needs.release-please.outputs.version }}
-            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/frog-movie-tv/frog:${{ needs.release-please.outputs.version }}
+            ghcr.io/frog-movie-tv/frog:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
