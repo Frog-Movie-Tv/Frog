@@ -14,15 +14,22 @@ const PASS = 'a-long-enough-pass';
 // the rest reuse the session via the browser context.
 test.describe.configure({ mode: 'serial' });
 
-test('a cold instance sends you to first-run setup', async ({ page }) => {
-	await page.goto('/');
-	await expect(page).toHaveURL(/\/login/);
-	// The heading only settles once the shell has asked whether this instance
-	// has an account, and the very first request hits a server that has just
-	// started and migrated.
-	// CI's runners are slow to start the very first time; 15 seconds was flaky.
-	await expect(page.getByRole('heading', { name: 'Set up Frog' })).toBeVisible({
-		timeout: 30000
+// Retrying this one is pointless: the suite is serial and shares one
+// instance, so by the second attempt the account exists and the instance
+// is no longer cold.
+test.describe('a cold instance', () => {
+	test.describe.configure({ retries: 0 });
+
+	test('a cold instance sends you to first-run setup', async ({ page }) => {
+		await page.goto('/');
+		await expect(page).toHaveURL(/\/login/);
+		// The heading only settles once the shell has asked whether this instance
+		// has an account, and the very first request hits a server that has just
+		// started and migrated.
+		// CI's runners are slow to start the very first time; 15 seconds was flaky.
+		await expect(page.getByRole('heading', { name: 'Set up Frog' })).toBeVisible({
+			timeout: 30000
+		});
 	});
 });
 
@@ -391,7 +398,11 @@ async function signIn(page: import('@playwright/test').Page) {
 	await page
 		.getByRole('button', { name: heading?.includes('Set up') ? 'Create account' : 'Sign in' })
 		.click();
-	// A brand-new account is shown the welcome before Home, so this lands on
-	// one or the other depending on whether the account already existed.
+	// A brand-new account is shown the welcome first. Read past it, as a
+	// person would, so everything after this starts on Home.
 	await expect(page).toHaveURL(/\/(welcome)?$/);
+	if (page.url().includes('/welcome')) {
+		await page.getByRole('button', { name: 'Skip' }).click();
+		await expect(page).toHaveURL('/');
+	}
 }
