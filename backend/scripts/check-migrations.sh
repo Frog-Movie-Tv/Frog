@@ -12,7 +12,16 @@ BIN="target/debug/frog"
 [ -x "$BIN" ] || { echo "build the binary first: cargo build"; exit 1; }
 
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+# The upgrade check swaps the migrations directory for an older one, so put it
+# back whatever happens: an interrupted run must not leave the checkout broken.
+restore() {
+	if [ -d migrations.current ]; then
+		rm -rf migrations
+		mv migrations.current migrations
+	fi
+	rm -rf "$WORK"
+}
+trap restore EXIT
 
 # Start the server against a database, wait for /healthz, stop it. Starting is
 # what runs the migrations, so a failure to come up is a migration failure.
