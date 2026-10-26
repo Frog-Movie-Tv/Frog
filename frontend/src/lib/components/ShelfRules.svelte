@@ -25,6 +25,7 @@
 		void api
 			.library({ limit: 2000 })
 			.then(({ items }) => {
+				// eslint-disable-next-line svelte/prefer-svelte-reactivity -- built and read here, never state
 				const all = new Set(items.flatMap((i) => i.genres));
 				for (const g of draft.genres ?? []) all.add(g);
 				genres = [...all].sort((a, b) => a.localeCompare(b));

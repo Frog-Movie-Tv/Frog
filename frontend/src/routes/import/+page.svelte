@@ -117,6 +117,7 @@
 	 * the later one starts.
 	 */
 	function foldSeasons() {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- built and read here, never state
 		const shows = new Map<number, Row[]>();
 		for (const row of rows) {
 			if (row.chosen?.kind !== 'tv' || row.incoming.season == null) continue;

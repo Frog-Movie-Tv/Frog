@@ -125,9 +125,9 @@ The hooks run these for you. Install them once per clone:
 git config core.hooksPath .githooks
 ```
 
-`pre-commit` runs the fast ones (rustfmt, prettier) and refuses a `.env`, a
-database file, or an edit to an applied migration. `pre-push` runs clippy, the
-backend tests and svelte-check. `FROG_SKIP_HOOKS=1` skips them once, for a
+`pre-commit` runs the fast ones (rustfmt, prettier, and eslint on the staged
+files) and refuses a `.env`, a database file, or an edit to an applied
+migration. `pre-push` runs clippy, the backend tests and svelte-check. `FROG_SKIP_HOOKS=1` skips them once, for a
 work-in-progress commit on your own branch.
 
 By hand:

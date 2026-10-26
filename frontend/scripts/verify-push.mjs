@@ -302,6 +302,7 @@ const failed = results.filter((r) => !r).length;
 if (failed) {
 	console.log('\n--- server log ---');
 	const lines = readFileSync(join(out, 'server.log'), 'utf8')
+		// eslint-disable-next-line no-control-regex -- stripping the log's colour codes
 		.replace(/\x1b\[[0-9;]*m/g, '')
 		.split('\n')
 		.filter((l) => !/database ready/.test(l));
