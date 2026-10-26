@@ -137,6 +137,7 @@ const ROUTES = [
 	'/import',
 	'/about',
 	'/whats-new',
+	'/admin',
 	'/title/tv/95396',
 	'/title/movie/157336',
 	'/person/73457'
