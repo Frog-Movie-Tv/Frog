@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { api } from '#lib/api';
 	import Icon, { type IconName } from '#lib/components/Icon.svelte';
 	import { goto } from '$app/navigation';
 	import Logo from '#lib/components/Logo.svelte';
@@ -184,6 +185,23 @@
 	}
 
 	const hiddenRows = $derived(HOME_ROWS.filter((r) => !s.homeRows.includes(r.id)));
+
+	/** Names for shelf rows ("shelf:12"), which are not in HOME_ROWS. */
+	let shelfNames = $state<Record<string, string>>({});
+	$effect(() => {
+		void api
+			.shelves()
+			.then(
+				(r) => (shelfNames = Object.fromEntries(r.shelves.map((x) => [`shelf:${x.id}`, x.name])))
+			)
+			.catch(() => undefined);
+	});
+	function rowInfo(id: string): { label: string; hint: string } | undefined {
+		const fixed = HOME_ROWS.find((r) => r.id === id);
+		if (fixed) return fixed;
+		if (id.startsWith('shelf:') && shelfNames[id]) return { label: shelfNames[id], hint: 'Shelf' };
+		return undefined;
+	}
 
 	let update = $state<{
 		state: 'idle' | 'checking' | 'current' | 'available' | 'failed';
@@ -541,7 +559,7 @@
 		<h3 class="sub">Home rows</h3>
 		<ul class="builder">
 			{#each s.homeRows as id, i (id)}
-				{@const row = HOME_ROWS.find((r) => r.id === id)}
+				{@const row = rowInfo(id)}
 				{#if row}
 					<li>
 						<span class="grip"><Icon name="grip" size={16} /></span>

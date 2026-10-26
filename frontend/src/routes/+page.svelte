@@ -11,15 +11,27 @@
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
-	import type { AiringEntry, BecauseRow, HomeData } from '#lib/types';
+	import type { AiringEntry, BecauseRow, HomeData, LibraryItem } from '#lib/types';
 
 	let data = $state<HomeData | null>(null);
 	let loading = $state(true);
 	let because = $state<BecauseRow[]>([]);
+	/** Shelves on Home, by row id ("shelf:12"), filled in after Home loads. */
+	let shelves = $state<Record<string, { name: string; items: LibraryItem[] }>>({});
 
 	$effect(() => {
 		if (!session.authenticated) return;
 		void load();
+		// Shelves chosen for Home load alongside, and a deleted one just goes.
+		const shelfRows = untrack(() =>
+			settings.current.homeRows.filter((r) => r.startsWith('shelf:'))
+		);
+		for (const row of shelfRows) {
+			void api
+				.shelf(Number(row.slice(6)))
+				.then((r) => (shelves[row] = { name: r.shelf.name, items: r.items }))
+				.catch(() => undefined);
+		}
 		// Recommendations may need TMDB; Home does not wait for them.
 		// Read once: the effect must not rerun on every settings change.
 		if (untrack(() => settings.current.homeRows.includes('because'))) {
@@ -74,7 +86,9 @@
 			favourites: data.favourites.length > 0,
 			because: because.length > 0
 		};
-		return settings.current.homeRows.filter((id) => available[id]);
+		return settings.current.homeRows.filter(
+			(id) => available[id] || (shelves[id]?.items.length ?? 0) > 0
+		);
 	});
 
 	/** "S01E05" for one, "S01E05–E06" for a run of them. */
@@ -231,6 +245,25 @@
 							{/each}
 						</Rail>
 					{/each}
+				{:else if row.startsWith('shelf:') && shelves[row]}
+					<Rail title={shelves[row].name}>
+						{#snippet action()}
+							<a class="see-all" href="/shelves/{row.slice(6)}">See all</a>
+						{/snippet}
+						{#each shelves[row].items.slice(0, 20) as item (item.id)}
+							<Poster
+								kind={item.kind}
+								tmdbId={item.tmdb_id}
+								name={item.name}
+								posterPath={item.poster_path}
+								year={year(item.release_date)}
+								status={item.entry?.status ?? null}
+								rating={item.entry?.rating ?? null}
+								watched={item.watched_episodes}
+								total={item.total_episodes}
+							/>
+						{/each}
+					</Rail>
 				{:else if row === 'recent'}
 					<Rail title="Recently added">
 						{#each data.recent as item (item.id)}
@@ -453,5 +486,11 @@
 		.logo {
 			max-height: 96px;
 		}
+	}
+
+	.see-all {
+		font-size: 0.84rem;
+		font-weight: 600;
+		color: var(--accent);
 	}
 </style>
