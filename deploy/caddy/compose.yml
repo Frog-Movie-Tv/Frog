@@ -1,0 +1,47 @@
+# The only thing listening on the internet. Terminates TLS with certificates
+# Let's Encrypt issues automatically, and passes everything through to the two
+# Frog containers on the shared frog-edge network.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: frog-caddy
+    restart: unless-stopped
+
+    ports:
+      - '80:80'
+      - '443:443'
+
+    environment:
+      PRODUCTION_DOMAIN: ${PRODUCTION_DOMAIN:?set PRODUCTION_DOMAIN}
+      STAGING_DOMAIN: ${STAGING_DOMAIN:?set STAGING_DOMAIN}
+      # Swap for the staging directory while testing, so a few bad attempts
+      # cannot use up the real rate limit for a week.
+      ACME_CA: ${ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+    networks:
+      - edge
+
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+volumes:
+  caddy-data:
+  caddy-config:
+
+networks:
+  edge:
+    external: true
+    name: frog-edge

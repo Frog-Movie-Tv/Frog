@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly backup of the %i instance of Frog
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=900
+# If the machine was off at 03:30, back up when it comes back.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

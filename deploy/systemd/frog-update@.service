@@ -1,0 +1,10 @@
+[Unit]
+Description=Update the %i instance of Frog
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/frog/deploy/update.sh %i
+# A pull plus a start plus the health wait; well inside this.
+TimeoutStartSec=900

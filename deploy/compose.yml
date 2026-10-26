@@ -1,0 +1,69 @@
+# One Frog instance. Used twice on the same machine, as two compose projects
+# with their own directory, .env and volume:
+#
+#   /opt/frog/production   COMPOSE_PROJECT_NAME=frog-production, IMAGE_TAG=latest
+#   /opt/frog/staging      COMPOSE_PROJECT_NAME=frog-staging,    IMAGE_TAG=main
+#
+# Nothing here publishes a port. Caddy reaches both over the shared frog-edge
+# network and is the only thing the internet can talk to.
+
+services:
+  frog:
+    image: ghcr.io/frog-movie-tv/frog:${IMAGE_TAG:?set IMAGE_TAG}
+    container_name: ${COMPOSE_PROJECT_NAME:?set COMPOSE_PROJECT_NAME}
+    restart: unless-stopped
+
+    # Secrets live in this file only, chmod 600, never in the repository.
+    env_file:
+      - .env
+
+    environment:
+      DATABASE_URL: sqlite:/data/frog.db?mode=rwc
+      FROG_STATIC_DIR: /app/static
+      FROG_BIND: 0.0.0.0:8080
+      # Caddy terminates TLS, so the session cookie must carry Secure.
+      FROG_SECURE_COOKIES: '1'
+      # So FROG_NOTIFY_HOUR means the hour the owners actually live in.
+      TZ: ${TZ:-Europe/Brussels}
+
+    volumes:
+      - data:/data
+
+    networks:
+      - edge
+
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+    # The image already carries a HEALTHCHECK against /healthz; this makes the
+    # thresholds explicit so update.sh can wait on it.
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:8080/healthz']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+    # Two instances on a 12 GB machine, leaving room for Caddy and the
+    # keepalive. Frog is one small Rust binary; this is generous.
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+volumes:
+  data:
+
+networks:
+  edge:
+    external: true
+    name: frog-edge

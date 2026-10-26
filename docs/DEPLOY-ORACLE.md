@@ -216,8 +216,176 @@ out each click.
 margin for anything else on the box is small, and the keepalive should hold
 memory rather than burn CPU (see above).
 
-## Still to write
+## The runbook
 
-The click-by-click runbook — Oracle sign-up, VM creation, security list rules,
-DuckDNS tokens, GHCR token, SSH keys — lands here with the `deploy/` folder,
-once Parts 1 to 3 are done and the decisions above are made.
+Everything in `deploy/` is written; what follows is the part only an owner can
+do, because it needs logins. Work top to bottom.
+
+### 1. The Oracle account
+
+1. Sign up at <https://signup.cloud.oracle.com>. A card is asked for to verify
+   identity; **Always Free** does not charge it. Pick **Netherlands Northwest
+   (Amsterdam)** as the home region — it cannot be changed later.
+2. Wait for the "your account is ready" email.
+3. **Never click "Upgrade to Pay As You Go."** Not for capacity, not for the
+   idle rule, not for the banner that suggests it.
+
+### 2. The machine
+
+Compute → Instances → **Create instance**.
+
+| Field | Value |
+| --- | --- |
+| Image | Canonical Ubuntu 24.04 |
+| Shape | **Ampere, VM.Standard.A1.Flex** |
+| OCPUs | 2 |
+| Memory | 12 GB |
+| Boot volume | 50 GB is plenty |
+| SSH keys | paste **both** owners' public keys, one per line |
+
+Check the availability domain says **Always Free Eligible** before creating.
+
+**If it says "Out of host capacity":** that is normal and not your fault. Try
+each availability domain in turn. If all three refuse, save the configuration
+as a stack (Create → *Save as stack*) and retry the apply on a loop, or script
+the launch with the OCI CLI. Do not upgrade the account to get capacity.
+
+### 3. Let the internet in — both halves
+
+**Security list.** Networking → Virtual Cloud Networks → your VCN → the public
+subnet → its security list → **Add Ingress Rules**:
+
+| Source | Protocol | Port |
+| --- | --- | --- |
+| 0.0.0.0/0 | TCP | 80 |
+| 0.0.0.0/0 | TCP | 443 |
+
+**The host firewall.** This is the half everyone misses: Oracle's Ubuntu image
+rejects the traffic itself, so the site stays unreachable with a correct
+security list. `install.sh` fixes it and verifies it — you do not need to do
+anything by hand, but if you are debugging later:
+
+```bash
+sudo iptables -L INPUT -n --line-numbers   # look for a REJECT above your rules
+```
+
+### 4. DuckDNS
+
+1. Sign in at <https://www.duckdns.org> with GitHub.
+2. Create two subdomains, one for each site, e.g. `frogtv` and `frogtv-staging`.
+3. Point both at the machine's public IP.
+4. The token on that page is not needed: two plain hostnames use the HTTP
+   challenge, so there is no DNS plugin and no token on the server.
+
+Check from your own machine before going further:
+
+```bash
+dig +short frogtv.duckdns.org
+```
+
+### 5. Install
+
+```bash
+ssh ubuntu@<the public IP>
+git clone https://github.com/Frog-Movie-Tv/Frog.git
+sudo ./Frog/deploy/install.sh
+```
+
+It installs Docker, sqlite3, age, fail2ban and unattended upgrades, fixes the
+firewall, lays out `/opt/frog`, writes the systemd units, and starts the
+keepalive. It prints what to fill in next.
+
+### 6. Fill in the three env files
+
+```bash
+sudo nano /opt/frog/production/.env    # TMDB_API_KEY, TZ
+sudo nano /opt/frog/staging/.env       # the same, IMAGE_TAG=main
+sudo nano /opt/frog/caddy/.env         # the two DuckDNS names, your email
+sudo nano /opt/frog/backup.env         # AGE_RECIPIENT
+```
+
+Generate the backup key pair **on your own computer, not the server**:
+
+```bash
+age-keygen -o frog-backup.key
+```
+
+Keep `frog-backup.key` somewhere safe. Paste only the `age1…` public line into
+`backup.env`. The server can then write backups it cannot read back.
+
+### 7. The backup repository
+
+1. Create a **private** repository, e.g. `Frog-Movie-Tv/frog-backups`.
+2. Add a deploy key with write access, using a key generated on the server:
+   `sudo -u root ssh-keygen -t ed25519 -f /root/.ssh/backup -N ""`
+3. `sudo git clone git@github.com:Frog-Movie-Tv/frog-backups.git /opt/frog/backup-repo`
+
+### 8. Start it
+
+```bash
+# A private image needs a token with read:packages. A public one does not.
+# sudo docker login ghcr.io -u <your github user>
+
+cd /opt/frog/caddy && sudo docker compose up -d
+sudo /opt/frog/deploy/update.sh production
+sudo /opt/frog/deploy/update.sh staging
+sudo systemctl start frog-update@production.timer frog-update@staging.timer
+sudo systemctl start frog-backup@production.timer frog-backup@staging.timer
+```
+
+Use the Let's Encrypt **staging** CA for the first attempt (there is a
+commented line in `caddy/.env`), confirm HTTPS answers, then switch back and
+`docker compose up -d --force-recreate`. A handful of failed attempts against
+the real CA can block issuance for a week.
+
+### 9. Check it
+
+```bash
+curl -fsS https://frogtv.duckdns.org/healthz
+curl -fsS https://frogtv-staging.duckdns.org/healthz
+sudo /opt/frog/deploy/keepalive.sh status
+```
+
+Then open production in a browser and create the owner account. **Do this
+immediately**: the setup screen is open to whoever reaches it first, and it
+closes for good once an account exists.
+
+### 10. Test the restore, before you need it
+
+A backup nobody has restored is a rumour:
+
+```bash
+sudo /opt/frog/deploy/backup.sh staging manual
+sudo /opt/frog/deploy/restore.sh staging latest
+```
+
+It asks for the age private key and for the instance name as confirmation, and
+keeps the database it replaced beside the new one.
+
+## How updates work
+
+Nothing is open to the internet except 80 and 443, and SSH by key. The machine
+**pulls**:
+
+- A systemd timer runs `update.sh` every 15 minutes per instance.
+- It compares the running image digest with the tag it follows. Same digest,
+  nothing to do.
+- Otherwise: back up, start the new image, wait for `/healthz`, and on failure
+  roll back to the previous digest and say so.
+- Migrations run as the server starts, so healthy means migrated and serving.
+  A rollback of the binary is **not** a rollback of the schema; if the old
+  image then refuses to start, restore the pre-update backup.
+
+Staging follows `:main`, so merging a pull request puts it on staging within a
+quarter of an hour. Production follows the newest release tag, so merging the
+release-please pull request is what puts a change in front of people.
+
+## If something is wrong
+
+| Symptom | Where to look |
+| --- | --- |
+| Site unreachable, DNS fine | the host firewall (section 3) |
+| Certificate never issued | `docker compose logs caddy`; check the rate limit |
+| Updates stop happening | `systemctl status frog-update@production.timer` |
+| Instance was reclaimed | `keepalive.sh status`; restore from a backup |
+| Backups stopped | `journalctl -u frog-backup@production` |

@@ -1,0 +1,55 @@
+{
+	email {$ACME_EMAIL}
+	acme_ca {$ACME_CA}
+	# Frog is the only thing here; no need to advertise the server.
+	servers {
+		protocols h1 h2
+	}
+}
+
+# Shared by both sites.
+(common) {
+	encode zstd gzip
+
+	header {
+		# HTTPS only, for two years, once this is known to work.
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+		# Frog is somebody's private watch history. Keep it out of search.
+		X-Robots-Tag "noindex, nofollow, noarchive, noimageindex"
+		# Everything is served from this origin; the only outside connection a
+		# page makes is to a browser push service, which is not fetched.
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		-Server
+	}
+
+	# Frog throttles sign-ins per address, and behind a proxy the only way it
+	# can tell callers apart is these headers.
+	reverse_proxy {args[0]}:8080 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+{$PRODUCTION_DOMAIN} {
+	import common frog-production
+	log {
+		output file /data/production.log {
+			roll_size 10MiB
+			roll_keep 3
+		}
+	}
+}
+
+{$STAGING_DOMAIN} {
+	import common frog-staging
+	log {
+		output file /data/staging.log {
+			roll_size 10MiB
+			roll_keep 3
+		}
+	}
+}
