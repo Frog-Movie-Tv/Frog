@@ -1,5 +1,54 @@
 [
 	{
+		"version": "0.4.5",
+		"codename": "Lily Pad",
+		"date": "2026-10-26",
+		"intro": "<!-- Drafted from the commit messages so the release is not blocked. Rewrite it in Frog's voice before merging: say what a person can now do, not what changed in the code. -->",
+		"groups": [
+			{
+				"title": "Changes",
+				"items": [
+					"Work on the micro shape, not just A1",
+					"Work on the micro shape, not just A1",
+					"Build each architecture on its own runner",
+					"Build each architecture on its own runner"
+				]
+			}
+		]
+	},
+	{
+		"version": "0.4.4",
+		"codename": "Lily Pad",
+		"date": "2026-10-26",
+		"intro": "<!-- Drafted from the commit messages so the release is not blocked. Rewrite it in Frog's voice before merging: say what a person can now do, not what changed in the code. -->",
+		"groups": [
+			{
+				"title": "Changes",
+				"items": [
+					"Let the bot draft the release notes",
+					"Publish the image when the release is tagged",
+					"Publish the image when the release is tagged",
+					"Write the 0.4.3 notes and lower-case the image name"
+				]
+			}
+		]
+	},
+	{
+		"version": "0.4.3",
+		"codename": "Lily Pad",
+		"date": "2026-10-26",
+		"intro": "New-episode alerts arrive at the hour you picked, in your own time.",
+		"groups": [
+			{
+				"title": "Fixes",
+				"items": [
+					"New-episode alerts go out at the hour you chose, read in your own time zone rather than the server's.",
+					"Each signed-in device has its own clearly named sign-out, so it is obvious which one you are ending."
+				]
+			}
+		]
+	},
+	{
 		"version": "0.4.2",
 		"codename": "Lily Pad",
 		"date": "2026-10-26",
