@@ -10,7 +10,17 @@ export default defineConfig({
 			adapter: adapter({ fallback: 'index.html', precompress: false, strict: false }),
 			// Registered by hand in src/lib/offline.svelte.ts so a browser that
 			// refuses reports why instead of leaving an uncaught rejection.
-			serviceWorker: { register: false }
+			serviceWorker: { register: false },
+			// SvelteKit boots from an inline script, which a policy of
+			// script-src 'self' blocks outright — the page then renders as an
+			// empty background. Hash mode puts the hash of that exact script
+			// into a meta policy, so it runs and nothing else inline does.
+			csp: {
+				mode: 'hash',
+				directives: {
+					'script-src': ['self']
+				}
+			}
 		})
 	],
 	server: {
