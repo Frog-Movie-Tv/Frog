@@ -17,11 +17,13 @@ const KEY: &str = "preferences";
 /// a settings document rather than someone using the instance as a database.
 const MAX_BYTES: usize = 128 * 1024;
 
-pub async fn get(_: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
-    let row: Option<(String,)> = sqlx::query_as("SELECT value FROM app_setting WHERE key = ?")
-        .bind(KEY)
-        .fetch_optional(&state.pool)
-        .await?;
+pub async fn get(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT value FROM app_setting WHERE user_id = ? AND key = ?")
+            .bind(auth.user_id())
+            .bind(KEY)
+            .fetch_optional(&state.pool)
+            .await?;
 
     let stored = row
         .and_then(|(v,)| serde_json::from_str::<Value>(&v).ok())
@@ -31,7 +33,7 @@ pub async fn get(_: Auth, State(state): State<AppState>) -> AppResult<Json<Value
 }
 
 pub async fn put(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Json(body): Json<Value>,
 ) -> AppResult<Json<Value>> {
@@ -47,9 +49,12 @@ pub async fn put(
     }
 
     sqlx::query(
-        "INSERT INTO app_setting (key, value, updated_at) VALUES (?, ?, ?)
-         ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        "INSERT INTO app_setting (user_id, key, value, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (user_id, key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = excluded.updated_at",
     )
+    .bind(auth.user_id())
     .bind(KEY)
     .bind(&encoded)
     .bind(Utc::now().to_rfc3339())

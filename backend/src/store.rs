@@ -303,12 +303,17 @@ pub async fn sync_all_seasons(state: &AppState, title_id: i64, detail: &Value) -
     Ok(())
 }
 
-pub async fn get_entry(pool: &SqlitePool, title_id: i64) -> AppResult<Option<LibraryEntry>> {
+pub async fn get_entry(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+) -> AppResult<Option<LibraryEntry>> {
     let row = sqlx::query_as::<_, LibraryEntry>(
         "SELECT status, rating, favourite, notes, started_at, finished_at,
                 rewatch_count, added_at, updated_at, notify
-           FROM library_entry WHERE title_id = ?",
+           FROM library_entry WHERE user_id = ? AND title_id = ?",
     )
+    .bind(user_id)
     .bind(title_id)
     .fetch_optional(pool)
     .await?;
@@ -317,6 +322,7 @@ pub async fn get_entry(pool: &SqlitePool, title_id: i64) -> AppResult<Option<Lib
 
 pub async fn apply_patch(
     pool: &SqlitePool,
+    user_id: i64,
     title_id: i64,
     patch: &LibraryPatch,
 ) -> AppResult<LibraryEntry> {
@@ -337,7 +343,7 @@ pub async fn apply_patch(
     }
 
     let now = Utc::now().to_rfc3339();
-    let existing = get_entry(pool, title_id).await?;
+    let existing = get_entry(pool, user_id, title_id).await?;
 
     let status = patch
         .status
@@ -376,10 +382,10 @@ pub async fn apply_patch(
     };
 
     sqlx::query(
-        "INSERT INTO library_entry (title_id, status, rating, favourite, notes, started_at,
+        "INSERT INTO library_entry (user_id, title_id, status, rating, favourite, notes, started_at,
                                     finished_at, rewatch_count, added_at, updated_at, notify)
-         VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT rewatch_count FROM library_entry WHERE title_id = ?), 0), ?, ?, ?)
-         ON CONFLICT (title_id) DO UPDATE SET
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT rewatch_count FROM library_entry WHERE user_id = ? AND title_id = ?), 0), ?, ?, ?)
+         ON CONFLICT (user_id, title_id) DO UPDATE SET
             notify = excluded.notify,
             status = excluded.status,
             rating = excluded.rating,
@@ -389,6 +395,7 @@ pub async fn apply_patch(
             finished_at = excluded.finished_at,
             updated_at = excluded.updated_at",
     )
+    .bind(user_id)
     .bind(title_id)
     .bind(&status)
     .bind(rating)
@@ -396,6 +403,7 @@ pub async fn apply_patch(
     .bind(&notes)
     .bind(&started_at)
     .bind(&finished_at)
+    .bind(user_id)
     .bind(title_id)
     .bind(existing.as_ref().map(|e| e.added_at.clone()).unwrap_or_else(|| now.clone()))
     .bind(&now)
@@ -403,13 +411,14 @@ pub async fn apply_patch(
     .execute(pool)
     .await?;
 
-    get_entry(pool, title_id)
+    get_entry(pool, user_id, title_id)
         .await?
         .ok_or_else(|| AppError::Other(anyhow::anyhow!("entry vanished after write")))
 }
 
-pub async fn remove_entry(pool: &SqlitePool, title_id: i64) -> AppResult<()> {
-    sqlx::query("DELETE FROM library_entry WHERE title_id = ?")
+pub async fn remove_entry(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppResult<()> {
+    sqlx::query("DELETE FROM library_entry WHERE user_id = ? AND title_id = ?")
+        .bind(user_id)
         .bind(title_id)
         .execute(pool)
         .await?;
@@ -422,16 +431,18 @@ pub struct Progress {
     pub total: i64,
 }
 
-pub async fn progress(pool: &SqlitePool, title_id: i64) -> AppResult<Progress> {
-    // Specials (season 0) do not count towards finishing a show.
+pub async fn progress(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppResult<Progress> {
+    // Specials (season 0) do not count towards finishing a show. The episode
+    // list is shared; only the watches are mine.
     let row: (i64, i64) = sqlx::query_as(
         "SELECT
             (SELECT COUNT(DISTINCT e.id)
                FROM episode e
-               JOIN watch_event w ON w.episode_id = e.id
+               JOIN watch_event w ON w.episode_id = e.id AND w.user_id = ?
               WHERE e.title_id = ? AND e.season_number > 0),
             (SELECT COUNT(*) FROM episode WHERE title_id = ? AND season_number > 0)",
     )
+    .bind(user_id)
     .bind(title_id)
     .bind(title_id)
     .fetch_one(pool)
@@ -443,22 +454,32 @@ pub async fn progress(pool: &SqlitePool, title_id: i64) -> AppResult<Progress> {
     })
 }
 
-pub async fn last_watched_at(pool: &SqlitePool, title_id: i64) -> AppResult<Option<String>> {
+pub async fn last_watched_at(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+) -> AppResult<Option<String>> {
     // An aggregate always returns exactly one row, and that row holds NULL
     // when nothing matched -- so this has to be Option-inside-the-row, not
     // fetch_optional, or a title with no watches fails to decode.
-    let (last,): (Option<String>,) =
-        sqlx::query_as("SELECT MAX(watched_at) FROM watch_event WHERE title_id = ?")
-            .bind(title_id)
-            .fetch_one(pool)
-            .await?;
+    let (last,): (Option<String>,) = sqlx::query_as(
+        "SELECT MAX(watched_at) FROM watch_event WHERE user_id = ? AND title_id = ?",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .fetch_one(pool)
+    .await?;
     Ok(last)
 }
 
-pub async fn build_item(pool: &SqlitePool, title: TitleRow) -> AppResult<LibraryItem> {
-    let entry = get_entry(pool, title.id).await?;
-    let p = progress(pool, title.id).await?;
-    let last = last_watched_at(pool, title.id).await?;
+pub async fn build_item(
+    pool: &SqlitePool,
+    user_id: i64,
+    title: TitleRow,
+) -> AppResult<LibraryItem> {
+    let entry = get_entry(pool, user_id, title.id).await?;
+    let p = progress(pool, user_id, title.id).await?;
+    let last = last_watched_at(pool, user_id, title.id).await?;
     let total = if p.total > 0 {
         p.total
     } else {

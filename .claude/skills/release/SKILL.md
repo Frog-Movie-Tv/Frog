@@ -14,6 +14,9 @@ release with a red test.
 - New features → minor bump (0.3.0 → 0.4.0). Fixes only → patch (0.4.0 → 0.4.1,
   same codename as its minor).
 - Set it in **both** `backend/Cargo.toml` and `frontend/package.json`.
+- A minor bump also changes the codename beside the version on the About page
+  (`frontend/src/routes/about/+page.svelte`) **and** the codename the About
+  test looks for in `frontend/e2e/smoke.spec.ts`. Both went stale in 0.4.0.
 
 ## 2. Write the changelog entry
 
@@ -56,7 +59,7 @@ Voice rules — these are strict:
   heading with the line `In progress.` under it. The codename order is in
   ROADMAP.md.
 - At the bottom, add a link reference for the new version only, for example
-  `[0.4.0]: https://github.com/MihCons/Frog/releases/tag/v0.4.0`. The Upcoming
+  `[0.4.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.0`. The Upcoming
   heading has no brackets, so it gets no link reference.
 
 ## 3. Verify everything
@@ -114,6 +117,6 @@ git push origin main --follow-tags
 - What shipped, in a short list.
 - What was not finished (and that it is now in ROADMAP.md).
 - That the GitHub Release needs creating by hand from the tag at
-  `https://github.com/MihCons/Frog/releases/new?tag=v0.4.0`, with the
+  `https://github.com/Frog-Movie-Tv/Frog/releases/new?tag=v0.4.0`, with the
   CHANGELOG.md section as the notes — unless `gh` is installed and signed in.
 - Restart their server: `.\scripts\run-local.ps1`.

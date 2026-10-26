@@ -36,9 +36,14 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!("Frog is listening on http://{bind}");
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    // With connect info, so sign-in throttling can tell callers apart when
+    // there is no proxy in front setting X-Forwarded-For.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
 
     worker.abort();
     tracing::info!("bye");

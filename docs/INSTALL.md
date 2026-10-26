@@ -230,7 +230,7 @@ instead of `build: .`:
 ```yaml
 services:
   frog:
-    image: ghcr.io/mihcons/frog:latest
+    image: ghcr.io/frog-movie-tv/frog:latest
     # ...everything else stays the same
 
   watchtower:

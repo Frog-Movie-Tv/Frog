@@ -54,7 +54,7 @@ async fn resolve(state: &AppState, kind: &str, tmdb_id: i64) -> AppResult<i64> {
 }
 
 pub async fn set_watched(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path((kind, tmdb_id, season, episode)): Path<(String, i64, i64, i64)>,
     Json(body): Json<WatchBody>,
@@ -64,16 +64,19 @@ pub async fn set_watched(
 
     if body.watched {
         let when = body.watched_at.unwrap_or_else(|| Utc::now().to_rfc3339());
+        // Only my own watches make this a rewatch.
         let seen_before: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE episode_id = ?")
+            sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE user_id = ? AND episode_id = ?")
+                .bind(auth.user_id())
                 .bind(ep_id)
                 .fetch_one(&state.pool)
                 .await?;
 
         sqlx::query(
-            "INSERT INTO watch_event (title_id, episode_id, watched_at, is_rewatch, source)
-             VALUES (?, ?, ?, ?, 'manual')",
+            "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch, source)
+             VALUES (?, ?, ?, ?, ?, 'manual')",
         )
+        .bind(auth.user_id())
         .bind(title_id)
         .bind(ep_id)
         .bind(&when)
@@ -81,13 +84,14 @@ pub async fn set_watched(
         .execute(&state.pool)
         .await?;
     } else {
-        sqlx::query("DELETE FROM watch_event WHERE episode_id = ?")
+        sqlx::query("DELETE FROM watch_event WHERE user_id = ? AND episode_id = ?")
+            .bind(auth.user_id())
             .bind(ep_id)
             .execute(&state.pool)
             .await?;
     }
 
-    after_change(&state, title_id).await
+    after_change(&state, auth.user_id(), title_id).await
 }
 
 /// When a batch of episodes was watched.
@@ -134,6 +138,7 @@ pub fn evening_of(date: &str) -> AppResult<String> {
 /// `season` is `None` (specials excluded).
 async fn bulk(
     state: &AppState,
+    user_id: i64,
     title_id: i64,
     season: Option<i64>,
     body: &BulkWatchBody,
@@ -141,7 +146,8 @@ async fn bulk(
     if !body.watched {
         sqlx::query(
             "DELETE FROM watch_event
-              WHERE episode_id IN (
+              WHERE user_id = ?3
+                AND episode_id IN (
                     SELECT id FROM episode
                      WHERE title_id = ?1
                        AND (?2 IS NOT NULL OR season_number > 0)
@@ -149,6 +155,7 @@ async fn bulk(
         )
         .bind(title_id)
         .bind(season)
+        .bind(user_id)
         .execute(&state.pool)
         .await?;
         return Ok(());
@@ -168,8 +175,9 @@ async fn bulk(
     // Only episodes with no watch yet, so this never inflates rewatches, and
     // only ones that have aired.
     sqlx::query(
-        "INSERT INTO watch_event (title_id, episode_id, watched_at, is_rewatch, source, undated)
-         SELECT ?1, e.id,
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                  source, undated)
+         SELECT ?6, ?1, e.id,
                 CASE ?2 WHEN 'release' THEN COALESCE(e.air_date || 'T20:00:00Z', ?3)
                         WHEN 'date' THEN ?4
                         ELSE ?3 END,
@@ -182,13 +190,16 @@ async fn bulk(
             AND (?5 IS NOT NULL OR e.season_number > 0)
             AND (?5 IS NULL OR e.season_number = ?5)
             AND (e.air_date IS NULL OR e.air_date <= date('now'))
-            AND NOT EXISTS (SELECT 1 FROM watch_event w WHERE w.episode_id = e.id)",
+            AND NOT EXISTS (
+                  SELECT 1 FROM watch_event w
+                   WHERE w.user_id = ?6 AND w.episode_id = e.id)",
     )
     .bind(title_id)
     .bind(mode)
     .bind(Utc::now().to_rfc3339())
     .bind(chosen)
     .bind(season)
+    .bind(user_id)
     .execute(&state.pool)
     .await?;
 
@@ -197,26 +208,26 @@ async fn bulk(
 
 /// Tick or clear a whole season in one go.
 pub async fn set_season_watched(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path((kind, tmdb_id, season)): Path<(String, i64, i64)>,
     Json(body): Json<BulkWatchBody>,
 ) -> AppResult<Json<Value>> {
     let title_id = resolve(&state, &kind, tmdb_id).await?;
-    bulk(&state, title_id, Some(season), &body).await?;
-    after_change(&state, title_id).await
+    bulk(&state, auth.user_id(), title_id, Some(season), &body).await?;
+    after_change(&state, auth.user_id(), title_id).await
 }
 
 /// Tick or clear every aired episode of a show.
 pub async fn set_show_watched(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path((kind, tmdb_id)): Path<(String, i64)>,
     Json(body): Json<BulkWatchBody>,
 ) -> AppResult<Json<Value>> {
     let title_id = resolve(&state, &kind, tmdb_id).await?;
-    bulk(&state, title_id, None, &body).await?;
-    after_change(&state, title_id).await
+    bulk(&state, auth.user_id(), title_id, None, &body).await?;
+    after_change(&state, auth.user_id(), title_id).await
 }
 
 #[derive(Deserialize)]
@@ -227,7 +238,7 @@ pub struct EpisodeStateBody {
 }
 
 pub async fn set_state(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path((kind, tmdb_id, season, episode)): Path<(String, i64, i64, i64)>,
     Json(body): Json<EpisodeStateBody>,
@@ -244,12 +255,14 @@ pub async fn set_state(
     let ep_id = episode_id(&state.pool, title_id, season, episode).await?;
 
     sqlx::query(
-        "INSERT INTO episode_state (episode_id, rating, notes, updated_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT (episode_id) DO UPDATE SET
+        "INSERT INTO episode_state (user_id, episode_id, rating, notes, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (user_id, episode_id) DO UPDATE SET
             rating = excluded.rating,
             notes = excluded.notes,
             updated_at = excluded.updated_at",
     )
+    .bind(auth.user_id())
     .bind(ep_id)
     .bind(body.rating)
     .bind(&body.notes)
@@ -262,9 +275,9 @@ pub async fn set_state(
 
 /// After any watch change, nudge the library entry to match reality: a show you
 /// start becomes "watching", and finishing the last episode completes it.
-async fn after_change(state: &AppState, title_id: i64) -> AppResult<Json<Value>> {
-    let progress = store::progress(&state.pool, title_id).await?;
-    let entry = store::get_entry(&state.pool, title_id).await?;
+async fn after_change(state: &AppState, user_id: i64, title_id: i64) -> AppResult<Json<Value>> {
+    let progress = store::progress(&state.pool, user_id, title_id).await?;
+    let entry = store::get_entry(&state.pool, user_id, title_id).await?;
 
     let desired = if progress.total > 0 && progress.watched >= progress.total {
         Some("completed")
@@ -285,11 +298,11 @@ async fn after_change(state: &AppState, title_id: i64) -> AppResult<Json<Value>>
                 status: Some(status.to_string()),
                 ..Default::default()
             };
-            store::apply_patch(&state.pool, title_id, &patch).await?;
+            store::apply_patch(&state.pool, user_id, title_id, &patch).await?;
         }
     }
 
     let row = store::get_title(&state.pool, title_id).await?;
-    let item = store::build_item(&state.pool, row).await?;
+    let item = store::build_item(&state.pool, user_id, row).await?;
     Ok(Json(json!({ "item": item })))
 }

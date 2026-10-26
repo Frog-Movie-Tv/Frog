@@ -13,6 +13,9 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
 COPY frontend/ ./
+# The build turns the changelog into the JSON the What's new page reads,
+# and the script looks for it beside the frontend directory.
+COPY CHANGELOG.md /CHANGELOG.md
 RUN npm run build
 
 

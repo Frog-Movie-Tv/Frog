@@ -4,6 +4,19 @@
 	import { offline } from '#lib/offline.svelte';
 	import { session } from '#lib/session.svelte';
 
+	const authors = [
+		{
+			name: 'Mihai Constantin',
+			role: 'Design and development',
+			href: 'https://github.com/MihCons'
+		},
+		{
+			name: 'Zjef Schaeken',
+			role: 'Design and development',
+			href: 'https://github.com/zschaeken'
+		}
+	];
+
 	const credits = [
 		{
 			name: 'TMDB',
@@ -44,7 +57,7 @@
 		<Logo size={56} />
 		<div>
 			<h1>Frog</h1>
-			<p class="muted">Version {session.status?.version ?? '—'} · Tadpole</p>
+			<p class="muted">Version {session.status?.version ?? '—'} · Lily Pad</p>
 		</div>
 	</header>
 
@@ -103,6 +116,21 @@
 	</section>
 
 	<section class="block">
+		<h2>Made by</h2>
+		<ul class="credits">
+			{#each authors as author (author.name)}
+				<li>
+					<a href={author.href} target="_blank" rel="noreferrer noopener">
+						<strong>{author.name}</strong>
+						<span class="faint">{author.role}</span>
+						<Icon name="external" size={13} />
+					</a>
+				</li>
+			{/each}
+		</ul>
+	</section>
+
+	<section class="block">
 		<h2>Built with</h2>
 		<ul class="credits">
 			{#each credits as credit (credit.name)}
@@ -127,7 +155,7 @@
 			<a class="btn" href="/whats-new">Release notes</a>
 			<a
 				class="btn ghost"
-				href="https://github.com/MihCons/Frog"
+				href="https://github.com/Frog-Movie-Tv/Frog"
 				target="_blank"
 				rel="noreferrer noopener"
 			>

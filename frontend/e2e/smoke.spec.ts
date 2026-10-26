@@ -179,7 +179,7 @@ test('the about page credits its sources', async ({ page }) => {
 	await page.goto('/about');
 
 	await expect(page.getByRole('heading', { name: 'Frog', level: 1 })).toBeVisible();
-	await expect(page.getByText('Tadpole')).toBeVisible();
+	await expect(page.getByText('Lily Pad')).toBeVisible();
 	await expect(page.getByRole('link', { name: /TMDB/ }).first()).toBeVisible();
 	await expect(page.getByRole('link', { name: /Lucide/ })).toBeVisible();
 });
@@ -301,6 +301,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/shelves/1',
 		'/api/titles/movie/1/shelves',
 		'/api/home/because',
+		'/api/invites',
 		'/img/w342/nope.jpg'
 	]) {
 		const res = await request.get(path);
@@ -318,11 +319,19 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/push/unsubscribe',
 		'/api/push/test',
 		'/api/shelves',
-		'/api/shelves/1/items'
+		'/api/shelves/1/items',
+		'/api/invites'
 	]) {
 		const res = await request.post(path, { data: {} });
 		expect(res.status(), `POST ${path} should be 401`).toBe(401);
 	}
+
+	// Joining is open by design, so it cannot be behind the wall. Without a
+	// live invite it still refuses, which is what keeps sign-up closed.
+	const join = await request.post('/api/auth/register', {
+		data: { username: 'nobody', password: 'a-long-enough-pass', invite: 'made-up' }
+	});
+	expect(join.status(), 'registering without a real invite is refused').toBe(403);
 });
 
 async function signIn(page: import('@playwright/test').Page) {

@@ -5,9 +5,17 @@ What changed in each release of Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Ribbit —
+## Upcoming — 0.4.1 Lily Pad —
 
 In progress.
+
+### Improvements
+
+- About credits the people who make Frog.
+
+### Fixes
+
+- About shows the name of the release you are running.
 
 ## [0.4.0] — Lily Pad — 2026-10-26
 
@@ -187,7 +195,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
-[0.4.0]: https://github.com/MihCons/Frog/releases/tag/v0.4.0
-[0.3.0]: https://github.com/MihCons/Frog/releases/tag/v0.3.0
-[0.2.0]: https://github.com/MihCons/Frog/releases/tag/v0.2.0
-[0.1.0]: https://github.com/MihCons/Frog/releases/tag/v0.1.0
+[0.4.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.0
+[0.3.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.3.0
+[0.2.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.2.0
+[0.1.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.1.0

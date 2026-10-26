@@ -11,11 +11,13 @@ use crate::push::{self, Vapid};
 use crate::state::AppState;
 
 /// The key a browser needs to subscribe, and how many devices already have.
-pub async fn status(_: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
+pub async fn status(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
     let vapid = Vapid::load_or_create(&state.pool).await?;
-    let (devices,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM push_subscription")
-        .fetch_one(&state.pool)
-        .await?;
+    let (devices,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM push_subscription WHERE user_id = ?")
+            .bind(auth.user_id())
+            .fetch_one(&state.pool)
+            .await?;
     Ok(Json(json!({
         "public_key": vapid.public_key(),
         "devices": devices,
@@ -36,7 +38,7 @@ pub struct Subscription {
 }
 
 pub async fn subscribe(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(sub): Json<Subscription>,
@@ -54,14 +56,15 @@ pub async fn subscribe(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.chars().take(200).collect::<String>());
     sqlx::query(
-        "INSERT INTO push_subscription (endpoint, p256dh, auth, user_agent, created_at)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (endpoint) DO UPDATE SET
+        "INSERT INTO push_subscription (user_id, endpoint, p256dh, auth, user_agent, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (user_id, endpoint) DO UPDATE SET
             p256dh = excluded.p256dh,
             auth = excluded.auth,
             user_agent = excluded.user_agent,
             failures = 0",
     )
+    .bind(auth.user_id())
     .bind(&sub.endpoint)
     .bind(&sub.keys.p256dh)
     .bind(&sub.keys.auth)
@@ -78,11 +81,12 @@ pub struct Endpoint {
 }
 
 pub async fn unsubscribe(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Json(body): Json<Endpoint>,
 ) -> AppResult<Json<Value>> {
-    sqlx::query("DELETE FROM push_subscription WHERE endpoint = ?")
+    sqlx::query("DELETE FROM push_subscription WHERE user_id = ? AND endpoint = ?")
+        .bind(auth.user_id())
         .bind(&body.endpoint)
         .execute(&state.pool)
         .await?;
@@ -90,9 +94,10 @@ pub async fn unsubscribe(
 }
 
 /// Send a test notification to every device, so turning it on can be checked.
-pub async fn test(_: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
+pub async fn test(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
     let result = push::broadcast(
         &state,
+        auth.user_id(),
         &json!({
             "title": "Frog",
             "body": "Notifications are on. New episodes of the shows you follow will show up here.",

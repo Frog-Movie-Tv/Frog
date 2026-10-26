@@ -83,6 +83,7 @@ type DueRow = (
 /// server was off, not yet announced and not already watched.
 pub async fn due_announcements(
     pool: &sqlx::SqlitePool,
+    user_id: i64,
     today: chrono::NaiveDate,
 ) -> anyhow::Result<Vec<Announcement>> {
     let yesterday = today - chrono::Duration::days(1);
@@ -91,16 +92,21 @@ pub async fn due_announcements(
                 e.name, e.air_date
            FROM episode e
            JOIN title t ON t.id = e.title_id
-           JOIN library_entry l ON l.title_id = t.id
+           JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?1
           WHERE t.kind = 'tv'
             AND l.status IN ('watching', 'planned', 'paused')
             AND l.notify = 1
             AND e.season_number > 0
-            AND e.air_date IN (?, ?)
-            AND NOT EXISTS (SELECT 1 FROM push_sent p WHERE p.episode_id = e.id)
-            AND NOT EXISTS (SELECT 1 FROM watch_event w WHERE w.episode_id = e.id)
+            AND e.air_date IN (?2, ?3)
+            AND NOT EXISTS (
+                  SELECT 1 FROM push_sent p
+                   WHERE p.user_id = ?1 AND p.episode_id = e.id)
+            AND NOT EXISTS (
+                  SELECT 1 FROM watch_event w
+                   WHERE w.user_id = ?1 AND w.episode_id = e.id)
           ORDER BY t.name, e.season_number, e.episode_number",
     )
+    .bind(user_id)
     .bind(today.to_string())
     .bind(yesterday.to_string())
     .fetch_all(pool)
@@ -164,28 +170,38 @@ async fn announce_new_episodes(state: &AppState, now: chrono::NaiveDateTime) -> 
     if now.hour() < state.config.notify_hour {
         return Ok(());
     }
-    let (devices,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM push_subscription")
-        .fetch_one(&state.pool)
+    // Only accounts with a subscribed browser can be told anything, and each
+    // is told about its own shows from its own library.
+    let listeners: Vec<(i64,)> = sqlx::query_as("SELECT DISTINCT user_id FROM push_subscription")
+        .fetch_all(&state.pool)
         .await?;
-    if devices == 0 {
-        return Ok(());
-    }
 
-    for a in due_announcements(&state.pool, now.date()).await? {
-        let result = crate::push::broadcast(state, &a.payload()).await?;
-        // Nobody reached because the network is down: try again next tick.
-        if result.sent == 0 && result.failed > 0 {
-            continue;
-        }
-        let sent_at = Utc::now().to_rfc3339();
-        for id in &a.episode_ids {
-            sqlx::query("INSERT OR IGNORE INTO push_sent (episode_id, sent_at) VALUES (?, ?)")
+    for (user_id,) in listeners {
+        for a in due_announcements(&state.pool, user_id, now.date()).await? {
+            let result = crate::push::broadcast(state, user_id, &a.payload()).await?;
+            // Nobody reached because the network is down: try again next tick.
+            if result.sent == 0 && result.failed > 0 {
+                continue;
+            }
+            let sent_at = Utc::now().to_rfc3339();
+            for id in &a.episode_ids {
+                sqlx::query(
+                    "INSERT OR IGNORE INTO push_sent (user_id, episode_id, sent_at)
+                     VALUES (?, ?, ?)",
+                )
+                .bind(user_id)
                 .bind(id)
                 .bind(&sent_at)
                 .execute(&state.pool)
                 .await?;
+            }
+            tracing::info!(
+                user_id,
+                show = %a.show,
+                episodes = a.episode_ids.len(),
+                "announced new episodes"
+            );
         }
-        tracing::info!(show = %a.show, episodes = a.episode_ids.len(), "announced new episodes");
     }
     Ok(())
 }

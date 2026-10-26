@@ -46,22 +46,22 @@ pub struct NextUp {
 /// One request per title page. Everything the page draws above the fold comes
 /// back here; seasons are fetched lazily as they are opened.
 pub async fn detail(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path((kind, tmdb_id)): Path<(String, i64)>,
 ) -> AppResult<Json<Value>> {
     check_kind(&kind)?;
     let (title_id, raw) = store::ensure_title(&state, &kind, tmdb_id).await?;
     let row = store::get_title(&state.pool, title_id).await?;
-    let item = store::build_item(&state.pool, row).await?;
+    let item = store::build_item(&state.pool, auth.user_id(), row).await?;
 
     let collection = match item.title.collection_id {
-        Some(cid) => collection_parts(&state, cid).await.ok(),
+        Some(cid) => collection_parts(&state, auth.user_id(), cid).await.ok(),
         None => None,
     };
 
     let next_up = if kind == "tv" {
-        next_unwatched(&state, title_id).await?
+        next_unwatched(&state, auth.user_id(), title_id).await?
     } else {
         None
     };
@@ -80,13 +80,13 @@ pub async fn detail(
         "similar": models::related(&raw, "similar", 18),
         "collection": collection,
         "next_up": next_up,
-        "heatmap": heatmap(&state, title_id).await?,
+        "heatmap": heatmap(&state, auth.user_id(), title_id).await?,
     })))
 }
 
 /// Films in the same franchise, in release order: the watch order that is
 /// actually defensible without hand-maintained lists.
-async fn collection_parts(state: &AppState, collection_id: i64) -> AppResult<Value> {
+async fn collection_parts(state: &AppState, user_id: i64, collection_id: i64) -> AppResult<Value> {
     let raw = state
         .tmdb
         .get(
@@ -107,7 +107,7 @@ async fn collection_parts(state: &AppState, collection_id: i64) -> AppResult<Val
         .unwrap_or_default();
 
     parts.sort_by_key(|p| p.year.unwrap_or(9999));
-    crate::routes::search::annotate_library(state, &mut parts).await?;
+    crate::routes::search::annotate_library(state, user_id, &mut parts).await?;
 
     Ok(json!({
         "id": collection_id,
@@ -119,17 +119,24 @@ async fn collection_parts(state: &AppState, collection_id: i64) -> AppResult<Val
     }))
 }
 
-async fn next_unwatched(state: &AppState, title_id: i64) -> AppResult<Option<NextUp>> {
+async fn next_unwatched(
+    state: &AppState,
+    user_id: i64,
+    title_id: i64,
+) -> AppResult<Option<NextUp>> {
     let row: Option<NextUpRow> = sqlx::query_as(
         "SELECT e.season_number, e.episode_number, e.name, e.still_path, e.air_date
            FROM episode e
           WHERE e.title_id = ?
             AND e.season_number > 0
-            AND NOT EXISTS (SELECT 1 FROM watch_event w WHERE w.episode_id = e.id)
+            AND NOT EXISTS (
+                  SELECT 1 FROM watch_event w
+                   WHERE w.user_id = ? AND w.episode_id = e.id)
           ORDER BY e.season_number, e.episode_number
           LIMIT 1",
     )
     .bind(title_id)
+    .bind(user_id)
     .fetch_optional(&state.pool)
     .await?;
 
@@ -149,18 +156,20 @@ type HeatRow = (i64, i64, Option<f64>, Option<f64>, i64);
 ///
 /// Carries TMDB's own episode score alongside mine, so a show you have just
 /// added already shows the shape of its seasons instead of an empty grid.
-async fn heatmap(state: &AppState, title_id: i64) -> AppResult<Value> {
+async fn heatmap(state: &AppState, user_id: i64, title_id: i64) -> AppResult<Value> {
     let rows: Vec<HeatRow> = sqlx::query_as(
         "SELECT e.season_number,
                 e.episode_number,
                 s.rating,
                 e.tmdb_vote,
-                (SELECT COUNT(*) FROM watch_event w WHERE w.episode_id = e.id)
+                (SELECT COUNT(*) FROM watch_event w
+                  WHERE w.user_id = ?1 AND w.episode_id = e.id)
            FROM episode e
-           LEFT JOIN episode_state s ON s.episode_id = e.id
-          WHERE e.title_id = ? AND e.season_number > 0
+           LEFT JOIN episode_state s ON s.episode_id = e.id AND s.user_id = ?1
+          WHERE e.title_id = ?2 AND e.season_number > 0
           ORDER BY e.season_number, e.episode_number",
     )
+    .bind(user_id)
     .bind(title_id)
     .fetch_all(&state.pool)
     .await?;
@@ -184,7 +193,7 @@ async fn heatmap(state: &AppState, title_id: i64) -> AppResult<Value> {
 
 /// Episodes of one season, merged with my watches, ratings and notes.
 pub async fn season(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path((kind, tmdb_id, season)): Path<(String, i64, i64)>,
 ) -> AppResult<Json<Value>> {
@@ -206,11 +215,13 @@ pub async fn season(
                 e.episode_number,
                 s.rating,
                 s.notes,
-                (SELECT COUNT(*) FROM watch_event w WHERE w.episode_id = e.id)
+                (SELECT COUNT(*) FROM watch_event w
+                  WHERE w.user_id = ?1 AND w.episode_id = e.id)
            FROM episode e
-           LEFT JOIN episode_state s ON s.episode_id = e.id
-          WHERE e.title_id = ? AND e.season_number = ?",
+           LEFT JOIN episode_state s ON s.episode_id = e.id AND s.user_id = ?1
+          WHERE e.title_id = ?2 AND e.season_number = ?3",
     )
+    .bind(auth.user_id())
     .bind(title_id)
     .bind(season)
     .fetch_all(&state.pool)
@@ -248,7 +259,7 @@ pub async fn season(
 
 /// A person, with their filmography marked up by what I have seen.
 pub async fn person(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path(person_id): Path<i64>,
 ) -> AppResult<Json<Value>> {
@@ -298,7 +309,7 @@ pub async fn person(
         .iter()
         .filter_map(|c| serde_json::from_value(c.get("item").cloned()?).ok())
         .collect();
-    crate::routes::search::annotate_library(&state, &mut items).await?;
+    crate::routes::search::annotate_library(&state, auth.user_id(), &mut items).await?;
     for (c, item) in credits.iter_mut().zip(items) {
         if let Some(obj) = c.as_object_mut() {
             obj.insert("item".into(), serde_json::to_value(item)?);
