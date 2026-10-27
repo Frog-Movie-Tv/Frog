@@ -11,6 +11,9 @@
 	/** Welcomed once; leaving through any door counts. */
 	async function finish(to: string) {
 		settings.set('onboarded', true);
+		// Saved now, not after the usual short delay: closing the app straight
+		// away must not bring the welcome back next time.
+		await settings.save();
 		await goto(to, { replace: true });
 	}
 </script>
