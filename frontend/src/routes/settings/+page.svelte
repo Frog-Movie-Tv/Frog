@@ -2,12 +2,14 @@
 	import { api } from '#lib/api';
 	import Icon, { type IconName } from '#lib/components/Icon.svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import Logo from '#lib/components/Logo.svelte';
 	import Rating from '#lib/components/Rating.svelte';
 	import Select from '#lib/components/Select.svelte';
 	import Notifications from '#lib/components/Notifications.svelte';
 	import AccountSettings from '#lib/components/AccountSettings.svelte';
-	import AniListSync from '#lib/components/AniListSync.svelte';
+	import ProfileSettings from '#lib/components/ProfileSettings.svelte';
+	import AniListConnect from '#lib/components/AniListConnect.svelte';
 	import TwoFactor from '#lib/components/TwoFactor.svelte';
 	import { SCORE_FORMATS, type ScoreFormat } from '#lib/format';
 	import { session } from '#lib/session.svelte';
@@ -36,6 +38,46 @@
 	let importing = $state(false);
 
 	const s = $derived(settings.current);
+
+	/** One page per group, each with its own address, so a link can open it. */
+	const TABS: { id: string; label: string; icon: IconName }[] = [
+		{ id: 'account', label: 'Account', icon: 'user' },
+		{ id: 'appearance', label: 'Appearance', icon: 'palette' },
+		{ id: 'home', label: 'Home and menus', icon: 'home' },
+		{ id: 'watching', label: 'Watching', icon: 'tv' },
+		{ id: 'connections', label: 'Connections', icon: 'plug' },
+		{ id: 'data', label: 'Your data', icon: 'database' }
+	];
+	/** Older links that point inside a group. */
+	const ALIASES: Record<string, string> = { 'this-instance': 'data' };
+	const tab = $derived.by(() => {
+		const hash = page.url.hash.replace('#', '');
+		const id = ALIASES[hash] ?? hash;
+		return TABS.some((t) => t.id === id) ? id : 'account';
+	});
+
+	// On a phone the groups scroll sideways; keep the open one in sight.
+	let tabBar = $state<HTMLElement | null>(null);
+	$effect(() => {
+		void tab;
+		tabBar
+			?.querySelector('a.on')
+			?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+	});
+
+	// Back from AniList's sign-in: say how it went, once, then tidy the
+	// address in place. A real navigation here re-ran this and looped.
+	let welcomedBack = false;
+	$effect(() => {
+		const outcome = page.url.searchParams.get('anilist');
+		if (!outcome || welcomedBack) return;
+		welcomedBack = true;
+		if (outcome === 'connected') toasts.push('AniList connected. The first sync is under way');
+		else if (outcome === 'signed-out')
+			toasts.push('Sign in to Frog, then connect AniList', 'error');
+		else toasts.push('AniList did not finish connecting. Try again', 'error');
+		void goto('/settings#connections', { replace: true, shallow: true, state: {} });
+	});
 
 	const tokens = [
 		{ key: 'bg', label: 'Background' },
@@ -250,675 +292,785 @@
 <div class="page">
 	<h1 class="title">Settings</h1>
 
-	<section class="block">
-		<div class="section-head"><h2>Account</h2></div>
-		<AccountSettings />
-	</section>
-
-	<section class="block">
-		<div class="section-head"><h2>Theme</h2></div>
-
-		<div class="tiles">
-			{#each THEMES as t (t.id)}
-				<button
-					class="tile"
-					class:on={s.theme === t.id}
-					aria-label={t.label}
-					aria-pressed={s.theme === t.id}
-					onclick={() => settings.set('theme', t.id as ThemeName)}
-				>
-					<span class="swatches" aria-hidden="true">
-						{#each t.swatches as c (c)}<i style:background={c}></i>{/each}
-					</span>
-					<strong>{t.label}</strong>
-					<span class="faint">{t.hint}</span>
-				</button>
+	<div class="layout">
+		<nav class="tabs" aria-label="Settings" bind:this={tabBar}>
+			{#each TABS as t (t.id)}
+				<a href="#{t.id}" class:on={tab === t.id} aria-current={tab === t.id ? 'page' : undefined}>
+					<Icon name={t.icon} size={17} />
+					<span>{t.label}</span>
+				</a>
 			{/each}
-		</div>
+		</nav>
 
-		<details class="editor">
-			<summary>Colour editor</summary>
+		<div class="panel">
+			{#if tab === 'account'}
+				<section class="block">
+					<div class="section-head"><h2>Profile</h2></div>
+					<ProfileSettings />
+				</section>
 
-			<div class="colours">
-				{#each tokens as token (token.key)}
-					<label class="colour">
-						<input
-							type="color"
-							value={currentToken(token.key)}
-							oninput={(e) => setToken(token.key, e.currentTarget.value)}
-						/>
-						<span>{token.label}</span>
-					</label>
-				{/each}
-			</div>
+				<section class="block">
+					<div class="section-head"><h2>Account</h2></div>
+					<AccountSettings />
+				</section>
 
-			<div class="actions">
-				<input class="input name" bind:value={themeName} aria-label="Theme name" />
-				<button class="btn" onclick={saveTheme}>Save</button>
-				<button class="btn ghost" onclick={() => settings.set('customTheme', null)}>
-					Reset colours
-				</button>
-				<button
-					class="btn ghost"
-					disabled={!s.customTheme}
-					onclick={() =>
-						download(
-							`${(s.customTheme?.name ?? 'frog-theme').replace(/\s+/g, '-')}.json`,
-							s.customTheme
-						)}
-				>
-					Export
-				</button>
-				<label class="btn ghost file">
-					Import
-					<input
-						type="file"
-						accept="application/json"
-						disabled={importing}
-						onchange={(e) => importJson(e.currentTarget.files?.[0], 'theme')}
-					/>
-				</label>
-			</div>
+				<section class="block">
+					<div class="section-head"><h2>Security</h2></div>
+					<TwoFactor />
+				</section>
 
-			{#if s.savedThemes.length}
-				<ul class="saved">
-					{#each s.savedThemes as theme (theme.name)}
-						<li>
-							<span class="dots" aria-hidden="true">
-								{#each Object.values(theme.tokens) as c (c)}<i style:background={c}></i>{/each}
-							</span>
-							<strong>{theme.name}</strong>
-							<button class="link" onclick={() => applyTheme(theme)}>Use</button>
-							<button class="link" onclick={() => duplicateTheme(theme)}>Duplicate</button>
+				<section class="block">
+					<div class="section-head"><h2>Notifications</h2></div>
+					<Notifications />
+				</section>
+			{:else if tab === 'appearance'}
+				<section class="block">
+					<div class="section-head"><h2>Theme</h2></div>
+
+					<div class="tiles">
+						{#each THEMES as t (t.id)}
 							<button
-								class="link danger"
+								class="tile"
+								class:on={s.theme === t.id}
+								aria-label={t.label}
+								aria-pressed={s.theme === t.id}
+								onclick={() => settings.set('theme', t.id as ThemeName)}
+							>
+								<span class="swatches" aria-hidden="true">
+									{#each t.swatches as c (c)}<i style:background={c}></i>{/each}
+								</span>
+								<strong>{t.label}</strong>
+								<span class="faint">{t.hint}</span>
+							</button>
+						{/each}
+					</div>
+
+					<details class="editor">
+						<summary>Colour editor</summary>
+
+						<div class="colours">
+							{#each tokens as token (token.key)}
+								<label class="colour">
+									<input
+										type="color"
+										value={currentToken(token.key)}
+										oninput={(e) => setToken(token.key, e.currentTarget.value)}
+									/>
+									<span>{token.label}</span>
+								</label>
+							{/each}
+						</div>
+
+						<div class="actions">
+							<input class="input name" bind:value={themeName} aria-label="Theme name" />
+							<button class="btn" onclick={saveTheme}>Save</button>
+							<button class="btn ghost" onclick={() => settings.set('customTheme', null)}>
+								Reset colours
+							</button>
+							<button
+								class="btn ghost"
+								disabled={!s.customTheme}
 								onclick={() =>
-									settings.set(
-										'savedThemes',
-										s.savedThemes.filter((t) => t.name !== theme.name)
+									download(
+										`${(s.customTheme?.name ?? 'frog-theme').replace(/\s+/g, '-')}.json`,
+										s.customTheme
 									)}
 							>
-								Delete
+								Export
 							</button>
-						</li>
-					{/each}
-				</ul>
+							<label class="btn ghost file">
+								Import
+								<input
+									type="file"
+									accept="application/json"
+									disabled={importing}
+									onchange={(e) => importJson(e.currentTarget.files?.[0], 'theme')}
+								/>
+							</label>
+						</div>
+
+						{#if s.savedThemes.length}
+							<ul class="saved">
+								{#each s.savedThemes as theme (theme.name)}
+									<li>
+										<span class="dots" aria-hidden="true">
+											{#each Object.values(theme.tokens) as c (c)}<i style:background={c}
+												></i>{/each}
+										</span>
+										<strong>{theme.name}</strong>
+										<button class="link" onclick={() => applyTheme(theme)}>Use</button>
+										<button class="link" onclick={() => duplicateTheme(theme)}>Duplicate</button>
+										<button
+											class="link danger"
+											onclick={() =>
+												settings.set(
+													'savedThemes',
+													s.savedThemes.filter((t) => t.name !== theme.name)
+												)}
+										>
+											Delete
+										</button>
+									</li>
+								{/each}
+							</ul>
+						{/if}
+					</details>
+				</section>
+
+				<section class="block">
+					<div class="section-head"><h2>Mascot</h2></div>
+
+					<div class="tiles mascots">
+						{#each MASCOTS as m (m.id)}
+							<button
+								class="tile"
+								class:on={s.mascot === m.id}
+								aria-label={m.label}
+								aria-pressed={s.mascot === m.id}
+								onclick={() => settings.set('mascot', m.id as MascotName)}
+							>
+								<img src="/mascots/{m.id}.svg" alt="" width="44" height="44" />
+								<strong>{m.label}</strong>
+							</button>
+						{/each}
+					</div>
+					<p class="faint tiny">Reinstall the app to change its home-screen icon.</p>
+				</section>
+
+				<section class="block">
+					<div class="section-head"><h2>Type and shape</h2></div>
+
+					<div class="rows">
+						<div class="row card">
+							<span class="label"><strong>Font</strong></span>
+							<Select
+								label="Font"
+								value={s.font}
+								options={FONTS.map((f) => ({ value: f.id, label: f.label }))}
+								onchange={(v) => settings.set('font', v as FontName)}
+							/>
+						</div>
+
+						<label class="row card">
+							<span class="label">
+								<strong>Text size</strong><span class="faint">{Math.round(s.textScale * 100)}%</span
+								>
+							</span>
+							<input
+								type="range"
+								min="0.85"
+								max="1.3"
+								step="0.05"
+								value={s.textScale}
+								oninput={(e) => settings.set('textScale', Number(e.currentTarget.value))}
+							/>
+						</label>
+
+						<label class="row card">
+							<span class="label">
+								<strong>Corner radius</strong><span class="faint"
+									>{Math.round(16 * s.radiusScale)}px</span
+								>
+							</span>
+							<input
+								type="range"
+								min="0"
+								max="2"
+								step="0.125"
+								value={s.radiusScale}
+								oninput={(e) => settings.set('radiusScale', Number(e.currentTarget.value))}
+							/>
+						</label>
+
+						<label class="row card">
+							<span class="label">
+								<strong>Glass blur</strong>
+								<span class="faint">{s.blur === 0 ? 'Off — solid bars' : `${s.blur}px`}</span>
+							</span>
+							<input
+								type="range"
+								min="0"
+								max="26"
+								step="2"
+								value={s.blur}
+								oninput={(e) => settings.set('blur', Number(e.currentTarget.value))}
+							/>
+						</label>
+
+						<div class="row card">
+							<span class="label">
+								<strong>Animation</strong>
+							</span>
+							<Select
+								label="Animation"
+								value={s.animations}
+								options={[
+									{ value: 'full', label: 'Full' },
+									{ value: 'reduced', label: 'Reduced' },
+									{ value: 'off', label: 'Off' }
+								]}
+								onchange={(v) => settings.set('animations', v as AnimationLevel)}
+							/>
+						</div>
+					</div>
+				</section>
+
+				<section class="block">
+					<div class="section-head"><h2>Cards and grid</h2></div>
+
+					<div class="rows">
+						<div class="row card">
+							<span class="label">
+								<strong>Card style</strong>
+							</span>
+							<Select
+								label="Card style"
+								value={s.cardStyle}
+								options={[
+									{ value: 'poster', label: 'Poster' },
+									{ value: 'landscape', label: 'Landscape' },
+									{ value: 'list', label: 'List' },
+									{ value: 'compact', label: 'Compact table' }
+								]}
+								onchange={(v) => settings.set('cardStyle', v as CardStyle)}
+							/>
+						</div>
+
+						<label class="row card">
+							<span class="label">
+								<strong>Poster size</strong><span class="faint">{s.posterSize}px columns</span>
+							</span>
+							<input
+								type="range"
+								min="90"
+								max="230"
+								step="2"
+								value={s.posterSize}
+								oninput={(e) => settings.set('posterSize', Number(e.currentTarget.value))}
+							/>
+						</label>
+
+						<label class="row card">
+							<span class="label"
+								><strong>Grid spacing</strong><span class="faint">{s.gridGap}px</span></span
+							>
+							<input
+								type="range"
+								min="6"
+								max="34"
+								step="2"
+								value={s.gridGap}
+								oninput={(e) => settings.set('gridGap', Number(e.currentTarget.value))}
+							/>
+						</label>
+
+						{#each cardToggles as [key, label] (key)}
+							<label class="row card">
+								<span class="label"><strong>{label}</strong></span>
+								<input
+									type="checkbox"
+									checked={s[key]}
+									onchange={(e) => settings.set(key, e.currentTarget.checked)}
+								/>
+							</label>
+						{/each}
+					</div>
+				</section>
+
+				<section class="block">
+					<div class="section-head"><h2>Title pages</h2></div>
+
+					<div class="rows">
+						<div class="row card">
+							<span class="label">
+								<strong>Hero</strong>
+							</span>
+							<Select
+								label="Hero"
+								value={s.heroStyle}
+								options={[
+									{ value: 'backdrop', label: 'Backdrop' },
+									{ value: 'poster', label: 'Poster' },
+									{ value: 'off', label: 'Off' }
+								]}
+								onchange={(v) => settings.set('heroStyle', v as HeroStyle)}
+							/>
+						</div>
+
+						<label class="row card">
+							<span class="label">
+								<strong>Follow the poster</strong>
+								<span class="faint">Colour each title page from its artwork</span>
+							</span>
+							<input
+								type="checkbox"
+								checked={s.followPoster}
+								onchange={(e) => settings.set('followPoster', e.currentTarget.checked)}
+							/>
+						</label>
+					</div>
+				</section>
+			{:else if tab === 'home'}
+				<section class="block">
+					<div class="section-head"><h2>Home</h2></div>
+
+					<div class="rows">
+						<div class="row card">
+							<span class="label">
+								<strong>Open on</strong>
+							</span>
+							<Select
+								label="Open on"
+								value={s.landingPage}
+								options={[
+									{ value: '/', label: 'Home' },
+									{ value: '/library', label: 'Library' },
+									{ value: '/search', label: 'Search' },
+									{ value: '/calendar', label: 'Calendar' },
+									{ value: '/diary', label: 'Diary' },
+									{ value: '/stats', label: 'Stats' }
+								]}
+								onchange={(v) => settings.set('landingPage', v)}
+							/>
+						</div>
+					</div>
+
+					<h3 class="sub">Home rows</h3>
+					<ul class="builder">
+						{#each s.homeRows as id, i (id)}
+							{@const row = rowInfo(id)}
+							{#if row}
+								<li>
+									<span class="grip"><Icon name="grip" size={16} /></span>
+									<span class="label">
+										<strong>{row.label}</strong><span class="faint">{row.hint}</span>
+									</span>
+									<button
+										class="icon-btn"
+										disabled={i === 0}
+										aria-label="Move up"
+										onclick={() => moveRow(id, -1)}
+									>
+										<Icon name="chevron-up" size={15} />
+									</button>
+									<button
+										class="icon-btn"
+										disabled={i === s.homeRows.length - 1}
+										aria-label="Move down"
+										onclick={() => moveRow(id, 1)}
+									>
+										<Icon name="chevron-down" size={15} />
+									</button>
+									<button class="icon-btn" aria-label="Remove row" onclick={() => toggleRow(id)}>
+										<Icon name="x" size={15} />
+									</button>
+								</li>
+							{/if}
+						{/each}
+					</ul>
+
+					{#if hiddenRows.length}
+						<div class="actions">
+							{#each hiddenRows as row (row.id)}
+								<button class="btn ghost small" onclick={() => toggleRow(row.id)}>
+									<Icon name="plus" size={14} />
+									{row.label}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</section>
+
+				<section class="block">
+					<div class="section-head">
+						<h2>Navigation</h2>
+						<span class="faint">{s.navTabs.length} of {MAX_TABS} in the phone tab bar</span>
+					</div>
+
+					<ul class="builder">
+						{#each navPages as navPage, i (navPage.href)}
+							{@const inBar = !s.navHidden.includes(navPage.href)}
+							{@const inTabs = s.navTabs.includes(navPage.href)}
+							<li>
+								<span class="nav-icon"><Icon name={navPage.icon as IconName} size={17} /></span>
+								<span class="label"><strong>{navPage.label}</strong></span>
+								<label class="mini" title="Show in the menu bar">
+									<input
+										type="checkbox"
+										checked={inBar || navPage.fixed}
+										disabled={navPage.fixed}
+										onchange={(e) => toggleHidden(navPage.href, !e.currentTarget.checked)}
+									/>
+									Menu
+								</label>
+								<label class="mini" title="Show in the phone tab bar">
+									<input
+										type="checkbox"
+										checked={inTabs}
+										disabled={!inTabs && s.navTabs.length >= MAX_TABS}
+										onchange={(e) => toggleTab(navPage.href, e.currentTarget.checked)}
+									/>
+									Tab
+								</label>
+								<button
+									class="icon-btn"
+									disabled={i === 0}
+									aria-label="Move {navPage.label} up"
+									onclick={() => moveNav(navPage.href, -1)}
+								>
+									<Icon name="chevron-up" size={15} />
+								</button>
+								<button
+									class="icon-btn"
+									disabled={i === navPages.length - 1}
+									aria-label="Move {navPage.label} down"
+									onclick={() => moveNav(navPage.href, 1)}
+								>
+									<Icon name="chevron-down" size={15} />
+								</button>
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{:else if tab === 'watching'}
+				<section class="block">
+					<div class="section-head"><h2>Ratings</h2></div>
+
+					<div class="tiles small">
+						{#each SCORE_FORMATS as f (f.id)}
+							<button
+								class="tile"
+								class:on={s.scoreFormat === f.id}
+								aria-label={f.label}
+								aria-pressed={s.scoreFormat === f.id}
+								onclick={() => settings.set('scoreFormat', f.id as ScoreFormat)}
+							>
+								<strong>{f.label}</strong>
+								<span class="faint">{f.example}</span>
+							</button>
+						{/each}
+					</div>
+
+					<div class="rows">
+						<label class="row card">
+							<span class="label">
+								<strong>Half stars</strong>
+							</span>
+							<input
+								type="checkbox"
+								checked={s.halfStars}
+								onchange={(e) => settings.set('halfStars', e.currentTarget.checked)}
+							/>
+						</label>
+
+						<div class="row card">
+							<span class="label"><strong>Preview</strong></span>
+							<Rating value={preview} onchange={(v) => (preview = v)} />
+						</div>
+					</div>
+				</section>
+
+				<section class="block">
+					<div class="section-head"><h2>Watching</h2></div>
+
+					<div class="rows">
+						<div class="row card">
+							<span class="label">
+								<strong>Default status</strong>
+							</span>
+							<Select
+								label="Default status"
+								value={s.defaultStatus}
+								options={STATUSES.map((st) => ({ value: st, label: STATUS_LABEL[st] }))}
+								onchange={(v) => settings.set('defaultStatus', v as Status)}
+							/>
+						</div>
+
+						<label class="row card">
+							<span class="label">
+								<strong>Spoiler protection</strong>
+								<span class="faint">Blur unwatched episode stills</span>
+							</span>
+							<input
+								type="checkbox"
+								checked={s.spoilerProtection}
+								onchange={(e) => settings.set('spoilerProtection', e.currentTarget.checked)}
+							/>
+						</label>
+
+						<label class="row card">
+							<span class="label">
+								<strong>Hide animation</strong>
+								<span class="faint">Leave animated titles out of search</span>
+							</span>
+							<input
+								type="checkbox"
+								checked={s.hideAnimation}
+								onchange={(e) => settings.set('hideAnimation', e.currentTarget.checked)}
+							/>
+						</label>
+
+						<label class="row card">
+							<span class="label">
+								<strong>Automatic dates</strong>
+							</span>
+							<input
+								type="checkbox"
+								checked={s.autoDates}
+								onchange={(e) => settings.set('autoDates', e.currentTarget.checked)}
+							/>
+						</label>
+
+						<label class="row card">
+							<span class="label">
+								<strong>Complete automatically</strong>
+								<span class="faint">When the last episode is ticked</span>
+							</span>
+							<input
+								type="checkbox"
+								checked={s.autoComplete}
+								onchange={(e) => settings.set('autoComplete', e.currentTarget.checked)}
+							/>
+						</label>
+
+						<div class="row card">
+							<span class="label"><strong>Dates</strong></span>
+							<Select
+								label="Dates"
+								value={s.dateStyle}
+								options={[
+									{ value: 'friendly', label: 'Friendly (3 days ago)' },
+									{ value: 'long', label: 'Long (24 October 2026)' },
+									{ value: 'iso', label: 'ISO (2026-10-24)' }
+								]}
+								onchange={(v) => settings.set('dateStyle', v as 'friendly')}
+							/>
+						</div>
+
+						<label class="row card">
+							<span class="label"><strong>24-hour clock</strong></span>
+							<input
+								type="checkbox"
+								checked={s.clock24}
+								onchange={(e) => settings.set('clock24', e.currentTarget.checked)}
+							/>
+						</label>
+					</div>
+				</section>
+			{:else if tab === 'connections'}
+				<section class="block">
+					<div class="section-head"><h2>Connections</h2></div>
+					<p class="faint intro">
+						Keep Frog in step with the other places you track what you watch.
+					</p>
+					<AniListConnect />
+				</section>
+			{:else if tab === 'data'}
+				<section class="block">
+					<div class="section-head"><h2>Your data</h2></div>
+
+					<div class="rows">
+						<a class="row card link-row" href="/import">
+							<span class="label">
+								<strong>Import</strong>
+								<span class="faint"
+									>Letterboxd, Trakt, IMDb, MyAnimeList, TV Time or a Frog backup</span
+								>
+							</span>
+							<Icon name="chevron-right" size={18} />
+						</a>
+						<a class="row card link-row" href="/api/export/library.json" download>
+							<span class="label">
+								<strong>Download backup</strong>
+								<span class="faint">Everything, as JSON</span>
+							</span>
+							<Icon name="download" size={18} />
+						</a>
+						<a class="row card link-row" href="/api/export/library.csv" download>
+							<span class="label">
+								<strong>Download spreadsheet</strong>
+								<span class="faint">Your library, as CSV</span>
+							</span>
+							<Icon name="download" size={18} />
+						</a>
+						<label class="row card">
+							<span class="label">
+								<strong>Data saver</strong>
+								<span class="faint">Smaller artwork everywhere</span>
+							</span>
+							<input
+								type="checkbox"
+								checked={s.dataSaver}
+								onchange={(e) => settings.set('dataSaver', e.currentTarget.checked)}
+							/>
+						</label>
+					</div>
+				</section>
+
+				<section class="block">
+					<div class="section-head"><h2>Advanced</h2></div>
+
+					<details class="editor">
+						<summary>Custom CSS</summary>
+						<p class="faint tiny">
+							Applied to every page, for example <code>:root &#123; --accent: hotpink; &#125;</code>
+						</p>
+						<textarea
+							class="input code"
+							rows="7"
+							spellcheck="false"
+							placeholder=":root &#123; --radius: 4px; &#125;"
+							value={s.customCss}
+							onchange={(e) => settings.set('customCss', e.currentTarget.value)}></textarea>
+					</details>
+
+					<div class="actions">
+						<button class="btn" onclick={() => download('frog-settings.json', s)}>
+							Export all settings
+						</button>
+						<label class="btn ghost file">
+							Import settings
+							<input
+								type="file"
+								accept="application/json"
+								disabled={importing}
+								onchange={(e) => importJson(e.currentTarget.files?.[0], 'all')}
+							/>
+						</label>
+						<button class="btn ghost" onclick={() => settings.reset()}>Reset everything</button>
+					</div>
+				</section>
+
+				<section class="block" id="this-instance">
+					<div class="section-head"><h2>This instance</h2></div>
+
+					<div class="instance card">
+						<Logo size={38} />
+						<dl class="facts">
+							<div>
+								<dt>Signed in as</dt>
+								<dd>{session.status?.username ?? '—'}</dd>
+							</div>
+							<div>
+								<dt>Version</dt>
+								<dd>{session.status?.version ?? '—'}</dd>
+							</div>
+							<div>
+								<dt>Provider region</dt>
+								<dd>{session.status?.region ?? '—'}</dd>
+							</div>
+							<div>
+								<dt>TMDB key</dt>
+								<dd class={session.status?.tmdb_configured ? 'ok' : 'bad'}>
+									{session.status?.tmdb_configured ? 'configured' : 'missing'}
+								</dd>
+							</div>
+						</dl>
+					</div>
+
+					<div class="actions">
+						<a class="btn" href="/whats-new">Release notes</a>
+						<a class="btn ghost" href="/about">About</a>
+						<button
+							class="btn ghost"
+							onclick={checkForUpdates}
+							disabled={update.state === 'checking'}
+						>
+							{update.state === 'checking' ? 'Checking…' : 'Check for updates'}
+						</button>
+						<button class="btn ghost" onclick={signOut}>Sign out</button>
+					</div>
+
+					{#if update.state === 'available'}
+						<p class="update available">
+							<strong>Version {update.tag} is out.</strong>
+							<a href={update.url} target="_blank" rel="noreferrer noopener">Read the notes</a>
+							— Frog installs it on its own, usually within the hour.
+						</p>
+					{:else if update.state === 'current'}
+						<p class="update faint">You are on the newest release.</p>
+					{:else if update.state === 'failed'}
+						<p class="update faint">Could not reach GitHub. Not to worry, nothing is wrong.</p>
+					{/if}
+				</section>
 			{/if}
-		</details>
-	</section>
-
-	<section class="block">
-		<div class="section-head"><h2>Mascot</h2></div>
-
-		<div class="tiles mascots">
-			{#each MASCOTS as m (m.id)}
-				<button
-					class="tile"
-					class:on={s.mascot === m.id}
-					aria-label={m.label}
-					aria-pressed={s.mascot === m.id}
-					onclick={() => settings.set('mascot', m.id as MascotName)}
-				>
-					<img src="/mascots/{m.id}.svg" alt="" width="44" height="44" />
-					<strong>{m.label}</strong>
-				</button>
-			{/each}
 		</div>
-		<p class="faint tiny">Reinstall the app to change its home-screen icon.</p>
-	</section>
-
-	<section class="block">
-		<div class="section-head"><h2>Type and shape</h2></div>
-
-		<div class="rows">
-			<div class="row card">
-				<span class="label"><strong>Font</strong></span>
-				<Select
-					label="Font"
-					value={s.font}
-					options={FONTS.map((f) => ({ value: f.id, label: f.label }))}
-					onchange={(v) => settings.set('font', v as FontName)}
-				/>
-			</div>
-
-			<label class="row card">
-				<span class="label">
-					<strong>Text size</strong><span class="faint">{Math.round(s.textScale * 100)}%</span>
-				</span>
-				<input
-					type="range"
-					min="0.85"
-					max="1.3"
-					step="0.05"
-					value={s.textScale}
-					oninput={(e) => settings.set('textScale', Number(e.currentTarget.value))}
-				/>
-			</label>
-
-			<label class="row card">
-				<span class="label">
-					<strong>Corner radius</strong><span class="faint">{Math.round(16 * s.radiusScale)}px</span
-					>
-				</span>
-				<input
-					type="range"
-					min="0"
-					max="2"
-					step="0.125"
-					value={s.radiusScale}
-					oninput={(e) => settings.set('radiusScale', Number(e.currentTarget.value))}
-				/>
-			</label>
-
-			<label class="row card">
-				<span class="label">
-					<strong>Glass blur</strong>
-					<span class="faint">{s.blur === 0 ? 'Off — solid bars' : `${s.blur}px`}</span>
-				</span>
-				<input
-					type="range"
-					min="0"
-					max="26"
-					step="2"
-					value={s.blur}
-					oninput={(e) => settings.set('blur', Number(e.currentTarget.value))}
-				/>
-			</label>
-
-			<div class="row card">
-				<span class="label">
-					<strong>Animation</strong>
-				</span>
-				<Select
-					label="Animation"
-					value={s.animations}
-					options={[
-						{ value: 'full', label: 'Full' },
-						{ value: 'reduced', label: 'Reduced' },
-						{ value: 'off', label: 'Off' }
-					]}
-					onchange={(v) => settings.set('animations', v as AnimationLevel)}
-				/>
-			</div>
-		</div>
-	</section>
-
-	<section class="block">
-		<div class="section-head"><h2>Cards and grid</h2></div>
-
-		<div class="rows">
-			<div class="row card">
-				<span class="label">
-					<strong>Card style</strong>
-				</span>
-				<Select
-					label="Card style"
-					value={s.cardStyle}
-					options={[
-						{ value: 'poster', label: 'Poster' },
-						{ value: 'landscape', label: 'Landscape' },
-						{ value: 'list', label: 'List' },
-						{ value: 'compact', label: 'Compact table' }
-					]}
-					onchange={(v) => settings.set('cardStyle', v as CardStyle)}
-				/>
-			</div>
-
-			<label class="row card">
-				<span class="label">
-					<strong>Poster size</strong><span class="faint">{s.posterSize}px columns</span>
-				</span>
-				<input
-					type="range"
-					min="90"
-					max="230"
-					step="2"
-					value={s.posterSize}
-					oninput={(e) => settings.set('posterSize', Number(e.currentTarget.value))}
-				/>
-			</label>
-
-			<label class="row card">
-				<span class="label"
-					><strong>Grid spacing</strong><span class="faint">{s.gridGap}px</span></span
-				>
-				<input
-					type="range"
-					min="6"
-					max="34"
-					step="2"
-					value={s.gridGap}
-					oninput={(e) => settings.set('gridGap', Number(e.currentTarget.value))}
-				/>
-			</label>
-
-			{#each cardToggles as [key, label] (key)}
-				<label class="row card">
-					<span class="label"><strong>{label}</strong></span>
-					<input
-						type="checkbox"
-						checked={s[key]}
-						onchange={(e) => settings.set(key, e.currentTarget.checked)}
-					/>
-				</label>
-			{/each}
-		</div>
-	</section>
-
-	<section class="block">
-		<div class="section-head"><h2>Hero and pages</h2></div>
-
-		<div class="rows">
-			<div class="row card">
-				<span class="label">
-					<strong>Hero</strong>
-				</span>
-				<Select
-					label="Hero"
-					value={s.heroStyle}
-					options={[
-						{ value: 'backdrop', label: 'Backdrop' },
-						{ value: 'poster', label: 'Poster' },
-						{ value: 'off', label: 'Off' }
-					]}
-					onchange={(v) => settings.set('heroStyle', v as HeroStyle)}
-				/>
-			</div>
-
-			<label class="row card">
-				<span class="label">
-					<strong>Follow the poster</strong>
-					<span class="faint">Colour each title page from its artwork</span>
-				</span>
-				<input
-					type="checkbox"
-					checked={s.followPoster}
-					onchange={(e) => settings.set('followPoster', e.currentTarget.checked)}
-				/>
-			</label>
-
-			<div class="row card">
-				<span class="label">
-					<strong>Open on</strong>
-				</span>
-				<Select
-					label="Open on"
-					value={s.landingPage}
-					options={[
-						{ value: '/', label: 'Home' },
-						{ value: '/library', label: 'Library' },
-						{ value: '/search', label: 'Search' },
-						{ value: '/calendar', label: 'Calendar' },
-						{ value: '/diary', label: 'Diary' },
-						{ value: '/stats', label: 'Stats' }
-					]}
-					onchange={(v) => settings.set('landingPage', v)}
-				/>
-			</div>
-		</div>
-
-		<h3 class="sub">Home rows</h3>
-		<ul class="builder">
-			{#each s.homeRows as id, i (id)}
-				{@const row = rowInfo(id)}
-				{#if row}
-					<li>
-						<span class="grip"><Icon name="grip" size={16} /></span>
-						<span class="label">
-							<strong>{row.label}</strong><span class="faint">{row.hint}</span>
-						</span>
-						<button
-							class="icon-btn"
-							disabled={i === 0}
-							aria-label="Move up"
-							onclick={() => moveRow(id, -1)}
-						>
-							<Icon name="chevron-up" size={15} />
-						</button>
-						<button
-							class="icon-btn"
-							disabled={i === s.homeRows.length - 1}
-							aria-label="Move down"
-							onclick={() => moveRow(id, 1)}
-						>
-							<Icon name="chevron-down" size={15} />
-						</button>
-						<button class="icon-btn" aria-label="Remove row" onclick={() => toggleRow(id)}>
-							<Icon name="x" size={15} />
-						</button>
-					</li>
-				{/if}
-			{/each}
-		</ul>
-
-		{#if hiddenRows.length}
-			<div class="actions">
-				{#each hiddenRows as row (row.id)}
-					<button class="btn ghost small" onclick={() => toggleRow(row.id)}>
-						<Icon name="plus" size={14} />
-						{row.label}
-					</button>
-				{/each}
-			</div>
-		{/if}
-	</section>
-
-	<section class="block">
-		<div class="section-head"><h2>Ratings</h2></div>
-
-		<div class="tiles small">
-			{#each SCORE_FORMATS as f (f.id)}
-				<button
-					class="tile"
-					class:on={s.scoreFormat === f.id}
-					aria-label={f.label}
-					aria-pressed={s.scoreFormat === f.id}
-					onclick={() => settings.set('scoreFormat', f.id as ScoreFormat)}
-				>
-					<strong>{f.label}</strong>
-					<span class="faint">{f.example}</span>
-				</button>
-			{/each}
-		</div>
-
-		<div class="rows">
-			<label class="row card">
-				<span class="label">
-					<strong>Half stars</strong>
-				</span>
-				<input
-					type="checkbox"
-					checked={s.halfStars}
-					onchange={(e) => settings.set('halfStars', e.currentTarget.checked)}
-				/>
-			</label>
-
-			<div class="row card">
-				<span class="label"><strong>Preview</strong></span>
-				<Rating value={preview} onchange={(v) => (preview = v)} />
-			</div>
-		</div>
-	</section>
-
-	<section class="block">
-		<div class="section-head"><h2>Watching</h2></div>
-
-		<div class="rows">
-			<div class="row card">
-				<span class="label">
-					<strong>Default status</strong>
-				</span>
-				<Select
-					label="Default status"
-					value={s.defaultStatus}
-					options={STATUSES.map((st) => ({ value: st, label: STATUS_LABEL[st] }))}
-					onchange={(v) => settings.set('defaultStatus', v as Status)}
-				/>
-			</div>
-
-			<label class="row card">
-				<span class="label">
-					<strong>Spoiler protection</strong>
-					<span class="faint">Blur unwatched episode stills</span>
-				</span>
-				<input
-					type="checkbox"
-					checked={s.spoilerProtection}
-					onchange={(e) => settings.set('spoilerProtection', e.currentTarget.checked)}
-				/>
-			</label>
-
-			<label class="row card">
-				<span class="label">
-					<strong>Hide animation</strong>
-					<span class="faint">Leave animated titles out of search</span>
-				</span>
-				<input
-					type="checkbox"
-					checked={s.hideAnimation}
-					onchange={(e) => settings.set('hideAnimation', e.currentTarget.checked)}
-				/>
-			</label>
-
-			<label class="row card">
-				<span class="label">
-					<strong>Automatic dates</strong>
-				</span>
-				<input
-					type="checkbox"
-					checked={s.autoDates}
-					onchange={(e) => settings.set('autoDates', e.currentTarget.checked)}
-				/>
-			</label>
-
-			<label class="row card">
-				<span class="label">
-					<strong>Complete automatically</strong>
-					<span class="faint">When the last episode is ticked</span>
-				</span>
-				<input
-					type="checkbox"
-					checked={s.autoComplete}
-					onchange={(e) => settings.set('autoComplete', e.currentTarget.checked)}
-				/>
-			</label>
-
-			<div class="row card">
-				<span class="label"><strong>Dates</strong></span>
-				<Select
-					label="Dates"
-					value={s.dateStyle}
-					options={[
-						{ value: 'friendly', label: 'Friendly (3 days ago)' },
-						{ value: 'long', label: 'Long (24 October 2026)' },
-						{ value: 'iso', label: 'ISO (2026-10-24)' }
-					]}
-					onchange={(v) => settings.set('dateStyle', v as 'friendly')}
-				/>
-			</div>
-
-			<label class="row card">
-				<span class="label"><strong>24-hour clock</strong></span>
-				<input
-					type="checkbox"
-					checked={s.clock24}
-					onchange={(e) => settings.set('clock24', e.currentTarget.checked)}
-				/>
-			</label>
-		</div>
-	</section>
-
-	<section class="block">
-		<div class="section-head"><h2>Notifications</h2></div>
-		<Notifications />
-	</section>
-
-	<section class="block">
-		<div class="section-head"><h2>Security</h2></div>
-		<TwoFactor />
-	</section>
-
-	<section class="block">
-		<div class="section-head"><h2>Your data</h2></div>
-
-		<div class="rows">
-			<a class="row card link-row" href="/import">
-				<span class="label">
-					<strong>Import</strong>
-					<span class="faint"
-						>Letterboxd, Trakt, IMDb, AniList, MyAnimeList, TV Time or a Frog backup</span
-					>
-				</span>
-				<Icon name="chevron-right" size={18} />
-			</a>
-			<AniListSync />
-			<a class="row card link-row" href="/api/export/library.json" download>
-				<span class="label">
-					<strong>Download backup</strong>
-					<span class="faint">Everything, as JSON</span>
-				</span>
-				<Icon name="download" size={18} />
-			</a>
-			<a class="row card link-row" href="/api/export/library.csv" download>
-				<span class="label">
-					<strong>Download spreadsheet</strong>
-					<span class="faint">Your library, as CSV</span>
-				</span>
-				<Icon name="download" size={18} />
-			</a>
-			<label class="row card">
-				<span class="label">
-					<strong>Data saver</strong>
-					<span class="faint">Smaller artwork everywhere</span>
-				</span>
-				<input
-					type="checkbox"
-					checked={s.dataSaver}
-					onchange={(e) => settings.set('dataSaver', e.currentTarget.checked)}
-				/>
-			</label>
-		</div>
-	</section>
-
-	<section class="block">
-		<div class="section-head">
-			<h2>Navigation</h2>
-			<span class="faint">{s.navTabs.length} of {MAX_TABS} in the phone tab bar</span>
-		</div>
-
-		<ul class="builder">
-			{#each navPages as navPage, i (navPage.href)}
-				{@const inBar = !s.navHidden.includes(navPage.href)}
-				{@const inTabs = s.navTabs.includes(navPage.href)}
-				<li>
-					<span class="nav-icon"><Icon name={navPage.icon as IconName} size={17} /></span>
-					<span class="label"><strong>{navPage.label}</strong></span>
-					<label class="mini" title="Show in the menu bar">
-						<input
-							type="checkbox"
-							checked={inBar || navPage.fixed}
-							disabled={navPage.fixed}
-							onchange={(e) => toggleHidden(navPage.href, !e.currentTarget.checked)}
-						/>
-						Menu
-					</label>
-					<label class="mini" title="Show in the phone tab bar">
-						<input
-							type="checkbox"
-							checked={inTabs}
-							disabled={!inTabs && s.navTabs.length >= MAX_TABS}
-							onchange={(e) => toggleTab(navPage.href, e.currentTarget.checked)}
-						/>
-						Tab
-					</label>
-					<button
-						class="icon-btn"
-						disabled={i === 0}
-						aria-label="Move {navPage.label} up"
-						onclick={() => moveNav(navPage.href, -1)}
-					>
-						<Icon name="chevron-up" size={15} />
-					</button>
-					<button
-						class="icon-btn"
-						disabled={i === navPages.length - 1}
-						aria-label="Move {navPage.label} down"
-						onclick={() => moveNav(navPage.href, 1)}
-					>
-						<Icon name="chevron-down" size={15} />
-					</button>
-				</li>
-			{/each}
-		</ul>
-	</section>
-
-	<section class="block">
-		<div class="section-head"><h2>Advanced</h2></div>
-
-		<details class="editor">
-			<summary>Custom CSS</summary>
-			<p class="faint tiny">
-				Applied to every page, for example <code>:root &#123; --accent: hotpink; &#125;</code>
-			</p>
-			<textarea
-				class="input code"
-				rows="7"
-				spellcheck="false"
-				placeholder=":root &#123; --radius: 4px; &#125;"
-				value={s.customCss}
-				onchange={(e) => settings.set('customCss', e.currentTarget.value)}></textarea>
-		</details>
-
-		<div class="actions">
-			<button class="btn" onclick={() => download('frog-settings.json', s)}>
-				Export all settings
-			</button>
-			<label class="btn ghost file">
-				Import settings
-				<input
-					type="file"
-					accept="application/json"
-					disabled={importing}
-					onchange={(e) => importJson(e.currentTarget.files?.[0], 'all')}
-				/>
-			</label>
-			<button class="btn ghost" onclick={() => settings.reset()}>Reset everything</button>
-		</div>
-	</section>
-
-	<section class="block" id="this-instance">
-		<div class="section-head"><h2>This instance</h2></div>
-
-		<div class="instance card">
-			<Logo size={38} />
-			<dl class="facts">
-				<div>
-					<dt>Signed in as</dt>
-					<dd>{session.status?.username ?? '—'}</dd>
-				</div>
-				<div>
-					<dt>Version</dt>
-					<dd>{session.status?.version ?? '—'}</dd>
-				</div>
-				<div>
-					<dt>Provider region</dt>
-					<dd>{session.status?.region ?? '—'}</dd>
-				</div>
-				<div>
-					<dt>TMDB key</dt>
-					<dd class={session.status?.tmdb_configured ? 'ok' : 'bad'}>
-						{session.status?.tmdb_configured ? 'configured' : 'missing'}
-					</dd>
-				</div>
-			</dl>
-		</div>
-
-		<div class="actions">
-			<a class="btn" href="/whats-new">Release notes</a>
-			<a class="btn ghost" href="/about">About</a>
-			<button class="btn ghost" onclick={checkForUpdates} disabled={update.state === 'checking'}>
-				{update.state === 'checking' ? 'Checking…' : 'Check for updates'}
-			</button>
-			<button class="btn ghost" onclick={signOut}>Sign out</button>
-		</div>
-
-		{#if update.state === 'available'}
-			<p class="update available">
-				<strong>Version {update.tag} is out.</strong>
-				<a href={update.url} target="_blank" rel="noreferrer noopener">Read the notes</a>
-				— Frog installs it on its own, usually within the hour.
-			</p>
-		{:else if update.state === 'current'}
-			<p class="update faint">You are on the newest release.</p>
-		{:else if update.state === 'failed'}
-			<p class="update faint">Could not reach GitHub. Not to worry, nothing is wrong.</p>
-		{/if}
-	</section>
+	</div>
 </div>
 
 <style>
 	.title {
 		margin-bottom: 22px;
+	}
+
+	.layout {
+		display: grid;
+		grid-template-columns: 210px minmax(0, 1fr);
+		gap: 34px;
+		align-items: start;
+	}
+
+	.tabs {
+		position: sticky;
+		top: calc(var(--header-h, 64px) + 16px);
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.tabs a {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 10px 12px;
+		border-radius: var(--radius-sm);
+		color: var(--text-dim);
+		text-decoration: none;
+		font-weight: 550;
+		white-space: nowrap;
+	}
+
+	.tabs a:hover {
+		color: var(--text);
+		background: var(--bg-elev);
+	}
+
+	.tabs a.on {
+		color: var(--text);
+		background: var(--bg-elev-2);
+	}
+
+	.tabs a.on :global(.icon) {
+		color: var(--accent);
+	}
+
+	.intro {
+		margin: -6px 0 14px;
+		font-size: 0.88rem;
+	}
+
+	@media (max-width: 860px) {
+		.layout {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 18px;
+		}
+
+		/* A row of chips that scrolls sideways, so every group is one tap away. */
+		.tabs {
+			position: static;
+			flex-direction: row;
+			overflow-x: auto;
+			gap: 6px;
+			min-width: 0;
+			padding-bottom: 4px;
+			scrollbar-width: none;
+		}
+
+		.tabs a {
+			padding: 8px 12px;
+			border: 1px solid var(--line);
+			border-radius: 999px;
+		}
 	}
 
 	.block {

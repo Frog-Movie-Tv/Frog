@@ -29,14 +29,20 @@ struct Scope {
 
 impl Scope {
     /// Every query starts from `scoped`, so the account and the year filter
-    /// live in one place.
+    /// live in one place. Only titles still in the library count: taking
+    /// something out of it takes it out of the numbers too, so the stats always
+    /// add up to the library you see.
     ///
     /// The account is written into the SQL rather than bound: these bodies are
     /// assembled by several callers and a placeholder would have to be bound in
     /// an order each of them agreed on. It is an `i64` from the session, so
     /// there is nothing in it to escape. The year is still bound.
     fn sql(&self, body: &str) -> String {
-        let mut filter = format!("w.user_id = {}", self.user_id);
+        let mut filter = format!(
+            "w.user_id = {0} AND w.title_id IN \
+             (SELECT l.title_id FROM library_entry l WHERE l.user_id = {0})",
+            self.user_id
+        );
         if self.year.is_some() {
             filter.push_str(" AND w.undated = 0 AND substr(w.watched_at, 1, 4) = ?");
         }

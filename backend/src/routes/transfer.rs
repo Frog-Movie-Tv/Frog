@@ -451,7 +451,42 @@ pub async fn apply(
                     )
                     .await?;
                 }
+            } else if completed && !already {
+                // Finished, with no season given: the whole show was watched,
+                // so its episodes count (undated) like any other.
+                for s in crate::tmdb::models::seasons(&detail)
+                    .into_iter()
+                    .filter(|s| s.season_number > 0)
+                {
+                    tick_season(
+                        &state,
+                        auth.user_id(),
+                        title_id,
+                        &detail,
+                        s.season_number,
+                        0,
+                        i64::MAX,
+                    )
+                    .await?;
+                }
             }
+        }
+
+        // A finished film with no date still counts as watched: undated, so
+        // it is in the totals but not on the day of the import in the diary.
+        if item.kind == "movie" && completed && item.watched_at.is_none() {
+            sqlx::query(
+                "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                          source, undated)
+                 SELECT ?1, ?2, NULL, ?3, 0, 'import', 1
+                  WHERE NOT EXISTS (SELECT 1 FROM watch_event
+                                     WHERE user_id = ?1 AND title_id = ?2 AND episode_id IS NULL)",
+            )
+            .bind(auth.user_id())
+            .bind(title_id)
+            .bind(chrono::Utc::now().to_rfc3339())
+            .execute(&state.pool)
+            .await?;
         }
 
         // A diary entry is the whole point of importing a diary.

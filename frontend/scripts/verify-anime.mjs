@@ -1,11 +1,9 @@
 /**
  * Verifies anime imports end to end in real Chrome, against real TMDB:
  *
- *   1. the AniList query is valid against AniList's live schema,
- *   2. a MyAnimeList XML export parses into season-aware rows,
- *   3. "Attack on Titan Season 2" matches TMDB's "Attack on Titan", season 2,
- *   4. importing ticks the right episodes of the right seasons, undated,
- *   5. an AniList list (served from a fixture) parses the same way.
+ *   1. a MyAnimeList XML export parses into season-aware rows,
+ *   2. "Attack on Titan Season 2" matches TMDB's "Attack on Titan", season 2,
+ *   3. importing ticks the right episodes of the right seasons, undated.
  *
  *   node scripts/verify-anime.mjs
  */
@@ -33,27 +31,6 @@ const check = (label, ok, detail = '') => {
 	results.push(ok);
 	console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${label}${detail ? ' — ' + detail : ''}`);
 };
-
-console.log('== AniList schema ==');
-{
-	const query = readFileSync(
-		join(repo, 'frontend', 'src', 'lib', 'import', 'parsers.ts'),
-		'utf8'
-	).match(/const ANILIST_QUERY = `([\s\S]*?)`;/)[1];
-	const res = await fetch('https://graphql.anilist.co', {
-		method: 'POST',
-		headers: { 'content-type': 'application/json', accept: 'application/json' },
-		body: JSON.stringify({ query, variables: { name: 'frog-schema-check-nobody-zz' } })
-	});
-	const body = await res.json();
-	const message = body?.errors?.[0]?.message ?? '';
-	// An unknown user means the query itself was accepted.
-	check(
-		'AniList accepts the query',
-		/not found/i.test(message) && !/Cannot query field|Unknown argument/i.test(message),
-		message
-	);
-}
 
 const binary = join(
 	repo,
@@ -171,108 +148,6 @@ check(
 	'ticked episodes stay out of the diary; the film is in it',
 	diary.entries.length === filmEntries && filmEntries === 1,
 	`${diary.entries.length} entries, ${diary.undated} undated`
-);
-
-console.log('\n== AniList list (fixture) ==');
-await page.route('https://graphql.anilist.co/**', (route) =>
-	route.fulfill({
-		contentType: 'application/json',
-		body: JSON.stringify({
-			data: {
-				MediaListCollection: {
-					lists: [
-						{
-							entries: [
-								{
-									status: 'COMPLETED',
-									score: 80,
-									progress: 24,
-									completedAt: { year: 2021, month: 3, day: 27 },
-									media: {
-										format: 'TV',
-										episodes: 24,
-										seasonYear: 2020,
-										startDate: { year: 2020 },
-										title: { english: 'JUJUTSU KAISEN', romaji: 'Jujutsu Kaisen' },
-										synonyms: []
-									}
-								},
-								{
-									status: 'CURRENT',
-									score: 85,
-									progress: 5,
-									completedAt: { year: null, month: null, day: null },
-									media: {
-										format: 'TV',
-										episodes: 24,
-										seasonYear: 2023,
-										startDate: { year: 2023 },
-										title: {
-											english: 'JUJUTSU KAISEN Season 2',
-											romaji: 'Jujutsu Kaisen 2nd Season'
-										},
-										synonyms: []
-									}
-								},
-								{
-									status: 'COMPLETED',
-									score: 0,
-									progress: 26,
-									completedAt: { year: 2020, month: 3, day: 1 },
-									media: {
-										format: 'TV',
-										episodes: 26,
-										seasonYear: 2004,
-										startDate: { year: 2004 },
-										title: { english: 'Samurai Champloo', romaji: 'Samurai Champloo' },
-										synonyms: []
-									}
-								}
-							]
-						}
-					]
-				}
-			}
-		})
-	})
-);
-await page.goto(`${BASE}/import`);
-await page.getByRole('button', { name: 'AniList', exact: true }).click();
-await page.getByLabel('AniList username').fill('someone');
-await page.getByRole('button', { name: 'Read my list' }).click();
-await page.getByText(/ready/).first().waitFor({ timeout: 60000 });
-await page.waitForFunction(() => !document.querySelector('.progress'), null, { timeout: 120000 });
-
-const jjk = page.locator('ul.rows > li').filter({ hasText: 'JUJUTSU KAISEN Season 2' });
-check('AniList rows read', (await page.locator('ul.rows > li').count()) === 3);
-check('its progress is carried', (await jjk.getByText('5 watched').count()) === 1);
-// TMDB keeps Jujutsu Kaisen as one long season; season 2 starts at its episode 25.
-const jjkSeason = await jjk.locator('.season input').inputValue();
-const jjkInfo =
-	(
-		await jjk
-			.locator('.info-line')
-			.textContent()
-			.catch(() => '')
-	)?.trim() ?? '';
-const jjkNote = (await jjk.locator('.note-line').count()) > 0;
-check(
-	'Season 2 lands where TMDB numbers it',
-	(jjkSeason === '1' && jjkInfo.includes('from episode 25') && !jjkNote) ||
-		(jjkSeason === '2' && !jjkNote),
-	`season ${jjkSeason}${jjkInfo ? ', ' + jjkInfo : ''}`
-);
-await page.screenshot({ path: join(out, '3-anilist-review.png'), fullPage: true });
-
-await page.getByRole('button', { name: /^Import \d+/ }).click();
-await page.getByRole('heading', { name: 'Import finished' }).waitFor({ timeout: 180000 });
-const jjkLib = (await (await page.request.get(`${BASE}/api/library?q=Jujutsu`)).json()).items.find(
-	(i) => /jujutsu/i.test(i.name)
-);
-check(
-	'24 + 5 Jujutsu Kaisen episodes ticked',
-	jjkLib?.watched_episodes === 29,
-	`${jjkLib?.watched_episodes} watched`
 );
 
 check('no page errors', errors.length === 0, errors.slice(0, 2).join(' | '));

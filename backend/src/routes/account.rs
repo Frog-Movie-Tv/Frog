@@ -1,10 +1,12 @@
 //! What any account can do to itself: its password, its signed-in devices,
 //! whether others may see its profile, and leaving.
 
+use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use axum::Json;
 use axum_extra::extract::CookieJar;
+use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -16,24 +18,47 @@ use crate::state::AppState;
 /// It cannot be turned back into a token, so showing it gives nothing away.
 const SESSION_ID_LEN: usize = 16;
 
-/// (username, role, created_at, profile_public, has two-factor)
-type AccountRow = (String, String, String, bool, bool);
+/// (username, role, created_at, profile_public, has two-factor,
+///  display name, bio, banner backdrop, pins)
+type AccountRow = (
+    String,
+    String,
+    String,
+    bool,
+    bool,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+);
 
 pub async fn get(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
-    let (username, role, created_at, profile_public, two_factor): AccountRow = sqlx::query_as(
-        "SELECT username, role, created_at, profile_public, totp_secret IS NOT NULL
+    let row: AccountRow = sqlx::query_as(
+        "SELECT username, role, created_at, profile_public, totp_secret IS NOT NULL,
+                display_name, bio, banner_backdrop, pins_json
            FROM app_user WHERE id = ?",
     )
     .bind(auth.user_id())
     .fetch_one(&state.pool)
     .await?;
+    let images: Vec<(String,)> = sqlx::query_as("SELECT kind FROM user_image WHERE user_id = ?")
+        .bind(auth.user_id())
+        .fetch_all(&state.pool)
+        .await?;
+    let has = |kind: &str| images.iter().any(|(k,)| k == kind);
     Ok(Json(json!({
         "id": auth.user_id(),
-        "username": username,
-        "role": role,
-        "created_at": created_at,
-        "profile_public": profile_public,
-        "two_factor": two_factor,
+        "username": row.0,
+        "role": row.1,
+        "created_at": row.2,
+        "profile_public": row.3,
+        "two_factor": row.4,
+        "display_name": row.5,
+        "bio": row.6,
+        "banner_backdrop": row.7,
+        "pins": serde_json::from_str::<Value>(&row.8).unwrap_or(json!([])),
+        "avatar": has("avatar"),
+        "banner": has("banner"),
     })))
 }
 
@@ -173,9 +198,35 @@ pub async fn end_other_sessions(
     Ok(Json(json!({ "signed_out": signed_out })))
 }
 
+/// Only the fields sent change. For the text fields an empty string clears.
 #[derive(Deserialize)]
 pub struct ProfileBody {
-    pub public: bool,
+    pub public: Option<bool>,
+    pub display_name: Option<String>,
+    pub bio: Option<String>,
+    pub banner_backdrop: Option<String>,
+    pub pins: Option<Vec<Pin>>,
+}
+
+#[derive(Deserialize, serde::Serialize)]
+pub struct Pin {
+    pub kind: String,
+    pub tmdb_id: i64,
+}
+
+const NAME_MAX: usize = 40;
+const BIO_MAX: usize = 600;
+const PINS_MAX: usize = 4;
+
+/// Trimmed text, `None` for empty, refused past `max` characters.
+fn text(value: &str, max: usize, what: &str) -> AppResult<Option<String>> {
+    let value = value.trim();
+    if value.chars().count() > max {
+        return Err(AppError::BadRequest(format!(
+            "Keep {what} under {max} characters."
+        )));
+    }
+    Ok((!value.is_empty()).then(|| value.to_string()))
 }
 
 pub async fn set_profile(
@@ -183,12 +234,130 @@ pub async fn set_profile(
     State(state): State<AppState>,
     Json(body): Json<ProfileBody>,
 ) -> AppResult<Json<Value>> {
-    sqlx::query("UPDATE app_user SET profile_public = ? WHERE id = ?")
-        .bind(body.public)
+    let pool = &state.pool;
+    let me = auth.user_id();
+    if let Some(public) = body.public {
+        sqlx::query("UPDATE app_user SET profile_public = ? WHERE id = ?")
+            .bind(public)
+            .bind(me)
+            .execute(pool)
+            .await?;
+    }
+    if let Some(name) = &body.display_name {
+        sqlx::query("UPDATE app_user SET display_name = ? WHERE id = ?")
+            .bind(text(name, NAME_MAX, "your name")?)
+            .bind(me)
+            .execute(pool)
+            .await?;
+    }
+    if let Some(bio) = &body.bio {
+        sqlx::query("UPDATE app_user SET bio = ? WHERE id = ?")
+            .bind(text(bio, BIO_MAX, "your about text")?)
+            .bind(me)
+            .execute(pool)
+            .await?;
+    }
+    if let Some(path) = &body.banner_backdrop {
+        // Only a TMDB image path: it is drawn through Frog's own image proxy.
+        let path = path.trim();
+        let valid = path.is_empty()
+            || (path.starts_with('/')
+                && path.len() < 80
+                && path
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '_' | '-')));
+        if !valid {
+            return Err(AppError::BadRequest("That banner cannot be used.".into()));
+        }
+        sqlx::query("UPDATE app_user SET banner_backdrop = ? WHERE id = ?")
+            .bind((!path.is_empty()).then_some(path))
+            .bind(me)
+            .execute(pool)
+            .await?;
+    }
+    if let Some(pins) = &body.pins {
+        if pins.len() > PINS_MAX {
+            return Err(AppError::BadRequest(format!(
+                "Pin at most {PINS_MAX} titles."
+            )));
+        }
+        if pins.iter().any(|p| p.kind != "movie" && p.kind != "tv") {
+            return Err(AppError::BadRequest("kind must be movie or tv".into()));
+        }
+        sqlx::query("UPDATE app_user SET pins_json = ? WHERE id = ?")
+            .bind(serde_json::to_string(pins)?)
+            .bind(me)
+            .execute(pool)
+            .await?;
+    }
+    get(auth, State(state)).await
+}
+
+/// Pictures people upload: a profile picture and a banner.
+const IMAGE_KINDS: [&str; 2] = ["avatar", "banner"];
+pub const IMAGE_MAX_BYTES: usize = 3 * 1024 * 1024;
+
+/// What the bytes are, from their first few, never from what the browser
+/// claims. Only plain raster formats: no SVG, which can carry script.
+pub fn sniff_image(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
+}
+
+pub async fn set_image(
+    auth: Auth,
+    State(state): State<AppState>,
+    Path(kind): Path<String>,
+    body: Bytes,
+) -> AppResult<Json<Value>> {
+    if !IMAGE_KINDS.contains(&kind.as_str()) {
+        return Err(AppError::NotFound("no such picture".into()));
+    }
+    if body.len() > IMAGE_MAX_BYTES {
+        return Err(AppError::BadRequest(
+            "That picture is too large; keep it under 3 MB.".into(),
+        ));
+    }
+    let Some(mime) = sniff_image(&body) else {
+        return Err(AppError::BadRequest(
+            "Use a JPEG, PNG, WebP or GIF picture.".into(),
+        ));
+    };
+    sqlx::query(
+        "INSERT INTO user_image (user_id, kind, mime, bytes, updated_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (user_id, kind) DO UPDATE SET
+            mime = excluded.mime, bytes = excluded.bytes, updated_at = excluded.updated_at",
+    )
+    .bind(auth.user_id())
+    .bind(&kind)
+    .bind(mime)
+    .bind(body.to_vec())
+    .bind(Utc::now().to_rfc3339())
+    .execute(&state.pool)
+    .await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+pub async fn remove_image(
+    auth: Auth,
+    State(state): State<AppState>,
+    Path(kind): Path<String>,
+) -> AppResult<Json<Value>> {
+    sqlx::query("DELETE FROM user_image WHERE user_id = ? AND kind = ?")
         .bind(auth.user_id())
+        .bind(&kind)
         .execute(&state.pool)
         .await?;
-    Ok(Json(json!({ "profile_public": body.public })))
+    Ok(Json(json!({ "ok": true })))
 }
 
 #[derive(Deserialize)]

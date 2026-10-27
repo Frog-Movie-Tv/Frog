@@ -9,9 +9,35 @@ people working on Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Leapfrog —
+## Upcoming — Bullfrog —
 
 In progress.
+
+## [0.6.0] — Leapfrog — 2026-10-27
+
+AniList and Frog keep each other up to date, profiles become your own, and
+Settings is easier to find your way around.
+
+![Settings in the Pond theme](docs/screenshots/settings-desktop-pond.png)
+
+### Highlights
+
+- **AniList, both ways.** Connect your AniList account in Settings and the two
+  stay the same: episodes you tick, statuses and scores, whichever side you
+  change them on. Every season lands where TMDB numbers it, and anything Frog
+  cannot place for certain waits for you to choose.
+- **A profile of your own.** A picture, a banner, your name, a few lines about
+  you and up to four pinned titles, with your totals, streak and favourite
+  genres alongside.
+- **Settings, grouped.** Account, Appearance, Home and menus, Watching,
+  Connections and Your data, each a tap away on a phone.
+
+### Improvements
+
+- Administrators can delete an account, with a few seconds to take it back.
+- Stats and profiles count exactly the titles in your library.
+- Finished films and shows brought in without a date count as watched.
+- AniList lives in Settings under Connections rather than in Import.
 
 ## [0.5.0] — Ribbit — 2026-10-27
 
@@ -302,6 +328,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[0.6.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.5.0
 [0.4.5]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.5
 [0.4.4]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.4

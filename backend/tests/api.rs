@@ -43,6 +43,7 @@ impl Harness {
             secure_cookies: false,
             session_days: 7,
             notify_hour: 18,
+            anilist: None,
         };
 
         let pool = frog::db::connect(&url).await.expect("database");
@@ -2562,4 +2563,228 @@ async fn a_sync_merge_never_undoes_what_you_did_in_frog() {
     let (_, body, _) = h.post("/api/import/apply", incoming, Some(&owner)).await;
     assert_eq!(body["updated"], json!(0), "{body}");
     assert_eq!(body["skipped"], json!(3), "{body}");
+}
+
+/// The stats add up to the library you see: a title taken out of it leaves
+/// the numbers, and a finished film imported without a date still counts.
+#[tokio::test]
+async fn stats_only_count_what_is_in_the_library() {
+    let h = Harness::new().await;
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "zjef", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+    cache_film(&h, 41, "Kept Film", "2001", &[]).await;
+    cache_film(&h, 42, "Removed Film", "2002", &[]).await;
+
+    let (status, body, _) = h
+        .post(
+            "/api/import/apply",
+            json!({ "on_conflict": "overwrite", "items": [
+                { "kind": "movie", "tmdb_id": 41, "status": "completed" },
+                { "kind": "movie", "tmdb_id": 42, "status": "completed" }
+            ]}),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (_, stats) = h.get("/api/stats", Some(&cookie)).await;
+    assert_eq!(
+        stats["totals"]["films"],
+        json!(2),
+        "undated finished films count"
+    );
+    let (_, diary) = h.get("/api/diary", Some(&cookie)).await;
+    assert_eq!(diary["entries"], json!([]), "but stay out of the diary");
+
+    h.delete("/api/titles/movie/42/library", Some(&cookie))
+        .await;
+    let (_, stats) = h.get("/api/stats", Some(&cookie)).await;
+    assert_eq!(stats["totals"]["films"], json!(1), "{}", stats["totals"]);
+    assert_eq!(stats["totals"]["titles"], json!(1));
+    let (_, library) = h.get("/api/library/stats", Some(&cookie)).await;
+    assert_eq!(library["films_watched"], json!(1), "{library}");
+}
+
+/// Administrators delete accounts within their rank, and everything personal
+/// goes with the account.
+#[tokio::test]
+async fn administrators_delete_accounts_within_their_rank() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    let (_, body) = h.get("/api/admin/users", Some(&owner)).await;
+    let users = body["users"].as_array().unwrap().clone();
+    let owner_id = users[0]["id"].as_i64().unwrap();
+    let guest_id = users[1]["id"].as_i64().unwrap();
+
+    // The guest has a shelf and a setting of their own.
+    h.post("/api/shelves", json!({ "name": "Mine" }), Some(&guest))
+        .await;
+    h.put("/api/settings", json!({ "theme": "dark" }), Some(&guest))
+        .await;
+
+    // A user cannot delete anyone; nobody deletes themselves or the owner here.
+    let (code, _, _) = h
+        .delete(&format!("/api/admin/users/{owner_id}"), Some(&guest))
+        .await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    let (code, _, _) = h
+        .delete(&format!("/api/admin/users/{owner_id}"), Some(&owner))
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "not yourself");
+
+    // An administrator cannot delete another administrator; the owner can.
+    h.put(
+        &format!("/api/admin/users/{guest_id}"),
+        json!({ "role": "admin" }),
+        Some(&owner),
+    )
+    .await;
+    let (_, invite, _) = h
+        .post("/api/invites", json!({ "role": "admin" }), Some(&owner))
+        .await;
+    let (_, _, third) = h
+        .post(
+            "/api/auth/register",
+            json!({ "username": "third", "password": "third-long-pass", "invite": invite["code"] }),
+            None,
+        )
+        .await;
+    assert!(third.is_some());
+    let (_, body) = h.get("/api/admin/users", Some(&owner)).await;
+    let third_id = body["users"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["username"] == json!("third"))
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    let (code, _, _) = h
+        .delete(&format!("/api/admin/users/{third_id}"), Some(&guest))
+        .await;
+    assert_eq!(code, StatusCode::FORBIDDEN, "only the owner removes admins");
+
+    let (code, body, _) = h
+        .delete(&format!("/api/admin/users/{guest_id}"), Some(&owner))
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(
+        h.get("/api/account", Some(&guest)).await.0,
+        StatusCode::UNAUTHORIZED,
+        "signed out at once"
+    );
+    for table in ["shelf", "app_setting", "session"] {
+        let (left,): (i64,) =
+            sqlx::query_as(&format!("SELECT COUNT(*) FROM {table} WHERE user_id = ?"))
+                .bind(guest_id)
+                .fetch_one(&h.state.pool)
+                .await
+                .unwrap();
+        assert_eq!(left, 0, "{table} rows went with the account");
+    }
+    let (code, _, _) = h
+        .delete(&format!("/api/admin/users/{guest_id}"), Some(&owner))
+        .await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+}
+
+/// A profile of one's own: name, about, pins and pictures, shown only where
+/// the profile itself may be seen.
+#[tokio::test]
+async fn profiles_carry_a_name_an_about_pins_and_pictures() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    cache_film(&h, 51, "Pinned Film", "2003", &[]).await;
+    h.put(
+        "/api/titles/movie/51/library",
+        json!({ "status": "completed", "rating": 90.0 }),
+        Some(&owner),
+    )
+    .await;
+
+    let (code, body, _) = h
+        .put(
+            "/api/account/profile",
+            json!({
+                "display_name": "  Mihai  ",
+                "bio": "Films first.",
+                "banner_backdrop": "/abc123.jpg",
+                "pins": [{ "kind": "movie", "tmdb_id": 51 }]
+            }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["display_name"], json!("Mihai"));
+
+    let (code, _, _) = h
+        .put(
+            "/api/account/profile",
+            json!({ "bio": "x".repeat(601) }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    let (code, _, _) = h
+        .put(
+            "/api/account/profile",
+            json!({ "banner_backdrop": "https://evil.example/x.jpg" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+
+    // A real PNG goes in; an SVG pretending to be one does not.
+    let png: Vec<u8> = [&b"\x89PNG\r\n\x1a\n"[..], &[0u8; 32]].concat();
+    let put_image = |bytes: Vec<u8>, cookie: String| {
+        let h = &h;
+        async move {
+            let req = axum::http::Request::builder()
+                .uri("/api/account/images/avatar")
+                .method("PUT")
+                .header(header::COOKIE, cookie)
+                .header(header::CONTENT_TYPE, "image/png")
+                .body(Body::from(bytes))
+                .unwrap();
+            h.call(req).await.0
+        }
+    };
+    assert_eq!(put_image(png.clone(), owner.clone()).await, StatusCode::OK);
+    assert_eq!(
+        put_image(b"<svg onload=alert(1)>".to_vec(), owner.clone()).await,
+        StatusCode::BAD_REQUEST
+    );
+
+    let (_, profile) = h.get("/api/profiles/mihai", Some(&owner)).await;
+    assert_eq!(profile["display_name"], json!("Mihai"));
+    assert_eq!(profile["bio"], json!("Films first."));
+    assert_eq!(profile["pinned"][0]["tmdb_id"], json!(51));
+    assert_eq!(profile["stats"]["films"], json!(1));
+    let avatar = profile["avatar"]
+        .as_str()
+        .expect("an avatar address")
+        .to_string();
+    let (code, _) = h.get(&avatar, Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK);
+
+    // Private: the other account sees neither the profile nor its picture.
+    assert_eq!(
+        h.get("/api/profiles/mihai", Some(&guest)).await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(h.get(&avatar, Some(&guest)).await.0, StatusCode::NOT_FOUND);
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&owner),
+    )
+    .await;
+    assert_eq!(h.get(&avatar, Some(&guest)).await.0, StatusCode::OK);
+    assert_eq!(h.get(&avatar, None).await.0, StatusCode::UNAUTHORIZED);
 }

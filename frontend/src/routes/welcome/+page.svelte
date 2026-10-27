@@ -91,9 +91,7 @@
 				<Icon name="upload" size={22} />
 				<span>
 					<strong>Import from another tracker</strong>
-					<span class="faint"
-						>Letterboxd, Trakt, IMDb, TV Time, AniList, MyAnimeList or a Frog backup</span
-					>
+					<span class="faint">Letterboxd, Trakt, IMDb, TV Time, MyAnimeList or a Frog backup</span>
 				</span>
 				<Icon name="chevron-right" size={18} />
 			</button>

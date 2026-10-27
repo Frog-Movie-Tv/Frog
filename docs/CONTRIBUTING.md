@@ -146,8 +146,10 @@ git commit --allow-empty -m "chore: release 0.5.0" -m "Release-As: 0.5.0"
 
 - One numbered or timestamped `.sql` file in `backend/migrations/`, embedded at
   compile time.
-- **New migrations get a timestamped name**: `20261026T1730_add_thing.sql`.
-  The old `0001`–`0008` files stay as they are. Timestamps mean two branches
+- **New migrations get a timestamped name**: `202610261730_add_thing.sql`.
+  Digits only before the first `_`: sqlx reads that part as a number, so
+  `20261026T1730_…` fails to compile. The old `0001`–`0008` files stay as they
+  are. Timestamps mean two branches
   never pick the same number and silently reorder when both merge.
 - **Never edit a migration that has been applied anywhere.** sqlx stores a
   checksum and refuses to start if it changed, which takes a running instance

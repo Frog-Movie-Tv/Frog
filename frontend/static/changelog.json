@@ -1,5 +1,31 @@
 [
 	{
+		"version": "0.6.0",
+		"codename": "Leapfrog",
+		"date": "2026-10-27",
+		"intro": "AniList and Frog keep each other up to date, profiles become your own, and Settings is easier to find your way around.",
+		"groups": [
+			{
+				"title": "Highlights",
+				"items": [
+					"**AniList, both ways.** Connect your AniList account in Settings and the two stay the same: episodes you tick, statuses and scores, whichever side you change them on. Every season lands where TMDB numbers it, and anything Frog cannot place for certain waits for you to choose.",
+					"**A profile of your own.** A picture, a banner, your name, a few lines about you and up to four pinned titles, with your totals, streak and favourite genres alongside.",
+					"**Settings, grouped.** Account, Appearance, Home and menus, Watching, Connections and Your data, each a tap away on a phone."
+				]
+			},
+			{
+				"title": "Improvements",
+				"items": [
+					"Administrators can delete an account, with a few seconds to take it back.",
+					"Stats and profiles count exactly the titles in your library.",
+					"Finished films and shows brought in without a date count as watched.",
+					"AniList lives in Settings under Connections rather than in Import."
+				]
+			}
+		],
+		"image": "docs/screenshots/settings-desktop-pond.png"
+	},
+	{
 		"version": "0.5.0",
 		"codename": "Ribbit",
 		"date": "2026-10-27",

@@ -14,8 +14,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Tables that gained a `user_id` in migration 0008.
-const PERSONAL: [&str; 9] = [
+/// Tables that gained a `user_id` in migration 0008, and personal tables
+/// added since.
+const PERSONAL: [&str; 13] = [
+    "user_image",
+    "anilist_link",
+    "anilist_entry",
+    "anilist_oauth",
     "library_entry",
     "episode_state",
     "watch_event",

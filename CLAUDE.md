@@ -41,6 +41,7 @@ backend/            Rust: axum 0.8, sqlx 0.8 (SQLite), tokio
   src/routes/       one module per area; thin — parse, call store, serialise
   src/store.rs      reads and writes of one account's own data
   src/auth.rs       sessions, roles, the Auth and AdminAuth extractors
+  src/anilist.rs    AniList sync: sign-in, placing entries by id, both ways
   src/tmdb/         TMDB client, cache, and the JSON → view mapping
   src/jobs/         background worker (sessions, cache pruning, show refresh)
   migrations/       numbered .sql files, embedded at compile time
@@ -141,8 +142,9 @@ Two owners work on this in parallel, often both with Claude Code.
   `chore` and `style` do not. On `0.x` a `feat` bumps the **patch**.
 - **Never edit a version or `CHANGELOG.md`.** Both are generated.
   `RELEASE-NOTES.md` is the hand-written, product-voice file the app reads.
-- **New migrations get timestamped names** (`20261026T1730_thing.sql`), and an
-  applied migration is never edited — sqlx refuses to start on a changed
+- **New migrations get timestamped names** (`202610261730_thing.sql`, digits
+  only: sqlx reads everything before the first `_` as a number, so a `T` in
+  it fails the build), and an applied migration is never edited — sqlx refuses to start on a changed
   checksum. Add another one.
 - **Every query touching personal data names its owner.**
   `backend/tests/scoping.rs` fails the build otherwise. Genuinely shared

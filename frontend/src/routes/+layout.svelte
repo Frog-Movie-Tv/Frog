@@ -11,7 +11,6 @@
 	import Toasts from '#lib/components/Toasts.svelte';
 	import UpdateBanner from '#lib/components/UpdateBanner.svelte';
 	import WhenWatched from '#lib/components/WhenWatched.svelte';
-	import { anilist } from '#lib/import/anilist.svelte';
 	import { offline } from '#lib/offline.svelte';
 	import { session } from '#lib/session.svelte';
 	import { MAX_TABS, NAV_PAGES, settings } from '#lib/settings.svelte';
@@ -42,14 +41,6 @@
 	// Preferences live on the server, so they load once there is a session.
 	$effect(() => {
 		if (session.authenticated && !settings.loaded) void settings.load();
-	});
-
-	// Once per app open, after preferences say whether a list is linked.
-	let synced = false;
-	$effect(() => {
-		if (synced || !session.authenticated || !settings.loaded) return;
-		synced = true;
-		void anilist.maybeRun();
 	});
 
 	// Route guard. Re-runs on every navigation because `page.url` is reactive.

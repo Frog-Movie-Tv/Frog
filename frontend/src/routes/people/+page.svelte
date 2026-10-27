@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { api } from '#lib/api';
+	import Avatar from '#lib/components/Avatar.svelte';
 	import Empty from '#lib/components/Empty.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { session } from '#lib/session.svelte';
+	import type { PersonSummary } from '#lib/types';
 
-	let profiles = $state<{ username: string; me: boolean }[]>([]);
+	let profiles = $state<PersonSummary[]>([]);
 	let loading = $state(true);
 
 	$effect(() => {
@@ -42,10 +44,17 @@
 			{#each others as person (person.username)}
 				<li>
 					<a class="card person" href="/people/{encodeURIComponent(person.username)}">
-						<span class="avatar" aria-hidden="true"
-							>{person.username.slice(0, 1).toUpperCase()}</span
-						>
-						<strong>{person.username}</strong>
+						<Avatar
+							src={person.avatar
+								? `/api/profiles/${encodeURIComponent(person.username)}/images/avatar`
+								: null}
+							name={person.username}
+							size={44}
+						/>
+						<span class="who">
+							<strong>{person.display_name ?? person.username}</strong>
+							{#if person.display_name}<span class="faint">@{person.username}</span>{/if}
+						</span>
 					</a>
 				</li>
 			{/each}
@@ -80,14 +89,14 @@
 		border-color: var(--line-strong);
 	}
 
-	.avatar {
-		width: 40px;
-		height: 40px;
-		border-radius: 50%;
-		display: grid;
-		place-items: center;
-		background: var(--accent-soft);
-		color: var(--accent);
-		font-weight: 700;
+	.who {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+	}
+
+	.who .faint {
+		font-size: 0.8rem;
 	}
 </style>

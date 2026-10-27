@@ -24,6 +24,8 @@ pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
         tokio::time::sleep(Duration::from_secs(5)).await;
         let credits = tokio::spawn(backfill_credits(state.clone()));
         let _guard = AbortOnDrop(credits);
+        let anilist = tokio::spawn(sync_anilist(state.clone()));
+        let _anilist_guard = AbortOnDrop(anilist);
         loop {
             if let Err(e) = tick(&state).await {
                 tracing::warn!(error = %e, "worker tick failed");
@@ -229,6 +231,25 @@ struct AbortOnDrop(tokio::task::JoinHandle<()>);
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
         self.0.abort();
+    }
+}
+
+/// AniList runs on its own short loop: a change made in Frog should reach
+/// AniList within a minute or two, not at the next half-hourly tick.
+async fn sync_anilist(state: AppState) {
+    if state.config.anilist.is_none() {
+        return;
+    }
+    loop {
+        match crate::anilist::due(&state.pool).await {
+            Ok(users) => {
+                for user_id in users {
+                    let _ = crate::anilist::sync_user(&state, user_id).await;
+                }
+            }
+            Err(e) => tracing::warn!(error = %e, "could not list AniList accounts"),
+        }
+        tokio::time::sleep(Duration::from_secs(60)).await;
     }
 }
 

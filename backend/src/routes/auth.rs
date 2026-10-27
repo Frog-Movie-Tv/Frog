@@ -128,9 +128,29 @@ pub async fn status(
         None => None,
     };
 
+    // The profile picture's address, so the top bar draws it without asking
+    // for a picture that is not there.
+    let avatar = match &identity {
+        Some(i) => sqlx::query_as::<_, (String,)>(
+            "SELECT updated_at FROM user_image WHERE user_id = ? AND kind = 'avatar'",
+        )
+        .bind(i.user_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .map(|(at,)| {
+            format!(
+                "/api/profiles/{}/images/avatar?v={}",
+                urlencoding::encode(&i.username),
+                urlencoding::encode(&at)
+            )
+        }),
+        None => None,
+    };
+
     Ok(Json(json!({
         "needs_setup": needs_setup(&state).await?,
         "authenticated": identity.is_some(),
+        "avatar": avatar,
         "username": identity.as_ref().map(|i| i.username.clone()),
         "role": identity.as_ref().map(|i| i.role),
         "is_admin": identity.as_ref().is_some_and(|i| i.role >= Role::Admin),

@@ -3,7 +3,8 @@
 The working backlog. Claude reads this at the start of a session and updates
 it when something ships. Top of **Next** is what to do next.
 
-Current release: **0.5.0 "Ribbit"**. Next release: **Leapfrog**, then
+Current release: **0.5.0 "Ribbit"**; **0.6.0 "Leapfrog"** is in its pull
+request. After that:
 Bullfrog (1.0).
 
 ## In progress — the multi-user brief, handed over 2026-10-26
@@ -177,14 +178,27 @@ Ordered by what the owner asked for most recently. Take from the top.
    login is needed (Oracle, DuckDNS, GitHub token). Docker is not installed
    on the owner's laptop: verify images through GitHub Actions, or install
    Docker for a local arm64/QEMU test.
-2. **Jellyfin scrobbling** via its free webhook plugin, plus a generic webhook
-   endpoint. Plex webhooks need Plex Pass, so not Plex.
-3. Smaller items: customisable keyboard shortcuts, rename and recolour
+2. Smaller items: customisable keyboard shortcuts, rename and recolour
    statuses, muted trailer autoplay, per-shelf layout defaults.
-4. **AniList sync, two-way.** Sync today only pulls (public list, no key).
-   Writing back needs an AniList API client registered by an owner (free,
-   but a login), then OAuth in Settings.
-5. **Projects board.** Needs `gh auth refresh -s project` by an owner first.
+3. **AniList, the rest.** Titles in Frog that were never on AniList are not
+   added to AniList, and removing a title in Frog never removes it there;
+   both are deliberate for now. Staging has no AniList client of its own (a
+   client has one redirect URL), so AniList only works on production.
+4. **Projects board.** Needs `gh auth refresh -s project` by an owner first.
+
+Dropped by the owner (2026-10-27): Jellyfin scrobbling.
+
+Done for 0.6.0 Leapfrog (2026-10-27): AniList sync both ways through
+AniList's own sign-in (`src/anilist.rs`; entries placed by id from the
+Kometa Anime-IDs list, TVDB seasons turned into TMDB numbering through
+absolute positions, unsure ones listed in Settings → Connections; the old
+username import and username sync are gone); stats, library totals and
+profiles count only titles in the library, and finished films imported
+without a date get an undated watch; Settings split into six groups with
+their own addresses; administrators delete accounts; profiles with a
+picture, banner, name, about, four pins and fuller stats.
+`scripts/verify-leapfrog.mjs` checks all of it in Chrome against real TMDB
+and a stand-in AniList.
 
 Done from this list on 2026-10-27: first-run onboarding (`/welcome`),
 pull-to-refresh on phones, the notification hour in Settings, shelves as Home
@@ -218,8 +232,8 @@ The interface stays English only.
 - **Verify scripts** in `frontend/scripts/`, each with its own server and
   throwaway database (build the release binary first): `verify-stats.mjs`,
   `verify-push.mjs`, `verify-shelves.mjs`, `verify-because.mjs`,
-  `verify-anime.mjs`, `verify-anilist-sync.mjs` (these need the TMDB key;
-  AniList itself is a fixture), `verify-2fa.mjs`,
+  `verify-anime.mjs`, `verify-leapfrog.mjs` (these need the TMDB key;
+  AniList is a stand-in server inside the script), `verify-2fa.mjs`,
   `verify-diary.mjs`, `verify-polish.mjs`, plus `npm run pwa-check` and
   `npm run audit`. Every script now stops its server and exits when done.
 - **Web Push in tests:** headless Chrome discards displayed notifications and

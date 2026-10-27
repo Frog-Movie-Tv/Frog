@@ -1,5 +1,6 @@
 pub mod account;
 pub mod admin;
+pub mod anilist;
 pub mod auth;
 pub mod episodes;
 pub mod home;
@@ -18,6 +19,7 @@ pub mod titles;
 pub mod transfer;
 pub mod two_factor;
 
+use axum::extract::DefaultBodyLimit;
 use axum::http::{header, HeaderValue};
 use axum::routing::{delete, get, post, put};
 use axum::Router;
@@ -79,6 +81,13 @@ pub fn router(state: AppState) -> Router {
         .route("/account", get(account::get).delete(account::delete))
         .route("/account/password", put(account::change_password))
         .route("/account/profile", put(account::set_profile))
+        .route(
+            "/account/images/{kind}",
+            put(account::set_image)
+                .delete(account::remove_image)
+                // Room for a picture; the handler refuses anything over 3 MB.
+                .layer(DefaultBodyLimit::max(account::IMAGE_MAX_BYTES + 64 * 1024)),
+        )
         .route("/account/sessions", get(account::sessions))
         .route(
             "/account/sessions/others",
@@ -86,10 +95,20 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/account/sessions/{id}", delete(account::end_session))
         .route("/admin/users", get(admin::users))
-        .route("/admin/users/{id}", put(admin::update_user))
+        .route(
+            "/admin/users/{id}",
+            put(admin::update_user).delete(admin::delete_user),
+        )
         .route("/admin/instance", get(admin::instance))
+        .route("/anilist", get(anilist::status).delete(anilist::disconnect))
+        .route("/anilist/connect", post(anilist::connect))
+        .route("/anilist/callback", get(anilist::callback))
+        .route("/anilist/sync", post(anilist::sync_now))
+        .route("/anilist/entries", get(anilist::entries))
+        .route("/anilist/entries/{media_id}", put(anilist::choose))
         .route("/profiles", get(profiles::list))
         .route("/profiles/{username}", get(profiles::get))
+        .route("/profiles/{username}/images/{kind}", get(profiles::image))
         .route("/invites", get(invites::list).post(invites::create))
         .route("/invites/{id}", delete(invites::revoke))
         .route("/export/library.json", get(transfer::export_json))

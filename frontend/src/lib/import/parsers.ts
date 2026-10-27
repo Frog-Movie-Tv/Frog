@@ -47,18 +47,9 @@ export interface SourceFormat {
 	label: string;
 	hint: string;
 	accept: string;
-	/** Read from the service by username instead of from a file. */
-	remote?: boolean;
 }
 
 export const SOURCES: SourceFormat[] = [
-	{
-		id: 'anilist',
-		label: 'AniList',
-		hint: 'Your username. The list needs to be public.',
-		accept: '',
-		remote: true
-	},
 	{
 		id: 'mal',
 		label: 'MyAnimeList',
@@ -526,98 +517,6 @@ function applyPartOffsets(rows: Incoming[]): Incoming[] {
 	}
 	for (const row of rows as WithPart[]) delete row.part;
 	return rows;
-}
-
-const ANILIST_QUERY = `query ($name: String) {
-  MediaListCollection(userName: $name, type: ANIME) {
-    lists { entries {
-      status
-      score(format: POINT_100)
-      progress
-      completedAt { year month day }
-      media {
-        format
-        episodes
-        seasonYear
-        startDate { year }
-        title { english romaji }
-        synonyms
-      }
-    } }
-  }
-}`;
-
-/** Read a public AniList list by username, straight from AniList. */
-export async function readAniList(username: string): Promise<ParsedFile[]> {
-	const name = username.trim();
-	if (!name) throw new Error('Enter your AniList username.');
-
-	let res: Response;
-	try {
-		res = await fetch('https://graphql.anilist.co', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json', accept: 'application/json' },
-			body: JSON.stringify({ query: ANILIST_QUERY, variables: { name } })
-		});
-	} catch {
-		throw new Error('Could not reach AniList.');
-	}
-
-	const body = await res.json().catch(() => null);
-	const message: string | undefined = body?.errors?.[0]?.message;
-	if (!res.ok || message) {
-		if (/private/i.test(message ?? '')) throw new Error('That AniList list is private.');
-		if (/not found/i.test(message ?? '') || res.status === 404) {
-			throw new Error(`No AniList user called “${name}”.`);
-		}
-		throw new Error(message ?? `AniList answered ${res.status}.`);
-	}
-
-	type Entry = {
-		status: string;
-		score: number;
-		progress: number;
-		completedAt: { year: number | null; month: number | null; day: number | null };
-		media: {
-			format: string | null;
-			episodes: number | null;
-			seasonYear: number | null;
-			startDate: { year: number | null };
-			title: { english: string | null; romaji: string | null };
-			synonyms: string[];
-		};
-	};
-
-	const lists: { entries: Entry[] }[] = body?.data?.MediaListCollection?.lists ?? [];
-	const rows = lists.flatMap((l) =>
-		l.entries.map((e) => {
-			const c = e.completedAt;
-			const finished =
-				c?.year && c.month && c.day
-					? `${c.year}-${String(c.month).padStart(2, '0')}-${String(c.day).padStart(2, '0')}`
-					: null;
-			const titles = [
-				e.media.title.english,
-				e.media.title.romaji,
-				...(e.media.synonyms ?? [])
-			].filter((t): t is string => !!t && t.trim() !== '');
-			return fromAnime({
-				titles,
-				format: e.media.format ?? 'TV',
-				episodes: e.media.episodes,
-				progress: e.progress ?? 0,
-				score100: e.score > 0 ? e.score : null,
-				status: e.status === 'REPEATING' ? 'watching' : animeStatus(e.status),
-				rewatching: e.status === 'REPEATING',
-				finished,
-				year: e.media.seasonYear ?? e.media.startDate?.year ?? null,
-				source: 'AniList'
-			});
-		})
-	);
-
-	if (!rows.length) throw new Error('That AniList list is empty.');
-	return [{ name: `AniList · ${name}`, rows: applyPartOffsets(rows) }];
 }
 
 /** MyAnimeList's XML export: one <anime> element per entry. */
