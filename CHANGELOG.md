@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.6.0](https://github.com/Frog-Movie-Tv/Frog/compare/v0.5.0...v0.6.0) (2026-10-27)
+
+
+### Features
+
+* 0.6.0 Leapfrog — AniList both ways, profiles, grouped settings ([1843724](https://github.com/Frog-Movie-Tv/Frog/commit/1843724778ef82f87c4895d1ec41ec723afbebf0))
+* **admin:** let administrators delete accounts ([e798582](https://github.com/Frog-Movie-Tv/Frog/commit/e79858236ddeaaa34c2d3c9ee87fc728fcb42318))
+* **anilist:** sync with AniList both ways through its own sign-in ([e798582](https://github.com/Frog-Movie-Tv/Frog/commit/e79858236ddeaaa34c2d3c9ee87fc728fcb42318))
+* **profiles:** add a picture, banner, name, about text and four pins ([e798582](https://github.com/Frog-Movie-Tv/Frog/commit/e79858236ddeaaa34c2d3c9ee87fc728fcb42318))
+* **settings:** group settings into six pages with their own addresses ([e798582](https://github.com/Frog-Movie-Tv/Frog/commit/e79858236ddeaaa34c2d3c9ee87fc728fcb42318))
+
+
+### Fixes
+
+* **stats:** count only titles in the library ([e798582](https://github.com/Frog-Movie-Tv/Frog/commit/e79858236ddeaaa34c2d3c9ee87fc728fcb42318))
+
+
+### Documentation
+
+* bring every guide back in line with reality ([a78288e](https://github.com/Frog-Movie-Tv/Frog/commit/a78288eedfb9ae74550fb90bf2bafd03c831ddf3))
+* bring every guide back in line with reality ([5d3acb0](https://github.com/Frog-Movie-Tv/Frog/commit/5d3acb04584653dca5a67cf9799059ea7b58fc1e))
+* rewrite the roadmap around what is true ([344be2f](https://github.com/Frog-Movie-Tv/Frog/commit/344be2fe5894c3d9a0745cf9547330b154cd9bbe))
+* rewrite the roadmap around what is true ([463ef3a](https://github.com/Frog-Movie-Tv/Frog/commit/463ef3aaf86c720329aecde50a533473f6358527))
+* write the 0.6.0 Leapfrog release notes ([e798582](https://github.com/Frog-Movie-Tv/Frog/commit/e79858236ddeaaa34c2d3c9ee87fc728fcb42318))
+
 ## [0.5.0](https://github.com/Frog-Movie-Tv/Frog/compare/v0.4.5...v0.5.0) (2026-10-27)
 
 
