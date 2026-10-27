@@ -46,14 +46,23 @@ test('creating the account signs you straight in', async ({ page }) => {
 	await page.getByLabel('Password').fill(PASS);
 	await page.getByRole('button', { name: isSetup ? 'Create account' : 'Sign in' }).click();
 
-	// A new account with nothing tracked is welcomed first. Either project may
-	// have been through it already on this shared database.
-	await expect(page).toHaveURL(/\/(welcome)?$/);
-	if (page.url().endsWith('/welcome')) {
-		await expect(page.getByRole('heading', { name: /^Welcome/ })).toBeVisible();
+	// A new account with nothing tracked is welcomed first. Home shows for a
+	// moment before it sends you on, so wait for the welcome itself; on a
+	// retry the account may have been welcomed already and Home stays.
+	const welcome = page.getByRole('heading', { name: /^Welcome/ });
+	const welcomed = await welcome.waitFor({ timeout: 10000 }).then(
+		() => true,
+		() => false
+	);
+	if (welcomed) {
 		await page.getByRole('button', { name: 'Continue' }).click();
 		await expect(page.getByRole('heading', { name: 'Fill your library' })).toBeVisible();
 		await page.getByRole('button', { name: 'Later' }).click();
+		// Leaving at once, as closing the app would: being welcomed has to be
+		// saved before the page goes, or the next sign-in welcomes again.
+		await expect(page).toHaveURL('/');
+		await page.close();
+		return;
 	}
 	await expect(page).toHaveURL('/');
 	await expect(page.getByText('Nothing here yet')).toBeVisible();
