@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.5.0](https://github.com/Frog-Movie-Tv/Frog/compare/v0.4.5...v0.5.0) (2026-10-27)
+
+
+### Features
+
+* **import:** keep the library in step with AniList ([7e54cab](https://github.com/Frog-Movie-Tv/Frog/commit/7e54cab91029b1796a5b830d697d37a30fcf561d))
+* **import:** keep the library in step with AniList ([37432ad](https://github.com/Frog-Movie-Tv/Frog/commit/37432add49eaafa5fb6102794cc30bec6db61f30))
+* **release:** make this one 0.5.0 Ribbit ([e33ab0c](https://github.com/Frog-Movie-Tv/Frog/commit/e33ab0c4d4b67683693c1248e09464d2cc2d4abc))
+* **release:** make this one 0.5.0 Ribbit ([145a087](https://github.com/Frog-Movie-Tv/Frog/commit/145a087bcb8602612bf2c76d580d98e3de003138))
+* **release:** put the written notes on the release page ([644c94c](https://github.com/Frog-Movie-Tv/Frog/commit/644c94ccbf4a70cb68c786ef99ec667097208071))
+* **release:** put the written notes on the release page ([22c5d8a](https://github.com/Frog-Movie-Tv/Frog/commit/22c5d8abb2087fb5e8fcd46bcf6d19b8d83ce09d))
+
+
+### Fixes
+
+* **ci:** name the digest files without a colon ([1ffb264](https://github.com/Frog-Movie-Tv/Frog/commit/1ffb2648036cb84bb84018d31ba072a23fc3b64d))
+* **ci:** name the digest files without a colon ([eac0693](https://github.com/Frog-Movie-Tv/Frog/commit/eac06939202e11ca8aeba5f879ece17c52caa628))
+* **csp:** let the app's own startup script run ([af4763c](https://github.com/Frog-Movie-Tv/Frog/commit/af4763c98314be6019e44a9b888e4b1dd7d91dfe))
+* **csp:** let the app's own startup script run ([e4ff877](https://github.com/Frog-Movie-Tv/Frog/commit/e4ff8770187b414e292bf6dc4457593c762faf1d))
+* **csp:** let the update check and AniList import reach their APIs ([1e80220](https://github.com/Frog-Movie-Tv/Frog/commit/1e802200070c28b947e10f5b7d17507cd2933de1))
+* **csp:** let the update check and AniList import reach their APIs ([da03805](https://github.com/Frog-Movie-Tv/Frog/commit/da03805a1526bb79d0ae2fbc36848d75b9603e5b))
+* **settings:** stop telling people to git pull ([36f8b68](https://github.com/Frog-Movie-Tv/Frog/commit/36f8b68d19de3e9c4348a0782665facd903a95ae))
+* **settings:** stop telling people to git pull ([0aca37e](https://github.com/Frog-Movie-Tv/Frog/commit/0aca37e40f890b56da5855240277770ecc934daf))
+* **welcome:** save being welcomed before leaving the page ([162bdb8](https://github.com/Frog-Movie-Tv/Frog/commit/162bdb8ed86e7f0528662a7dd24117f06b30a111))
+
+
+### Documentation
+
+* describe the Frog that exists now ([e075caf](https://github.com/Frog-Movie-Tv/Frog/commit/e075caff6a6f2e0d4ac67325da14451ab80e54d0))
+* describe the Frog that exists now ([56608b0](https://github.com/Frog-Movie-Tv/Frog/commit/56608b0235d90499baeb7926dcb16aa43bdd1c36))
+
 ## [0.4.5](https://github.com/Frog-Movie-Tv/Frog/compare/v0.4.4...v0.4.5) (2026-10-26)
 
 
