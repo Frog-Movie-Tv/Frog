@@ -150,6 +150,13 @@ export const api = {
 		}),
 	logout: () => send<{ ok: true }>('POST', '/api/auth/logout', {}),
 
+	/** Empties this account's library. There is no undo. */
+	clearLibrary: (password: string, confirm: string) =>
+		send<{ titles: number; watches: number; shelves: number }>('DELETE', '/api/account/library', {
+			password,
+			confirm
+		}),
+
 	/** Joining with an invite link. There is no open sign-up. */
 	register: (username: string, password: string, invite: string, remember = true) =>
 		send<{ ok: true }>('POST', '/api/auth/register', { username, password, invite, remember }),

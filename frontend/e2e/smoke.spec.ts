@@ -364,6 +364,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/anilist',
 		'/api/anilist/entries',
 		'/api/invites',
+		'/api/account/library',
 		'/img/w342/nope.jpg'
 	]) {
 		const res = await request.get(path);

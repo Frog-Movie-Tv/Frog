@@ -388,6 +388,71 @@ pub async fn delete(
     Ok((jar, Json(json!({ "ok": true }))))
 }
 
+/// Typed by hand before the library goes. Deliberately a phrase rather than a
+/// button: this cannot be undone and there is no backup of one account.
+pub const CLEAR_PHRASE: &str = "delete my library";
+
+#[derive(Deserialize)]
+pub struct ClearLibraryBody {
+    pub password: String,
+    pub confirm: String,
+}
+
+/// Empty this account's library and keep the account.
+///
+/// Goes: every title tracked, every watch, every episode rating and note, and
+/// every shelf. Stays: the account itself, its settings, its devices and its
+/// profile. Scoped to the caller throughout, so one account emptying its own
+/// library cannot touch another's.
+pub async fn clear_library(
+    auth: Auth,
+    State(state): State<AppState>,
+    Json(body): Json<ClearLibraryBody>,
+) -> AppResult<Json<Value>> {
+    if body.confirm.trim().to_lowercase() != CLEAR_PHRASE {
+        return Err(AppError::BadRequest(format!(
+            "Type {CLEAR_PHRASE} to confirm."
+        )));
+    }
+    check_password(&state, auth.user_id(), &body.password).await?;
+
+    let me = auth.user_id();
+    let mut tx = state.pool.begin().await?;
+
+    // Counted before the deletes, so the answer says what actually went.
+    let (titles,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM library_entry WHERE user_id = ?")
+        .bind(me)
+        .fetch_one(&mut *tx)
+        .await?;
+    let (watches,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE user_id = ?")
+        .bind(me)
+        .fetch_one(&mut *tx)
+        .await?;
+    let (shelves,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM shelf WHERE user_id = ?")
+        .bind(me)
+        .fetch_one(&mut *tx)
+        .await?;
+
+    // One transaction: a half-emptied library is worse than either end of it.
+    // shelf_item goes with its shelf, on the foreign key.
+    for statement in [
+        "DELETE FROM watch_event WHERE user_id = ?",
+        "DELETE FROM episode_state WHERE user_id = ?",
+        "DELETE FROM shelf WHERE user_id = ?",
+        "DELETE FROM library_entry WHERE user_id = ?",
+    ] {
+        sqlx::query(statement).bind(me).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+
+    tracing::info!(user_id = me, titles, watches, shelves, "library emptied");
+    Ok(Json(json!({
+        "titles": titles,
+        "watches": watches,
+        "shelves": shelves,
+    })))
+}
+
 #[cfg(test)]
 mod tests {
     use super::describe_agent;
