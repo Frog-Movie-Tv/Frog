@@ -188,7 +188,7 @@ export const api = {
 	matchImport: (items: unknown[]) =>
 		send<{ results: MatchResult[] }>('POST', '/api/import/match', { items }),
 
-	applyImport: (items: unknown[], onConflict: 'skip' | 'overwrite') =>
+	applyImport: (items: unknown[], onConflict: 'skip' | 'overwrite' | 'merge') =>
 		send<ImportSummary>('POST', '/api/import/apply', { items, on_conflict: onConflict }),
 
 	library: (query: LibraryQuery = {}) =>

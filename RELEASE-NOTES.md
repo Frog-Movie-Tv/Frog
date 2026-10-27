@@ -11,7 +11,11 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Ribbit —
 
-In progress.
+### Highlights
+
+- **Keep in step with AniList.** Link a public AniList list in Settings and
+  new titles and progress come across whenever Frog opens. Your own ratings,
+  pauses and drops stay as you left them.
 
 ## [0.4.5] — Lily Pad — 2026-10-26
 

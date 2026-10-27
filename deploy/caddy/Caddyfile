@@ -20,8 +20,9 @@
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
 		# Frog is somebody's private watch history. Keep it out of search.
 		X-Robots-Tag "noindex, nofollow, noarchive, noimageindex"
-		# Everything is served from this origin; the only outside connection a
-		# page makes is to a browser push service, which is not fetched.
+		# Everything is served from this origin. The outside connections are
+		# AniList (import and sync), GitHub (the update check) and the trailer
+		# player; a browser push service is not fetched, so it needs no entry.
 		#
 		# script-src carries 'unsafe-inline' because a browser applies every
 		# policy it is given and blocks anything one of them refuses. The app
@@ -29,7 +30,7 @@
 		# script, and a policy carrying a hash ignores 'unsafe-inline'. So the
 		# effective rule is that one script and no other: this line widens the
 		# header only so the stricter one can decide.
-		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' https://graphql.anilist.co https://api.github.com; frame-src https://www.youtube-nocookie.com; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 		-Server
 	}
 

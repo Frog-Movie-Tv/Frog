@@ -289,6 +289,29 @@ pub enum Conflict {
     Skip,
     /// Let the file win.
     Overwrite,
+    /// Keep in step without undoing anything (AniList sync): add what is new,
+    /// move progress and status forward only, and fill a rating only where
+    /// there is none. A paused or dropped title stays as you left it.
+    Merge,
+}
+
+/// How far along a status is, for merging: only a later one replaces it.
+fn status_rank(status: &str) -> Option<u8> {
+    match status {
+        "planned" => Some(0),
+        "watching" => Some(1),
+        "completed" => Some(2),
+        // Paused and dropped are decisions, not progress; nothing overrides them.
+        _ => None,
+    }
+}
+
+/// The status a merge keeps: the incoming one only when it is further along.
+pub fn merged_status(existing: &str, incoming: &str) -> String {
+    match (status_rank(existing), status_rank(incoming)) {
+        (Some(have), Some(new)) if new > have => incoming.to_string(),
+        _ => existing.to_string(),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -378,13 +401,33 @@ pub async fn apply(
             status
         };
 
+        // What a merge compares against, to report only real changes.
+        let before = if already && body.on_conflict == Conflict::Merge {
+            let entry = store::get_entry(&state.pool, auth.user_id(), title_id).await?;
+            let watched = store::progress(&state.pool, auth.user_id(), title_id)
+                .await?
+                .watched;
+            entry.map(|e| (e, watched))
+        } else {
+            None
+        };
+
         let completed = status == "completed";
-        let patch = LibraryPatch {
-            status: Some(status),
-            rating: Some(item.rating),
-            favourite: Some(item.favourite),
-            notes: None,
-            notify: None,
+        let patch = match &before {
+            Some((have, _)) => LibraryPatch {
+                status: Some(merged_status(&have.status, &status)),
+                rating: Some(have.rating.or(item.rating)),
+                favourite: Some(have.favourite || item.favourite),
+                notes: None,
+                notify: None,
+            },
+            None => LibraryPatch {
+                status: Some(status),
+                rating: Some(item.rating),
+                favourite: Some(item.favourite),
+                notes: None,
+                notify: None,
+            },
         };
         store::apply_patch(&state.pool, auth.user_id(), title_id, &patch).await?;
 
@@ -439,7 +482,20 @@ pub async fn apply(
             }
         }
 
-        if already {
+        if let Some((have, watched_before)) = before {
+            let now = store::get_entry(&state.pool, auth.user_id(), title_id).await?;
+            let watched_now = store::progress(&state.pool, auth.user_id(), title_id)
+                .await?
+                .watched;
+            let same = now.is_some_and(|e| {
+                e.status == have.status && e.rating == have.rating && e.favourite == have.favourite
+            }) && watched_now == watched_before;
+            if same {
+                skipped += 1;
+            } else {
+                updated += 1;
+            }
+        } else if already {
             updated += 1;
         } else {
             added += 1;
@@ -694,5 +750,22 @@ mod tests {
             "\"Crouching Tiger, Hidden Dragon\""
         );
         assert_eq!(csv_field("He said \"hi\""), "\"He said \"\"hi\"\"\"");
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::merged_status;
+
+    #[test]
+    fn a_merge_only_moves_a_status_forward() {
+        assert_eq!(merged_status("planned", "watching"), "watching");
+        assert_eq!(merged_status("watching", "completed"), "completed");
+        assert_eq!(merged_status("completed", "watching"), "completed");
+        assert_eq!(merged_status("watching", "planned"), "watching");
+        // Your own pause or drop is never undone by a tracker.
+        assert_eq!(merged_status("paused", "completed"), "paused");
+        assert_eq!(merged_status("dropped", "watching"), "dropped");
+        assert_eq!(merged_status("planned", "dropped"), "planned");
     }
 }

@@ -96,6 +96,10 @@ export interface Settings {
 	onboarded?: boolean;
 	/** Hour (0-23, server time) new-episode alerts go out; absent is the server's. */
 	notifyHour?: number | null;
+	/** A public AniList list kept in step with the library; absent is off. */
+	anilistUser?: string;
+	/** When that list was last synced, as an ISO timestamp. */
+	anilistSyncedAt?: string;
 
 	dateStyle: 'friendly' | 'iso' | 'long';
 	clock24: boolean;
