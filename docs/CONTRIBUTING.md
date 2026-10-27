@@ -55,6 +55,19 @@ test tooling only. What ships is the image CI builds.
 5. Merge. An administrator can override the review requirement in a genuine
    emergency; it is there for outages, not for impatience.
 
+### Merging
+
+**Use "Merge pull request" or "Squash and merge". Never "Rebase and merge".**
+
+Rebasing rewrites every commit, so the copy that lands on `main` has a
+different hash from the one on the branch. Any other branch still carrying the
+original then brings it in a second time, and git has no way to know it is the
+same change. The generated changelog shows both, which is how `0.4.6` ended up
+listing every fix twice.
+
+It is worth turning "Rebase and merge" off in the repository settings so the
+button is not there to press.
+
 ## Commit messages
 
 ```
