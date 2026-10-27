@@ -1,5 +1,26 @@
 [
 	{
+		"version": "0.6.1",
+		"codename": "Leapfrog",
+		"date": "2026-10-27",
+		"intro": "Four new mascots, and a tidier profile and Stats page.",
+		"groups": [
+			{
+				"title": "Improvements",
+				"items": [
+					"Four new mascots to choose from: Starry-eyed, Bow, Delighted and Sprout.",
+					"Actors, directors and studios sit side by side on Stats."
+				]
+			},
+			{
+				"title": "Fixes",
+				"items": [
+					"Your profile picture sits in front of your banner."
+				]
+			}
+		]
+	},
+	{
 		"version": "0.6.0",
 		"codename": "Leapfrog",
 		"date": "2026-10-27",

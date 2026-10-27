@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Frog">
+  <ellipse cx="32" cy="38" rx="25" ry="20" fill="#6cc46b"/>
+  <ellipse cx="32" cy="45" rx="15.5" ry="11" fill="#8ad88a" opacity="0.45"/>
+  <circle cx="19" cy="20" r="12" fill="#6cc46b"/>
+  <circle cx="45" cy="20" r="12" fill="#6cc46b"/>
+  <ellipse cx="12.5" cy="40" rx="5" ry="3.3" fill="#f4738f" opacity="0.82"/>
+  <ellipse cx="51.5" cy="40" rx="5" ry="3.3" fill="#f4738f" opacity="0.82"/>
+  <ellipse cx="12.5" cy="40" rx="6" ry="3.8" fill="#f4738f" opacity="0.95"/>
+  <ellipse cx="51.5" cy="40" rx="6" ry="3.8" fill="#f4738f" opacity="0.95"/>
+  <circle cx="19" cy="20" r="8.5" fill="#fbfaf1"/>
+  <circle cx="45" cy="20" r="8.5" fill="#fbfaf1"/>
+  <circle cx="19.6" cy="21" r="6.2" fill="#11231a"/>
+  <circle cx="44.4" cy="21" r="6.2" fill="#11231a"/>
+  <circle cx="17.2" cy="18.4" r="2.4" fill="#ffffff"/>
+  <circle cx="42" cy="18.4" r="2.4" fill="#ffffff"/>
+  <circle cx="21.8" cy="23.6" r="1.2" fill="#ffffff"/>
+  <circle cx="46.6" cy="23.6" r="1.2" fill="#ffffff"/>
+  <polyline points="26,43 26.86,44.11 27.71,44.88 28.57,45.3 29.43,45.37 30.29,45.09 31.14,44.47 32,43.5 32.86,44.47 33.71,45.09 34.57,45.37 35.43,45.3 36.29,44.88 37.14,44.11 38,43" fill="none" stroke="#2c6b40" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -3,7 +3,8 @@ import type { ScoreFormat } from './format';
 import type { Status } from './types';
 
 export type ThemeName = 'pond' | 'pond-light' | 'dark' | 'amoled' | 'light';
-export type MascotName = 'classic' | 'sleepy' | 'popcorn' | 'cinema';
+export type MascotName =
+	'classic' | 'sleepy' | 'popcorn' | 'cinema' | 'starry' | 'bow' | 'delighted' | 'sprout';
 export type CardStyle = 'poster' | 'landscape' | 'list' | 'compact';
 export type HeroStyle = 'backdrop' | 'poster' | 'off';
 export type FontName = 'system' | 'humanist' | 'grotesque' | 'serif' | 'mono';
@@ -31,7 +32,11 @@ export const MASCOTS: { id: MascotName; label: string; hint: string }[] = [
 	{ id: 'classic', label: 'Classic', hint: 'Wide awake' },
 	{ id: 'sleepy', label: 'Sleepy', hint: 'Just one more episode' },
 	{ id: 'popcorn', label: 'Popcorn', hint: 'Settled in for a double bill' },
-	{ id: 'cinema', label: '3D glasses', hint: 'Front row, centre' }
+	{ id: 'cinema', label: '3D glasses', hint: 'Front row, centre' },
+	{ id: 'starry', label: 'Starry-eyed', hint: 'Big eyes for big moments' },
+	{ id: 'bow', label: 'Bow', hint: 'Dressed up for the premiere' },
+	{ id: 'delighted', label: 'Delighted', hint: 'Best episode yet' },
+	{ id: 'sprout', label: 'Sprout', hint: 'Freshly picked' }
 ];
 
 /** Bundled with the app, so every device renders them identically. */
