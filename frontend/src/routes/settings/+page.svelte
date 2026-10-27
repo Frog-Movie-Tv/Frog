@@ -904,7 +904,7 @@
 			<p class="update available">
 				<strong>Version {update.tag} is out.</strong>
 				<a href={update.url} target="_blank" rel="noreferrer noopener">Read the notes</a>
-				— then run <code>git pull</code> and start Frog again.
+				— Frog installs it on its own, usually within the hour.
 			</p>
 		{:else if update.state === 'current'}
 			<p class="update faint">You are on the newest release.</p>
