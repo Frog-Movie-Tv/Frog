@@ -7,6 +7,10 @@ use serde_json::json;
 pub enum AppError {
     #[error("unauthorised")]
     Unauthorised,
+    /// A sign-in that did not match. The same words whichever part was wrong,
+    /// so the answer never says which usernames exist.
+    #[error("That username and password don't match.")]
+    WrongCredentials,
     /// The password was right; the authenticator code is missing or wrong.
     #[error("{0}")]
     TwoFactor(String),
@@ -38,7 +42,9 @@ pub enum AppError {
 impl AppError {
     fn status(&self) -> StatusCode {
         match self {
-            AppError::Unauthorised | AppError::TwoFactor(_) => StatusCode::UNAUTHORIZED,
+            AppError::Unauthorised | AppError::WrongCredentials | AppError::TwoFactor(_) => {
+                StatusCode::UNAUTHORIZED
+            }
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,

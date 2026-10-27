@@ -225,9 +225,10 @@ pub async fn login(
     let keys = buckets(&body.username, &client);
 
     if let Some(seconds) = throttled_for(&state, &keys) {
+        let minutes = seconds.div_ceil(60);
         return Err(AppError::TooManyRequests(format!(
-            "too many failed sign-ins; try again in {} minutes",
-            seconds.div_ceil(60)
+            "Too many tries. Try again in {minutes} {}.",
+            if minutes == 1 { "minute" } else { "minutes" }
         )));
     }
 
@@ -243,11 +244,11 @@ pub async fn login(
     // Same message whichever part was wrong: never leak which usernames exist.
     let Some((user_id, _, hash, totp_secret, disabled)) = row else {
         record_failure(&state, &keys);
-        return Err(AppError::Unauthorised);
+        return Err(AppError::WrongCredentials);
     };
     if !session::verify_password(&body.password, &hash) {
         record_failure(&state, &keys);
-        return Err(AppError::Unauthorised);
+        return Err(AppError::WrongCredentials);
     }
     if disabled != 0 {
         return Err(AppError::Forbidden(

@@ -2788,3 +2788,41 @@ async fn profiles_carry_a_name_an_about_pins_and_pictures() {
     assert_eq!(h.get(&avatar, Some(&guest)).await.0, StatusCode::OK);
     assert_eq!(h.get(&avatar, None).await.0, StatusCode::UNAUTHORIZED);
 }
+
+/// A sign-in that does not match says so in words a person can act on, and
+/// the same words whether the username or the password was wrong.
+#[tokio::test]
+async fn a_wrong_sign_in_says_so_plainly() {
+    let h = Harness::new().await;
+    h.post(
+        "/api/auth/setup",
+        json!({ "username": "zjef", "password": "a-long-enough-pass" }),
+        None,
+    )
+    .await;
+
+    let (code, wrong_password, _) = h
+        .post(
+            "/api/auth/login",
+            json!({ "username": "zjef", "password": "not-the-password" }),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::UNAUTHORIZED);
+    let (code, wrong_name, _) = h
+        .post(
+            "/api/auth/login",
+            json!({ "username": "nobody", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        wrong_password["error"],
+        json!("That username and password don't match.")
+    );
+    assert_eq!(
+        wrong_password, wrong_name,
+        "never says which part was wrong"
+    );
+}
