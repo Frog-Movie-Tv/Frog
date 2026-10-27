@@ -7,6 +7,7 @@
 	import Select from '#lib/components/Select.svelte';
 	import Notifications from '#lib/components/Notifications.svelte';
 	import AccountSettings from '#lib/components/AccountSettings.svelte';
+	import AniListSync from '#lib/components/AniListSync.svelte';
 	import TwoFactor from '#lib/components/TwoFactor.svelte';
 	import { SCORE_FORMATS, type ScoreFormat } from '#lib/format';
 	import { session } from '#lib/session.svelte';
@@ -750,6 +751,7 @@
 				</span>
 				<Icon name="chevron-right" size={18} />
 			</a>
+			<AniListSync />
 			<a class="row card link-row" href="/api/export/library.json" download>
 				<span class="label">
 					<strong>Download backup</strong>

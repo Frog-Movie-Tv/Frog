@@ -11,6 +11,7 @@
 		type Incoming,
 		type ParsedFile
 	} from '#lib/import/parsers';
+	import { applyItem, bySeason, foldSeasons } from '#lib/import/rows';
 	import { toasts } from '#lib/toast.svelte';
 	import type { ImportSummary, MatchResult, SearchItem, Status } from '#lib/types';
 	import { STATUS_LABEL, STATUSES } from '#lib/types';
@@ -106,63 +107,13 @@
 			progress = { ...progress, done: Math.min(i + size, rows.length) };
 		}
 
-		foldSeasons();
+		foldAll();
 		busy = false;
 	}
 
-	/**
-	 * TMDB often keeps an anime as one long season where trackers count
-	 * several ("Season 2" is TMDB's season 1 from episode 25). When the
-	 * earlier seasons are in this import too, their episode counts say where
-	 * the later one starts.
-	 */
-	function foldSeasons() {
-		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- built and read here, never state
-		const shows = new Map<number, Row[]>();
-		for (const row of rows) {
-			if (row.chosen?.kind !== 'tv' || row.incoming.season == null) continue;
-			const list = shows.get(row.chosen.tmdb_id) ?? [];
-			list.push(row);
-			shows.set(row.chosen.tmdb_id, list);
-		}
-
-		for (const list of shows.values()) {
-			const last = list.find((r) => r.match?.last_season != null)?.match?.last_season;
-			if (last == null || last < 1) continue;
-			list.sort(
-				(a, b) =>
-					a.incoming.season! - b.incoming.season! ||
-					(a.incoming.episode_offset ?? 0) - (b.incoming.episode_offset ?? 0)
-			);
-
-			// `carried` is how far into TMDB's last season the rows so far reach;
-			// each later tracker season starts where the one before it ended.
-			let carried = 0;
-			let base = 0;
-			let current = -1;
-			for (const row of list) {
-				const season = row.incoming.season!;
-				if (season < last) continue;
-				if (season !== current) {
-					// A gap means an episode count is missing; stop guessing.
-					if (season > last && season !== current + 1) break;
-					base = carried;
-					current = season;
-				}
-				if (season > last) {
-					const start = base + (row.incoming.episode_offset ?? 0);
-					row.incoming.season = last;
-					row.incoming.episode_offset = start;
-					row.incoming.info = `Counted as season ${last}, from episode ${start + 1}`;
-					if (row.match?.note?.startsWith('TMDB lists no season')) row.match.note = null;
-				}
-				if (row.incoming.episode_total == null) break;
-				carried = Math.max(
-					carried,
-					(row.incoming.episode_offset ?? 0) + row.incoming.episode_total
-				);
-			}
-		}
+	/** Later tracker seasons onto TMDB's long ones; see `foldSeasons`. */
+	function foldAll() {
+		foldSeasons(rows);
 		rows = [...rows];
 	}
 
@@ -176,14 +127,8 @@
 		const skippedUp = keep ? included.filter((r) => r.match?.already_tracked).length : 0;
 		const todo = included
 			.filter((r) => !keep || !r.match?.already_tracked)
-			// Seasons of one show in order, so the latest season's status is the
-			// one the library ends up with.
-			.sort(
-				(a, b) =>
-					a.chosen!.tmdb_id - b.chosen!.tmdb_id ||
-					(a.incoming.season ?? 0) - (b.incoming.season ?? 0) ||
-					(a.incoming.episode_offset ?? 0) - (b.incoming.episode_offset ?? 0)
-			);
+			// The latest season's status is the one the library ends up with.
+			.sort(bySeason);
 
 		summary = { added: 0, updated: 0, skipped: skippedUp, failed: [] };
 		progress = { done: 0, total: todo.length, label: 'Adding to your library' };
@@ -192,22 +137,7 @@
 		for (let i = 0; i < todo.length; i += size) {
 			const batch = todo.slice(i, i + size);
 			try {
-				const result = await api.applyImport(
-					batch.map((r) => ({
-						kind: r.chosen!.kind,
-						tmdb_id: r.chosen!.tmdb_id,
-						status: r.incoming.status,
-						rating: r.incoming.rating,
-						watched_at: r.incoming.watched_at,
-						favourite: r.incoming.favourite,
-						rewatch: r.incoming.rewatch,
-						season: r.chosen!.kind === 'tv' ? (r.incoming.season ?? null) : null,
-						progress: r.incoming.progress ?? null,
-						episode_offset: r.incoming.episode_offset ?? 0,
-						episode_total: r.incoming.episode_total ?? null
-					})),
-					'overwrite'
-				);
+				const result = await api.applyImport(batch.map(applyItem), 'overwrite');
 				summary = {
 					added: summary.added + result.added,
 					updated: summary.updated + result.updated,

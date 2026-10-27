@@ -177,15 +177,21 @@ Ordered by what the owner asked for most recently. Take from the top.
    login is needed (Oracle, DuckDNS, GitHub token). Docker is not installed
    on the owner's laptop: verify images through GitHub Actions, or install
    Docker for a local arm64/QEMU test.
-2. **First-run onboarding.** Pick a theme and mascot, then import or search.
-3. **Pull-to-refresh on mobile.**
-4. **AniList sync** (free GraphQL API, no key; import already exists).
-5. **Jellyfin scrobbling** via its free webhook plugin, plus a generic webhook
+2. **Jellyfin scrobbling** via its free webhook plugin, plus a generic webhook
    endpoint. Plex webhooks need Plex Pass, so not Plex.
-6. Smaller items: customisable keyboard shortcuts, rename and recolour
-   statuses, muted trailer autoplay, per-shelf layout defaults, a choice of
-   notification hour in Settings (today it is `FROG_NOTIFY_HOUR`), shelves
-   as Home rows.
+3. Smaller items: customisable keyboard shortcuts, rename and recolour
+   statuses, muted trailer autoplay, per-shelf layout defaults.
+4. **AniList sync, two-way.** Sync today only pulls (public list, no key).
+   Writing back needs an AniList API client registered by an owner (free,
+   but a login), then OAuth in Settings.
+5. **Projects board.** Needs `gh auth refresh -s project` by an owner first.
+
+Done from this list on 2026-10-27: first-run onboarding (`/welcome`),
+pull-to-refresh on phones, the notification hour in Settings, shelves as Home
+rows, and AniList sync (pull only: Settings → Your data, re-runs when the app
+opens if the last sync is over six hours old, applies confident matches with
+the server's `merge` mode and leaves the rest for Import). PR #25 hardens the
+welcome save and fixes a race in its e2e test.
 
 Dropped by the owner (2026-10-26): interface language English / Nederlands.
 The interface stays English only.
@@ -212,7 +218,8 @@ The interface stays English only.
 - **Verify scripts** in `frontend/scripts/`, each with its own server and
   throwaway database (build the release binary first): `verify-stats.mjs`,
   `verify-push.mjs`, `verify-shelves.mjs`, `verify-because.mjs`,
-  `verify-anime.mjs` (these need the TMDB key), `verify-2fa.mjs`,
+  `verify-anime.mjs`, `verify-anilist-sync.mjs` (these need the TMDB key;
+  AniList itself is a fixture), `verify-2fa.mjs`,
   `verify-diary.mjs`, `verify-polish.mjs`, plus `npm run pwa-check` and
   `npm run audit`. Every script now stops its server and exits when done.
 - **Web Push in tests:** headless Chrome discards displayed notifications and

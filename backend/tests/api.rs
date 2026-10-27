@@ -2500,3 +2500,66 @@ async fn a_profile_is_only_seen_when_its_owner_turns_it_on() {
         StatusCode::UNAUTHORIZED
     );
 }
+
+/// AniList sync merges: new titles are added, a status only moves forward,
+/// your own rating, pause or drop is never undone, and a sync that changes
+/// nothing says so.
+#[tokio::test]
+async fn a_sync_merge_never_undoes_what_you_did_in_frog() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    for (id, name) in [(31, "Rated Film"), (32, "Paused Film"), (33, "New Film")] {
+        cache_film(&h, id, name, "2020", &[]).await;
+    }
+    let put = |id: i64, body: Value| {
+        let owner = owner.clone();
+        let h = &h;
+        async move {
+            h.put(
+                &format!("/api/titles/movie/{id}/library"),
+                body,
+                Some(&owner),
+            )
+            .await
+        }
+    };
+    put(31, json!({ "status": "watching", "rating": 90.0 })).await;
+    put(32, json!({ "status": "paused" })).await;
+
+    let incoming = json!({
+        "on_conflict": "merge",
+        "items": [
+            { "kind": "movie", "tmdb_id": 31, "status": "completed", "rating": 50.0 },
+            { "kind": "movie", "tmdb_id": 32, "status": "completed", "rating": 70.0 },
+            { "kind": "movie", "tmdb_id": 33, "status": "planned", "rating": null }
+        ]
+    });
+    let (status, body, _) = h
+        .post("/api/import/apply", incoming.clone(), Some(&owner))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["added"], json!(1), "{body}");
+    assert_eq!(body["updated"], json!(2), "{body}");
+
+    let entry = |id: i64| {
+        let owner = owner.clone();
+        let h = &h;
+        async move {
+            let (_, b) = h
+                .get(&format!("/api/titles/movie/{id}"), Some(&owner))
+                .await;
+            b["item"]["entry"].clone()
+        }
+    };
+    let rated = entry(31).await;
+    assert_eq!(rated["status"], json!("completed"), "moved forward");
+    assert_eq!(rated["rating"], json!(90.0), "your own rating stays");
+    let paused = entry(32).await;
+    assert_eq!(paused["status"], json!("paused"), "a pause is yours");
+    assert_eq!(paused["rating"], json!(70.0), "an empty rating is filled");
+
+    // The same list again changes nothing, and says so.
+    let (_, body, _) = h.post("/api/import/apply", incoming, Some(&owner)).await;
+    assert_eq!(body["updated"], json!(0), "{body}");
+    assert_eq!(body["skipped"], json!(3), "{body}");
+}
