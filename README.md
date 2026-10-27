@@ -7,8 +7,8 @@
 ### Your own little cinema, on your own little computer.
 
 Frog remembers every film and show you watch, and gives them a beautiful place
-to live. It runs on your laptop, your phone reaches it privately, and it costs
-nothing at all.
+to live. Run it for yourself or invite a few people, each with a library of
+their own. It costs nothing at all.
 
 [**Get started →**](docs/INSTALL.md)
 &nbsp;·&nbsp;
@@ -150,18 +150,20 @@ keeps working when you have no signal.
 
 ## Privacy
 
-Frog is built for exactly one person, and assumes that person wants to be left
-alone.
+Frog assumes everyone on it wants to be left alone, including from each other.
 
+- **Your library is yours.** Ratings, episodes, diary, shelves and settings
+  belong to your account. Nobody else on the same Frog can see them, and that
+  is enforced on every request, not just hidden in the interface.
+- **Invitation only.** There is no sign-up page. An administrator makes a link
+  that works once and expires; without one there is no way in.
+- **Nothing is public.** Every page needs an account. Frog asks search engines
+  not to index it and serves a `robots.txt` that refuses everything.
+- **Sharing is something you switch on.** A profile lets others *on your Frog*
+  see what you are watching. It starts off, and it is never visible outside.
 - Everything sits behind a password, with two-factor sign-in if you want it.
-  There is no sign-up page: the account is created once on first run, and that
-  screen closes for good afterwards.
-- Nothing is public. The app asks search engines not to index it and serves a
-  `robots.txt` that refuses everything.
-- Nothing leaves your machine except requests to TMDB for artwork, and those
+- Nothing leaves the machine except requests to TMDB for artwork, and those
   are cached so they mostly happen once.
-- Your phone reaches it over Tailscale, a private link between your own
-  devices. No port is opened to the internet.
 - There is no analytics of any kind, and no "anonymous usage data".
 
 ## Questions
@@ -182,9 +184,9 @@ getting the free key and reaching it from your phone.
 
 <br>
 
-While you want to reach it from your phone, yes. Frog runs on your laptop, so a
-sleeping laptop means a phone that cannot reach it. The install guide covers
-keeping it awake.
+Only if you run it on your own machine. Put it on a small server instead and it
+is there whenever you are — [the deployment guide](docs/DEPLOY-ORACLE.md) walks
+through a free one, where Frog keeps itself up to date on its own.
 
 </details>
 
@@ -204,8 +206,10 @@ backups. You see every match before anything is written.
 
 <br>
 
-No. There is no public page and no sharing. If that ever changes, it will be a
-setting that starts switched off.
+Only if you let them, and only people who already have an account on the same
+Frog. Turn on your profile and they can see what you are watching, your
+favourites and your totals. It starts switched off, and nothing is ever
+visible to anyone without an account.
 
 </details>
 

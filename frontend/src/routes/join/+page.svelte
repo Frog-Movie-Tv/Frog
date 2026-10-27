@@ -21,7 +21,9 @@
 			await api.register(username, password, invite);
 			await session.refresh();
 			toasts.push(`Welcome to Frog, ${username}.`);
-			await goto('/', { replaceState: true });
+			// Same as first-run setup: a new account goes to the welcome
+			// rather than flashing an empty Home on the way there.
+			await goto('/welcome', { replaceState: true });
 		} catch (e) {
 			error = e instanceof ApiError ? e.message : 'Something went wrong';
 		} finally {

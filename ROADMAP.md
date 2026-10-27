@@ -3,8 +3,8 @@
 The working backlog. Claude reads this at the start of a session and updates
 it when something ships. Top of **Next** is what to do next.
 
-Current release: **0.4.0 "Lily Pad"** (2026-10-26). Next release:
-**0.5.0 "Ribbit"**. Codenames after that, in order: Leapfrog, Bullfrog (1.0).
+Current release: **0.5.0 "Ribbit"**. Next release: **Leapfrog**, then
+Bullfrog (1.0).
 
 ## In progress — the multi-user brief, handed over 2026-10-26
 

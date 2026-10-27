@@ -29,7 +29,11 @@
 				await api.login(username, password, remember, askCode ? code : undefined);
 			}
 			await session.refresh();
-			await goto(next, { replaceState: true });
+			// An account that was just created has nothing in it, so send it
+			// straight to the welcome. Waiting for Home to load and decide
+			// shows an empty page first, which is the one thing the welcome
+			// exists to avoid.
+			await goto(setup ? '/welcome' : next, { replaceState: true });
 		} catch (e) {
 			if (e instanceof ApiError && e.twoFactor) {
 				// The first ask is a step, not an error.
