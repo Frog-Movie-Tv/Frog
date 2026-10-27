@@ -122,6 +122,10 @@ git commit --allow-empty -m "chore: release 0.5.0" -m "Release-As: 0.5.0"
    list of commits, because it is one. Replace it in `RELEASE-NOTES.md` with
    what a person can now do. The draft is marked with an HTML comment saying
    so.
+
+   That section becomes three things: the *What's new* page inside the app,
+   the body of the GitHub release, and what anyone following a link reads.
+   `CHANGELOG.md` stays as the commit list, for people working on Frog.
 2. **Take the next codename** from the list in `ROADMAP.md`, and put it in the
    heading, on the About page and in the About test in `e2e/smoke.spec.ts`.
 3. **Read the README as a stranger.** A big release usually makes something in

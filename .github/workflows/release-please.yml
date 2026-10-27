@@ -67,6 +67,39 @@ jobs:
           git commit -m 'chore: sync the lock file and draft the release notes'
           git push
 
+  # release-please writes the release page from CHANGELOG.md, which is a list
+  # of commit subjects. That is the page anyone following a link lands on, so
+  # it carries the notes written for people instead.
+  notes:
+    name: Put the written notes on the release
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Replace the release body
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          node scripts/release-body.mjs "$VERSION" > /tmp/body.md
+          if [ -s /tmp/body.md ]; then
+            gh release edit "$TAG" --notes-file /tmp/body.md
+            echo "the release page now carries the written notes"
+          else
+            echo "nothing written for $VERSION; leaving the generated body"
+          fi
+
   # A tag created with GITHUB_TOKEN does not start a workflow run, so the tag
   # build in CI never happens and production has no image to pull. Publish it
   # here instead, from the release release-please just made.
