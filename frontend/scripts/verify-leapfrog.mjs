@@ -342,6 +342,57 @@ check('and the pinned title', (await page.locator('.pins a, .pins .poster').coun
 check('and the totals', (await page.getByText('Time watched').count()) === 1);
 await page.screenshot({ path: join(out, '3-profile.png'), fullPage: true });
 
+console.log('\n== 0.6.1 ==');
+// A banner picture behind the profile picture: the picture must be on top.
+const backdrop = (await call('GET', `/api/titles/tv/${jjk.tmdb_id}`)).item.backdrop_path;
+await call('PUT', '/api/account/profile', { banner_backdrop: backdrop ?? '' });
+/** Whatever is drawn at the middle of `selector` belongs to it. */
+const onTop = (selector) =>
+	page.evaluate((sel) => {
+		const el = document.querySelector(sel);
+		if (!el) return false;
+		const r = el.getBoundingClientRect();
+		// Near the top edge, where the picture overlaps the banner.
+		const hit = document.elementFromPoint(r.left + r.width / 2, r.top + 12);
+		return !!hit && el.contains(hit);
+	}, selector);
+await page.goto(`${BASE}/people/${USER}`);
+await page.locator('.banner img').waitFor();
+await page.locator('.hero .avatar img').waitFor();
+check('a banner picture is set', !!backdrop);
+check('the profile picture is in front of the banner', await onTop('.hero .avatar'));
+await page.screenshot({ path: join(out, '3b-profile-banner.png') });
+await page.goto(`${BASE}/settings#account`);
+await page.locator('.profile .banner img').waitFor();
+check('and in Settings too', await onTop('.profile .picture .avatar'));
+
+// The people on Stats share one row.
+await page.goto(`${BASE}/stats`);
+await page.getByRole('heading', { name: 'Stats', level: 1 }).waitFor();
+await page.waitForTimeout(1500);
+const peopleTops = await page.$$eval('.people-row > section', (els) =>
+	els.map((e) => Math.round(e.getBoundingClientRect().top))
+);
+check(
+	'actors, directors and studios side by side',
+	peopleTops.length >= 2 && new Set(peopleTops).size === 1,
+	`${peopleTops.length} lists at ${peopleTops.join(', ')}`
+);
+await page.screenshot({ path: join(out, '3c-stats.png'), fullPage: true });
+
+// The new mascots can be chosen, and become the icon.
+await page.goto(`${BASE}/settings#appearance`);
+await page.getByRole('heading', { name: 'Mascot', level: 2 }).waitFor();
+for (const name of ['Starry-eyed', 'Bow', 'Delighted', 'Sprout']) {
+	await page.getByRole('button', { name, exact: true }).click();
+	const icon = await page.locator('link[rel="icon"]').getAttribute('href');
+	const id = icon?.match(/mascots\/(\w+)\.svg/)?.[1];
+	const res = await fetch(`${BASE}${icon}`);
+	check(`${name} becomes the icon`, res.ok && !!id, `${icon} ${res.status}`);
+}
+await page.screenshot({ path: join(out, '3d-mascots.png') });
+await page.getByRole('button', { name: 'Classic', exact: true }).click();
+
 console.log('\n== Deleting an account ==');
 const invite = await call('POST', '/api/invites', { role: 'user' });
 await fetch(`${BASE}/api/auth/register`, {

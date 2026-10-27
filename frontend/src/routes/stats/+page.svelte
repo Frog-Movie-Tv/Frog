@@ -331,7 +331,11 @@
 						</div>
 					</section>
 				{/if}
+			</div>
 
+			<!-- The people get a row of their own, side by side, rather than
+			     filling whatever gap the charts above leave. -->
+			<div class="grid people-row">
 				{@render people('Actors', stats.people.actors, true)}
 				{@render people('Directors and creators', stats.people.directors, true)}
 				{@render people('Studios', stats.people.studios, false, true)}
@@ -467,6 +471,17 @@
 		grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
 		gap: 0 18px;
 		align-items: start;
+	}
+
+	/* Three across, or one under the other: never two and a straggler. */
+	.people-row {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+
+	@media (max-width: 900px) {
+		.people-row {
+			grid-template-columns: minmax(0, 1fr);
+		}
 	}
 
 	.split {

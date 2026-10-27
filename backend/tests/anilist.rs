@@ -246,9 +246,6 @@ async fn seed_tmdb(h: &Harness) {
 
 #[tokio::test]
 async fn anilist_syncs_both_ways_and_places_seasons_by_id() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter("frog=debug")
-        .try_init();
     let h = Harness::new().await;
     seed_tmdb(&h).await;
     h.fake.lock().unwrap().entries = vec![
@@ -508,4 +505,55 @@ async fn another_account_cannot_see_or_change_your_anilist() {
     // Signed out: nothing.
     let (code, _, _, _) = h.call("GET", "/api/anilist", None, None).await;
     assert_eq!(code, StatusCode::UNAUTHORIZED);
+}
+
+/// TMDB out of reach is an error to retry, not a reason to give up on every
+/// entry: nothing is marked as needing a place, and the next sync places them.
+#[tokio::test]
+async fn a_tmdb_outage_is_retried_not_left_for_the_person() {
+    let h = Harness::new().await;
+    h.fake.lock().unwrap().entries = vec![entry(
+        113415,
+        "JUJUTSU KAISEN",
+        "TV",
+        24,
+        "COMPLETED",
+        24,
+        80,
+    )];
+    let (_, _, cookie, _) = h
+        .call(
+            "POST",
+            "/api/auth/setup",
+            Some(json!({ "username": "zjef", "password": "a-long-enough-pass" })),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+    sqlx::query(
+        "INSERT INTO anilist_link (user_id, anilist_user_id, anilist_name, token, expires_at, connected_at)
+         VALUES (1, 77, 'pondwatcher', 't', '2099-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    // Nothing from TMDB is cached and there is no key: TMDB is unreachable.
+    assert!(frog::anilist::sync_user(&h.state, 1).await.is_err());
+    let (_, status, _, _) = h.call("GET", "/api/anilist", None, Some(&cookie)).await;
+    assert_eq!(status["unsure"], json!(0), "{status}");
+    assert!(
+        status["error"].as_str().unwrap_or("").contains("TMDB"),
+        "{status}"
+    );
+
+    // TMDB back: the same entry is placed as if nothing had happened.
+    seed_tmdb(&h).await;
+    h.sync(1).await;
+    let (_, status, _, _) = h.call("GET", "/api/anilist", None, Some(&cookie)).await;
+    assert_eq!(status["error"], Value::Null, "{status}");
+    let (_, show, _, _) = h
+        .call("GET", "/api/titles/tv/95479", None, Some(&cookie))
+        .await;
+    assert_eq!(show["item"]["watched_episodes"], json!(24));
 }

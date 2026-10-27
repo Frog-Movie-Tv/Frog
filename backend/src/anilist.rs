@@ -511,22 +511,31 @@ async fn remember_media(
     Ok(())
 }
 
-async fn tmdb_by_external(state: &AppState, id: &str, source: &str) -> Option<(String, i64)> {
-    let found = state.tmdb.find(id, source).await.ok()?;
-    if let Some(m) = found["movie_results"].as_array().and_then(|a| a.first()) {
-        return Some(("movie".into(), m["id"].as_i64()?));
+/// The TMDB title another database's id points at. `Ok(None)` is TMDB saying
+/// it knows no such id; TMDB being unreachable is an error, so a bad moment
+/// never turns a whole list into "needs a place".
+async fn tmdb_by_external(
+    state: &AppState,
+    id: &str,
+    source: &str,
+) -> AppResult<Option<(String, i64)>> {
+    let found = match state.tmdb.find(id, source).await {
+        Ok(v) => v,
+        Err(AppError::NotFound(_)) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let first = |key: &str| found[key].as_array().and_then(|a| a.first()).cloned();
+    if let Some(m) = first("movie_results") {
+        return Ok(m["id"].as_i64().map(|id| ("movie".into(), id)));
     }
-    if let Some(t) = found["tv_results"].as_array().and_then(|a| a.first()) {
-        return Some(("tv".into(), t["id"].as_i64()?));
+    if let Some(t) = first("tv_results") {
+        return Ok(t["id"].as_i64().map(|id| ("tv".into(), id)));
     }
     // An episode's own id still says which show it belongs to.
-    if let Some(e) = found["tv_episode_results"]
-        .as_array()
-        .and_then(|a| a.first())
-    {
-        return Some(("tv".into(), e["show_id"].as_i64()?));
+    if let Some(e) = first("tv_episode_results") {
+        return Ok(e["show_id"].as_i64().map(|id| ("tv".into(), id)));
     }
-    None
+    Ok(None)
 }
 
 /// Where this entry goes, or `None` when that is not certain.
@@ -549,7 +558,7 @@ async fn place(
 
     if let Some(imdb) = imdb_id.as_deref() {
         if is_film || tvdb_id.is_none() {
-            if let Some((kind, id)) = tmdb_by_external(state, imdb, "imdb_id").await {
+            if let Some((kind, id)) = tmdb_by_external(state, imdb, "imdb_id").await? {
                 if kind == "movie" {
                     return Ok(Some(Target::Movie(id)));
                 }
@@ -564,7 +573,7 @@ async fn place(
     let (Some(tvdb_id), Some(tvdb_season)) = (tvdb_id, tvdb_season) else {
         return Ok(None);
     };
-    let Some((kind, tmdb_id)) = tmdb_by_external(state, &tvdb_id.to_string(), "tvdb_id").await
+    let Some((kind, tmdb_id)) = tmdb_by_external(state, &tvdb_id.to_string(), "tvdb_id").await?
     else {
         return Ok(None);
     };
@@ -1157,6 +1166,10 @@ pub async fn sync_user(state: &AppState, user_id: i64) -> AppResult<Summary> {
         Err(e) => {
             let message = match e {
                 AppError::Forbidden(m) | AppError::BadRequest(m) => m.clone(),
+                AppError::Tmdb(_) | AppError::TmdbUnconfigured => {
+                    "Could not reach TMDB to place your titles. Frog will try again shortly."
+                        .to_string()
+                }
                 _ => "Could not reach AniList. Frog will try again shortly.".to_string(),
             };
             tracing::warn!(user_id, error = %e, "AniList sync failed");

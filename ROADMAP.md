@@ -83,9 +83,11 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 - **Verify scripts** live in `frontend/scripts/`, each starting its own server
   against a throwaway database: `verify-stats`, `verify-push`,
   `verify-shelves`, `verify-because`, `verify-anime`, `verify-leapfrog`
-  (AniList is a stand-in server inside it),
+  (AniList is a stand-in server inside it), `verify-profile-stats` (no TMDB:
+  it writes a small library straight into the database with `node:sqlite`),
   `verify-2fa`, `verify-diary`, `verify-polish`, plus `npm run pwa-check` and
-  `npm run audit`. The ones that reach TMDB need the key.
+  `npm run audit`. The ones that reach TMDB need a valid key; with a bad one
+  every TMDB page answers 502.
 - **Web Push in tests:** headless Chrome throws away displayed notifications,
   and Playwright's `--disable-background-networking` cuts it off from FCM.
   `verify-push.mjs` keeps background networking and records the worker's
