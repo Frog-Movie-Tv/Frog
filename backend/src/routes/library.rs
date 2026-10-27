@@ -141,12 +141,13 @@ pub async fn stats(auth: Auth, State(state): State<AppState>) -> AppResult<Json<
     .fetch_all(&state.pool)
     .await?;
 
+    // Watches of titles still in the library, as on the stats page.
     let (films_watched, episodes_watched): (i64, i64) = sqlx::query_as(
-        "SELECT
-            (SELECT COUNT(*) FROM watch_event WHERE user_id = ? AND episode_id IS NULL),
-            (SELECT COUNT(*) FROM watch_event WHERE user_id = ? AND episode_id IS NOT NULL)",
+        "SELECT COALESCE(SUM(w.episode_id IS NULL), 0), COALESCE(SUM(w.episode_id IS NOT NULL), 0)
+           FROM watch_event w
+           JOIN library_entry l ON l.title_id = w.title_id AND l.user_id = w.user_id
+          WHERE w.user_id = ?",
     )
-    .bind(auth.user_id())
     .bind(auth.user_id())
     .fetch_one(&state.pool)
     .await?;
@@ -159,6 +160,7 @@ pub async fn stats(auth: Auth, State(state): State<AppState>) -> AppResult<Json<
         "SELECT CAST(SUM(COALESCE(e.runtime, t.runtime, 0)) AS REAL)
            FROM watch_event w
            JOIN title t ON t.id = w.title_id
+           JOIN library_entry l ON l.title_id = w.title_id AND l.user_id = w.user_id
            LEFT JOIN episode e ON e.id = w.episode_id
           WHERE w.user_id = ?",
     )
@@ -211,6 +213,7 @@ pub async fn upsert(
     let before = store::get_entry(&state.pool, auth.user_id(), title_id).await?;
     let is_new = before.is_none();
     store::apply_patch(&state.pool, auth.user_id(), title_id, &body.patch).await?;
+    crate::anilist::touch(&state.pool, auth.user_id()).await;
 
     // Finishing a film is watching it: without a watch it would never reach
     // the diary or the stats. A film already watched keeps its history.

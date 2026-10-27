@@ -1,6 +1,9 @@
 import { settings } from './settings.svelte';
 import type { WhenAnswer } from './when.svelte';
 import type {
+	AniListChoice,
+	AniListEntry,
+	AniListStatus,
 	AuthStatus,
 	BecauseRow,
 	HomeData,
@@ -10,7 +13,9 @@ import type {
 	DeviceSession,
 	InstanceInfo,
 	Invite,
+	PersonSummary,
 	Profile,
+	ProfileEdit,
 	NewInvite,
 	MatchResult,
 	Kind,
@@ -156,7 +161,17 @@ export const api = {
 	endSession: (id: string) => send<{ ok: true }>('DELETE', `/api/account/sessions/${id}`),
 	endOtherSessions: () => send<{ signed_out: number }>('DELETE', '/api/account/sessions/others'),
 	setProfilePublic: (value: boolean) =>
-		send<{ profile_public: boolean }>('PUT', '/api/account/profile', { public: value }),
+		send<Account>('PUT', '/api/account/profile', { public: value }),
+	updateProfile: (edit: ProfileEdit) => send<Account>('PUT', '/api/account/profile', edit),
+	/** The picture goes up as it is; the server checks what it really is. */
+	uploadProfileImage: (kind: 'avatar' | 'banner', file: Blob) =>
+		request<{ ok: true }>(`/api/account/images/${kind}`, {
+			method: 'PUT',
+			body: file,
+			headers: { 'content-type': file.type || 'application/octet-stream' }
+		}),
+	removeProfileImage: (kind: 'avatar' | 'banner') =>
+		send<{ ok: true }>('DELETE', `/api/account/images/${kind}`),
 	deleteAccount: (password: string) => send<{ ok: true }>('DELETE', '/api/account', { password }),
 
 	adminUsers: () => get<{ users: AdminUser[] }>('/api/admin/users'),
@@ -166,9 +181,18 @@ export const api = {
 			`/api/admin/users/${id}`,
 			patch
 		),
+	deleteUser: (id: number) => send<{ ok: true }>('DELETE', `/api/admin/users/${id}`),
 	instance: () => get<InstanceInfo>('/api/admin/instance'),
 
-	profiles: () => get<{ profiles: { username: string; me: boolean }[] }>('/api/profiles'),
+	anilist: () => get<AniListStatus>('/api/anilist'),
+	anilistConnect: () => send<{ url: string }>('POST', '/api/anilist/connect', {}),
+	anilistSync: () => send<{ syncing: true }>('POST', '/api/anilist/sync', {}),
+	anilistDisconnect: () => send<{ ok: true }>('DELETE', '/api/anilist'),
+	anilistEntries: () => get<{ entries: AniListEntry[] }>('/api/anilist/entries'),
+	anilistChoose: (mediaId: number, choice: AniListChoice) =>
+		send<{ ok: true }>('PUT', `/api/anilist/entries/${mediaId}`, choice),
+
+	profiles: () => get<{ profiles: PersonSummary[] }>('/api/profiles'),
 	profile: (username: string) => get<Profile>(`/api/profiles/${encodeURIComponent(username)}`),
 
 	invites: () => get<{ invites: Invite[] }>('/api/invites'),

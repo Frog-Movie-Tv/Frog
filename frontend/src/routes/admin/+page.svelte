@@ -75,6 +75,35 @@
 		}
 	}
 
+	/**
+	 * Deleting cannot be taken back once it happens, so it waits behind the
+	 * toast's undo. The account is switched off at once, which signs it out,
+	 * and only goes for good when the toast does.
+	 */
+	async function remove(user: AdminUser) {
+		const wasOff = user.disabled;
+		try {
+			if (!wasOff) await api.updateUser(user.id, { disabled: true });
+		} catch (e) {
+			toasts.error(e);
+			return;
+		}
+		users = users.filter((u) => u.id !== user.id);
+		const timer = setTimeout(async () => {
+			try {
+				await api.deleteUser(user.id);
+			} catch (e) {
+				toasts.error(e);
+				await loadPeople();
+			}
+		}, 7000);
+		toasts.undoable(`${user.username} and everything they tracked will be deleted`, async () => {
+			clearTimeout(timer);
+			if (!wasOff) await api.updateUser(user.id, { disabled: false });
+			await loadPeople();
+		});
+	}
+
 	function size(bytes: number): string {
 		if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 		if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -198,6 +227,13 @@
 								{/if}
 								<button class="btn ghost" onclick={() => setDisabled(user, !user.disabled)}>
 									{user.disabled ? 'Switch on' : 'Switch off'}
+								</button>
+								<button
+									class="btn ghost danger"
+									aria-label="Delete {user.username}"
+									onclick={() => remove(user)}
+								>
+									<Icon name="trash" size={16} /> Delete
 								</button>
 							</div>
 						{/if}
@@ -531,5 +567,9 @@
 
 	.facts dt {
 		color: var(--text-faint);
+	}
+
+	.danger {
+		color: var(--bad);
 	}
 </style>

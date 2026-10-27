@@ -79,15 +79,6 @@
 		}
 	}
 
-	async function toggleProfile(value: boolean) {
-		try {
-			const r = await api.setProfilePublic(value);
-			if (account) account.profile_public = r.profile_public;
-		} catch (e) {
-			toasts.error(e);
-		}
-	}
-
 	async function switchAccount() {
 		await session.logout();
 		await goto('/login', { replace: true });
@@ -204,22 +195,6 @@
 		</ul>
 	</div>
 
-	<label class="row card">
-		<span class="label">
-			<strong>Show my profile</strong>
-			<span class="faint">
-				Others on this Frog can see what you watch, your favourites and your totals.
-				{#if account}<a href="/people/{encodeURIComponent(account.username)}">See your profile</a
-					>{/if}
-			</span>
-		</span>
-		<input
-			type="checkbox"
-			checked={account?.profile_public ?? false}
-			onchange={(e) => toggleProfile(e.currentTarget.checked)}
-		/>
-	</label>
-
 	{#if account && account.role !== 'owner'}
 		<div class="row card column">
 			<div class="top">
@@ -315,10 +290,6 @@
 
 	.label .faint {
 		font-size: 0.82rem;
-	}
-
-	.label a {
-		color: var(--accent);
 	}
 
 	.password {

@@ -248,6 +248,16 @@ impl Tmdb {
         .await
     }
 
+    /// Look a title up by another database's id: `tvdb_id` or `imdb_id`.
+    pub async fn find(&self, external_id: &str, source: &str) -> AppResult<Value> {
+        self.get(
+            &format!("/find/{external_id}"),
+            &[("external_source", source.to_string())],
+            Duration::hours(ttl::MOVIE_HOURS),
+        )
+        .await
+    }
+
     pub async fn person(&self, id: i64) -> AppResult<Value> {
         self.get(
             &format!("/person/{id}"),

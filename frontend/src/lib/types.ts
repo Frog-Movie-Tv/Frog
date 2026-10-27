@@ -213,6 +213,8 @@ export interface AuthStatus {
 	authenticated: boolean;
 	/** Whoever is signed in, or null. */
 	username: string | null;
+	/** Address of their profile picture, if they have one. */
+	avatar: string | null;
 	role: 'owner' | 'admin' | 'user' | null;
 	is_admin: boolean;
 	tmdb_configured: boolean;
@@ -388,6 +390,30 @@ export interface Account {
 	created_at: string;
 	profile_public: boolean;
 	two_factor: boolean;
+	display_name: string | null;
+	bio: string | null;
+	/** A TMDB backdrop path used as the banner when no picture is uploaded. */
+	banner_backdrop: string | null;
+	pins: { kind: Kind; tmdb_id: number }[];
+	/** Whether a picture of each kind is uploaded. */
+	avatar: boolean;
+	banner: boolean;
+}
+
+/** Profile fields to change; anything left out stays as it is. */
+export interface ProfileEdit {
+	public?: boolean;
+	display_name?: string;
+	bio?: string;
+	banner_backdrop?: string;
+	pins?: { kind: Kind; tmdb_id: number }[];
+}
+
+export interface PersonSummary {
+	username: string;
+	display_name: string | null;
+	me: boolean;
+	avatar: boolean;
 }
 
 /** One device signed in to your account. */
@@ -417,6 +443,50 @@ export interface InstanceInfo {
 	last_backup: { at: string; label: string; pushed: boolean } | null;
 }
 
+/** The AniList connection as Settings shows it. */
+export interface AniListStatus {
+	/** False when this Frog has no AniList client set up. */
+	available: boolean;
+	connected?: boolean;
+	name?: string;
+	expires_at?: string;
+	synced_at?: string | null;
+	syncing?: boolean;
+	error?: string | null;
+	summary?: { to_frog: number; to_anilist: number; unsure: number; entries: number } | null;
+	unsure?: number;
+}
+
+export interface AniListCandidate {
+	kind: Kind;
+	tmdb_id: number;
+	name: string;
+	year: string | null;
+	poster_path: string | null;
+}
+
+export interface AniListEntry {
+	media_id: number;
+	name: string;
+	format: string | null;
+	episodes: number | null;
+	state: 'placed' | 'unsure' | 'ignored';
+	candidates: AniListCandidate[];
+	title: {
+		name: string;
+		poster_path: string | null;
+		kind: Kind;
+		tmdb_id: number;
+		season: number | null;
+		from_episode: number;
+	} | null;
+	status: string | null;
+	progress: number | null;
+}
+
+export type AniListChoice =
+	{ ignore: true } | { kind: Kind; tmdb_id: number; season?: number; from_episode?: number };
+
 export interface ProfileCard {
 	kind: Kind;
 	tmdb_id: number;
@@ -427,10 +497,28 @@ export interface ProfileCard {
 
 export interface Profile {
 	username: string;
+	display_name: string | null;
+	bio: string | null;
 	joined: string;
 	public: boolean;
 	me: boolean;
-	stats: { films: number; episodes: number; minutes: number };
+	avatar: string | null;
+	banner: string | null;
+	banner_backdrop: string | null;
+	stats: {
+		films: number;
+		episodes: number;
+		shows: number;
+		minutes: number;
+		library: number;
+		completed: number;
+		favourites: number;
+		mean_rating: number | null;
+		streak: number;
+		longest_streak: number;
+	};
+	genres: { name: string; titles: number }[];
+	pinned: ProfileCard[];
 	watching: ProfileCard[];
 	favourites: ProfileCard[];
 	recent: ProfileCard[];

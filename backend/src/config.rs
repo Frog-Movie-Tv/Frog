@@ -16,6 +16,22 @@ pub struct Config {
     pub session_days: i64,
     /// Local hour (0-23) from which new episodes are announced on their air date.
     pub notify_hour: u32,
+    /// AniList API client. All three are needed, or AniList stays hidden.
+    pub anilist: Option<AniListClient>,
+}
+
+/// An application registered at anilist.co/settings/developer. Its redirect
+/// URL is fixed there, so one client serves exactly one public address.
+#[derive(Clone, Debug)]
+pub struct AniListClient {
+    pub id: String,
+    pub secret: String,
+    pub redirect_uri: String,
+    /// GraphQL endpoint and sign-in site. Only tests point these elsewhere.
+    pub api_url: String,
+    pub site_url: String,
+    /// The Anime-IDs list that says which TVDB/IMDb entry each AniList id is.
+    pub anime_ids_url: String,
 }
 
 fn env_opt(key: &str) -> Option<String> {
@@ -53,6 +69,24 @@ impl Config {
                 .ok()
                 .filter(|h| *h < 24)
                 .unwrap_or(18),
+            anilist: match (
+                env_opt("ANILIST_CLIENT_ID"),
+                env_opt("ANILIST_CLIENT_SECRET"),
+                env_opt("ANILIST_REDIRECT_URI"),
+            ) {
+                (Some(id), Some(secret), Some(redirect_uri)) => Some(AniListClient {
+                    id,
+                    secret,
+                    redirect_uri,
+                    api_url: env_or("ANILIST_API_URL", "https://graphql.anilist.co"),
+                    site_url: env_or("ANILIST_SITE_URL", "https://anilist.co"),
+                    anime_ids_url: env_or(
+                        "ANIME_IDS_URL",
+                        "https://raw.githubusercontent.com/Kometa-Team/Anime-IDs/master/anime_ids.json",
+                    ),
+                }),
+                _ => None,
+            },
         })
     }
 

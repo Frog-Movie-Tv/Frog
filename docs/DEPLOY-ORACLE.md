@@ -344,6 +344,20 @@ age-keygen -o frog-backup.key
 Keep `frog-backup.key` somewhere safe. Paste only the `age1…` public line into
 `backup.env`. The server can then write backups it cannot read back.
 
+**AniList (optional).** Register a client at
+<https://anilist.co/settings/developer> with the redirect URL
+`https://<production domain>/api/anilist/callback`. It has to match exactly, and
+a client has only one, so staging needs a client of its own (or goes without
+AniList). Then add all three to that instance's `.env` and restart it:
+
+```bash
+ANILIST_CLIENT_ID=12345
+ANILIST_CLIENT_SECRET=…
+ANILIST_REDIRECT_URI=https://<production domain>/api/anilist/callback
+```
+
+With any of the three missing, AniList simply does not appear in Settings.
+
 ### 7. The backup repository
 
 1. Create a **private** repository, e.g. `Frog-Movie-Tv/frog-backups`.

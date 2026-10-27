@@ -7,8 +7,8 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 0.5.0 "Ribbit" |
-| **Next codenames** | Leapfrog, then Bullfrog (1.0) |
+| **Release** | 0.5.0 "Ribbit"; 0.6.0 "Leapfrog" is in its pull request |
+| **Next codenames** | Bullfrog (1.0) |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
 | **Updates** | by itself: a timer pulls the newest release every 15 minutes, backs up first, rolls back on an unhealthy `/healthz` |
@@ -21,17 +21,21 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 ## Next
 
-1. **Back up somewhere other than the server.** `BACKUP_REPO_DIR` is blank, so
+1. **Give the server its AniList client.** 0.6.0 syncs AniList through
+   AniList's own sign-in, which needs `ANILIST_CLIENT_ID`,
+   `ANILIST_CLIENT_SECRET` and `ANILIST_REDIRECT_URI` in
+   `/opt/frog/production/.env` (the client exists; its redirect URL is
+   `https://frogwatchlist.duckdns.org/api/anilist/callback`). Without them
+   AniList simply does not appear in Settings. `docs/DEPLOY-ORACLE.md` step 6.
+2. **Back up somewhere other than the server.** `BACKUP_REPO_DIR` is blank, so
    nightly backups land in `/opt/frog/backups` and nowhere else — lose the
    instance and they go with it. Needs a private repository and a deploy key.
-2. **Restore once, for real.** `restore.sh` has never been run. Do it against
+3. **Restore once, for real.** `restore.sh` has never been run. Do it against
    a throwaway instance before it is ever needed in anger.
-3. **AniList sync, both ways.** Today it only pulls from a public list.
-   Writing progress back needs an AniList API client registered by an owner
-   (free, but a login), then OAuth in Settings.
-4. **Refresh the screenshots.** No shelves shot at all, and the calendar one
-   is empty because the demo titles have no upcoming episodes — seed a
-   currently airing show in `scripts/screenshots.mjs` first.
+4. **The screenshots, the rest.** Refreshed for 0.6.0, but there is still no
+   shelves shot and the calendar one is empty because the demo titles have
+   no upcoming episodes — seed a currently airing show in
+   `scripts/screenshots.mjs`.
 5. **The Projects board.** Backlog / In progress / Review / Done. Needs
    `gh auth refresh -s project` from an owner before it can be created.
 6. **Smaller things.** Customisable keyboard shortcuts, renaming and
@@ -62,12 +66,15 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 - **Migrations are never edited once applied** — sqlx compares checksums and
   refuses to start, which takes a running instance down on its next deploy.
-  Add another file. New ones get timestamped names.
+  Add another file. New ones get timestamped names, **digits only** before the
+  first `_` (`202610271200_anilist.sql`): sqlx reads that part as a number and
+  a `T` in it fails the build.
   `db::heal_line_endings` forgives a checksum that differs only in line
   endings, which is what lets a database move between a Windows checkout and
   the server.
 - **The deployed Content-Security-Policy has broken the site three times** —
-  the inline startup script, the update check, the AniList import. It comes
+  the inline startup script, the update check, the old AniList import (the
+  browser no longer talks to AniList; the server does). It comes
   from Caddy, so nothing local ever sees it: not a dev build, not the audit,
   not Playwright. Anything fetched from another origin has to be named in
   `deploy/caddy/Caddyfile`.
@@ -75,19 +82,35 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   binary is newer, and a stale release build silently tests old code.
 - **Verify scripts** live in `frontend/scripts/`, each starting its own server
   against a throwaway database: `verify-stats`, `verify-push`,
-  `verify-shelves`, `verify-because`, `verify-anime`, `verify-anilist-sync`,
+  `verify-shelves`, `verify-because`, `verify-anime`, `verify-leapfrog`
+  (AniList is a stand-in server inside it),
   `verify-2fa`, `verify-diary`, `verify-polish`, plus `npm run pwa-check` and
   `npm run audit`. The ones that reach TMDB need the key.
 - **Web Push in tests:** headless Chrome throws away displayed notifications,
   and Playwright's `--disable-background-networking` cuts it off from FCM.
   `verify-push.mjs` keeps background networking and records the worker's
   `showNotification` calls instead.
+- **AniList sync** (`backend/src/anilist.rs`) places entries by id from the
+  Kometa Anime-IDs list, turning TVDB season and offset into TMDB numbering
+  through absolute positions. Each entry keeps a snapshot of both sides from
+  the last sync; whichever side differs from its snapshot changed and wins.
+  A Frog title never on AniList is not added there, and removing one in Frog
+  never removes it on AniList — both on purpose.
+- **Stats count only titles in the library.** Watches of removed titles stay
+  in the database (the diary keeps them) but leave every total.
 - **Stats credits** live in `title_person`, filled by `store::ensure_title`
   and backfilled by the worker, 25 titles every 2 minutes.
 - **New Home rows** reach saved layouts once, through `homeRowsSeen` in
   `lib/settings.svelte.ts`. Add the id to `HOME_ROWS` and to the default list.
 
 ## Shipped
+
+**0.6.0 Leapfrog** — AniList both ways through AniList's own sign-in, placed by
+id rather than by name, with anything uncertain left for the person to choose;
+the username import it replaces is gone. Stats, library totals and profiles
+count exactly the library. Settings in six groups with their own addresses.
+Administrators delete accounts. Profiles with a picture, banner, name, about
+text, four pins and fuller totals.
 
 **0.5.0 Ribbit** — Frog for more than one person. An account each, with every
 personal row scoped to its owner and a test that fails the build if a query

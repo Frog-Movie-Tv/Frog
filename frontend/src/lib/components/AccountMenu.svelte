@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import Avatar from './Avatar.svelte';
 	import Icon, { type IconName } from './Icon.svelte';
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
@@ -51,7 +52,7 @@
 		title={name}
 		onclick={() => (open = !open)}
 	>
-		{name.slice(0, 1).toUpperCase()}
+		<Avatar src={session.status?.avatar} {name} size={34} />
 	</button>
 
 	{#if open}
@@ -87,11 +88,13 @@
 	.avatar {
 		width: 34px;
 		height: 34px;
+		padding: 0;
+		display: grid;
+		place-items: center;
+		overflow: hidden;
 		border-radius: 50%;
 		border: 1px solid var(--line-strong);
 		background: var(--accent-soft);
-		color: var(--accent);
-		font-weight: 700;
 		cursor: pointer;
 	}
 

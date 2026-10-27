@@ -3,14 +3,7 @@
 	import { api, img } from '#lib/api';
 	import Icon from '#lib/components/Icon.svelte';
 	import Select from '#lib/components/Select.svelte';
-	import {
-		dedupe,
-		readAniList,
-		readFile,
-		SOURCES,
-		type Incoming,
-		type ParsedFile
-	} from '#lib/import/parsers';
+	import { dedupe, readFile, SOURCES, type Incoming, type ParsedFile } from '#lib/import/parsers';
 	import { applyItem, bySeason, foldSeasons } from '#lib/import/rows';
 	import { toasts } from '#lib/toast.svelte';
 	import type { ImportSummary, MatchResult, SearchItem, Status } from '#lib/types';
@@ -26,8 +19,7 @@
 	}
 
 	let step = $state<Step>('source');
-	let format = $state('anilist');
-	let username = $state('');
+	let format = $state('mal');
 	let rows = $state<Row[]>([]);
 	let busy = $state(false);
 	let progress = $state({ done: 0, total: 0, label: '' });
@@ -48,11 +40,6 @@
 			for (const file of Array.from(list)) chunks.push(...(await readFile(format, file)));
 			return chunks;
 		}, 'Reading the file');
-	}
-
-	async function fetchAniList(event: SubmitEvent) {
-		event.preventDefault();
-		await load(() => readAniList(username), 'Reading your AniList');
 	}
 
 	async function load(read: () => Promise<ParsedFile[]>, label: string) {
@@ -211,43 +198,23 @@
 			{/each}
 		</div>
 
-		{#if source.remote}
-			<form class="drop remote" onsubmit={fetchAniList}>
-				<Icon name="download" size={26} />
-				<label class="user">
-					<span>AniList username</span>
-					<input
-						class="input"
-						bind:value={username}
-						autocomplete="off"
-						autocapitalize="off"
-						spellcheck="false"
-						placeholder="username"
-						disabled={busy}
-					/>
-				</label>
-				<button class="btn primary" type="submit" disabled={busy || !username.trim()}>
-					{busy ? 'Reading…' : 'Read my list'}
-				</button>
-			</form>
-			<p class="faint note">
-				Your list is read from AniList by this browser; only titles are looked up on TMDB.
-			</p>
-		{:else}
-			<label class="drop">
-				<input
-					type="file"
-					accept={source.accept}
-					multiple
-					disabled={busy}
-					onchange={(e) => onFiles(e.currentTarget.files)}
-				/>
-				<Icon name="upload" size={26} />
-				<strong>Choose a file</strong>
-				<span class="faint">{source.label} · {source.accept.split(',').join(' or ')}</span>
-			</label>
-			<p class="faint note">Files are read in this browser; only titles are looked up on TMDB.</p>
-		{/if}
+		<label class="drop">
+			<input
+				type="file"
+				accept={source.accept}
+				multiple
+				disabled={busy}
+				onchange={(e) => onFiles(e.currentTarget.files)}
+			/>
+			<Icon name="upload" size={26} />
+			<strong>Choose a file</strong>
+			<span class="faint">{source.label} · {source.accept.split(',').join(' or ')}</span>
+		</label>
+		<p class="faint note">Files are read in this browser; only titles are looked up on TMDB.</p>
+		<p class="faint note">
+			AniList stays in step on its own: connect it in
+			<a href="/settings#connections">Settings</a>.
+		</p>
 
 		<div class="alt">
 			<h2>Export</h2>
@@ -519,19 +486,6 @@
 
 	.season input::-webkit-inner-spin-button {
 		display: none;
-	}
-
-	.remote {
-		cursor: default;
-	}
-
-	.remote .user {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		width: min(320px, 100%);
-		font-size: 0.8rem;
-		color: var(--text-dim);
 	}
 
 	.drop:hover {

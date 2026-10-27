@@ -195,22 +195,12 @@ test('the importer offers every supported source and both exports', async ({ pag
 	await signIn(page);
 	await page.goto('/import');
 
-	for (const source of [
-		'AniList',
-		'MyAnimeList',
-		'Letterboxd',
-		'IMDb',
-		'Trakt',
-		'TV Time',
-		'Frog backup'
-	]) {
+	for (const source of ['MyAnimeList', 'Letterboxd', 'IMDb', 'Trakt', 'TV Time', 'Frog backup']) {
 		await expect(page.getByRole('button', { name: source, exact: true })).toBeVisible();
 	}
 
-	// AniList is read by username; its field must be usable, not covered.
-	await page.getByRole('button', { name: 'AniList', exact: true }).click();
-	await page.getByLabel('AniList username').fill('someone');
-	await expect(page.getByRole('button', { name: 'Read my list' })).toBeEnabled();
+	// AniList is not a file: it is connected from Settings.
+	await expect(page.getByRole('link', { name: 'Settings' }).last()).toBeVisible();
 	await expect(page.getByRole('link', { name: 'Download backup' })).toBeVisible();
 	await expect(page.getByRole('link', { name: 'Download CSV' })).toBeVisible();
 });
@@ -232,7 +222,7 @@ test('the about page credits its sources', async ({ page }) => {
 	await page.goto('/about');
 
 	await expect(page.getByRole('heading', { name: 'Frog', level: 1 })).toBeVisible();
-	await expect(page.getByText('Ribbit')).toBeVisible();
+	await expect(page.getByText('Leapfrog')).toBeVisible();
 	await expect(page.getByRole('link', { name: /TMDB/ }).first()).toBeVisible();
 	await expect(page.getByRole('link', { name: /Lucide/ })).toBeVisible();
 });
@@ -255,12 +245,18 @@ test('search says plainly when metadata is not connected', async ({ page }) => {
 
 test('settings shows the instance facts and switches theme', async ({ page }) => {
 	await signIn(page);
-	await page.goto('/settings');
+	// Settings comes in groups; each has its own address.
+	await page.goto('/settings#data');
 
 	// The name shows in Account too; the facts live in This instance.
 	const facts = page.locator('#this-instance');
 	await expect(facts.getByText(USER)).toBeVisible();
 	await expect(facts.getByText('missing')).toBeVisible();
+
+	await page
+		.getByRole('navigation', { name: 'Settings' })
+		.getByRole('link', { name: 'Appearance' })
+		.click();
 
 	// Pond is the default now.
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'pond');
@@ -278,7 +274,7 @@ test('settings shows the instance facts and switches theme', async ({ page }) =>
 
 test('preferences are kept on the server, not just in this browser', async ({ page, context }) => {
 	await signIn(page);
-	await page.goto('/settings');
+	await page.goto('/settings#appearance');
 
 	await page.getByRole('button', { name: /Sleepy/ }).click();
 	// Give the debounced save a moment to land.
@@ -291,7 +287,7 @@ test('preferences are kept on the server, not just in this browser', async ({ pa
 
 	// A browser with no local storage must still see the choice.
 	const fresh = await context.newPage();
-	await fresh.goto('/settings');
+	await fresh.goto('/settings#appearance');
 	const stored = await fresh.request.get('/api/settings');
 	expect((await stored.json()).mascot).toBe('sleepy');
 	await fresh.close();
@@ -299,7 +295,7 @@ test('preferences are kept on the server, not just in this browser', async ({ pa
 
 test('score format changes how a rating reads without touching the value', async ({ page }) => {
 	await signIn(page);
-	await page.goto('/settings');
+	await page.goto('/settings#watching');
 
 	await page.getByRole('button', { name: /100 point/ }).click();
 	await expect(page.getByRole('button', { name: 'Rated 78' })).toBeVisible();
@@ -315,7 +311,7 @@ test('score format changes how a rating reads without touching the value', async
 
 test('signing out closes the door behind you', async ({ page }) => {
 	await signIn(page);
-	await page.goto('/settings');
+	await page.goto('/settings#data');
 	// Each signed-in device has its own Sign out too, and the header menu
 	// carries one; this is the one that ends the session you are using.
 	await page.getByRole('main').getByRole('button', { name: 'Sign out', exact: true }).click();
@@ -364,6 +360,9 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/admin/instance',
 		'/api/profiles',
 		'/api/profiles/someone',
+		'/api/profiles/someone/images/avatar',
+		'/api/anilist',
+		'/api/anilist/entries',
 		'/api/invites',
 		'/img/w342/nope.jpg'
 	]) {
@@ -383,7 +382,9 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/push/test',
 		'/api/shelves',
 		'/api/shelves/1/items',
-		'/api/invites'
+		'/api/invites',
+		'/api/anilist/connect',
+		'/api/anilist/sync'
 	]) {
 		const res = await request.post(path, { data: {} });
 		expect(res.status(), `POST ${path} should be 401`).toBe(401);

@@ -276,6 +276,7 @@ pub async fn set_state(
 /// After any watch change, nudge the library entry to match reality: a show you
 /// start becomes "watching", and finishing the last episode completes it.
 async fn after_change(state: &AppState, user_id: i64, title_id: i64) -> AppResult<Json<Value>> {
+    crate::anilist::touch(&state.pool, user_id).await;
     let progress = store::progress(&state.pool, user_id, title_id).await?;
     let entry = store::get_entry(&state.pool, user_id, title_id).await?;
 

@@ -129,6 +129,53 @@ pub async fn update_user(
     ))
 }
 
+/// Remove someone from this Frog for good: their library, diary, shelves,
+/// settings and sessions all go with the account (the foreign keys cascade).
+///
+/// The same rules as changing an account: never yourself (Settings has that),
+/// never the owner, and only the owner removes an administrator.
+pub async fn delete_user(
+    AdminAuth(me): AdminAuth,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<Value>> {
+    if id == me.user_id() {
+        return Err(AppError::BadRequest(
+            "Delete your own account from Settings.".into(),
+        ));
+    }
+    let target: Option<(String,)> = sqlx::query_as("SELECT role FROM app_user WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?;
+    let Some((target_role,)) = target else {
+        return Err(AppError::NotFound("no such account".into()));
+    };
+    let target_role = Role::from_db(&target_role);
+    if target_role == Role::Owner {
+        return Err(AppError::Forbidden(
+            "The owner's account cannot be deleted.".into(),
+        ));
+    }
+    if target_role == Role::Admin && me.role() < Role::Owner {
+        return Err(AppError::Forbidden(
+            "Only the owner can delete an administrator.".into(),
+        ));
+    }
+
+    auth::destroy_sessions_for(&state.pool, id, None).await?;
+    sqlx::query("DELETE FROM app_user WHERE id = ?")
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+    tracing::info!(
+        deleted = id,
+        by = me.user_id(),
+        "account deleted by an administrator"
+    );
+    Ok(Json(json!({ "ok": true })))
+}
+
 /// How the instance is doing: version, space used, and the last backup the
 /// server's backup script recorded next to the database.
 pub async fn instance(

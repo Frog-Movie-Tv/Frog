@@ -25,6 +25,8 @@ pub enum AppError {
     TmdbUnconfigured,
     #[error("TMDB request failed: {0}")]
     Tmdb(String),
+    #[error("AniList request failed: {0}")]
+    AniList(String),
     #[error(transparent)]
     Db(#[from] sqlx::Error),
     #[error(transparent)]
@@ -43,7 +45,7 @@ impl AppError {
             AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::TooManyRequests(_) => StatusCode::TOO_MANY_REQUESTS,
             AppError::TmdbUnconfigured => StatusCode::SERVICE_UNAVAILABLE,
-            AppError::Tmdb(_) => StatusCode::BAD_GATEWAY,
+            AppError::Tmdb(_) | AppError::AniList(_) => StatusCode::BAD_GATEWAY,
             AppError::Db(sqlx::Error::RowNotFound) => StatusCode::NOT_FOUND,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -65,6 +67,10 @@ impl IntoResponse for AppError {
             AppError::Tmdb(detail) => {
                 tracing::error!(%detail, "TMDB request failed");
                 "Could not reach TMDB. It may be down, or the API key may be wrong.".to_string()
+            }
+            AppError::AniList(detail) => {
+                tracing::error!(%detail, "AniList request failed");
+                "Could not reach AniList. Try again in a minute.".to_string()
             }
             other => other.to_string(),
         };

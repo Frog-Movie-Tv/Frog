@@ -65,7 +65,7 @@
 		<Logo size={56} />
 		<div>
 			<h1>Frog</h1>
-			<p class="muted">Version {session.status?.version ?? '—'} · Ribbit</p>
+			<p class="muted">Version {session.status?.version ?? '—'} · Leapfrog</p>
 		</div>
 	</header>
 
