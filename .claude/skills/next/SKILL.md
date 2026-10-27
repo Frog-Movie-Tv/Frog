@@ -16,8 +16,8 @@ description: Pick up the next item on Frog's roadmap and build it end to end —
 
 ## 2. Build it
 
-- Backend first when the feature needs data: migration (next number in
-  `backend/migrations/`), store or route code, and a test in
+- Backend first when the feature needs data: migration (a **timestamped**
+  name, never editing one that exists), store or route code, and a test in
   `backend/tests/api.rs` that would have failed without the change.
 - Then the frontend, following the conventions in CLAUDE.md: `Icon`, `Select`,
   `Empty`, undo toasts, a `<title>` per route, product-voice copy.

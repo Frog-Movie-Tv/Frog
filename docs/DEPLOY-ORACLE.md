@@ -2,10 +2,10 @@
 
 Developer and operator documentation. Nothing here is user-facing.
 
-> **Status: research only.** The facts below were checked on **2026-10-26** and
-> are the basis for the `deploy/` folder. No deploy code has been written yet,
-> and nothing is deployed. Three findings change the plan — see
-> [What the research changes](#what-the-research-changes).
+> **Status: deployed.** Frog runs on a free Oracle instance, behind Caddy,
+> updating itself from the newest release image. The facts below were checked
+> on **2026-10-26** and are the basis for everything in `deploy/`. Re-check
+> anything older than a few months: free tiers move.
 
 ## What this actually runs on
 

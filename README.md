@@ -49,12 +49,12 @@ their own. It costs nothing at all.
 </tr>
 <tr>
 <td>
-<img src="docs/screenshots/settings-desktop-pond.png" alt="The settings page with theme tiles and mascot choices">
-<p align="center"><b>Make it yours</b><br><sub>Themes, fonts, shapes, cards and rows — all live</sub></p>
+<img src="docs/screenshots/settings-desktop-pond.png" alt="Settings, grouped, open on your profile">
+<p align="center"><b>Make it yours</b><br><sub>Your profile, themes, fonts, cards and rows — all live</sub></p>
 </td>
 <td>
-<img src="docs/screenshots/import-desktop-pond.png" alt="The import page offering Letterboxd, IMDb, Trakt, TV Time, AniList, MyAnimeList and Frog backups">
-<p align="center"><b>Bring your history</b><br><sub>Letterboxd, Trakt, IMDb, TV Time, AniList and MyAnimeList</sub></p>
+<img src="docs/screenshots/import-desktop-pond.png" alt="The import page offering Letterboxd, IMDb, Trakt, TV Time, MyAnimeList and Frog backups">
+<p align="center"><b>Bring your history</b><br><sub>Letterboxd, Trakt, IMDb, TV Time and MyAnimeList, with AniList kept in step</sub></p>
 </td>
 </tr>
 </table>
@@ -87,10 +87,14 @@ their own. It costs nothing at all.
 
 ## A quick tour
 
-**Bring your history with you.** Import from Letterboxd, Trakt, IMDb, TV Time,
-AniList or MyAnimeList. Frog reads the export, matches each title, shows you
-what it found and lets you correct anything it got wrong before a single row is
+**Bring your history with you.** Import from Letterboxd, Trakt, IMDb, TV Time
+or MyAnimeList. Frog reads the export, matches each title, shows you what it
+found and lets you correct anything it got wrong before a single row is
 written. Anime seasons land on the right season, parts and all.
+
+**Keep AniList in step.** Connect your AniList account in Settings and the two
+stay the same: episodes, statuses and scores, whichever side you change them
+on.
 
 **Find anything.** Search every film and show on TMDB and add it with one tap.
 Results lead with the thing you actually meant, rather than obscure shorts that
@@ -196,8 +200,9 @@ through a free one, where Frog keeps itself up to date on its own.
 <br>
 
 Import it. Frog reads exports from Letterboxd, Trakt, IMDb, TV Time and
-MyAnimeList, reads an AniList profile by username, and restores its own
-backups. You see every match before anything is written.
+MyAnimeList, and restores its own backups. You see every match before anything
+is written. AniList is not imported but connected: it stays in step from then
+on.
 
 </details>
 
@@ -207,8 +212,8 @@ backups. You see every match before anything is written.
 <br>
 
 Only if you let them, and only people who already have an account on the same
-Frog. Turn on your profile and they can see what you are watching, your
-favourites and your totals. It starts switched off, and nothing is ever
+Frog. Turn on your profile and they can see your picture, what you are
+watching, your pinned titles, your favourites and your totals. It starts switched off, and nothing is ever
 visible to anyone without an account.
 
 </details>
