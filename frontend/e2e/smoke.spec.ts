@@ -173,7 +173,7 @@ test("the what's new page lists the current release", async ({ page }) => {
 
 	await expect(page.getByRole('heading', { name: "What's new" })).toBeVisible();
 	await expect(page.getByText('Installed', { exact: true })).toBeVisible();
-	await expect(page.getByText('Lily Pad').first()).toBeVisible();
+	await expect(page.getByText('Ribbit').first()).toBeVisible();
 
 	// Release notes must not be cut off at the first line wrap, and <kbd>
 	// must render as a key rather than as literal angle brackets.
@@ -232,7 +232,7 @@ test('the about page credits its sources', async ({ page }) => {
 	await page.goto('/about');
 
 	await expect(page.getByRole('heading', { name: 'Frog', level: 1 })).toBeVisible();
-	await expect(page.getByText('Lily Pad')).toBeVisible();
+	await expect(page.getByText('Ribbit')).toBeVisible();
 	await expect(page.getByRole('link', { name: /TMDB/ }).first()).toBeVisible();
 	await expect(page.getByRole('link', { name: /Lucide/ })).toBeVisible();
 });

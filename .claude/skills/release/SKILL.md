@@ -8,15 +8,22 @@ description: Ship a new version of Frog — bump the version, write the changelo
 Work through these in order. Stop and report if any check fails; do not tag a
 release with a red test.
 
+> **Most releases need none of this.** Merging to `main` keeps a release pull
+> request open, and merging that one tags the release, builds the image and
+> deploys it. This skill is for the parts a person has to do: deciding that a
+> release is a big one, and writing what people read.
+
 ## 1. Decide the version
 
-- Read `ROADMAP.md` for the current version and the next codename.
-- New features → minor bump (0.3.0 → 0.4.0). Fixes only → patch (0.4.0 → 0.4.1,
-  same codename as its minor).
-- Set it in **both** `backend/Cargo.toml` and `frontend/package.json`.
-- A minor bump also changes the codename beside the version on the About page
-  (`frontend/src/routes/about/+page.svelte`) **and** the codename the About
-  test looks for in `frontend/e2e/smoke.spec.ts`. Both went stale in 0.4.0.
+- `0.x` bumps the patch for everything, so a large release has to say so.
+  Put `Release-As: 0.5.0` in a commit footer on `main` and the next release
+  pull request becomes that version. `docs/CONTRIBUTING.md` has the detail.
+- Take the next codename from `ROADMAP.md`. It goes in the `RELEASE-NOTES.md`
+  heading, beside the version on the About page
+  (`frontend/src/routes/about/+page.svelte`) **and** in the About test in
+  `frontend/e2e/smoke.spec.ts`. All three have gone stale before.
+- Never edit `version.txt`, `Cargo.toml`, `package.json` or `CHANGELOG.md`
+  by hand. They are generated.
 
 ## 2. Write the changelog entry
 

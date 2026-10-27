@@ -9,39 +9,59 @@ people working on Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Ribbit —
+## Upcoming — Leapfrog —
+
+In progress.
+
+## [0.5.0] — Ribbit — 2026-10-27
+
+Frog is for more than one person now. Everyone gets their own library, and
+nobody else can see it.
+
+![Home in the Pond theme](docs/screenshots/home-desktop-pond.png)
 
 ### Highlights
 
+- **An account each.** Your library, ratings, episodes, diary, notes,
+  favourites, shelves, settings and notifications are yours. Nobody else on
+  the same Frog can see them or change them, and nothing is visible to anyone
+  without an account.
+- **Invitations.** There is no sign-up page. An administrator makes a link
+  that works once and expires; whoever opens it picks a name and a password.
+- **Your account, your devices.** Change your password, turn on two-factor
+  sign-in, see every device you are signed in on and sign out of any of them,
+  take a copy of everything you have, or delete your account for good.
+- **Profiles, if you want one.** Let others on your Frog see what you are
+  watching, your favourites and your totals. Off until you turn it on, and
+  never visible outside your Frog.
+- **Administration.** Invitations, who is here, roles, switching an account
+  off, the space Frog uses and when it was last backed up.
 - **Keep in step with AniList.** Link a public AniList list in Settings and
   new titles and progress come across whenever Frog opens. Your own ratings,
   pauses and drops stay as you left them.
 
+### Improvements
+
+- The top bar keeps search and your account in reach on every screen size.
+- New-episode alerts go out at the hour you chose, read in your own time zone.
+- Frog updates itself: new versions arrive on their own, usually within the
+  hour.
+
+### Fixes
+
+- Checking for updates and importing from AniList reach the internet again.
+- Invitation links open the page for joining, and Administration appears in
+  the menu for owners and administrators.
+- Each signed-in device has its own clearly named sign-out, so it is obvious
+  which one you are ending.
+
 ## [0.4.5] — Lily Pad — 2026-10-26
 
-<!-- Drafted from the commit messages so the release is not blocked.
-     Rewrite it in Frog's voice before merging: say what a person can now
-     do, not what changed in the code. -->
-
-### Changes
-
-- Work on the micro shape, not just A1
-- Work on the micro shape, not just A1
-- Build each architecture on its own runner
-- Build each architecture on its own runner
+Groundwork for running Frog on a server. Nothing changes on screen.
 
 ## [0.4.4] — Lily Pad — 2026-10-26
 
-<!-- Drafted from the commit messages so the release is not blocked.
-     Rewrite it in Frog's voice before merging: say what a person can now
-     do, not what changed in the code. -->
-
-### Changes
-
-- Let the bot draft the release notes
-- Publish the image when the release is tagged
-- Publish the image when the release is tagged
-- Write the 0.4.3 notes and lower-case the image name
+Groundwork for running Frog on a server. Nothing changes on screen.
 
 ## [0.4.3] — Lily Pad — 2026-10-26
 
@@ -282,6 +302,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[0.5.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.5.0
 [0.4.5]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.5
 [0.4.4]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.4
 [0.4.3]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.3

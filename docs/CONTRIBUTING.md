@@ -92,6 +92,52 @@ people editing a changelog is a merge conflict every time.
   So merging a pull request puts it on staging, and merging the release pull
   request puts it in front of people.
 
+### Cutting a big release
+
+While Frog is on `0.x`, every change bumps the patch — `0.4.5`, `0.4.6`, and
+so on — because `bump-patch-for-minor-pre-major` is on. That is right for most
+weeks and wrong when something large lands, and release-please cannot tell the
+difference on its own. You tell it.
+
+Put a `Release-As:` footer on any commit that reaches `main`:
+
+```
+feat(accounts): invitations, profiles and per-account settings
+
+Release-As: 0.5.0
+```
+
+The next release pull request will be that version, whatever the commits
+since would otherwise have produced. An empty commit works just as well if
+the work has already landed:
+
+```bash
+git commit --allow-empty -m "chore: release 0.5.0" -m "Release-As: 0.5.0"
+```
+
+**What a big release needs beyond the version**, none of which is automatic:
+
+1. **Write the notes yourself.** The bot drafts a section from commit
+   subjects so a release is never blocked, but a drafted section reads like a
+   list of commits, because it is one. Replace it in `RELEASE-NOTES.md` with
+   what a person can now do. The draft is marked with an HTML comment saying
+   so.
+2. **Take the next codename** from the list in `ROADMAP.md`, and put it in the
+   heading, on the About page and in the About test in `e2e/smoke.spec.ts`.
+3. **Read the README as a stranger.** A big release usually makes something in
+   it untrue. The accounts release made four things untrue.
+4. **Regenerate the screenshots** if any page in them changed:
+   `cd frontend && npm run screenshots` (needs the TMDB key, about 8 minutes).
+5. **Check the image was published.** Merging the release pull request tags
+   the version and builds it; the tag existing is not proof the image does:
+
+   ```bash
+   docker manifest inspect ghcr.io/frog-movie-tv/frog:<version> > /dev/null      && echo published || echo "not published"
+   ```
+
+6. **Check it arrived.** Production pulls within fifteen minutes. The About
+   page should show the new version.
+
 ## Migrations
 
 - One numbered or timestamped `.sql` file in `backend/migrations/`, embedded at
