@@ -1,9 +1,13 @@
 # Frog — notes for Claude
 
-Frog is a self-hosted, single-user film and TV tracker. One Rust binary serves
-the API and the built SvelteKit app; one SQLite file holds everything. The
-owner runs it on a Windows laptop and uses it from an Android phone over
-Tailscale.
+Frog is a self-hosted film and TV tracker for a handful of invited people.
+One Rust binary serves the API and the built SvelteKit app; one SQLite file
+holds everything.
+
+It runs as a public site on an Oracle Cloud free instance, behind Caddy with
+automatic HTTPS, and updates itself by pulling the newest release image.
+`docs/DEPLOY-ORACLE.md` is the whole story. It still runs on a laptop for
+development, which is what `scripts/dev.ps1` is for.
 
 **Start every session by reading [ROADMAP.md](ROADMAP.md)** — it says what is
 done, what is next, and what is known to be broken. Update it when you finish
@@ -14,7 +18,15 @@ something.
 - **Zero cost.** No paid APIs, no AI/LLM features, no services that need a card,
   no runtime CDNs (fonts and icons are bundled). TMDB's free key is the only
   credential. If something would cost money, say so and leave it out.
-- **Private, single user.** No sign-up, no public pages, no `user_id` columns.
+- **Invitation only.** Several accounts, no open sign-up: an administrator
+  makes a single-use link and that is the only way in. Nothing is visible to
+  anyone without an account.
+- **Every personal row names its owner.** Library, ratings, episodes, diary,
+  shelves, settings, sessions, two-factor and notifications all carry a
+  `user_id`; only titles, episodes, credits, the TMDB and image caches and the
+  push keys are shared. A query that reads or writes personal data without
+  naming whose it is fails `backend/tests/scoping.rs`, and that is a real
+  guard, not a style rule — it is what stops one account seeing another's.
 - **Never print or commit `TMDB_API_KEY`.** It lives in `.env`, which is
   gitignored.
 - **Product voice everywhere the user reads** — UI copy, changelog, README.
@@ -27,7 +39,8 @@ something.
 ```
 backend/            Rust: axum 0.8, sqlx 0.8 (SQLite), tokio
   src/routes/       one module per area; thin — parse, call store, serialise
-  src/store.rs      all reads/writes of the user's own data
+  src/store.rs      reads and writes of one account's own data
+  src/auth.rs       sessions, roles, the Auth and AdminAuth extractors
   src/tmdb/         TMDB client, cache, and the JSON → view mapping
   src/jobs/         background worker (sessions, cache pruning, show refresh)
   migrations/       numbered .sql files, embedded at compile time
@@ -37,8 +50,12 @@ frontend/           SvelteKit 3 + Svelte 5 runes, adapter-static SPA, Vite 8
   src/lib/import/       client-side parsers for other trackers' exports
   scripts/          icons, changelog → JSON, screenshots, audit, e2e server
   e2e/smoke.spec.ts Playwright, desktop + Pixel 7
-scripts/run-local.ps1   run without Docker
-docs/INSTALL.md     install, Tailscale, updating, backups
+scripts/dev.ps1, dev.sh   one command: build, seed two demo accounts, run
+scripts/seed-demo.mjs     the two demo accounts, for seeing isolation by eye
+deploy/             compose, Caddyfile, install/update/backup/restore scripts
+docs/INSTALL.md     install, updating, backups
+docs/CONTRIBUTING.md  how the two of us work on it
+docs/DEPLOY-ORACLE.md the live deployment, and the research behind it
 RELEASE-NOTES.md        source of truth for release notes (parsed into the app)
 ```
 
@@ -48,7 +65,8 @@ In Git Bash, put cargo on PATH first: `export PATH="$HOME/.cargo/bin:$PATH"`.
 
 | What | Command |
 | --- | --- |
-| Run it (port 8080, `data/frog.db`) | `.\scripts\run-local.ps1` (`-Rebuild` to force) |
+| Run it (port 8080, two demo accounts) | `.\scripts\dev.ps1` (`-Fresh` to start over) |
+| Run it without Docker, no seed | `.\scripts\run-local.ps1` (development only) |
 | Backend checks | `cd backend && cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo test` |
 | Frontend types | `cd frontend && npm run check` |
 | Frontend build | `cd frontend && npm run build` (also regenerates `static/changelog.json`) |
@@ -84,8 +102,14 @@ each with its own throwaway database.
   `frog.exe` and the build fails with "Access is denied".
 - **The Claude browser pane cannot register service workers.** It fails even
   for a one-line worker. Use `npm run audit`, which drives real Chromium.
-- **Offline mode needs HTTPS.** Over plain `http://<tailscale-ip>` the browser
-  refuses the worker; Tailscale Serve fixes it. About shows the status.
+- **Offline mode needs HTTPS.** A browser refuses to register the worker over
+  plain HTTP, so it works on the deployed site and on localhost, but not over
+  a bare IP. About shows the status.
+- **The deployed Content-Security-Policy has broken the site three times.**
+  It is sent by Caddy, so nothing local ever sees it: not a dev build, not the
+  audit, not Playwright. Anything the browser fetches from another origin, and
+  any inline script, has to be named in `deploy/caddy/Caddyfile` or it fails
+  only once it is live.
 
 ## Conventions
 
@@ -99,8 +123,9 @@ each with its own throwaway database.
 - Destructive actions use `toasts.undoable(…)`, not a confirm dialog.
 - Empty states use `Empty` with `art`, a short title and one clear action.
 - Every route sets `<svelte:head><title>Name · Frog</title></svelte:head>`.
-- New API routes go behind the `Auth` extractor and get added to the
-  auth-wall test in `e2e/smoke.spec.ts`.
+- New API routes go behind the `Auth` extractor — or `AdminAuth`, which
+  refuses anyone below administrator — and get added to the auth-wall test in
+  `e2e/smoke.spec.ts`.
 - Rails use fixed card widths; never `1fr` (one card would stretch to full width).
 
 ## Working together
