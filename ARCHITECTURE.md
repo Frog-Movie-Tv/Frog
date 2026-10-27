@@ -1,4 +1,4 @@
-# Frog — architecture and phase plan
+# Frog — architecture
 
 A self-hosted personal cinema: one Rust binary, one SQLite file, one installable
 web app. Everything in it is free to build, run and host.
@@ -9,19 +9,22 @@ web app. Everything in it is free to build, run and host.
 
 | Question | Answer | Why |
 | --- | --- | --- |
-| Users | Single user | You said just you. No `user_id` column anywhere, no joins to filter by owner, no sharing UI. Roughly a third less schema and code than the multi-user version. |
-| Public profile | Not built | You said keep it private. Every route except `/api/health` and the three auth endpoints sits behind a session. |
-| Imports | IMDb CSV + AniList | Phase 2. Letterboxd and Trakt are not built; the importer is written around a common intermediate shape so adding them later is a parser, not a redesign. |
-| Scrobbling | Jellyfin webhook + generic endpoint | Phase 4. **Plex webhooks require Plex Pass, which costs money**, so Plex is out; Tautulli's webhook is free and hits the same endpoint if you ever want it. |
-| Hosting | Your laptop, Docker + Tailscale | Verified October 2026: no mainstream container host still has an always-on free tier that takes no card. Details in [docs/INSTALL.md](docs/INSTALL.md). |
+| Users | Several, invitation only | Every personal table carries a `user_id` with a foreign key, and `backend/tests/scoping.rs` fails the build if a query forgets it. Isolation is enforced per request, not hidden in the interface. |
+| Profiles | Opt in, instance only | Off until an account turns it on, and visible only to other accounts on the same instance. Every route except `/healthz` and the auth endpoints sits behind a session. |
+| Imports | Letterboxd, Trakt, IMDb, TV Time, MyAnimeList, AniList | All of them reduce to one intermediate shape, so a new source is a parser rather than a redesign. AniList also syncs on its own. |
+| Scrobbling | Not built | It only sees what plays through a media server the owners do not use. Anime arrives through the AniList sync; the rest is ticked by hand, on purpose. Plex is out regardless: its webhooks need Plex Pass. |
+| Hosting | Oracle Cloud Always Free, Docker, Caddy | A public site on a free instance, HTTPS issued automatically, updating itself from the newest release image. See [docs/DEPLOY-ORACLE.md](docs/DEPLOY-ORACLE.md). It still runs on a laptop for development. |
 
 ---
 
 ## Shape of the system
 
 ```
-                   Android phone (installed PWA)
-                              │  Tailscale (WireGuard, private)
+              Any browser, or the installed PWA
+                              │  HTTPS
+                              ▼
+                    Caddy  —  TLS, security headers
+                              │
                               ▼
 ┌──────────────────────────────────────────────────────────┐
 │  frog  —  one process, one container                     │
@@ -37,7 +40,7 @@ web app. Everything in it is free to build, run and host.
 │   └── refresh airing shows every 6h                      │
 │                                                          │
 │  SQLite (WAL)  ──  /data/frog.db                         │
-│   user · library · episodes · watches · caches           │
+│   accounts · library · episodes · watches · caches       │
 └──────────────────────────────────────────────────────────┘
                               │  HTTPS, cached aggressively
                               ▼
@@ -47,7 +50,7 @@ web app. Everything in it is free to build, run and host.
 ### Why it is one process
 
 A separate job runner would mean a second container, a queue and a way to talk
-between them. For a single-user tracker the whole job list is "re-check a few
+between them. For a tracker this size the whole job list is "re-check a few
 hundred shows every six hours", which is a `tokio::spawn` and a sleep. The
 worker is a module (`jobs/`), so if phase 4 ever outgrows that, it moves out
 without touching the routes.
@@ -80,8 +83,8 @@ library" becomes "copy one file".
 
 A session token is 32 random bytes. Only its SHA-256 is stored, so a stolen
 database file does not hand over live sessions. The cookie is `HttpOnly`,
-`SameSite=Lax`, and `Secure` when `FROG_SECURE_COOKIES=1` (set that when
-Tailscale Serve terminates TLS for you).
+`SameSite=Lax`, and `Secure` when `FROG_SECURE_COOKIES=1` (set that whenever
+something in front terminates TLS, which Caddy does on the deployed site).
 
 First run creates the account, either from `FROG_ADMIN_USERNAME` /
 `FROG_ADMIN_PASSWORD` at boot or from the setup screen. The setup endpoint
@@ -171,49 +174,29 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
 
 ---
 
-## Phases
+## How it was built
 
-### Phase 1 — shipped
+Four rounds, all shipped. What each one added is in
+[RELEASE-NOTES.md](RELEASE-NOTES.md); what is left is in
+[ROADMAP.md](ROADMAP.md).
 
-Auth and first-run setup · TMDB search and trending · add and track titles
-(status, rating, favourite, notes) · per-episode checkmarks, ratings and notes
-· mark a whole season · automatic status transitions · library poster wall with
-filters, sorts, genre and text search · title pages with poster-extracted
-colour, logo art hero, cast, crew, seasons, episode rating heatmap, trailers,
-franchise order, Belgian watch providers, recommendations · person pages with
-filmography marked by what you have seen · basic stats · installable PWA with
-offline shell · one Docker image · CI · 22 Rust tests, 18 Playwright runs.
-
-### Phase 2 — next
-
-Cinematic home (backdrop + logo hero, "up next" with the exact episode,
-reorderable rows) · calendar of upcoming episodes · Web Push notifications
-(VAPID, free) · full stats page · diary timeline · rewatch tracking · IMDb CSV
-import · AniList sync · full JSON export and import · image cache eviction.
-
-### Phase 3
-
-Theme editor with live preview and shareable theme JSON · per-section layouts
-and a home row builder · smart shelves (rule based) and manual drag-and-drop
-shelves · command palette and keyboard shortcuts · fuller offline support with
-a queue for actions taken while disconnected · preferences moved from
-`localStorage` into `app_setting` so a new device inherits them.
-
-### Phase 4
-
-Recommendations weighted by your ratings, built from TMDB's own
-recommendation and similar endpoints (no AI, no model, no cost) · Jellyfin
-webhook scrobbling plus a generic endpoint · Wrapped-style year in review
-rendered to a shareable image with canvas · optional public profile, only if
-you change your mind.
+| | |
+| --- | --- |
+| **0.1 Spawn** | Accounts, TMDB search, tracking, episodes, the library wall, title and person pages, the PWA, one Docker image, CI. |
+| **0.2 Ripple** | The mascot and the Pond theme, Home split from Library, the command palette, the theme editor, server-side settings. |
+| **0.3 Tadpole** | Imports from four trackers, export, the calendar, the diary, About. |
+| **0.4 Lily Pad** | Full stats and the year in review, Web Push, shelves, recommendations, anime imports, two-factor. |
+| **0.5 Ribbit** | Several accounts with enforced isolation, invitations, profiles, administration, AniList sync — and the whole thing deployed. |
 
 ---
 
 ## What is deliberately not here
 
-- **No AI or LLM anywhere.** Recommendations in phase 4 are weighted sums over
-  TMDB's own graph.
-- **No Plex webhooks.** They need Plex Pass. Tautulli is the free path.
+- **No AI or LLM anywhere.** Recommendations are weighted sums over TMDB's
+  own graph.
+- **No scrobbling at all.** It only sees what plays through a media server;
+  anime arrives through the AniList sync and the rest is ticked by hand.
 - **No paid APIs, analytics, error reporting or fonts.** The font stack is the
   system's. TMDB's free key is the only credential.
-- **No cloud host by default.** See [docs/INSTALL.md](docs/INSTALL.md).
+- **No paid host.** It runs on a free Oracle instance, and on your own
+  machine just as well. See [docs/DEPLOY-ORACLE.md](docs/DEPLOY-ORACLE.md).

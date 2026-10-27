@@ -2,9 +2,19 @@
 
 [← back to the README](../README.md)
 
-Target setup: Frog runs in Docker on your laptop, and your phone reaches it
-over Tailscale. Nothing is exposed to the internet, nothing costs money, and no
-credit card is involved anywhere.
+**You may not need this page.** If somebody has already set Frog up and sent
+you an invitation link, open it, pick a name and a password, and you are done.
+There is nothing to install: add it to your home screen and it behaves like any
+other app.
+
+This page is for running your own Frog. There are two ways:
+
+| | |
+| --- | --- |
+| **On a server** | A public site anyone you invite can open, with HTTPS and updates that install themselves. [docs/DEPLOY-ORACLE.md](DEPLOY-ORACLE.md) does this on a free Oracle instance, click by click. |
+| **On your own machine** | Docker on a laptop or a home server, reached over your own network or privately over Tailscale. That is what the rest of this page covers. |
+
+Either way it costs nothing to run. A free TMDB key is the only credential.
 
 ---
 
@@ -113,7 +123,11 @@ that gets committed.
 
 ---
 
-## 4. Reach it from your phone with Tailscale
+## 4. Reach it from your phone, privately
+
+Skip this if Frog is on a server with a hostname — it is already reachable, and
+[the deployment guide](DEPLOY-ORACLE.md) covers that. This is for a Frog on
+your own machine that you want on your phone without opening a port.
 
 Tailscale's Personal plan is free and needs no card. It puts your laptop and
 your phone on the same private WireGuard network, so the phone can reach Frog
@@ -190,6 +204,9 @@ The laptop still has to be awake. On Windows, set *Power & battery → Screen an
 sleep → When plugged in, put my device to sleep* to **Never** if you want the
 phone to reach it at any hour.
 
+This is the part a small server solves and a laptop cannot: it is awake when
+you are not, so new episodes are picked up and notifications arrive on time.
+
 ---
 
 ## Updating
@@ -219,33 +236,29 @@ Your library is untouched either way: it lives in `data/frog.db` or in the
 
 ### Letting it update itself
 
-[Watchtower](https://containrrr.dev/watchtower/) watches a running container and
-replaces it when a new image appears. It is free and it is one more container.
-
-It only helps if Frog is pulled from a registry rather than built from this
-folder, so first publish the image somewhere free — the GitHub Container
-Registry is free for public images — then point `docker-compose.yml` at it
-instead of `build: .`:
+Point `docker-compose.yml` at the published image rather than building from
+this folder, and a release is a pull away:
 
 ```yaml
 services:
   frog:
     image: ghcr.io/frog-movie-tv/frog:latest
     # ...everything else stays the same
-
-  watchtower:
-    image: containrrr/watchtower
-    restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: --cleanup --interval 86400 frog
 ```
 
-That checks once a day and restarts Frog when there is something newer.
+```bash
+docker compose pull && docker compose up -d
+```
 
-> Honestly: for a single-user app on your own laptop, `git pull` once in a
-> while is less machinery and tells you what changed. Watchtower earns its keep
-> when you have stopped thinking about the thing at all.
+For a machine you are not sitting at, the deployment in
+[docs/DEPLOY-ORACLE.md](DEPLOY-ORACLE.md) does this on a timer and does it
+properly: it backs up first, waits for `/healthz`, and rolls back to the
+previous image if the new one does not answer. `deploy/update.sh` is the whole
+of it and works on any Docker host, not only Oracle.
+
+**Not Watchtower.** It is unmaintained, and handing a container the Docker
+socket hands it the machine. A timer running one script is less to trust and
+easier to read.
 
 ## Backups
 
@@ -305,9 +318,17 @@ against a throwaway database with no TMDB key, so it never touches the network.
 
 ## About cloud hosting
 
-You asked me to check before recommending a host. I did, in October 2026, and
-the honest answer is that self-hosting is the only option that meets your rule
-cleanly:
+Checked in October 2026, and revisited when Frog was actually deployed. The
+conclusion changed: **Oracle Cloud Always Free is the one that works**, and it
+is where Frog runs. A card is asked for to verify identity and is not charged,
+which is the compromise worth making; nothing else came close.
+
+[docs/DEPLOY-ORACLE.md](DEPLOY-ORACLE.md) has the whole thing, including the
+traps — the instance shape that is actually available, the firewall rule that
+leaves the site dark even when the cloud settings look right, and the keepalive
+that stops an idle instance being reclaimed.
+
+The others, for the record:
 
 - **Fly.io** — the free tier is gone for new signups. A short trial, then a
   card is required before any usage.
@@ -318,13 +339,12 @@ cleanly:
   disagree about whether a card is needed for Docker deployments.
 - **Railway** — no longer a usable free tier; reports conflict, and it moved
   away from prepaid credit in early 2026.
-- **Google Cloud Run / Oracle Cloud** — genuinely generous free usage, but both
-  require a card on file.
+- **Google Cloud Run** — generous free usage, but scales to zero, which is the
+  wrong shape here: the background worker has to run on a schedule to notice
+  new episodes, and it cannot while asleep.
 
-A sleeping container is also the wrong shape for this app: the background
-worker needs to run on a schedule to pick up new episodes, and it cannot do
-that while scaled to zero. Your laptop plus Tailscale costs nothing, keeps your
-watch history on hardware you own, and the worker actually runs.
+A sleeping container is the thing to avoid, whoever hosts it. Oracle's free
+instance is always on, so the worker actually runs.
 
 Sources: [Fly.io vs Railway vs Render 2026](https://speedtesthq.com/compare/fly-io-vs-railway-vs-render),
 [Render vs Railway vs Fly.io pricing compared](https://hostim.dev/blog/render-vs-railway-vs-fly-pricing/),
