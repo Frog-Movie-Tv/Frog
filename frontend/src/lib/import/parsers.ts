@@ -1,5 +1,6 @@
 import { gunzipSync, strFromU8, unzipSync } from 'fflate';
 import type { Status } from '#lib/types';
+import { netflixRows, readNetflix, type NetflixExport, type NetflixMeta } from './netflix';
 
 /**
  * Readers for the exports other trackers hand out.
@@ -40,6 +41,16 @@ export interface Incoming {
 	warning?: string;
 	/** A neutral remark shown under the row, such as how a season was mapped. */
 	info?: string;
+	/** With no `kind`: which kind to take when the search finds both. */
+	prefer?: 'movie' | 'tv';
+	/** The source's name for a season it does not number, to tell same-named shows apart. */
+	season_name?: string | null;
+	/** Where a Netflix row came from, for the step after matching. */
+	netflix?: NetflixMeta;
+	/** Episode names to find on TMDB when the season is not known for sure. */
+	episodes?: string[];
+	/** Exactly these episodes, once found: ticked instead of `season` and `progress`. */
+	watches?: { season: number; episode: number; watched_at: string | null }[];
 }
 
 export interface SourceFormat {
@@ -78,6 +89,12 @@ export const SOURCES: SourceFormat[] = [
 		id: 'tvtime',
 		label: 'TV Time',
 		hint: 'The CSV files from a GDPR data request.',
+		accept: '.csv,.zip'
+	},
+	{
+		id: 'netflix',
+		label: 'Netflix',
+		hint: 'Viewing activity from your Netflix profile, or the ZIP from a data request.',
 		accept: '.csv,.zip'
 	},
 	{
@@ -585,8 +602,27 @@ export async function readFile(format: string, file: File): Promise<ParsedFile[]
 	return [{ name: file.name, rows: readOne(format, file.name, text) }];
 }
 
+/**
+ * A Netflix file, read but not yet grouped: the personal-data ZIP can hold
+ * several profiles, and the person chooses whose plays to import first.
+ */
+export async function readNetflixFile(file: File): Promise<NetflixExport> {
+	if (!file.name.toLowerCase().endsWith('.zip')) return readNetflix(await file.text());
+
+	const entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
+	// CONTENT_INTERACTION/ViewingActivity.csv in a data request; a zipped
+	// NetflixViewingHistory.csv works too.
+	const path =
+		Object.keys(entries).find((p) => /(^|\/)viewingactivity\.csv$/i.test(p)) ??
+		Object.keys(entries).find((p) => /viewinghistory[^/]*\.csv$/i.test(p));
+	if (!path) throw new Error('No viewing activity inside that archive.');
+	return readNetflix(strFromU8(entries[path]));
+}
+
 function readOne(format: string, name: string, text: string): Incoming[] {
 	switch (format) {
+		case 'netflix':
+			return netflixRows(readNetflix(text)).rows;
 		case 'letterboxd':
 			return readLetterboxdCsv(name, text);
 		case 'imdb':

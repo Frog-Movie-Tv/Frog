@@ -22,7 +22,8 @@ export function applyItem(row: Foldable) {
 		season: chosen.kind === 'tv' ? (row.incoming.season ?? null) : null,
 		progress: row.incoming.progress ?? null,
 		episode_offset: row.incoming.episode_offset ?? 0,
-		episode_total: row.incoming.episode_total ?? null
+		episode_total: row.incoming.episode_total ?? null,
+		episodes: chosen.kind === 'tv' ? (row.incoming.watches ?? []) : []
 	};
 }
 

@@ -13,6 +13,12 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+- **Netflix import.** Bring in your viewing activity from Netflix, or the ZIP
+  from a data request with a profile of your choice. Every show lands on the
+  right season with the episodes you saw, found by their names and kept on
+  the day you watched them, films keep their day too, and anything Netflix
+  leaves unclear is set aside for you to check.
+
 ## [0.7.0] — Treefrog — 2026-10-28
 
 One search for everything, AniList that looks after itself, and trailers that

@@ -2,6 +2,7 @@
 	import { img } from '#lib/api';
 	import Icon from './Icon.svelte';
 	import { formatScore } from '#lib/format';
+	import { morph as opened } from '#lib/morph.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import type { Kind, Status } from '#lib/types';
 	import { STATUS_LABEL } from '#lib/types';
@@ -48,13 +49,21 @@
 		rating === null ? null : formatScore(rating, settings.current.scoreFormat)
 	);
 	const show = $derived(settings.current);
+	const key = $derived(`${kind}-${tmdbId}`);
+	const named = $derived(morph && opened.key === key);
 </script>
 
 <a
 	class="poster"
 	href="/title/{kind}/{tmdbId}"
 	title={name}
-	style:view-transition-name={morph ? `poster-${kind}-${tmdbId}` : undefined}
+	style:view-transition-name={named ? `poster-${key}` : undefined}
+	onclick={(e) => {
+		if (!morph) return;
+		opened.key = key;
+		// Named now, before the transition takes its picture of this page.
+		e.currentTarget.style.viewTransitionName = `poster-${key}`;
+	}}
 >
 	<div class="art">
 		{#if src}
@@ -178,8 +187,9 @@
 		font-weight: 700;
 		letter-spacing: 0.03em;
 		text-transform: uppercase;
-		backdrop-filter: blur(8px);
-		background: rgba(10, 10, 14, 0.66);
+		/* No backdrop blur: on a library of hundreds it halved the frame rate
+		   while scrolling. A darker fill keeps the text as legible. */
+		background: rgba(10, 10, 14, 0.78);
 		color: #fff;
 		border: 1px solid rgba(255, 255, 255, 0.14);
 	}
@@ -191,7 +201,7 @@
 	}
 
 	.badge.kind {
-		background: rgba(10, 10, 14, 0.72);
+		background: rgba(10, 10, 14, 0.8);
 		font-weight: 650;
 	}
 
@@ -208,8 +218,7 @@
 		border-radius: var(--radius-pill);
 		font-size: 0.72rem;
 		font-weight: 700;
-		background: rgba(10, 10, 14, 0.72);
-		backdrop-filter: blur(8px);
+		background: rgba(10, 10, 14, 0.8);
 		border: 1px solid rgba(255, 255, 255, 0.14);
 		color: #fff;
 	}

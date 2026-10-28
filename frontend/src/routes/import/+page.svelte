@@ -3,13 +3,21 @@
 	import { api, img } from '#lib/api';
 	import Icon from '#lib/components/Icon.svelte';
 	import Select from '#lib/components/Select.svelte';
-	import { dedupe, readFile, SOURCES, type Incoming, type ParsedFile } from '#lib/import/parsers';
+	import { CHOOSE, netflixRows, settleNetflix, type NetflixExport } from '#lib/import/netflix';
+	import {
+		dedupe,
+		readFile,
+		readNetflixFile,
+		SOURCES,
+		type Incoming,
+		type ParsedFile
+	} from '#lib/import/parsers';
 	import { applyItem, bySeason, foldSeasons } from '#lib/import/rows';
 	import { toasts } from '#lib/toast.svelte';
 	import type { ImportSummary, MatchResult, SearchItem, Status } from '#lib/types';
 	import { STATUS_LABEL, STATUSES } from '#lib/types';
 
-	type Step = 'source' | 'review' | 'done';
+	type Step = 'source' | 'profile' | 'review' | 'done';
 
 	interface Row {
 		incoming: Incoming;
@@ -26,7 +34,10 @@
 	let onConflict = $state<'skip' | 'overwrite'>('skip');
 	let summary = $state<ImportSummary | null>(null);
 	let filesRead = $state<string[]>([]);
+	let notes = $state<string[]>([]);
 	let onlyProblems = $state(false);
+	/** A Netflix export with several profiles, waiting for one to be chosen. */
+	let netflix = $state<{ data: NetflixExport; names: string[] } | null>(null);
 
 	const source = $derived(SOURCES.find((s) => s.id === format) ?? SOURCES[0]);
 	const included = $derived(rows.filter((r) => r.include && r.chosen));
@@ -35,6 +46,7 @@
 
 	async function onFiles(list: FileList | null) {
 		if (!list?.length) return;
+		if (format === 'netflix') return readNetflixFiles(Array.from(list));
 		await load(async () => {
 			const chunks: ParsedFile[] = [];
 			for (const file of Array.from(list)) chunks.push(...(await readFile(format, file)));
@@ -42,10 +54,47 @@
 		}, 'Reading the file');
 	}
 
-	async function load(read: () => Promise<ParsedFile[]>, label: string) {
+	async function readNetflixFiles(files: File[]) {
+		busy = true;
+		progress = { done: 0, total: 0, label: 'Reading the file' };
+		try {
+			const exports = await Promise.all(files.map(readNetflixFile));
+			const data: NetflixExport = {
+				plays: exports.flatMap((e) => e.plays),
+				profiles: [...new Set(exports.flatMap((e) => e.profiles))].sort(),
+				ignored: exports.reduce((n, e) => n + e.ignored, 0),
+				undated: exports.reduce((n, e) => n + e.undated, 0),
+				dateNote: exports.find((e) => e.dateNote)?.dateNote
+			};
+			const names = files.map((f) => f.name);
+			if (data.profiles.length > 1) {
+				netflix = { data, names };
+				step = 'profile';
+				return;
+			}
+			await useNetflix(data, null, names);
+		} catch (e) {
+			toasts.error(e);
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function useNetflix(data: NetflixExport, profile: string | null, names: string[]) {
+		netflix = null;
+		const result = netflixRows(data, profile);
+		await load(
+			async () => names.map((name, i) => ({ name, rows: i === 0 ? result.rows : [] })),
+			'Reading the file',
+			result.notes
+		);
+	}
+
+	async function load(read: () => Promise<ParsedFile[]>, label: string, extra: string[] = []) {
 		busy = true;
 		progress = { done: 0, total: 0, label };
 		filesRead = [];
+		notes = extra;
 
 		try {
 			const parsed: Incoming[] = [];
@@ -54,7 +103,8 @@
 				parsed.push(...chunk.rows);
 			}
 
-			const unique = dedupe(parsed);
+			// Netflix rows arrive grouped already, one per show and season.
+			const unique = format === 'netflix' ? parsed : dedupe(parsed);
 			if (!unique.length) {
 				toasts.push('Nothing to import in that file', 'error');
 				return;
@@ -94,7 +144,8 @@
 			progress = { ...progress, done: Math.min(i + size, rows.length) };
 		}
 
-		foldAll();
+		if (rows.some((r) => r.incoming.netflix)) rows = settleNetflix(rows);
+		else foldAll();
 		busy = false;
 	}
 
@@ -151,7 +202,15 @@
 	function setSeason(row: Row, value: string) {
 		const n = Number(value);
 		row.incoming.season = Number.isInteger(n) && n >= 0 ? n : null;
-		if (row.incoming.warning === 'Choose which season this is' && row.incoming.season !== null) {
+		// A season chosen by hand wins over the episodes found by name.
+		row.incoming.watches = undefined;
+		row.incoming.episode_offset = 0;
+		const warning = row.incoming.warning ?? '';
+		// Choosing the season settles any doubt about which one it was.
+		const aboutSeason =
+			warning === CHOOSE ||
+			(row.incoming.netflix && /^Netflix (gives no season|calls this)/.test(warning));
+		if (aboutSeason && row.incoming.season !== null) {
 			row.incoming.warning = undefined;
 		}
 		rows = [...rows];
@@ -166,6 +225,8 @@
 		rows = [];
 		summary = null;
 		filesRead = [];
+		notes = [];
+		netflix = null;
 		step = 'source';
 	}
 
@@ -229,6 +290,24 @@
 				</a>
 			</div>
 		</div>
+	{:else if step === 'profile' && netflix}
+		<h2 class="pick-title">Whose viewing activity?</h2>
+		<div class="sources">
+			{#each netflix.data.profiles as name (name)}
+				<button
+					class="source"
+					onclick={() => netflix && useNetflix(netflix.data, name, netflix.names)}
+				>
+					<strong>{name}</strong>
+					<span class="faint">
+						{netflix.data.plays.filter((p) => p.profile === name).length} plays
+					</span>
+				</button>
+			{/each}
+		</div>
+		<div class="footer">
+			<button class="btn ghost" onclick={restart}>Start over</button>
+		</div>
 	{:else if step === 'review'}
 		{#if busy}
 			<div class="progress card">
@@ -240,6 +319,9 @@
 		{#if filesRead.length}
 			<p class="faint note">Read {filesRead.join(', ')}</p>
 		{/if}
+		{#each notes as line (line)}
+			<p class="faint note">{line}</p>
+		{/each}
 
 		<div class="toolbar">
 			<div class="counts">
@@ -335,7 +417,7 @@
 					</div>
 
 					<div class="row-controls">
-						{#if row.chosen?.kind === 'tv' && row.incoming.anime}
+						{#if row.chosen?.kind === 'tv' && (row.incoming.anime || row.incoming.netflix)}
 							<label class="season" title="TMDB season">
 								<span>S</span>
 								<input
@@ -486,6 +568,10 @@
 
 	.season input::-webkit-inner-spin-button {
 		display: none;
+	}
+
+	.pick-title {
+		margin-bottom: 14px;
 	}
 
 	.drop:hover {

@@ -8,6 +8,7 @@
     "build": "node scripts/changelog.mjs && vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "node --import ./tests/register.mjs --test \"tests/**/*.test.mjs\"",
     "test:e2e": "playwright test",
     "icons": "node scripts/make-icons.mjs",
     "changelog": "node scripts/changelog.mjs",

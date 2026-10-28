@@ -497,6 +497,95 @@ pub async fn build_item(
     })
 }
 
+/// A library entry with the title it belongs to, for loading them all at once.
+#[derive(FromRow)]
+struct EntryOfTitle {
+    title_id: i64,
+    #[sqlx(flatten)]
+    entry: LibraryEntry,
+}
+
+/// `build_item` for a whole list, in four queries instead of three per title.
+///
+/// A library of six hundred titles was eighteen hundred queries and over a
+/// second before the page could draw. The numbers are the same as
+/// `build_item`'s: specials do not count, and the episode list is shared
+/// while the watches are this account's.
+pub async fn build_items(
+    pool: &SqlitePool,
+    user_id: i64,
+    titles: Vec<TitleRow>,
+) -> AppResult<Vec<LibraryItem>> {
+    use std::collections::HashMap;
+
+    let entries: HashMap<i64, LibraryEntry> = sqlx::query_as::<_, EntryOfTitle>(
+        "SELECT title_id, status, rating, favourite, notes, started_at, finished_at,
+                rewatch_count, added_at, updated_at, notify
+           FROM library_entry WHERE user_id = ?",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(|r| (r.title_id, r.entry))
+    .collect();
+
+    let watched: HashMap<i64, i64> = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT e.title_id, COUNT(DISTINCT e.id)
+           FROM episode e
+           JOIN watch_event w ON w.episode_id = e.id AND w.user_id = ?
+          WHERE e.season_number > 0
+          GROUP BY e.title_id",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .collect();
+
+    let totals: HashMap<i64, i64> = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT e.title_id, COUNT(*)
+           FROM episode e
+          WHERE e.season_number > 0
+            AND e.title_id IN (SELECT title_id FROM library_entry WHERE user_id = ?)
+          GROUP BY e.title_id",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .collect();
+
+    let last: HashMap<i64, Option<String>> = sqlx::query_as::<_, (i64, Option<String>)>(
+        "SELECT title_id, MAX(watched_at) FROM watch_event WHERE user_id = ? GROUP BY title_id",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .collect();
+
+    Ok(titles
+        .into_iter()
+        .map(|title| {
+            let total = totals.get(&title.id).copied().unwrap_or(0);
+            LibraryItem {
+                genres: parse_genres(&title.genres_json),
+                accent: parse_accent(title.accent_json.as_deref()),
+                entry: entries.get(&title.id).cloned(),
+                watched_episodes: watched.get(&title.id).copied().unwrap_or(0),
+                total_episodes: if total > 0 {
+                    total
+                } else {
+                    title.episode_count.unwrap_or(0)
+                },
+                last_watched_at: last.get(&title.id).cloned().flatten(),
+                title,
+            }
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

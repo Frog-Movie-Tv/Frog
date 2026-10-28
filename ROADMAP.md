@@ -39,7 +39,19 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 6. **The screenshots, the rest.** There is still no shelves shot.
 7. **The Projects board.** Backlog / In progress / Review / Done. Needs
    `gh auth refresh -s project` from an owner before it can be created.
-8. **Smaller things.** Customisable keyboard shortcuts, renaming and
+8. **Netflix: real dates on every episode.** Episodes TMDB finds by name
+   are ticked exactly, on the day Netflix gives. Seasons Netflix numbers
+   itself are not looked up (that would mean reading every season of every
+   show), so their episodes are still the first N, undated, and such a show
+   reads "last watched today". Looking those up too, in the background after
+   the import, would date everything. Films keep only their latest date;
+   earlier watches of the same film are a rewatch flag, not entries.
+9. **Netflix: untested shapes.** The personal-data ZIP
+   (`CONTENT_INTERACTION/ViewingActivity.csv`) is read from its documented
+   columns but has never been tried on a real one. Netflix's "Part N"
+   seasons are placed by their episode names; parts whose episodes are only
+   called "Episode 3" (Money Heist Part 1) still wait for a person.
+10. **Smaller things.** Customisable keyboard shortcuts, renaming and
    recolouring statuses, muted trailer autoplay, per-shelf layout defaults.
 
 ## Known issues
@@ -71,6 +83,10 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   Add another file. New ones get timestamped names, **digits only** before the
   first `_` (`202610271200_anilist.sql`): sqlx reads that part as a number and
   a `T` in it fails the build.
+  A new migration file alone does not rebuild the binary (there is no
+  `build.rs` watching `migrations/`): touch `backend/src/db.rs` before a
+  local build, or the server starts without it. CI builds clean, so it only
+  bites locally.
   `db::heal_line_endings` forgives a checksum that differs only in line
   endings, which is what lets a database move between a Windows checkout and
   the server.
@@ -105,6 +121,22 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   from its snapshot changed and wins. Lists are re-read every 5 minutes. A
   Frog title never on AniList is not added there, and removing one in Frog
   never removes it on AniList — both on purpose.
+- **Netflix import** (`frontend/src/lib/import/netflix.ts`) groups plays into
+  one row per show and season before matching, then `settleNetflix` finishes
+  them with TMDB's answer: titles sent one by one fold back into their show,
+  named seasons ("STONE OCEAN", "Egghead Arc ①") are placed only when a TMDB
+  season has that name, and a show is completed only when every season was
+  seen to the end. Shows are split by season marker first, then by where
+  titles branch across the whole file, never by "the first colon". When a
+  season is in doubt the server looks the episode names up across the
+  show's seasons (`place_episodes` in `transfer.rs`); a name placed there
+  settles the season, the exact episode and its date, and proves the match.
+  `npm test` runs it against `tests/fixtures/netflix-viewing-history.csv`,
+  real titles with made-up dates; `node --test` reads the TypeScript directly
+  through `tests/ts-paths.mjs`.
+- **Imported shows get no title-level diary entry.** `apply` only writes one
+  for films; a show's watches are its episodes, and a title-level watch
+  would count the show as a film in Stats.
 - **Stats count only titles in the library.** Watches of removed titles stay
   in the database (the diary keeps them) but leave every total.
 - **Stats credits** live in `title_person`, filled by `store::ensure_title`
