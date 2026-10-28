@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use crate::auth::Auth;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
-use crate::store::{self, LibraryItem, LibraryPatch, TitleRow};
+use crate::store::{self, LibraryPatch, TitleRow};
 
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
@@ -105,16 +105,14 @@ pub async fn list(
         let like = format!("%{term}%");
         query = query.bind(like.clone()).bind(like);
     }
+    // The whole library unless asked for less: a Netflix import alone brings
+    // six hundred titles, and the page has no "load more".
     query = query
-        .bind(q.limit.unwrap_or(500).clamp(1, 2000))
+        .bind(q.limit.unwrap_or(10_000).clamp(1, 10_000))
         .bind(q.offset.unwrap_or(0).max(0));
 
     let rows = query.fetch_all(&state.pool).await?;
-
-    let mut items: Vec<LibraryItem> = Vec::with_capacity(rows.len());
-    for row in rows {
-        items.push(store::build_item(&state.pool, auth.user_id(), row).await?);
-    }
+    let items = store::build_items(&state.pool, auth.user_id(), rows).await?;
 
     Ok(Json(json!({ "items": items })))
 }
