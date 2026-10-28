@@ -25,6 +25,7 @@ Four new mascots, and a tidier profile and Stats page.
 ### Fixes
 
 - Your profile picture sits in front of your banner.
+- A sign-in that doesn't match says so in plain words.
 
 ## [0.6.0] — Leapfrog — 2026-10-27
 
