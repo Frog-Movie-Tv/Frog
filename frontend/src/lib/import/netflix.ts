@@ -56,6 +56,10 @@ export interface NetflixMeta {
 	loose?: boolean;
 	/** Watched with no episode name at all (a film, or a show's own name). */
 	single?: boolean;
+	/** The last day each of the row's `episodes` was watched, in the same order. */
+	days?: string[];
+	/** Netflix's "Part 2" as a number, the season to fall back on. */
+	part?: number;
 }
 
 const DAY_MS = 86_400_000;
@@ -367,6 +371,8 @@ interface Group {
 	seasonName: string | null;
 	/** Distinct episode name → full Netflix titles. */
 	episodes: Map<string, string[]>;
+	/** The same keys → the episode name as Netflix writes it. */
+	names: Map<string, string>;
 	known: boolean;
 }
 
@@ -407,13 +413,26 @@ export function netflixRows(
 		].join('\u0000');
 		let g = groups.get(key);
 		if (!g)
-			groups.set(key, (g = { show, kind, season, seasonName: name, episodes: new Map(), known }));
+			groups.set(
+				key,
+				(g = {
+					show,
+					kind,
+					season,
+					seasonName: name,
+					episodes: new Map(),
+					names: new Map(),
+					known
+				})
+			);
 		return g;
 	};
 	const add = (g: Group, episode: string, title: string) => {
-		const list = g.episodes.get(episode.toLowerCase()) ?? [];
+		const key = episode.toLowerCase();
+		const list = g.episodes.get(key) ?? [];
 		list.push(title);
-		g.episodes.set(episode.toLowerCase(), list);
+		g.episodes.set(key, list);
+		if (!g.names.has(key)) g.names.set(key, episode);
 	};
 
 	// 1. Titles that name their season. These also tell us which show names
@@ -549,7 +568,7 @@ export function netflixRows(
 			!numbered &&
 			!episodeNames.some((e) => CHAPTER.test(e))
 		) {
-			for (const same of g.episodes.values()) rows.push(looseRow(same[0], same, true));
+			for (const [key, same] of g.episodes) rows.push(looseRow(same[0], same, g.names.get(key)!));
 			continue;
 		}
 
@@ -558,13 +577,16 @@ export function netflixRows(
 		const { best } = latest(titles);
 		row.kind = 'tv';
 		row.year = year;
-		row.season = g.season;
+		// A Netflix "Part" is not reliably a TMDB season (KENGAN ASHURA's two
+		// parts are one season): sent without one, so the episodes decide.
+		row.season = g.kind === 'part' ? null : g.season;
 		row.progress = g.episodes.size;
 		row.watched_at = best ? iso(best) : null;
 		row.status = (showLatest.get(showName.toLowerCase()) ?? best) < idle ? 'paused' : 'watching';
 		row.label = g.seasonName ? `${showName}: ${g.seasonName}` : showName;
 		row.alt_titles = prefixes(g.show);
 		row.netflix = { show: showName, seasonKind: g.kind, seasonName: g.seasonName };
+		if (g.kind === 'part') row.netflix.part = g.season ?? undefined;
 
 		if (numbered) {
 			const n = episodeNames.map((e) => Number(e.match(EPISODE_N)![1]));
@@ -576,13 +598,19 @@ export function netflixRows(
 			row.info = `Netflix calls this “${g.seasonName}”`;
 			row.season_name = g.seasonName;
 		}
+		// TMDB looks the episodes up by name when it is unsure: of the season,
+		// or for a numbered one, of the show itself.
+		if (!numbered) {
+			row.episodes = [...g.names.values()];
+			row.netflix.days = [...g.episodes.values()].map((same) => latest(same).best);
+		}
 		rows.push(row);
 	}
 
-	for (const title of singles) rows.push(looseRow(title, [title], false));
+	for (const title of singles) rows.push(looseRow(title, [title], null));
 
-	/** A title sent on its own; `episode` when it has a colon and might be one. */
-	function looseRow(title: string, same: string[], episode: boolean): Incoming {
+	/** A title sent on its own; `episode` is its episode name when it might be one. */
+	function looseRow(title: string, same: string[], episode: string | null): Incoming {
 		const { name, year } = searchName(title);
 		const row = blank(name, 'Netflix');
 		const { best, days } = latest(same);
@@ -597,12 +625,16 @@ export function netflixRows(
 		// film, not the series, whose episodes all have names.
 		if (!episode) row.prefer = 'movie';
 		row.netflix = {
-			show: episode ? title.split(': ').slice(0, -1).join(': ') : title,
+			show: episode ? title.slice(0, -episode.length).replace(/: $/, '') : title,
 			seasonKind: 'none',
 			seasonName: null,
 			loose: true,
 			single: !episode
 		};
+		if (episode) {
+			row.episodes = [episode];
+			row.netflix.days = [best];
+		}
 		return row;
 	}
 
@@ -739,6 +771,41 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 	const gone = new Set<T>();
 	/** Titles sent on their own that now stand for their show. */
 	const promoted = new Set<T>();
+	/** Rows split off another because its episodes span several seasons. */
+	const extra = new Map<T, T[]>();
+
+	for (const row of rows) {
+		const inc = row.incoming;
+		if (!inc.netflix || !row.chosen) continue;
+		// "Dr.STONE" is "Dr. STONE", "Naruto Shippuden" is "Naruto Shippūden".
+		if (
+			row.match?.note === 'Closest match by name' &&
+			[inc.title, inc.netflix.show, row.match.searched].some(
+				(n) => n && sameName(n, row.chosen!.name)
+			)
+		) {
+			row.match.note = null;
+		}
+		// The episodes TMDB knows by name, each on the day it was watched.
+		const days = inc.netflix.days ?? [];
+		const placed = row.match?.placed ?? [];
+		if (row.chosen.kind !== 'tv' || !placed.length) continue;
+		// Episodes found by name inside this show prove it is the show meant.
+		const proven = placed.length >= 2 || placed.length === inc.episodes?.length;
+		if (proven && row.match?.note === 'Closest match by name') row.match.note = null;
+		if (inc.netflix.seasonKind === 'number') {
+			// Netflix's season number stands, and the names only had to confirm
+			// the show; unless TMDB has no such season, when they say where
+			// the episodes are instead.
+			if (!proven || !row.match?.note?.startsWith('TMDB lists no season')) continue;
+			row.match.note = null;
+		}
+		inc.watches = placed.map((p) => ({
+			season: p.season,
+			episode: p.episode,
+			watched_at: days[p.index] ? `${days[p.index]}T20:00:00Z` : null
+		}));
+	}
 
 	// Films that turned out to be the same film.
 	const films = new Map<number, T>();
@@ -806,9 +873,12 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 			host.incoming.progress = (host.incoming.progress ?? 0) + (from.netflix!.single ? 0 : 1);
 			if ((from.watched_at ?? '') > (host.incoming.watched_at ?? ''))
 				host.incoming.watched_at = from.watched_at;
+			host.incoming.episodes = [...(host.incoming.episodes ?? []), ...(from.episodes ?? [])];
+			host.incoming.watches = [...(host.incoming.watches ?? []), ...(from.watches ?? [])];
 			gone.add(row);
 		}
 		const kept = list.filter((r) => !gone.has(r));
+		const split: T[] = [];
 		const numberedSeasons = new Set(
 			kept.filter((r) => r.incoming.netflix!.seasonKind === 'number').map((r) => r.incoming.season)
 		);
@@ -817,6 +887,71 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 			const inc = row.incoming;
 			const meta = inc.netflix!;
 			if (!regular.length) continue;
+
+			// TMDB found the episodes by name: that settles the season, and
+			// exactly which episodes, with no guessing. Episodes from several
+			// seasons become a row each.
+			if (inc.watches?.length) {
+				const total = inc.episodes?.length ?? inc.watches.length;
+				const missing = total - inc.watches.length;
+				const bySeason = new Map<number, NonNullable<Incoming['watches']>>();
+				for (const w of inc.watches) bySeason.set(w.season, [...(bySeason.get(w.season) ?? []), w]);
+				const order = [...bySeason.keys()].sort((a, b) => a - b);
+				const main = order.reduce(
+					(m, s) => (bySeason.get(s)!.length > bySeason.get(m)!.length ? s : m),
+					order[0]
+				);
+
+				// Names TMDB writes differently ("JoJo" is translated twice): those
+				// episodes go next to the ones found, in the season most of them
+				// are in. The gaps between found episodes first, then after the
+				// last, then before the first: Bleach's three arcs share one
+				// TMDB season and must not all count from its start. When the
+				// gaps are exactly as many as the episodes not found, they can
+				// only be those, and nothing is in doubt.
+				let doubt: string | undefined;
+				if (missing > 0) {
+					const list = bySeason.get(main)!;
+					const have = new Set(list.map((w) => w.episode));
+					const lo = Math.min(...have);
+					const hi = Math.max(...have);
+					const size = regular.find((s) => s.number === main)?.episodes ?? 0;
+					const gaps: number[] = [];
+					for (let n = lo + 1; n < hi; n++) if (!have.has(n)) gaps.push(n);
+					const around = [...gaps];
+					for (let n = hi + 1; n <= size; n++) around.push(n);
+					for (let n = lo - 1; n >= 1; n--) around.push(n);
+					const fill = around.slice(0, missing);
+					list.push(...fill.map((episode) => ({ season: main, episode, watched_at: null })));
+					// Also certain: everything from episode 1 on, unbroken, as when a
+					// whole season was watched.
+					const ticked = list.map((w) => w.episode);
+					const fromStart = Math.min(...ticked) === 1 && Math.max(...ticked) === ticked.length;
+					if (fill.length !== missing || (gaps.length !== missing && !fromStart)) {
+						doubt = `${missing} of ${total} episodes not found by name; counted next to the ones that were`;
+					}
+				}
+
+				order.forEach((s, i) => {
+					const target =
+						i === 0 ? row : ({ ...row, incoming: { ...inc, key: `${inc.key}-s${s}` } } as T);
+					const t = target.incoming;
+					t.watches = bySeason.get(s);
+					t.season = s;
+					t.progress = t.watches!.length;
+					t.episode_offset = 0;
+					t.warning = s === main ? doubt : undefined;
+					t.info = meta.seasonName
+						? `Netflix calls this “${meta.seasonName}”; season ${s} by its episode names`
+						: `Season ${s}, by its episode names`;
+					if (i > 0) {
+						split.push(target);
+						extra.set(row, [...(extra.get(row) ?? []), target]);
+					}
+				});
+				continue;
+			}
+
 			const asSeason =
 				norm(row.chosen!.name) === norm(meta.show)
 					? null
@@ -829,6 +964,8 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 				if (hit) {
 					inc.season = hit.number;
 					inc.warning = undefined;
+					// A season of that name is in this show: it is the one meant.
+					if (row.match?.note === 'Closest match by name') row.match.note = null;
 					inc.info = `Netflix calls this “${meta.seasonName}”; season ${hit.number} on TMDB`;
 				}
 			} else if (meta.seasonKind === 'none') {
@@ -844,6 +981,7 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 					// Turbo" in "Beyblade Burst", "Pokémon Journeys" in "Pokémon".
 					inc.season = asSeason.number;
 					inc.warning = undefined;
+					if (row.match?.note === 'Closest match by name') row.match.note = null;
 					inc.info = `Netflix calls this “${meta.show}”; season ${asSeason.number} on TMDB`;
 				} else if (numberedSeasons.size && !numberedSeasons.has(1)) {
 					// Netflix leaves the first season unnamed once a second exists.
@@ -856,6 +994,7 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 					inc.season = byName.number;
 					inc.info = `Netflix calls this ${meta.seasonName}; season ${byName.number} on TMDB`;
 				} else {
+					inc.season = meta.part ?? null;
 					inc.warning = `Netflix calls this ${meta.seasonName}; check the season`;
 				}
 			}
@@ -873,7 +1012,11 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 				if (absolute || hi - lo + 1 === inc.progress) inc.episode_offset = lo - 1;
 				if (absolute) inc.warning = `Netflix numbers these ${lo}–${hi}; check the episodes`;
 			} else if (season && (inc.progress ?? 0) > season.episodes) {
-				inc.warning = `${inc.progress} episodes watched, but TMDB's season ${season.number} has ${season.episodes}`;
+				const line = `${inc.progress} episodes watched, and TMDB's season ${season.number} has ${season.episodes}`;
+				// One or two over is Netflix counting a recap or a double episode:
+				// the whole season is ticked either way. More is a different split.
+				if ((inc.progress ?? 0) - season.episodes <= 2) inc.info = `${line}; all ticked`;
+				else inc.warning = `${line}; check the season`;
 			}
 
 			// Matched on a shorter name than the show's own ("Monster" for
@@ -890,23 +1033,43 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 		}
 
 		// Completed only when every season was seen to its last episode.
+		const all = [...kept, ...split];
 		const complete =
 			regular.length > 0 &&
 			regular.every((s) =>
-				kept.some(
+				all.some(
 					(r) =>
 						r.incoming.season === s.number &&
 						(r.incoming.episode_offset ?? 0) === 0 &&
 						(r.incoming.progress ?? 0) >= s.episodes
 				)
 			);
-		const last = kept.reduce(
+		const last = all.reduce(
 			(m, r) => ((r.incoming.watched_at ?? '') > m ? r.incoming.watched_at! : m),
 			''
 		);
 		const status: Status = complete ? 'completed' : last && last < idle ? 'paused' : 'watching';
-		for (const row of kept) row.incoming.status = status;
+		for (const row of all) row.incoming.status = status;
 	}
 
-	return rows.filter((r) => !gone.has(r));
+	return rows.filter((r) => !gone.has(r)).flatMap((r) => [r, ...(extra.get(r) ?? [])]);
+}
+
+/** Words that come and go between Netflix's name and TMDB's for the same title. */
+const FILLER = new Set(['the', 'a', 'movie', 'film', 'special']);
+
+/** The same title written differently: punctuation, accents, "&", "The Movie". */
+function sameName(a: string, b: string): boolean {
+	const key = (v: string) =>
+		v
+			.replace(CIRCLED, '')
+			.normalize('NFKD')
+			.replace(ACCENTS, '')
+			.toLowerCase()
+			.replace(/&/g, ' and ')
+			.split(/[^a-z0-9]+/)
+			.filter((w) => w && !FILLER.has(w))
+			.join('');
+	const k = key(a);
+	return k !== '' && k === key(b);
 }

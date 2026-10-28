@@ -47,6 +47,10 @@ export interface Incoming {
 	season_name?: string | null;
 	/** Where a Netflix row came from, for the step after matching. */
 	netflix?: NetflixMeta;
+	/** Episode names to find on TMDB when the season is not known for sure. */
+	episodes?: string[];
+	/** Exactly these episodes, once found: ticked instead of `season` and `progress`. */
+	watches?: { season: number; episode: number; watched_at: string | null }[];
 }
 
 export interface SourceFormat {

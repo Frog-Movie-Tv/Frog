@@ -366,6 +366,8 @@ export interface MatchResult {
 	seasons?: { number: number; name: string; episodes: number }[];
 	/** The name that found the match, when it was not the row's own title. */
 	searched?: string | null;
+	/** Which of the row's `episodes` TMDB has by that name, and where. */
+	placed?: { index: number; season: number; episode: number }[];
 }
 
 export interface ImportSummary {

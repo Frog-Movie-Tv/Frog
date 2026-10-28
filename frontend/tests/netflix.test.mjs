@@ -85,9 +85,9 @@ test('the fixture comes out exactly as expected', () => {
 		["Avatar: The Last Airbender: Book 3","tv","Avatar: The Last Airbender",3,1,"paused","2025-12-06",false,null,["Avatar"],null],
 		["BAKI: Season 1","tv","BAKI",1,2,"paused","2025-11-29",false,null,[],null],
 		["KENGAN ASHURA: Season 2","tv","KENGAN ASHURA",2,1,"paused","2025-11-15",false,null,[],null],
-		["KENGAN ASHURA: Part ll","tv","KENGAN ASHURA",2,1,"paused","2025-11-08",false,null,[],null],
-		["KENGAN ASHURA: Part l","tv","KENGAN ASHURA",1,1,"paused","2025-11-01",false,null,[],null],
-		["Money Heist: Part 1","tv","Money Heist",1,2,"paused","2025-10-25",false,null,[],null],
+		["KENGAN ASHURA: Part ll","tv","KENGAN ASHURA",null,1,"paused","2025-11-08",false,null,[],null],
+		["KENGAN ASHURA: Part l","tv","KENGAN ASHURA",null,1,"paused","2025-11-01",false,null,[],null],
+		["Money Heist: Part 1","tv","Money Heist",null,2,"paused","2025-10-25",false,null,[],null],
 		["JoJo's Bizarre Adventure: STONE OCEAN","tv","JoJo's Bizarre Adventure",null,3,"paused","2025-10-18",false,null,[],"Choose which season this is"],
 		["JoJo's Bizarre Adventure: Golden Wind","tv","JoJo's Bizarre Adventure",null,2,"paused","2025-10-11",false,null,[],"Choose which season this is"],
 		["Bleach",null,"Bleach",null,null,"completed","2025-10-04",false,null,[],null],
@@ -236,7 +236,8 @@ function settled(answers) {
 					note: a.note ?? null,
 					already_tracked: null,
 					seasons: a.seasons,
-					searched: a.searched ?? null
+					searched: a.searched ?? null,
+					placed: a.placed ?? []
 				}
 			: null;
 		return { incoming, match, chosen: match?.matched ?? null, include: true };
@@ -406,4 +407,87 @@ test('a film released after it was watched is flagged', () => {
 	const bleach = rows.find((r) => r.incoming.label === 'Bleach');
 	assert.equal(bleach.incoming.warning, undefined);
 	assert.equal(bleach.match.note, null);
+});
+
+test('episodes found by name settle the season, exactly and on their day', () => {
+	const supergirl = read().rows.find((r) => r.label === 'Supergirl');
+	// Episode names go along; the server looks them up only when in doubt.
+	assert.deepEqual(supergirl.episodes, [
+		'Better Angels',
+		'Myriad',
+		"World's Finest",
+		'Falling',
+		'Manhunter',
+		'Childish Things',
+		'Solitude'
+	]);
+	assert.deepEqual(read().rows.find((r) => r.label === 'Supergirl: Season 2').episodes, [
+		'The Adventures of Supergirl'
+	]);
+	// "Episode 21" says nothing TMDB could look up by name.
+	assert.equal(read().rows.find((r) => r.label === 'VINLAND SAGA: Season 1').episodes, undefined);
+
+	const seasons = show(62688, 'Supergirl', [
+		[1, 20],
+		[2, 22]
+	]);
+	const rows = settled({
+		Supergirl: {
+			...seasons,
+			// Five in season 1, one in season 2, "Solitude" nowhere.
+			placed: [
+				{ index: 0, season: 1, episode: 20 },
+				{ index: 1, season: 1, episode: 19 },
+				{ index: 2, season: 1, episode: 18 },
+				{ index: 3, season: 1, episode: 16 },
+				{ index: 4, season: 1, episode: 17 },
+				{ index: 5, season: 2, episode: 3 }
+			]
+		},
+		'Supergirl: Season 2': seasons
+	});
+
+	const first = byLabel(rows, 'Supergirl');
+	assert.equal(first.season, 1);
+	// "Solitude" was not found: counted next to the five that were, and
+	// with no gap between them, just before the first.
+	assert.equal(first.progress, 6);
+	assert.deepEqual(first.watches.at(-1), { season: 1, episode: 15, watched_at: null });
+	assert.deepEqual(first.watches[0], {
+		season: 1,
+		episode: 20,
+		watched_at: '2025-07-12T20:00:00Z'
+	});
+	assert.equal(
+		first.warning,
+		'1 of 7 episodes not found by name; counted next to the ones that were'
+	);
+	assert.equal(first.info, 'Season 1, by its episode names');
+
+	// The one from season 2 became a row of its own, right after.
+	const at = rows.findIndex((r) => r.incoming === first);
+	const second = rows[at + 1].incoming;
+	assert.equal(second.key, `${first.key}-s2`);
+	assert.equal(second.season, 2);
+	assert.deepEqual(second.watches, [{ season: 2, episode: 3, watched_at: '2025-07-05T20:00:00Z' }]);
+	assert.equal(second.warning, undefined);
+});
+
+test('a name that differs only in punctuation is not a problem', () => {
+	const rows = settled({
+		'Hunter X Hunter (2011): Season 1': {
+			...show(46298, 'Hunter x Hunter', [[1, 148]]),
+			note: 'Closest match by name'
+		},
+		'Doctor (Telugu)': { ...film(284052, 'Doctor Strange', 2016), note: 'Closest match by name' }
+	});
+	assert.equal(
+		rows.find((r) => r.incoming.label === 'Hunter X Hunter (2011): Season 1').match.note,
+		null
+	);
+	// Other words are another title: still for a person to look at.
+	assert.equal(
+		rows.find((r) => r.incoming.label === 'Doctor (Telugu)').match.note,
+		'Closest match by name'
+	);
 });

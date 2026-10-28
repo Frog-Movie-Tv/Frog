@@ -58,6 +58,10 @@ pub struct Incoming {
     /// The source's own name for the season ("Stone Ocean"), which picks
     /// between shows that share a name: only one of them has that season.
     pub season_name: Option<String>,
+    /// Episode names the source gives, to be found on TMDB by name when the
+    /// season is not known for sure.
+    #[serde(default)]
+    pub episodes: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -79,6 +83,17 @@ pub struct MatchResult {
     pub seasons: Vec<SeasonCount>,
     /// The name that found the match, when it was not the row's own title.
     pub searched: Option<String>,
+    /// Which of the row's `episodes` TMDB has, and where.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub placed: Vec<Placed>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Placed {
+    /// Index into the row's `episodes`.
+    pub index: usize,
+    pub season: i64,
+    pub episode: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -127,6 +142,7 @@ pub async fn match_titles(
         } = resolve(&state, &row).await;
         let mut last_season = None;
         let mut season_counts = Vec::new();
+        let mut placed = Vec::new();
 
         if let Some(m) = matched.as_ref().filter(|m| m.kind == "tv") {
             if let Ok(detail) = state.tmdb.tv(m.tmdb_id).await {
@@ -140,6 +156,11 @@ pub async fn match_titles(
                             "TMDB lists no season {season} for this show; check the match"
                         ));
                     }
+                }
+                // Only when something is in doubt: no season, or a note already.
+                // Reading every season of every show would make a big import slow.
+                if !row.episodes.is_empty() && (row.season.is_none() || note.is_some()) {
+                    placed = place_episodes(&state, m.tmdb_id, &seasons, &row.episodes).await;
                 }
                 season_counts = seasons
                     .into_iter()
@@ -169,6 +190,7 @@ pub async fn match_titles(
             last_season,
             seasons: season_counts,
             searched,
+            placed,
         });
     }
 
@@ -338,6 +360,68 @@ async fn resolve(state: &AppState, row: &Incoming) -> Resolved {
         note,
         searched: other_name,
     }
+}
+
+/// An episode name reduced to its letters and digits: "Chapter One: The
+/// Vanishing of Will Byers" and "Chapter One - The Vanishing Of Will Byers"
+/// are the same episode.
+fn episode_key(name: &str) -> String {
+    name.to_lowercase()
+        .replace('&', "and")
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect()
+}
+
+/// Find episodes by name across a show's seasons (specials left out).
+///
+/// A name is placed only when exactly one episode has it; "Pilot" in two
+/// seasons places nothing. Netflix sometimes keeps part of an episode name
+/// apart ("Chapter One: The Vanishing of Will Byers"), so the last part on its
+/// own is tried when the whole finds nothing.
+async fn place_episodes(
+    state: &AppState,
+    tmdb_id: i64,
+    seasons: &[crate::tmdb::models::SeasonSummary],
+    names: &[String],
+) -> Vec<Placed> {
+    let mut by_name: std::collections::HashMap<String, Vec<(i64, i64)>> =
+        std::collections::HashMap::new();
+    for s in seasons.iter().filter(|s| s.season_number > 0) {
+        let Ok(raw) = state.tmdb.season(tmdb_id, s.season_number).await else {
+            continue;
+        };
+        for e in crate::tmdb::models::episodes_of_season(&raw) {
+            let key = episode_key(e.name.as_deref().unwrap_or(""));
+            // TMDB fills unnamed episodes with "Episode 12"; those say nothing.
+            let numbered =
+                key.starts_with("episode") && key[7..].chars().all(|c| c.is_ascii_digit());
+            if key.is_empty() || numbered {
+                continue;
+            }
+            by_name
+                .entry(key)
+                .or_default()
+                .push((e.season_number, e.episode_number));
+        }
+    }
+
+    let mut out = Vec::new();
+    for (index, name) in names.iter().enumerate() {
+        let tail = name.rsplit(": ").next().unwrap_or(name);
+        let found = [episode_key(name), episode_key(tail)]
+            .into_iter()
+            .filter(|k| !k.is_empty())
+            .find_map(|k| by_name.get(&k).filter(|hits| hits.len() == 1));
+        if let Some(&[(season, episode)]) = found.map(Vec::as_slice) {
+            out.push(Placed {
+                index,
+                season,
+                episode,
+            });
+        }
+    }
+    out
 }
 
 /// Season names compared loosely: "Sun & Moon - Ultra Adventures" is
@@ -510,6 +594,17 @@ pub struct ApplyItem {
     pub episode_offset: i64,
     /// How many episodes this row covers, when the tracker says.
     pub episode_total: Option<i64>,
+    /// Exactly these episodes, each on the day it was watched when known.
+    /// Takes the place of `season` and `progress`.
+    #[serde(default)]
+    pub episodes: Vec<EpisodeWatch>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EpisodeWatch {
+    pub season: i64,
+    pub episode: i64,
+    pub watched_at: Option<String>,
 }
 
 pub async fn apply(
@@ -605,7 +700,9 @@ pub async fn apply(
         };
         store::apply_patch(&state.pool, auth.user_id(), title_id, &patch).await?;
 
-        if item.kind == "tv" {
+        if item.kind == "tv" && !item.episodes.is_empty() {
+            tick_episodes(&state, auth.user_id(), title_id, &detail, &item.episodes).await?;
+        } else if item.kind == "tv" {
             if let Some(season) = item.season {
                 let after = item.episode_offset.max(0);
                 let count = match (item.progress, completed) {
@@ -766,6 +863,58 @@ async fn tick_season(
     .execute(&state.pool)
     .await?;
 
+    Ok(())
+}
+
+/// Mark exactly these episodes watched: dated when the source says when,
+/// undated otherwise. An episode already watched is left as it is.
+async fn tick_episodes(
+    state: &AppState,
+    user_id: i64,
+    title_id: i64,
+    detail: &Value,
+    episodes: &[EpisodeWatch],
+) -> AppResult<()> {
+    let mut seasons: Vec<i64> = episodes.iter().map(|e| e.season).collect();
+    seasons.sort_unstable();
+    seasons.dedup();
+    for season in seasons {
+        let (have,): (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM episode WHERE title_id = ? AND season_number = ?")
+                .bind(title_id)
+                .bind(season)
+                .fetch_one(&state.pool)
+                .await?;
+        if have == 0 {
+            store::sync_all_seasons(state, title_id, detail).await?;
+            break;
+        }
+    }
+
+    for e in episodes {
+        let (at, undated) = match e.watched_at.as_deref() {
+            Some(at) => (at.to_string(), 0),
+            None => (chrono::Utc::now().to_rfc3339(), 1),
+        };
+        sqlx::query(
+            "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                      source, undated)
+             SELECT ?1, ?2, e.id, ?3, 0, 'import', ?4
+               FROM episode e
+              WHERE e.title_id = ?2 AND e.season_number = ?5 AND e.episode_number = ?6
+                AND NOT EXISTS (
+                      SELECT 1 FROM watch_event w
+                       WHERE w.user_id = ?1 AND w.episode_id = e.id)",
+        )
+        .bind(user_id)
+        .bind(title_id)
+        .bind(at)
+        .bind(undated)
+        .bind(e.season)
+        .bind(e.episode)
+        .execute(&state.pool)
+        .await?;
+    }
     Ok(())
 }
 

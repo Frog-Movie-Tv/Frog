@@ -39,17 +39,18 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 6. **The screenshots, the rest.** There is still no shelves shot.
 7. **The Projects board.** Backlog / In progress / Review / Done. Needs
    `gh auth refresh -s project` from an owner before it can be created.
-8. **Netflix: real dates on episodes.** Imported episodes are ticked undated
-   (stored with the import's time), so every Netflix show reads "last
-   watched today" and the diary holds only its films. Netflix gives a date
-   per episode; matching its episode names to TMDB's would date them
-   properly. The same holds for MyAnimeList. Films keep only their latest
-   date; earlier watches of the same film are a rewatch flag, not entries.
+8. **Netflix: real dates on every episode.** Episodes TMDB finds by name
+   are ticked exactly, on the day Netflix gives. Seasons Netflix numbers
+   itself are not looked up (that would mean reading every season of every
+   show), so their episodes are still the first N, undated, and such a show
+   reads "last watched today". Looking those up too, in the background after
+   the import, would date everything. Films keep only their latest date;
+   earlier watches of the same film are a rewatch flag, not entries.
 9. **Netflix: untested shapes.** The personal-data ZIP
    (`CONTENT_INTERACTION/ViewingActivity.csv`) is read from its documented
-   columns but has never been tried on a real one. Netflix's "Part N" seasons
-   are only placed when TMDB names a season "Part N"; Money Heist, KENGAN
-   ASHURA and the like still wait for a person.
+   columns but has never been tried on a real one. Netflix's "Part N"
+   seasons are placed by their episode names; parts whose episodes are only
+   called "Episode 3" (Money Heist Part 1) still wait for a person.
 10. **Smaller things.** Customisable keyboard shortcuts, renaming and
    recolouring statuses, muted trailer autoplay, per-shelf layout defaults.
 
@@ -122,7 +123,10 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   named seasons ("STONE OCEAN", "Egghead Arc ①") are placed only when a TMDB
   season has that name, and a show is completed only when every season was
   seen to the end. Shows are split by season marker first, then by where
-  titles branch across the whole file, never by "the first colon".
+  titles branch across the whole file, never by "the first colon". When a
+  season is in doubt the server looks the episode names up across the
+  show's seasons (`place_episodes` in `transfer.rs`); a name placed there
+  settles the season, the exact episode and its date, and proves the match.
   `npm test` runs it against `tests/fixtures/netflix-viewing-history.csv`,
   real titles with made-up dates; `node --test` reads the TypeScript directly
   through `tests/ts-paths.mjs`.

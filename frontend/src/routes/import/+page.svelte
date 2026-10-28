@@ -202,6 +202,9 @@
 	function setSeason(row: Row, value: string) {
 		const n = Number(value);
 		row.incoming.season = Number.isInteger(n) && n >= 0 ? n : null;
+		// A season chosen by hand wins over the episodes found by name.
+		row.incoming.watches = undefined;
+		row.incoming.episode_offset = 0;
 		const warning = row.incoming.warning ?? '';
 		// Choosing the season settles any doubt about which one it was.
 		const aboutSeason =
