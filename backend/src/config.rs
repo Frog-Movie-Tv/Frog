@@ -32,6 +32,9 @@ pub struct AniListClient {
     pub site_url: String,
     /// The Anime-IDs list that says which TVDB/IMDb entry each AniList id is.
     pub anime_ids_url: String,
+    /// Fribb's anime-lists, which says which TMDB entry (and TMDB season)
+    /// each AniList id is.
+    pub anime_lists_url: String,
 }
 
 fn env_opt(key: &str) -> Option<String> {
@@ -83,6 +86,10 @@ impl Config {
                     anime_ids_url: env_or(
                         "ANIME_IDS_URL",
                         "https://raw.githubusercontent.com/Kometa-Team/Anime-IDs/master/anime_ids.json",
+                    ),
+                    anime_lists_url: env_or(
+                        "ANIME_LISTS_URL",
+                        "https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json",
                     ),
                 }),
                 _ => None,

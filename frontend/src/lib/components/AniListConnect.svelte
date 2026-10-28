@@ -1,20 +1,26 @@
 <script lang="ts">
 	import { api, img } from '#lib/api';
 	import Icon from '#lib/components/Icon.svelte';
+	import Select from '#lib/components/Select.svelte';
 	import { plural, relativeDate } from '#lib/format';
 	import { toasts } from '#lib/toast.svelte';
-	import type { AniListEntry, AniListStatus, Kind, SearchItem } from '#lib/types';
+	import type { AniListEntry, AniListStatus, Kind, SearchItem, SeasonSummary } from '#lib/types';
 
 	let status = $state<AniListStatus | null>(null);
 	let entries = $state<AniListEntry[]>([]);
 	let busy = $state(false);
 	let showAll = $state(false);
+	let showUnsure = $state(false);
 	/** The entry whose place is being chosen. */
 	let choosing = $state<number | null>(null);
 	let query = $state('');
 	let results = $state<SearchItem[]>([]);
 	let season = $state(1);
 	let fromEpisode = $state(1);
+	/** The show picked for an entry, waiting for its season to be confirmed. */
+	let picked = $state<{ tmdb_id: number; name: string; seasons: SeasonSummary[] } | null>(null);
+	let picking = $state(false);
+	const pickedSeason = $derived(picked?.seasons.find((x) => x.season_number === season) ?? null);
 	let leaving = $state(false);
 
 	const unsure = $derived(entries.filter((e) => e.state === 'unsure'));
@@ -84,6 +90,7 @@
 
 	function startChoosing(entry: AniListEntry) {
 		choosing = entry.media_id;
+		picked = null;
 		query = entry.name;
 		results = entry.candidates.map((c) => ({
 			kind: c.kind,
@@ -111,6 +118,57 @@
 		}
 	}
 
+	/**
+	 * Where an entry most likely starts in a show: straight after the entries
+	 * of the same show already placed (a second season follows the first),
+	 * or where it already is, or the very beginning.
+	 */
+	function suggest(entry: AniListEntry, tmdbId: number, seasons: SeasonSummary[]) {
+		const numbered = seasons
+			.filter((x) => x.season_number >= 1)
+			.sort((a, b) => a.season_number - b.season_number);
+		const absolute = (s: number, e: number) =>
+			numbered.filter((x) => x.season_number < s).reduce((n, x) => n + x.episode_count, 0) + e;
+		if (entry.title?.kind === 'tv' && entry.title.tmdb_id === tmdbId) {
+			return { season: entry.title.season ?? 1, episode: entry.title.from_episode };
+		}
+		let next = 0;
+		for (const other of entries) {
+			const t = other.title;
+			if (other.media_id === entry.media_id || other.state !== 'placed') continue;
+			if (t?.kind !== 'tv' || t.tmdb_id !== tmdbId || !other.episodes) continue;
+			next = Math.max(next, absolute(t.season ?? 1, t.from_episode - 1) + other.episodes);
+		}
+		let left = next;
+		for (const x of numbered) {
+			if (left < x.episode_count) return { season: x.season_number, episode: left + 1 };
+			left -= x.episode_count;
+		}
+		// Past the last season TMDB knows of: the start of the newest one.
+		const last = numbered.at(-1);
+		return next && last ? { season: last.season_number, episode: 1 } : { season: 1, episode: 1 };
+	}
+
+	async function pick(entry: AniListEntry, result: SearchItem) {
+		if (result.kind === 'movie') {
+			await choose(entry, 'movie', result.tmdb_id);
+			return;
+		}
+		picking = true;
+		try {
+			const detail = await api.title('tv', result.tmdb_id);
+			const seasons = detail.seasons.filter((x) => x.season_number >= 1);
+			const spot = suggest(entry, result.tmdb_id, seasons);
+			season = spot.season;
+			fromEpisode = spot.episode;
+			picked = { tmdb_id: result.tmdb_id, name: result.name, seasons };
+		} catch (e) {
+			toasts.error(e);
+		} finally {
+			picking = false;
+		}
+	}
+
 	async function choose(entry: AniListEntry, kind: Kind, tmdbId: number) {
 		try {
 			await api.anilistChoose(entry.media_id, {
@@ -120,6 +178,7 @@
 				from_episode: kind === 'tv' ? fromEpisode : undefined
 			});
 			choosing = null;
+			picked = null;
 			toasts.push(`${entry.name} is placed; it syncs in a moment`);
 			await load();
 		} catch (e) {
@@ -147,47 +206,83 @@
 
 {#snippet chooser(entry: AniListEntry)}
 	<div class="chooser">
-		<form class="find" onsubmit={search}>
-			<input class="input" bind:value={query} aria-label="Search TMDB" placeholder="Search" />
-			<button class="btn">Search</button>
-		</form>
-		<div class="place">
-			<label>
-				<span>Season</span>
-				<input class="input" type="number" min="0" bind:value={season} />
-			</label>
-			<label>
-				<span>From episode</span>
-				<input class="input" type="number" min="1" bind:value={fromEpisode} />
-			</label>
-		</div>
-		{#if results.length}
-			<ul class="results">
-				{#each results as r (r.kind + r.tmdb_id)}
-					<li>
-						<button class="result" onclick={() => choose(entry, r.kind, r.tmdb_id)}>
-							{#if img(r.poster_path, 'w92')}
-								<img src={img(r.poster_path, 'w92')} alt="" width="34" height="51" />
-							{:else}
-								<span class="blank"></span>
-							{/if}
-							<span class="label">
-								<strong>{r.name}</strong>
-								<span class="faint"
-									>{r.kind === 'tv' ? 'Show' : 'Film'}{r.year ? ` · ${r.year}` : ''}</span
-								>
-							</span>
-						</button>
-					</li>
-				{/each}
-			</ul>
+		{#if picked}
+			<div class="picked">
+				<span class="label">
+					<strong>{picked.name}</strong>
+					<span class="faint">
+						{entry.episodes
+							? `${plural(entry.episodes, 'episode')} on AniList, starting at`
+							: 'Starting at'}
+					</span>
+				</span>
+				<button class="link" onclick={() => (picked = null)}>Another title</button>
+			</div>
+			<div class="place">
+				<Select
+					label="Season"
+					value={String(season)}
+					options={picked.seasons.map((x) => ({
+						value: String(x.season_number),
+						label: x.name || `Season ${x.season_number}`,
+						hint: plural(x.episode_count, 'episode')
+					}))}
+					onchange={(v) => {
+						season = Number(v);
+						fromEpisode = 1;
+					}}
+				/>
+				<label class="episode">
+					<span>Episode</span>
+					<input
+						class="input"
+						type="number"
+						min="1"
+						max={pickedSeason?.episode_count || undefined}
+						bind:value={fromEpisode}
+					/>
+				</label>
+			</div>
+			<div class="actions">
+				<button class="btn primary small" onclick={() => choose(entry, 'tv', picked!.tmdb_id)}>
+					Place here
+				</button>
+				<button class="btn ghost small" onclick={() => (choosing = null)}>Cancel</button>
+			</div>
 		{:else}
-			<p class="faint small">Nothing found yet. Try another name.</p>
+			<form class="find" onsubmit={search}>
+				<input class="input" bind:value={query} aria-label="Search TMDB" placeholder="Search" />
+				<button class="btn">Search</button>
+			</form>
+			{#if results.length}
+				<ul class="results">
+					{#each results as r (r.kind + r.tmdb_id)}
+						<li>
+							<button class="result" disabled={picking} onclick={() => pick(entry, r)}>
+								{#if img(r.poster_path, 'w92')}
+									<img src={img(r.poster_path, 'w92')} alt="" width="34" height="51" />
+								{:else}
+									<span class="blank"></span>
+								{/if}
+								<span class="label">
+									<strong>{r.name}</strong>
+									<span class="faint"
+										>{r.kind === 'tv' ? 'Show' : 'Film'}{r.year ? ` · ${r.year}` : ''}</span
+									>
+								</span>
+								<Icon name="chevron-right" size={16} />
+							</button>
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<p class="faint small">Nothing found yet. Try another name.</p>
+			{/if}
+			<div class="actions">
+				<button class="btn ghost small" onclick={() => ignore(entry)}>Not in Frog</button>
+				<button class="btn ghost small" onclick={() => (choosing = null)}>Cancel</button>
+			</div>
 		{/if}
-		<div class="actions">
-			<button class="btn ghost small" onclick={() => ignore(entry)}>Not in Frog</button>
-			<button class="btn ghost small" onclick={() => (choosing = null)}>Cancel</button>
-		</div>
 	</div>
 {/snippet}
 
@@ -249,32 +344,36 @@
 
 		{#if unsure.length}
 			<div class="group">
-				<h3>{plural(unsure.length, 'title')} {unsure.length === 1 ? 'needs' : 'need'} a place</h3>
-				<p class="faint small">
-					Frog could not tell for certain which title or season these are, so they wait for you.
-				</p>
-				<ul class="list">
-					{#each unsure as entry (entry.media_id)}
-						<li>
-							<div class="entry">
-								<span class="label">
-									<strong>{entry.name}</strong>
-									<span class="faint"
-										>{entry.format ?? 'Anime'}{entry.episodes
-											? ` · ${plural(entry.episodes, 'episode')}`
-											: ''}</span
-									>
-								</span>
-								{#if choosing !== entry.media_id}
-									<button class="btn small" onclick={() => startChoosing(entry)}>Choose</button>
+				<button class="link more" onclick={() => (showUnsure = !showUnsure)}>
+					{showUnsure ? 'Hide unmatched' : `${plural(unsure.length, 'title')} not matched yet`}
+				</button>
+				{#if showUnsure}
+					<p class="faint small">
+						Frog looks again at every sync. Match one yourself if you would rather not wait.
+					</p>
+					<ul class="list">
+						{#each unsure as entry (entry.media_id)}
+							<li>
+								<div class="entry">
+									<span class="label">
+										<strong>{entry.name}</strong>
+										<span class="faint"
+											>{entry.format ?? 'Anime'}{entry.episodes
+												? ` · ${plural(entry.episodes, 'episode')}`
+												: ''}</span
+										>
+									</span>
+									{#if choosing !== entry.media_id}
+										<button class="btn small" onclick={() => startChoosing(entry)}>Match</button>
+									{/if}
+								</div>
+								{#if choosing === entry.media_id}
+									{@render chooser(entry)}
 								{/if}
-							</div>
-							{#if choosing === entry.media_id}
-								{@render chooser(entry)}
-							{/if}
-						</li>
-					{/each}
-				</ul>
+							</li>
+						{/each}
+					</ul>
+				{/if}
 			</div>
 		{/if}
 
@@ -355,11 +454,6 @@
 		font-size: 0.85rem;
 	}
 
-	.group h3 {
-		font-size: 0.95rem;
-		margin: 6px 0 4px;
-	}
-
 	.list {
 		list-style: none;
 		margin: 8px 0 0;
@@ -404,13 +498,29 @@
 		flex-wrap: wrap;
 	}
 
-	.place label {
+	.place {
+		align-items: flex-end;
+	}
+
+	.episode {
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
 		font-size: 0.78rem;
 		color: var(--text-dim);
-		width: 130px;
+		width: 110px;
+	}
+
+	.picked {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+
+	.picked .label {
+		display: flex;
+		flex-direction: column;
 	}
 
 	.results {
