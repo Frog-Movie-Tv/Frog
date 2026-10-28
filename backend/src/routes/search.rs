@@ -37,9 +37,14 @@ pub async fn search(
         ));
     }
 
-    let raw = state.tmdb.search_multi(term, q.page.clamp(1, 500)).await?;
+    let page = q.page.clamp(1, 500);
+    let raw = state.tmdb.search_multi(term, page).await?;
     let mut items = collect(&raw, None);
     rank(&mut items, term, q.hide_animation);
+    if page == 1 {
+        let known = known_titles(&state, auth.user_id(), term, q.hide_animation).await?;
+        items = merge_known(items, known, term);
+    }
     annotate_library(&state, auth.user_id(), &mut items).await?;
 
     Ok(Json(serde_json::json!({
@@ -54,6 +59,99 @@ pub async fn trending(auth: Auth, State(state): State<AppState>) -> AppResult<Js
     let mut items = collect(&raw, None);
     annotate_library(&state, auth.user_id(), &mut items).await?;
     Ok(Json(serde_json::json!({ "results": items })))
+}
+
+/// (kind, tmdb_id, name, poster, backdrop, release date, vote, genres)
+type KnownRow = (
+    String,
+    i64,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<f64>,
+    String,
+);
+
+/// Titles this Frog already knows whose name starts with what was typed, or
+/// has a word that does. TMDB matches whole words only, so "inter" never
+/// finds Interstellar there; typing a few letters of something you track
+/// should. Your own library first.
+async fn known_titles(
+    state: &AppState,
+    user_id: i64,
+    term: &str,
+    hide_animation: bool,
+) -> AppResult<Vec<SearchItem>> {
+    if term.chars().count() < 2 {
+        return Ok(Vec::new());
+    }
+    let pattern = term.replace(['\\', '%', '_'], "");
+    let rows: Vec<KnownRow> = sqlx::query_as(
+        "SELECT t.kind, t.tmdb_id, t.name, t.poster_path, t.backdrop_path, t.release_date,
+                t.tmdb_vote, t.genres_json
+           FROM title t
+          WHERE t.name LIKE ?1 || '%' OR t.name LIKE '% ' || ?1 || '%'
+             OR t.original_name LIKE ?1 || '%'
+          ORDER BY EXISTS (SELECT 1 FROM library_entry l
+                            WHERE l.title_id = t.id AND l.user_id = ?2) DESC,
+                   t.tmdb_vote DESC
+          LIMIT 8",
+    )
+    .bind(&pattern)
+    .bind(user_id)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .filter(|r| !(hide_animation && r.7.contains("Animation")))
+        .map(
+            |(kind, tmdb_id, name, poster_path, backdrop_path, date, vote, _)| SearchItem {
+                kind,
+                tmdb_id,
+                name,
+                poster_path,
+                backdrop_path,
+                year: date
+                    .as_deref()
+                    .and_then(|d| d.get(..4))
+                    .and_then(|y| y.parse().ok()),
+                overview: None,
+                vote,
+                popularity: None,
+                vote_count: None,
+                genre_ids: Vec::new(),
+                in_library: None,
+            },
+        )
+        .collect())
+}
+
+/// Exact names first, wherever they came from; then what this Frog knows;
+/// then the rest of TMDB's results, each title once.
+fn merge_known(tmdb: Vec<SearchItem>, known: Vec<SearchItem>, term: &str) -> Vec<SearchItem> {
+    let needle = term.trim().to_lowercase();
+    let exact = |i: &SearchItem| i.name.to_lowercase() == needle;
+    let mut out: Vec<SearchItem> = Vec::new();
+    let push = |item: SearchItem, out: &mut Vec<SearchItem>| {
+        if !out
+            .iter()
+            .any(|o| o.kind == item.kind && o.tmdb_id == item.tmdb_id)
+        {
+            out.push(item);
+        }
+    };
+    let (exact_known, other_known): (Vec<_>, Vec<_>) = known.into_iter().partition(|i| exact(i));
+    let (exact_tmdb, other_tmdb): (Vec<_>, Vec<_>) = tmdb.into_iter().partition(|i| exact(i));
+    for item in exact_known
+        .into_iter()
+        .chain(exact_tmdb)
+        .chain(other_known)
+        .chain(other_tmdb)
+    {
+        push(item, &mut out);
+    }
+    out
 }
 
 /// Put the thing you almost certainly meant at the top.
@@ -82,7 +180,17 @@ fn score(item: &SearchItem, needle: &str) -> f64 {
     let confidence = (votes / (votes + 50.0)).clamp(0.05, 1.0);
     let popularity = item.popularity.unwrap_or(0.0).min(500.0);
 
-    exact + starts + popularity * confidence
+    // A result with no artwork at all is rarely the one meant, and a wall
+    // that opens on empty cards looks broken; it goes below the rest.
+    let art = if item.poster_path.is_some() {
+        0.0
+    } else if item.backdrop_path.is_some() {
+        -150.0
+    } else {
+        -400.0
+    };
+
+    exact + starts + popularity * confidence + art
 }
 
 fn collect(raw: &Value, force_kind: Option<&str>) -> Vec<SearchItem> {

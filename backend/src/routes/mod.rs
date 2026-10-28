@@ -2,6 +2,7 @@ pub mod account;
 pub mod admin;
 pub mod anilist;
 pub mod auth;
+pub mod browse;
 pub mod episodes;
 pub mod home;
 pub mod images;
@@ -50,6 +51,8 @@ pub fn router(state: AppState) -> Router {
         // Everything below needs a session.
         .route("/search", get(search::search))
         .route("/discover/trending", get(search::trending))
+        .route("/search/more", get(browse::more))
+        .route("/studios/{id}", get(browse::studio))
         .route("/home", get(home::home))
         .route("/home/because", get(home::because))
         .route("/calendar", get(timeline::calendar))

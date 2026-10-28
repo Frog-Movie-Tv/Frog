@@ -224,19 +224,52 @@ impl Tmdb {
     }
 
     pub async fn tv(&self, id: i64) -> AppResult<Value> {
-        self.get(
-            &format!("/tv/{id}"),
-            &[
-                (
-                    "append_to_response",
-                    "credits,videos,images,watch/providers,recommendations,similar,external_ids"
-                        .into(),
-                ),
-                ("include_image_language", format!("{},null", self.lang2())),
-            ],
-            Duration::hours(ttl::TV_HOURS),
-        )
-        .await
+        let mut detail = self
+            .get(
+                &format!("/tv/{id}"),
+                &[
+                    (
+                        "append_to_response",
+                        "credits,videos,images,watch/providers,recommendations,similar,external_ids"
+                            .into(),
+                    ),
+                    ("include_image_language", format!("{},null", self.lang2())),
+                ],
+                Duration::hours(ttl::TV_HOURS),
+            )
+            .await?;
+        // A show's credits are its latest season only, and for many anime
+        // that season lists nobody. The whole run's cast is in
+        // aggregate_credits; without it the show has no cast at all.
+        let empty = detail["credits"]["cast"]
+            .as_array()
+            .is_none_or(|cast| cast.is_empty());
+        if empty {
+            let whole_run = self
+                .get(
+                    &format!("/tv/{id}/aggregate_credits"),
+                    &[],
+                    Duration::hours(ttl::TV_HOURS),
+                )
+                .await;
+            if let Ok(whole_run) = whole_run {
+                let cast: Vec<Value> = whole_run["cast"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .take(60)
+                    .map(|c| {
+                        let mut c = c.clone();
+                        c["character"] = c["roles"][0]["character"].clone();
+                        c
+                    })
+                    .collect();
+                if !cast.is_empty() {
+                    detail["credits"]["cast"] = Value::Array(cast);
+                }
+            }
+        }
+        Ok(detail)
     }
 
     pub async fn season(&self, tv_id: i64, season: i64) -> AppResult<Value> {
@@ -272,6 +305,51 @@ impl Tmdb {
             "/trending/all/week",
             &[],
             Duration::hours(ttl::TRENDING_HOURS),
+        )
+        .await
+    }
+
+    pub async fn search_person(&self, query: &str) -> AppResult<Value> {
+        self.get(
+            "/search/person",
+            &[
+                ("query", query.to_string()),
+                ("include_adult", "false".into()),
+            ],
+            Duration::minutes(ttl::SEARCH_MINUTES),
+        )
+        .await
+    }
+
+    pub async fn search_company(&self, query: &str) -> AppResult<Value> {
+        self.get(
+            "/search/company",
+            &[("query", query.to_string())],
+            Duration::minutes(ttl::SEARCH_MINUTES),
+        )
+        .await
+    }
+
+    pub async fn company(&self, id: i64) -> AppResult<Value> {
+        self.get(
+            &format!("/company/{id}"),
+            &[],
+            Duration::hours(ttl::PERSON_HOURS),
+        )
+        .await
+    }
+
+    /// The most popular films or shows one company made.
+    pub async fn by_company(&self, kind: &str, id: i64, page: u32) -> AppResult<Value> {
+        self.get(
+            &format!("/discover/{kind}"),
+            &[
+                ("with_companies", id.to_string()),
+                ("sort_by", "popularity.desc".into()),
+                ("include_adult", "false".into()),
+                ("page", page.to_string()),
+            ],
+            Duration::hours(ttl::TV_HOURS),
         )
         .await
     }

@@ -102,7 +102,7 @@
 	<title>Stats · Frog</title>
 </svelte:head>
 
-{#snippet people(title: string, list: StatsPerson[], link: boolean, logo = false)}
+{#snippet people(title: string, list: StatsPerson[], base: string, logo = false)}
 	{#if list.length}
 		<section class="block card panel">
 			<h2>{title}</h2>
@@ -110,11 +110,7 @@
 				{#each list as person, i (person.tmdb_id)}
 					{@const src = img(person.image, 'w185')}
 					<li>
-						<svelte:element
-							this={link ? 'a' : 'div'}
-							class="person"
-							href={link ? `/person/${person.tmdb_id}` : undefined}
-						>
+						<a class="person" href="{base}/{person.tmdb_id}">
 							<span class="rank">{i + 1}</span>
 							<span class="avatar" class:logo>
 								{#if src}
@@ -125,7 +121,7 @@
 							</span>
 							<span class="name">{person.name}</span>
 							<span class="faint count">{plural(person.titles, 'title')}</span>
-						</svelte:element>
+						</a>
 					</li>
 				{/each}
 			</ol>
@@ -259,8 +255,13 @@
 									'film'
 								)} · {plural(point.episodes, 'episode')}"
 							>
+								<!-- Hours, but under one hour a bar says its minutes rather than 0. -->
 								<span class="value faint"
-									>{point.minutes ? Math.round(point.minutes / 60) : ''}</span
+									>{!point.minutes
+										? ''
+										: point.minutes < 60
+											? `${point.minutes}m`
+											: Math.round(point.minutes / 60)}</span
 								>
 								<span class="bar-v" style:height="{(point.minutes / timelineMax) * 100}%"></span>
 								<span class="label faint">{unitLabel(point.unit)}</span>
@@ -301,10 +302,7 @@
 							{#each stats.ratings as n, i (i)}
 								<div
 									class="column"
-									title="{formatScore(i * 10, settings.current.scoreFormat)}–{formatScore(
-										i === 9 ? 100 : i * 10 + 9,
-										settings.current.scoreFormat
-									)}: {n}"
+									title="{formatScore((i + 1) * 10, settings.current.scoreFormat)}: {n}"
 								>
 									<span class="value faint">{n || ''}</span>
 									<span class="bar-v" style:height="{(n / ratingMax) * 100}%"></span>
@@ -336,9 +334,9 @@
 			<!-- The people get a row of their own, side by side, rather than
 			     filling whatever gap the charts above leave. -->
 			<div class="grid people-row">
-				{@render people('Actors', stats.people.actors, true)}
-				{@render people('Directors and creators', stats.people.directors, true)}
-				{@render people('Studios', stats.people.studios, false, true)}
+				{@render people('Actors', stats.people.actors, '/person')}
+				{@render people('Directors and creators', stats.people.directors, '/person')}
+				{@render people('Studios', stats.people.studios, '/studio', true)}
 			</div>
 
 			{#if stats.credits_pending > 0}

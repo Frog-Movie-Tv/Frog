@@ -222,7 +222,7 @@ test('the about page credits its sources', async ({ page }) => {
 	await page.goto('/about');
 
 	await expect(page.getByRole('heading', { name: 'Frog', level: 1 })).toBeVisible();
-	await expect(page.getByText('Leapfrog')).toBeVisible();
+	await expect(page.getByText('Treefrog')).toBeVisible();
 	await expect(page.getByRole('link', { name: /TMDB/ }).first()).toBeVisible();
 	await expect(page.getByRole('link', { name: /Lucide/ })).toBeVisible();
 });
@@ -239,7 +239,7 @@ test('the instance asks not to be indexed', async ({ request }) => {
 test('search says plainly when metadata is not connected', async ({ page }) => {
 	await signIn(page);
 	await page.goto('/search');
-	await expect(page.getByPlaceholder('Films, shows, anything on TMDB')).toBeVisible();
+	await expect(page.getByPlaceholder('Films, shows, people, characters, studios')).toBeVisible();
 	await expect(page.getByText('Search is unavailable until metadata is connected')).toBeVisible();
 });
 
@@ -364,6 +364,8 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/anilist',
 		'/api/anilist/entries',
 		'/api/invites',
+		'/api/search/more?q=frog',
+		'/api/studios/1',
 		'/img/w342/nope.jpg'
 	]) {
 		const res = await request.get(path);

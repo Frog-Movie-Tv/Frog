@@ -23,6 +23,10 @@ pub async fn cached_image(
     size: &str,
     path: &str,
 ) -> AppResult<(String, Vec<u8>)> {
+    if size == "anilist" {
+        let path = format!("/{}", path.trim_start_matches('/'));
+        return anilist_image(state, &path).await;
+    }
     if !SIZES.contains(&size) {
         return Err(AppError::BadRequest(format!(
             "unsupported image size {size}"
@@ -64,6 +68,59 @@ pub async fn cached_image(
     .execute(&state.pool)
     .await;
 
+    Ok((content_type, bytes))
+}
+
+/// Character pictures from AniList's CDN, kept the same way. Only the
+/// character and staff folders, so this is no general relay either.
+async fn anilist_image(state: &AppState, path: &str) -> AppResult<(String, Vec<u8>)> {
+    let allowed = path.starts_with("/character/") || path.starts_with("/staff/");
+    if !allowed || path.contains("..") {
+        return Err(AppError::BadRequest("bad image path".into()));
+    }
+    let key = format!("anilist{path}");
+    let hit: Option<(String, Vec<u8>)> =
+        sqlx::query_as("SELECT content_type, bytes FROM image_cache WHERE path = ?")
+            .bind(&key)
+            .fetch_optional(&state.pool)
+            .await?;
+    if let Some(found) = hit {
+        return Ok(found);
+    }
+    let resp = state
+        .http
+        .get(format!("https://s4.anilist.co/file/anilistcdn{path}"))
+        .send()
+        .await
+        .map_err(|e| AppError::AniList(e.to_string()))?;
+    if !resp.status().is_success() {
+        return Err(AppError::NotFound("no such picture".into()));
+    }
+    let content_type = resp
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .filter(|t| t.starts_with("image/"))
+        .unwrap_or("image/jpeg")
+        .to_string();
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| AppError::AniList(e.to_string()))?
+        .to_vec();
+    let _ = sqlx::query(
+        "INSERT INTO image_cache (path, content_type, bytes, fetched_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (path) DO UPDATE SET
+            content_type = excluded.content_type,
+            bytes = excluded.bytes,
+            fetched_at = excluded.fetched_at",
+    )
+    .bind(&key)
+    .bind(&content_type)
+    .bind(&bytes)
+    .bind(Utc::now().to_rfc3339())
+    .execute(&state.pool)
+    .await;
     Ok((content_type, bytes))
 }
 

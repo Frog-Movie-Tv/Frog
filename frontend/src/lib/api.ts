@@ -4,6 +4,8 @@ import type {
 	AniListChoice,
 	AniListEntry,
 	AniListStatus,
+	MoreResults,
+	StudioDetail,
 	AuthStatus,
 	BecauseRow,
 	HomeData,
@@ -212,6 +214,8 @@ export const api = {
 			`/api/search${qs({ q, page, hide_animation: hideAnimation || undefined })}`
 		),
 	trending: () => get<{ results: SearchItem[] }>('/api/discover/trending'),
+	searchMore: (q: string) => get<MoreResults>(`/api/search/more${qs({ q })}`),
+	studio: (id: number) => get<StudioDetail>(`/api/studios/${id}`),
 
 	home: () => get<HomeData>('/api/home'),
 	because: () => get<{ rows: BecauseRow[] }>('/api/home/because'),
@@ -297,7 +301,9 @@ export const api = {
 	setShowWatched: (kind: Kind, id: number, watched: boolean, when?: WhenAnswer) =>
 		send<{ item: LibraryItem }>('POST', `/api/titles/${kind}/${id}/episodes/watch`, {
 			watched,
-			...when
+			...when,
+			extras: undefined,
+			specials: when?.extras
 		}),
 
 	redateDiary: (kind: Kind, id: number, day: string, when: WhenAnswer) =>
