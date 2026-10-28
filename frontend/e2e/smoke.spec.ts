@@ -364,7 +364,6 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/anilist',
 		'/api/anilist/entries',
 		'/api/invites',
-		'/api/account/library',
 		'/img/w342/nope.jpg'
 	]) {
 		const res = await request.get(path);
@@ -389,6 +388,10 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 	]) {
 		const res = await request.post(path, { data: {} });
 		expect(res.status(), `POST ${path} should be 401`).toBe(401);
+	}
+	for (const path of ['/api/account', '/api/account/library']) {
+		const res = await request.delete(path, { data: {} });
+		expect(res.status(), `DELETE ${path} should be 401`).toBe(401);
 	}
 
 	// Joining is open by design, so it cannot be behind the wall. Without a

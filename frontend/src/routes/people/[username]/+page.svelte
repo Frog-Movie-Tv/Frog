@@ -200,7 +200,11 @@
 		object-fit: cover;
 	}
 
+	/* Pulled up over the banner, so it has to sit above it: the banner's
+	   picture would otherwise paint over the profile picture. */
 	.identity {
+		position: relative;
+		z-index: 1;
 		display: flex;
 		align-items: flex-end;
 		gap: 16px;

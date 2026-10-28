@@ -23,7 +23,13 @@ export const POND = {
 	popcornKernel: '#ffe9a8',
 	lensRed: '#e4572e',
 	lensCyan: '#35b7c9',
-	frame: '#23342b'
+	frame: '#23342b',
+	bow: '#ff8fb1',
+	bowKnot: '#e5577f',
+	leaf: '#9be27a',
+	// The belly as it looks laid over the skin, for shapes that cut into it.
+	bellyOnSkin: '#7acd79',
+	stem: '#3f8f52'
 };
 
 /** The head, eye bumps and cheeks: shared by every variant. */
@@ -141,6 +147,92 @@ export const VARIANTS = {
 				width: 2.4,
 				color: c.frame
 			}
+		]
+	},
+
+	// The kawaii set: big shiny eyes, rosy cheeks, small mouths. Each still has
+	// to read at 16px, so the extras are blobs, never fine lines.
+
+	starry: {
+		label: 'Starry-eyed',
+		hint: 'Big eyes for big moments',
+		build: (c = POND) => [
+			...base(c),
+			// Fuller cheeks than the others.
+			{ type: 'ellipse', cx: 12.5, cy: 40, rx: 6, ry: 3.8, fill: c.blush, opacity: 0.95 },
+			{ type: 'ellipse', cx: 51.5, cy: 40, rx: 6, ry: 3.8, fill: c.blush, opacity: 0.95 },
+			{ type: 'circle', cx: 19, cy: 20, r: 8.5, fill: c.eyeWhite },
+			{ type: 'circle', cx: 45, cy: 20, r: 8.5, fill: c.eyeWhite },
+			{ type: 'circle', cx: 19.6, cy: 21, r: 6.2, fill: c.pupil },
+			{ type: 'circle', cx: 44.4, cy: 21, r: 6.2, fill: c.pupil },
+			// Two shines per eye is what makes them sparkle.
+			{ type: 'circle', cx: 17.2, cy: 18.4, r: 2.4, fill: c.shine },
+			{ type: 'circle', cx: 42, cy: 18.4, r: 2.4, fill: c.shine },
+			{ type: 'circle', cx: 21.8, cy: 23.6, r: 1.2, fill: c.shine },
+			{ type: 'circle', cx: 46.6, cy: 23.6, r: 1.2, fill: c.shine },
+			// A little "ω".
+			{
+				type: 'stroke',
+				points: [
+					...quad(26, 43, 29, 47.5, 32, 43.5, 7),
+					...quad(32, 43.5, 35, 47.5, 38, 43, 7).slice(1)
+				],
+				width: 2.6,
+				color: c.mouth
+			}
+		]
+	},
+
+	bow: {
+		label: 'Bow',
+		hint: 'Dressed up for the premiere',
+		build: (c = POND) => [
+			...base(c),
+			...openEyes(c),
+			smile(c),
+			// The bow sits in the dip between the eyes, so fill the dip first.
+			{ type: 'rect', x: 27, y: 12, w: 10, h: 9, r: 2, fill: c.skin },
+			{ type: 'ellipse', cx: 25.5, cy: 11.5, rx: 6.5, ry: 4.8, fill: c.bow },
+			{ type: 'ellipse', cx: 38.5, cy: 11.5, rx: 6.5, ry: 4.8, fill: c.bow },
+			{ type: 'circle', cx: 32, cy: 13, r: 4.2, fill: c.bowKnot }
+		]
+	},
+
+	delighted: {
+		label: 'Delighted',
+		hint: 'Best episode yet',
+		build: (c = POND) => [
+			...base(c),
+			// Eyes shut with joy: an upward arc on each bump.
+			{
+				type: 'stroke',
+				points: quad(13, 22.5, 19, 14.5, 25, 22.5),
+				width: 3.2,
+				color: c.pupil
+			},
+			{
+				type: 'stroke',
+				points: quad(39, 22.5, 45, 14.5, 51, 22.5),
+				width: 3.2,
+				color: c.pupil
+			},
+			// A wide grin: an oval with its top half cut flat by the belly.
+			{ type: 'ellipse', cx: 32, cy: 42.5, rx: 7.5, ry: 6.5, fill: c.mouth },
+			{ type: 'rect', x: 24.5, y: 35.6, w: 15, h: 6.9, r: 0, fill: c.bellyOnSkin },
+			{ type: 'ellipse', cx: 32, cy: 46.4, rx: 3.8, ry: 2.2, fill: c.blush }
+		]
+	},
+
+	sprout: {
+		label: 'Sprout',
+		hint: 'Freshly picked',
+		build: (c = POND) => [
+			...base(c),
+			{ type: 'stroke', points: quad(32, 19, 31, 13, 32, 7), width: 2.4, color: c.stem },
+			{ type: 'ellipse', cx: 26.5, cy: 6.5, rx: 5.5, ry: 3.4, fill: c.leaf },
+			{ type: 'ellipse', cx: 37.5, cy: 6.5, rx: 5.5, ry: 3.4, fill: c.leaf },
+			...openEyes(c),
+			smile(c)
 		]
 	}
 };

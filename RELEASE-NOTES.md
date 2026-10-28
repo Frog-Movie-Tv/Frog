@@ -13,6 +13,20 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+## [0.6.1] — Leapfrog — 2026-10-27
+
+Four new mascots, and a tidier profile and Stats page.
+
+### Improvements
+
+- Four new mascots to choose from: Starry-eyed, Bow, Delighted and Sprout.
+- Actors, directors and studios sit side by side on Stats.
+
+### Fixes
+
+- Your profile picture sits in front of your banner.
+- A sign-in that doesn't match says so in plain words.
+
 ## [0.6.0] — Leapfrog — 2026-10-27
 
 AniList and Frog keep each other up to date, profiles become your own, and
@@ -328,6 +342,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[0.6.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.6.1
 [0.6.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.5.0
 [0.4.5]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.5
