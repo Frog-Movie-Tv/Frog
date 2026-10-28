@@ -39,7 +39,18 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 6. **The screenshots, the rest.** There is still no shelves shot.
 7. **The Projects board.** Backlog / In progress / Review / Done. Needs
    `gh auth refresh -s project` from an owner before it can be created.
-8. **Smaller things.** Customisable keyboard shortcuts, renaming and
+8. **Netflix: real dates on episodes.** Imported episodes are ticked undated
+   (stored with the import's time), so every Netflix show reads "last
+   watched today" and the diary holds only its films. Netflix gives a date
+   per episode; matching its episode names to TMDB's would date them
+   properly. The same holds for MyAnimeList. Films keep only their latest
+   date; earlier watches of the same film are a rewatch flag, not entries.
+9. **Netflix: untested shapes.** The personal-data ZIP
+   (`CONTENT_INTERACTION/ViewingActivity.csv`) is read from its documented
+   columns but has never been tried on a real one. Netflix's "Part N" seasons
+   are only placed when TMDB names a season "Part N"; Money Heist, KENGAN
+   ASHURA and the like still wait for a person.
+10. **Smaller things.** Customisable keyboard shortcuts, renaming and
    recolouring statuses, muted trailer autoplay, per-shelf layout defaults.
 
 ## Known issues
@@ -105,6 +116,19 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   from its snapshot changed and wins. Lists are re-read every 5 minutes. A
   Frog title never on AniList is not added there, and removing one in Frog
   never removes it on AniList — both on purpose.
+- **Netflix import** (`frontend/src/lib/import/netflix.ts`) groups plays into
+  one row per show and season before matching, then `settleNetflix` finishes
+  them with TMDB's answer: titles sent one by one fold back into their show,
+  named seasons ("STONE OCEAN", "Egghead Arc ①") are placed only when a TMDB
+  season has that name, and a show is completed only when every season was
+  seen to the end. Shows are split by season marker first, then by where
+  titles branch across the whole file, never by "the first colon".
+  `npm test` runs it against `tests/fixtures/netflix-viewing-history.csv`,
+  real titles with made-up dates; `node --test` reads the TypeScript directly
+  through `tests/ts-paths.mjs`.
+- **Imported shows get no title-level diary entry.** `apply` only writes one
+  for films; a show's watches are its episodes, and a title-level watch
+  would count the show as a film in Stats.
 - **Stats count only titles in the library.** Watches of removed titles stay
   in the database (the diary keeps them) but leave every total.
 - **Stats credits** live in `title_person`, filled by `store::ensure_title`

@@ -53,6 +53,11 @@ pub struct Incoming {
     /// From an anime tracker: prefer animated results when matching.
     #[serde(default)]
     pub anime: bool,
+    /// With no `kind`: the kind to take when a name is both a film and a show.
+    pub prefer: Option<String>,
+    /// The source's own name for the season ("Stone Ocean"), which picks
+    /// between shows that share a name: only one of them has that season.
+    pub season_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -68,6 +73,19 @@ pub struct MatchResult {
     /// The show's highest numbered season on TMDB, so the client can carry
     /// episode numbering on when TMDB folds later seasons into an earlier one.
     pub last_season: Option<i64>,
+    /// A matched show's seasons, so the client can tell whether every episode
+    /// was seen and place seasons it only knows by name.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub seasons: Vec<SeasonCount>,
+    /// The name that found the match, when it was not the row's own title.
+    pub searched: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SeasonCount {
+    pub number: i64,
+    pub name: String,
+    pub episodes: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -101,23 +119,36 @@ pub async fn match_titles(
 
     let mut out = Vec::with_capacity(body.items.len());
     for row in body.items {
-        let (matched, candidates, mut note) = resolve(&state, &row).await;
+        let Resolved {
+            matched,
+            candidates,
+            mut note,
+            searched,
+        } = resolve(&state, &row).await;
         let mut last_season = None;
+        let mut season_counts = Vec::new();
 
-        // A season the show does not have is the anime case that needs a
-        // human: some shows are split into seasons differently on TMDB.
-        if let (Some(m), Some(season)) = (matched.as_ref(), row.season) {
-            if m.kind == "tv" {
-                if let Ok(detail) = state.tmdb.tv(m.tmdb_id).await {
-                    let seasons = crate::tmdb::models::seasons(&detail);
-                    last_season = seasons.iter().map(|s| s.season_number).max();
-                    let known = seasons.iter().any(|s| s.season_number == season);
-                    if !known {
+        if let Some(m) = matched.as_ref().filter(|m| m.kind == "tv") {
+            if let Ok(detail) = state.tmdb.tv(m.tmdb_id).await {
+                let seasons = crate::tmdb::models::seasons(&detail);
+                last_season = seasons.iter().map(|s| s.season_number).max();
+                // A season the show does not have is the anime case that needs
+                // a human: some shows are split into seasons differently on TMDB.
+                if let Some(season) = row.season {
+                    if !seasons.iter().any(|s| s.season_number == season) {
                         note = Some(format!(
                             "TMDB lists no season {season} for this show; check the match"
                         ));
                     }
                 }
+                season_counts = seasons
+                    .into_iter()
+                    .map(|s| SeasonCount {
+                        number: s.season_number,
+                        name: s.name,
+                        episodes: s.episode_count,
+                    })
+                    .collect();
             }
         }
 
@@ -136,10 +167,38 @@ pub async fn match_titles(
             already_tracked: already,
             season: row.season,
             last_season,
+            seasons: season_counts,
+            searched,
         });
     }
 
     Ok(Json(json!({ "results": out })))
+}
+
+/// What `resolve` decided for one row.
+#[derive(Default)]
+struct Resolved {
+    matched: Option<SearchItem>,
+    candidates: Vec<SearchItem>,
+    note: Option<String>,
+    /// Set when one of the other names found it, not the title itself.
+    searched: Option<String>,
+}
+
+impl Resolved {
+    fn exact(item: SearchItem) -> Self {
+        Resolved {
+            matched: Some(item),
+            ..Default::default()
+        }
+    }
+
+    fn missing(note: &str) -> Self {
+        Resolved {
+            note: Some(note.into()),
+            ..Default::default()
+        }
+    }
 }
 
 /// Work out which TMDB title a row means.
@@ -147,21 +206,18 @@ pub async fn match_titles(
 /// An IMDb id is unambiguous, so it wins. Otherwise search by name and prefer
 /// an exact title in the right year: a year match is what separates the 1978
 /// film from the 2008 remake.
-async fn resolve(
-    state: &AppState,
-    row: &Incoming,
-) -> (Option<SearchItem>, Vec<SearchItem>, Option<String>) {
+async fn resolve(state: &AppState, row: &Incoming) -> Resolved {
     if let (Some(tmdb_id), Some(kind)) = (row.tmdb_id, row.kind.as_deref()) {
         if kind == "movie" || kind == "tv" {
             if let Ok(detail) = fetch_known(state, kind, tmdb_id).await {
-                return (Some(detail), Vec::new(), None);
+                return Resolved::exact(detail);
             }
         }
     }
 
     if let Some(imdb) = row.imdb_id.as_deref().filter(|s| s.starts_with("tt")) {
         if let Some(found) = find_by_imdb(state, imdb).await {
-            return (Some(found), Vec::new(), None);
+            return Resolved::exact(found);
         }
     }
 
@@ -177,7 +233,7 @@ async fn resolve(
     for name in names {
         let raw = match state.tmdb.search_multi(name, 1).await {
             Ok(v) => v,
-            Err(_) => return (None, Vec::new(), Some("TMDB did not answer".into())),
+            Err(_) => return Resolved::missing("TMDB did not answer"),
         };
         found = raw
             .get("results")
@@ -201,8 +257,9 @@ async fn resolve(
     }
 
     if found.is_empty() {
-        return (None, Vec::new(), Some("No match found".into()));
+        return Resolved::missing("No match found");
     }
+    let other_name = (searched != row.title).then(|| searched.clone());
 
     // A live-action remake shares a name with half of anime; for rows from
     // an anime tracker, animated results go first.
@@ -210,18 +267,44 @@ async fn resolve(
         const ANIMATION: i64 = 16;
         found.sort_by_key(|f| !f.genre_ids.contains(&ANIMATION));
     }
+    if let Some(prefer) = row.prefer.as_deref() {
+        found.sort_by_key(|f| f.kind != prefer);
+    }
 
     let wanted = searched.trim().to_lowercase();
+
+    // Two shows called "One Piece", two called "Avatar: The Last Airbender":
+    // the one meant has the season the row is about.
+    if let Some(i) = pick_by_season(state, &found, &searched, row).await {
+        let best = found.remove(i);
+        return Resolved {
+            matched: Some(best),
+            candidates: found.into_iter().take(4).collect(),
+            note: None,
+            searched: other_name,
+        };
+    }
+
     let exact_same_year = found
         .iter()
         .position(|f| f.name.to_lowercase() == wanted && row.year.is_some() && f.year == row.year);
 
     if let Some(i) = exact_same_year {
         let best = found.remove(i);
-        return (Some(best), found.into_iter().take(4).collect(), None);
+        return Resolved {
+            matched: Some(best),
+            candidates: found.into_iter().take(4).collect(),
+            note: None,
+            searched: other_name,
+        };
     }
 
-    let exact = found.iter().position(|f| f.name.to_lowercase() == wanted);
+    // Netflix writes the 2023 series "ONE PIECE" and the anime "One Piece":
+    // the same letters in the same case win over the same letters.
+    let exact = found
+        .iter()
+        .position(|f| f.name == searched.trim())
+        .or_else(|| found.iter().position(|f| f.name.to_lowercase() == wanted));
     let index = exact.unwrap_or(0);
     let best = found.remove(index);
 
@@ -233,10 +316,101 @@ async fn resolve(
             Some(format!("Your file says {a}, TMDB says {b}"))
         }
         _ if exact.is_none() => Some("Closest match by name".into()),
+        // "Bleach" is a film and a show; the preferred kind won, but only
+        // just.
+        _ if row.prefer.is_some()
+            && found
+                .iter()
+                .any(|f| f.kind != best.kind && f.name.to_lowercase() == wanted) =>
+        {
+            Some(if best.kind == "movie" {
+                "There is also a show by this name".into()
+            } else {
+                "There is also a film by this name".into()
+            })
+        }
         _ => None,
     };
 
-    (Some(best), found.into_iter().take(4).collect(), note)
+    Resolved {
+        matched: Some(best),
+        candidates: found.into_iter().take(4).collect(),
+        note,
+        searched: other_name,
+    }
+}
+
+/// Season names compared loosely: "Sun & Moon - Ultra Adventures" is
+/// "Sun & Moon: Ultra Adventures", and "Egghead Arc" is "Egghead". "Part"
+/// and "Season" stay: a "Part 2" is not a "Season 2".
+pub fn season_words(name: &str) -> String {
+    let lower = name.to_lowercase();
+    let words: Vec<&str> = lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .filter(|w| !matches!(*w, "the" | "arc" | "saga"))
+        .collect();
+    words.join(" ")
+}
+
+/// Among shows found under the same name, the first that has the row's
+/// season: one of that name, or that number with at least as many episodes
+/// as were watched. None when the name is not shared or nothing fits.
+async fn pick_by_season(
+    state: &AppState,
+    found: &[SearchItem],
+    searched: &str,
+    row: &Incoming,
+) -> Option<usize> {
+    let wanted = searched.trim().to_lowercase();
+    let target = row
+        .season_name
+        .as_deref()
+        .map(season_words)
+        .filter(|t| !t.is_empty());
+    let number = row.season.filter(|n| *n > 0);
+    if target.is_none() && number.is_none() {
+        return None;
+    }
+    let mut same: Vec<usize> = found
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| f.kind == "tv" && f.name.to_lowercase() == wanted)
+        .map(|(i, _)| i)
+        .take(4)
+        .collect();
+    // The exact casing first, as for a plain match.
+    same.sort_by_key(|&i| found[i].name != searched.trim());
+    if same.len() < 2 {
+        return None;
+    }
+    for i in same {
+        let Ok(detail) = state.tmdb.tv(found[i].tmdb_id).await else {
+            continue;
+        };
+        let hit = crate::tmdb::models::seasons(&detail).iter().any(|s| {
+            if s.season_number < 1 {
+                return false;
+            }
+            match (&target, number) {
+                (Some(target), _) => {
+                    let have = season_words(&s.name);
+                    !have.is_empty()
+                        && (have == *target
+                            || format!(" {have} ").contains(&format!(" {target} "))
+                            || format!(" {target} ").contains(&format!(" {have} ")))
+                }
+                (None, Some(n)) => {
+                    s.season_number == n && s.episode_count >= row.progress.unwrap_or(1)
+                }
+                (None, None) => false,
+            }
+        });
+        if hit {
+            return Some(i);
+        }
+    }
+    None
 }
 
 async fn fetch_known(state: &AppState, kind: &str, tmdb_id: i64) -> AppResult<SearchItem> {
@@ -489,8 +663,10 @@ pub async fn apply(
             .await?;
         }
 
-        // A diary entry is the whole point of importing a diary.
-        if let Some(watched_at) = item.watched_at.as_deref() {
+        // A diary entry is the whole point of importing a diary. Only for a
+        // film: a show's watches are its episodes, and a title-level entry
+        // would count the show as a film in the stats.
+        if let Some(watched_at) = item.watched_at.as_deref().filter(|_| item.kind == "movie") {
             let exists: (i64,) = sqlx::query_as(
                 "SELECT COUNT(*) FROM watch_event
                   WHERE user_id = ? AND title_id = ? AND episode_id IS NULL
