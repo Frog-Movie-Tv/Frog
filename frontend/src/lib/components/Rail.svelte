@@ -15,10 +15,13 @@
 	let track: HTMLDivElement | undefined = $state();
 	let atStart = $state(true);
 	let atEnd = $state(false);
+	/** Whether there is anything off-screen to scroll to at all. */
+	let overflows = $state(false);
 
 	function measure() {
 		if (!track) return;
 		const max = track.scrollWidth - track.clientWidth;
+		overflows = max > 2;
 		atStart = track.scrollLeft <= 2;
 		atEnd = track.scrollLeft >= max - 2;
 	}
@@ -33,25 +36,37 @@
 	});
 </script>
 
+<!-- Resizing changes whether a row still fits, so the arrows re-decide. -->
+<svelte:window onresize={measure} />
+
 <section class="rail" class:wide>
 	{#if title || action}
 		<div class="section-head">
 			{#if title}<h2>{title}</h2>{/if}
 			<div class="tools">
 				{#if action}{@render action()}{/if}
-				<div class="arrows">
-					<button
-						class="arrow"
-						disabled={atStart}
-						aria-label="Scroll left"
-						onclick={() => nudge(-1)}
-					>
-						<Icon name="chevron-left" size={17} />
-					</button>
-					<button class="arrow" disabled={atEnd} aria-label="Scroll right" onclick={() => nudge(1)}>
-						<Icon name="chevron-right" size={17} />
-					</button>
-				</div>
+				<!-- A row that fits has nothing to scroll to, and two dead arrows
+				     beside one card read as something being broken. -->
+				{#if overflows}
+					<div class="arrows">
+						<button
+							class="arrow"
+							disabled={atStart}
+							aria-label="Scroll left"
+							onclick={() => nudge(-1)}
+						>
+							<Icon name="chevron-left" size={17} />
+						</button>
+						<button
+							class="arrow"
+							disabled={atEnd}
+							aria-label="Scroll right"
+							onclick={() => nudge(1)}
+						>
+							<Icon name="chevron-right" size={17} />
+						</button>
+					</div>
+				{/if}
 			</div>
 		</div>
 	{/if}

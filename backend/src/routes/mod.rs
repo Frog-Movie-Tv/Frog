@@ -88,6 +88,7 @@ pub fn router(state: AppState) -> Router {
                 // Room for a picture; the handler refuses anything over 3 MB.
                 .layer(DefaultBodyLimit::max(account::IMAGE_MAX_BYTES + 64 * 1024)),
         )
+        .route("/account/library", delete(account::clear_library))
         .route("/account/sessions", get(account::sessions))
         .route(
             "/account/sessions/others",

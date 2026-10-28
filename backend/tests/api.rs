@@ -125,6 +125,24 @@ impl Harness {
         self.call(req.body(Body::empty()).unwrap()).await
     }
 
+    /// A DELETE carrying a body, for the ones that ask you to confirm.
+    async fn delete_with(
+        &self,
+        path: &str,
+        body: Value,
+        cookie: Option<&str>,
+    ) -> (StatusCode, Value, Option<String>) {
+        let mut req = Request::builder()
+            .uri(path)
+            .method("DELETE")
+            .header(header::CONTENT_TYPE, "application/json");
+        if let Some(c) = cookie {
+            req = req.header(header::COOKIE, c);
+        }
+        self.call(req.body(Body::from(body.to_string())).unwrap())
+            .await
+    }
+
     /// A POST that claims to come from a particular address, for the sign-in
     /// throttle: under the test harness there is no socket, so the caller is
     /// only ever named by the proxy header.
@@ -2787,6 +2805,96 @@ async fn profiles_carry_a_name_an_about_pins_and_pictures() {
     .await;
     assert_eq!(h.get(&avatar, Some(&guest)).await.0, StatusCode::OK);
     assert_eq!(h.get(&avatar, None).await.0, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn emptying_a_library_takes_only_your_own() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    seed_owner_history(&h).await;
+
+    // Give the guest something of their own, so "it emptied everything"
+    // and "it emptied the right account" are different results.
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (2, 1, 'watching', 'x', 'x')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at)
+         VALUES (2, 2, 1, '2026-02-02T20:00:00Z')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    // The phrase has to be typed, and the password has to be right.
+    let (code, _, _) = h
+        .delete_with(
+            "/api/account/library",
+            json!({ "password": "a-long-enough-pass", "confirm": "yes" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(
+        code,
+        StatusCode::BAD_REQUEST,
+        "a vague confirmation is refused"
+    );
+
+    let (code, _, _) = h
+        .delete_with(
+            "/api/account/library",
+            json!({ "password": "wrong-password", "confirm": "delete my library" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(
+        code,
+        StatusCode::BAD_REQUEST,
+        "the wrong password is refused"
+    );
+
+    // Nothing has gone yet.
+    let (_, before) = h.get("/api/library", Some(&owner)).await;
+    assert_eq!(before["items"].as_array().unwrap().len(), 2);
+
+    let (code, body, _) = h
+        .delete_with(
+            "/api/account/library",
+            json!({ "password": "a-long-enough-pass", "confirm": "Delete My Library" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body:?}");
+    assert_eq!(body["titles"], json!(2));
+    assert_eq!(body["watches"], json!(2));
+    assert_eq!(body["shelves"], json!(1));
+
+    // The owner is empty...
+    let (_, mine) = h.get("/api/library", Some(&owner)).await;
+    assert!(mine["items"].as_array().unwrap().is_empty());
+    let (_, diary) = h.get("/api/diary", Some(&owner)).await;
+    assert_eq!(diary["total"], json!(0));
+    let (_, shelves) = h.get("/api/shelves", Some(&owner)).await;
+    assert!(shelves["shelves"].as_array().unwrap().is_empty());
+
+    // ...and still signed in, with the account intact.
+    let (code, status) = h.get("/api/auth/status", Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(status["authenticated"], json!(true));
+
+    // The guest kept everything.
+    let (_, theirs) = h.get("/api/library", Some(&guest)).await;
+    assert_eq!(
+        theirs["items"].as_array().unwrap().len(),
+        1,
+        "the guest lost a title: {theirs:?}"
+    );
+    let (_, their_diary) = h.get("/api/diary", Some(&guest)).await;
+    assert_eq!(their_diary["total"], json!(1), "the guest lost a watch");
 }
 
 /// A sign-in that does not match says so in words a person can act on, and
