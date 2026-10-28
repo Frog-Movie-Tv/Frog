@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.7.0](https://github.com/Frog-Movie-Tv/Frog/compare/v0.6.0...v0.7.0) (2026-10-28)
+
+
+### Features
+
+* **anilist:** place entries by TMDB id, exact name and prequel chain ([f2e754e](https://github.com/Frog-Movie-Tv/Frog/commit/f2e754eef45582cad6d3105a04363ac199201d9c))
+* **mascots:** add four kawaii mascots ([c206b8a](https://github.com/Frog-Movie-Tv/Frog/commit/c206b8a0e526712f260981bf1a995e524089bdbf))
+* **search:** find people, characters, studios and members ([5b28367](https://github.com/Frog-Movie-Tv/Frog/commit/5b2836731de2e4385e037ecd034627078d1f29a4))
+* **settings:** empty your library, and stop empty rails showing arrows ([d704b84](https://github.com/Frog-Movie-Tv/Frog/commit/d704b8477ceb4fac0fc0c547d13300492bb34290))
+* **settings:** empty your library, and stop empty rails showing arrows ([8419408](https://github.com/Frog-Movie-Tv/Frog/commit/84194088ae2c82cdd9fe5eaf25be3e4bf31c8848))
+* **titles:** trailers play, completed shows tick their episodes ([3ec0434](https://github.com/Frog-Movie-Tv/Frog/commit/3ec0434030955785b89f4a1d67ab529214777d02))
+
+
+### Fixes
+
+* 0.6.1 — picture over the banner, people side by side, kawaii mascots ([504ae62](https://github.com/Frog-Movie-Tv/Frog/commit/504ae62c2fb6bac86f41a8a180369fa927c65df8))
+* **anilist:** retry when TMDB is out of reach instead of asking you ([85d0bd8](https://github.com/Frog-Movie-Tv/Frog/commit/85d0bd804e3147d20177921806936ccd554ced0f))
+* **auth:** say plainly when a sign-in does not match ([c18d635](https://github.com/Frog-Movie-Tv/Frog/commit/c18d6359b32e28789bc2177cdb5c97d3bba002bd))
+* **auth:** say plainly when a sign-in does not match ([c56bccc](https://github.com/Frog-Movie-Tv/Frog/commit/c56bccc25f9c8f736ab78c1110e4276f9290a644))
+* **profiles:** draw the profile picture in front of the banner ([e47a5cd](https://github.com/Frog-Movie-Tv/Frog/commit/e47a5cd50cb77009293603af783393f2ebc46377))
+* **stats:** keep actors, directors and studios in one row ([9c3aa3a](https://github.com/Frog-Movie-Tv/Frog/commit/9c3aa3a4bbcfc88fae44e488a7c3f3dd3b358759))
+
+
+### Documentation
+
+* write the 0.6.1 release notes ([77ee240](https://github.com/Frog-Movie-Tv/Frog/commit/77ee24077acf4aa3a4fed2e606580457bfb64aac))
+* write the 0.7.0 Treefrog release notes ([b1d44a0](https://github.com/Frog-Movie-Tv/Frog/commit/b1d44a08723355b351c26dc9b4abb45957e68ccb))
+
 ## [0.6.0](https://github.com/Frog-Movie-Tv/Frog/compare/v0.5.0...v0.6.0) (2026-10-27)
 
 
