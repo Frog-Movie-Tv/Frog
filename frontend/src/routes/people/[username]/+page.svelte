@@ -74,7 +74,11 @@
 	{:else}
 		<header class="hero card">
 			<div class="banner" class:plain={!banner}>
-				{#if banner}<img src={banner} alt="" />{/if}
+				{#if banner}<img
+						src={banner}
+						alt=""
+						style:object-position={profile.banner_position ?? undefined}
+					/>{/if}
 			</div>
 			<div class="identity">
 				<span class="picture"
@@ -217,9 +221,12 @@
 		border: 4px solid var(--bg-elev);
 	}
 
+	/* Below the banner's edge, never on it: a name over a picture is only
+	   as readable as the picture lets it be. */
 	.names {
 		flex: 1;
 		min-width: 180px;
+		padding-top: 52px;
 	}
 
 	.names h1 {

@@ -46,6 +46,11 @@ pub async fn get(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Va
         .fetch_all(&state.pool)
         .await?;
     let has = |kind: &str| images.iter().any(|(k,)| k == kind);
+    let (banner_position,): (Option<String>,) =
+        sqlx::query_as("SELECT banner_position FROM app_user WHERE id = ?")
+            .bind(auth.user_id())
+            .fetch_one(&state.pool)
+            .await?;
     Ok(Json(json!({
         "id": auth.user_id(),
         "username": row.0,
@@ -56,6 +61,7 @@ pub async fn get(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Va
         "display_name": row.5,
         "bio": row.6,
         "banner_backdrop": row.7,
+        "banner_position": banner_position,
         "pins": serde_json::from_str::<Value>(&row.8).unwrap_or(json!([])),
         "avatar": has("avatar"),
         "banner": has("banner"),
@@ -205,6 +211,8 @@ pub struct ProfileBody {
     pub display_name: Option<String>,
     pub bio: Option<String>,
     pub banner_backdrop: Option<String>,
+    /// "x% y%", which part of the banner shows. Empty resets it.
+    pub banner_position: Option<String>,
     pub pins: Option<Vec<Pin>>,
 }
 
@@ -215,6 +223,17 @@ pub struct Pin {
 }
 
 const NAME_MAX: usize = 40;
+
+/// Two percentages from 0 to 100, as CSS writes a position: "50% 30%".
+fn is_position(value: &str) -> bool {
+    let parts: Vec<&str> = value.split(' ').collect();
+    parts.len() == 2
+        && parts.iter().all(|p| {
+            p.strip_suffix('%')
+                .and_then(|n| n.parse::<f64>().ok())
+                .is_some_and(|n| (0.0..=100.0).contains(&n))
+        })
+}
 const BIO_MAX: usize = 600;
 const PINS_MAX: usize = 4;
 
@@ -253,6 +272,19 @@ pub async fn set_profile(
     if let Some(bio) = &body.bio {
         sqlx::query("UPDATE app_user SET bio = ? WHERE id = ?")
             .bind(text(bio, BIO_MAX, "your about text")?)
+            .bind(me)
+            .execute(pool)
+            .await?;
+    }
+    if let Some(position) = &body.banner_position {
+        let position = position.trim();
+        if !position.is_empty() && !is_position(position) {
+            return Err(AppError::BadRequest(
+                "That banner position cannot be used.".into(),
+            ));
+        }
+        sqlx::query("UPDATE app_user SET banner_position = ? WHERE id = ?")
+            .bind((!position.is_empty()).then_some(position))
             .bind(me)
             .execute(pool)
             .await?;

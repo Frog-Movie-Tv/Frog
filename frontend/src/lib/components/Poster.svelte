@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { img } from '#lib/api';
+	import Icon from './Icon.svelte';
 	import { formatScore } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import type { Kind, Status } from '#lib/types';
@@ -20,6 +21,8 @@
 		/** Show a Film / Show badge, for mixed result lists. */
 		kindBadge?: boolean;
 		size?: string;
+		/** A backdrop to crop when TMDB has no poster, as small titles often do. */
+		fallbackPath?: string | null;
 	}
 
 	let {
@@ -34,10 +37,12 @@
 		total = 0,
 		morph = false,
 		kindBadge = false,
-		size = 'w342'
+		size = 'w342',
+		fallbackPath = null
 	}: Props = $props();
 
 	const src = $derived(img(posterPath, size));
+	const fallback = $derived(posterPath ? null : img(fallbackPath, 'w780'));
 	const progress = $derived(total > 0 ? Math.min(100, (watched / total) * 100) : 0);
 	const scored = $derived(
 		rating === null ? null : formatScore(rating, settings.current.scoreFormat)
@@ -55,7 +60,15 @@
 		{#if src}
 			<img {src} alt="" loading="lazy" decoding="async" />
 		{:else}
-			<div class="placeholder"><span>{name.slice(0, 2).toUpperCase()}</span></div>
+			{#if fallback}
+				<img class="cropped" src={fallback} alt="" loading="lazy" decoding="async" />
+			{:else}
+				<!-- No artwork anywhere: a drawn card rather than an empty box. -->
+				<div class="placeholder">
+					<Icon name={kind === 'tv' ? 'tv' : 'film'} size={26} />
+					<span>{name}</span>
+				</div>
+			{/if}
 		{/if}
 
 		{#if status && show.showBadge}
@@ -116,16 +129,43 @@
 		display: block;
 	}
 
+	/* A landscape backdrop standing in for a poster: cropped to the middle,
+	   where the subject usually is. */
+	.cropped {
+		object-position: center;
+	}
+
 	.placeholder {
 		width: 100%;
 		height: 100%;
-		display: grid;
-		place-items: center;
-		background: linear-gradient(160deg, var(--bg-elev-2), var(--bg-elev));
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 10px;
+		padding: 14px;
+		text-align: center;
+		background:
+			radial-gradient(
+				120% 70% at 50% 0%,
+				color-mix(in srgb, var(--accent) 16%, transparent),
+				transparent 70%
+			),
+			linear-gradient(160deg, var(--bg-elev-2), var(--bg-elev));
 		color: var(--text-faint);
-		font-weight: 700;
-		font-size: 1.4rem;
-		letter-spacing: 0.05em;
+	}
+
+	.placeholder span {
+		font-family: var(--font-display);
+		font-size: 0.86rem;
+		font-weight: 650;
+		line-height: 1.25;
+		color: var(--text-dim);
+		display: -webkit-box;
+		-webkit-line-clamp: 4;
+		line-clamp: 4;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
 	}
 
 	.badge {

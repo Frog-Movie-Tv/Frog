@@ -121,6 +121,10 @@ pub struct BulkWatchBody {
     pub when: When,
     /// yyyy-mm-dd, required when `when` is `date`.
     pub date: Option<String>,
+    /// Specials (season 0 episode numbers) to tick as well, when marking a
+    /// whole show: a finished show means its seasons, and specials are chosen.
+    #[serde(default)]
+    pub specials: Vec<i64>,
 }
 
 /// Turn a yyyy-mm-dd into the timestamp watches are stored with, refusing
@@ -197,11 +201,42 @@ async fn bulk(
     .bind(title_id)
     .bind(mode)
     .bind(Utc::now().to_rfc3339())
-    .bind(chosen)
+    .bind(chosen.as_deref())
     .bind(season)
     .bind(user_id)
     .execute(&state.pool)
     .await?;
+
+    if season.is_none() {
+        for special in &body.specials {
+            sqlx::query(
+                "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                          source, undated)
+                 SELECT ?6, ?1, e.id,
+                        CASE ?2 WHEN 'release' THEN COALESCE(e.air_date || 'T20:00:00Z', ?3)
+                                WHEN 'date' THEN ?4
+                                ELSE ?3 END,
+                        0, 'manual',
+                        CASE ?2 WHEN 'unknown' THEN 1
+                                WHEN 'release' THEN e.air_date IS NULL
+                                ELSE 0 END
+                   FROM episode e
+                  WHERE e.title_id = ?1 AND e.season_number = 0 AND e.episode_number = ?5
+                    AND (e.air_date IS NULL OR e.air_date <= date('now'))
+                    AND NOT EXISTS (
+                          SELECT 1 FROM watch_event w
+                           WHERE w.user_id = ?6 AND w.episode_id = e.id)",
+            )
+            .bind(title_id)
+            .bind(mode)
+            .bind(Utc::now().to_rfc3339())
+            .bind(chosen.as_deref())
+            .bind(special)
+            .bind(user_id)
+            .execute(&state.pool)
+            .await?;
+        }
+    }
 
     Ok(())
 }
@@ -280,7 +315,10 @@ async fn after_change(state: &AppState, user_id: i64, title_id: i64) -> AppResul
     let progress = store::progress(&state.pool, user_id, title_id).await?;
     let entry = store::get_entry(&state.pool, user_id, title_id).await?;
 
-    let desired = if progress.total > 0 && progress.watched >= progress.total {
+    let desired = if progress.total > 0
+        && progress.watched >= progress.total
+        && crate::routes::settings::auto_complete(&state.pool, user_id).await
+    {
         Some("completed")
     } else if progress.watched > 0 {
         match entry.as_ref().map(|e| e.status.as_str()) {

@@ -380,7 +380,7 @@
 					</div>
 
 					<details class="editor">
-						<summary>Colour editor</summary>
+						<summary><Icon name="chevron-right" size={16} />Colour editor</summary>
 
 						<div class="colours">
 							{#each tokens as token (token.key)}
@@ -603,6 +603,7 @@
 								<span class="label"><strong>{label}</strong></span>
 								<input
 									type="checkbox"
+									class="toggle-switch"
 									checked={s[key]}
 									onchange={(e) => settings.set(key, e.currentTarget.checked)}
 								/>
@@ -638,6 +639,7 @@
 							</span>
 							<input
 								type="checkbox"
+								class="toggle-switch"
 								checked={s.followPoster}
 								onchange={(e) => settings.set('followPoster', e.currentTarget.checked)}
 							/>
@@ -792,6 +794,7 @@
 							</span>
 							<input
 								type="checkbox"
+								class="toggle-switch"
 								checked={s.halfStars}
 								onchange={(e) => settings.set('halfStars', e.currentTarget.checked)}
 							/>
@@ -827,6 +830,7 @@
 							</span>
 							<input
 								type="checkbox"
+								class="toggle-switch"
 								checked={s.spoilerProtection}
 								onchange={(e) => settings.set('spoilerProtection', e.currentTarget.checked)}
 							/>
@@ -839,19 +843,9 @@
 							</span>
 							<input
 								type="checkbox"
+								class="toggle-switch"
 								checked={s.hideAnimation}
 								onchange={(e) => settings.set('hideAnimation', e.currentTarget.checked)}
-							/>
-						</label>
-
-						<label class="row card">
-							<span class="label">
-								<strong>Automatic dates</strong>
-							</span>
-							<input
-								type="checkbox"
-								checked={s.autoDates}
-								onchange={(e) => settings.set('autoDates', e.currentTarget.checked)}
 							/>
 						</label>
 
@@ -862,6 +856,7 @@
 							</span>
 							<input
 								type="checkbox"
+								class="toggle-switch"
 								checked={s.autoComplete}
 								onchange={(e) => settings.set('autoComplete', e.currentTarget.checked)}
 							/>
@@ -885,6 +880,7 @@
 							<span class="label"><strong>24-hour clock</strong></span>
 							<input
 								type="checkbox"
+								class="toggle-switch"
 								checked={s.clock24}
 								onchange={(e) => settings.set('clock24', e.currentTarget.checked)}
 							/>
@@ -934,6 +930,7 @@
 							</span>
 							<input
 								type="checkbox"
+								class="toggle-switch"
 								checked={s.dataSaver}
 								onchange={(e) => settings.set('dataSaver', e.currentTarget.checked)}
 							/>
@@ -1008,7 +1005,7 @@
 					<div class="section-head"><h2>Advanced</h2></div>
 
 					<details class="editor">
-						<summary>Custom CSS</summary>
+						<summary><Icon name="chevron-right" size={16} />Custom CSS</summary>
 						<p class="faint tiny">
 							Applied to every page, for example <code>:root &#123; --accent: hotpink; &#125;</code>
 						</p>
@@ -1262,7 +1259,7 @@
 		flex: none;
 	}
 
-	input[type='checkbox'] {
+	input[type='checkbox']:not(.toggle-switch) {
 		width: 20px;
 		height: 20px;
 		accent-color: var(--accent);
@@ -1277,10 +1274,27 @@
 		margin-bottom: 14px;
 	}
 
+	/* Frog's own chevron, not the browser's triangle, turning as it opens. */
 	summary {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 		cursor: pointer;
 		font-weight: 600;
 		font-size: 0.92rem;
+		list-style: none;
+	}
+
+	summary::-webkit-details-marker {
+		display: none;
+	}
+
+	summary :global(svg) {
+		transition: transform var(--fast) var(--ease);
+	}
+
+	details[open] > summary :global(svg) {
+		transform: rotate(90deg);
 	}
 
 	.colours {

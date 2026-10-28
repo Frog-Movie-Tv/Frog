@@ -3,17 +3,23 @@
 	import { api } from '#lib/api';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
+	import { prettyDate } from '#lib/format';
+	import { whenWatched } from '#lib/when.svelte';
 	import type { Kind, LibraryItem, Status } from '#lib/types';
 	import { STATUSES, STATUS_LABEL } from '#lib/types';
 	import Rating from './Rating.svelte';
 	import Select from './Select.svelte';
 
+	const today = () => new Date().toISOString().slice(0, 10);
+
 	interface Props {
 		item: LibraryItem;
 		onchange: (item: LibraryItem) => void;
+		/** Episodes were ticked as well, so lists of them need reloading. */
+		onepisodes?: (item: LibraryItem) => void;
 	}
 
-	let { item, onchange }: Props = $props();
+	let { item, onchange, onepisodes }: Props = $props();
 
 	const defaultStatus = $derived(settings.current.defaultStatus);
 
@@ -31,6 +37,48 @@
 		try {
 			const { item: updated } = await api.track(kind, item.tmdb_id, patch);
 			onchange(updated);
+		} catch (e) {
+			toasts.error(e);
+		} finally {
+			saving = false;
+		}
+	}
+
+	/**
+	 * Completed means seen: a show marked finished with episodes still open
+	 * would count for nothing in the diary, stats or watch time. Ask when, as
+	 * ticking them by hand would, and tick every aired one.
+	 */
+	async function setStatus(status: Status) {
+		await save({ status });
+		const open = item.total_episodes - item.watched_episodes;
+		if (status !== 'completed' || kind !== 'tv' || open <= 0) return;
+		// Completed means the seasons; specials are a choice, so offer them.
+		const specials = await api
+			.season(kind, item.tmdb_id, 0)
+			.then((s) =>
+				s.episodes
+					.filter((e) => !e.watched && (!e.air_date || e.air_date <= today()))
+					.map((e) => ({
+						key: e.episode_number,
+						label: e.name || `Special ${e.episode_number}`,
+						hint: e.air_date ? prettyDate(e.air_date) : undefined
+					}))
+			)
+			.catch(() => []);
+		const answer = await whenWatched.ask(
+			item.name,
+			'Every aired episode of every season',
+			true,
+			specials,
+			'Specials you saw too'
+		);
+		if (!answer) return;
+		saving = true;
+		try {
+			const { item: updated } = await api.setShowWatched(kind, item.tmdb_id, true, answer);
+			(onepisodes ?? onchange)(updated);
+			toasts.push(`Marked ${updated.watched_episodes} episodes watched`);
 		} catch (e) {
 			toasts.error(e);
 		} finally {
@@ -83,7 +131,7 @@
 			label="Status"
 			value={item.entry?.status ?? 'planned'}
 			options={STATUSES.map((st) => ({ value: st, label: STATUS_LABEL[st] }))}
-			onchange={(v) => save({ status: v as Status })}
+			onchange={(v) => setStatus(v as Status)}
 		/>
 
 		<Rating value={item.entry?.rating ?? null} onchange={(v) => save({ rating: v })} />

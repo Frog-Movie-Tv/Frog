@@ -32,6 +32,22 @@ pub async fn get(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Va
     Ok(Json(stored))
 }
 
+/// "Complete automatically" in Watching: whether ticking a show's last
+/// episode marks it completed. On unless it was turned off.
+pub async fn auto_complete(pool: &sqlx::SqlitePool, user_id: i64) -> bool {
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT value FROM app_setting WHERE user_id = ? AND key = ?")
+            .bind(user_id)
+            .bind(KEY)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+    row.and_then(|(v,)| serde_json::from_str::<Value>(&v).ok())
+        .and_then(|v| v["autoComplete"].as_bool())
+        .unwrap_or(true)
+}
+
 pub async fn put(
     auth: Auth,
     State(state): State<AppState>,

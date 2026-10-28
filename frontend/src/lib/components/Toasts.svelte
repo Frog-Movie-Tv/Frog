@@ -100,7 +100,8 @@
 		color: var(--text);
 	}
 
-	@media (max-width: 720px) {
+	/* The same width the tab bar appears at, so a toast always clears it. */
+	@media (max-width: 760px) {
 		.stack {
 			bottom: calc(78px + env(safe-area-inset-bottom));
 		}

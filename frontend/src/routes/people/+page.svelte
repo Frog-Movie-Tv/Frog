@@ -37,7 +37,7 @@
 			title="Nobody is sharing yet"
 			hint="When someone turns on their profile in Settings, they appear here."
 		>
-			<a class="btn" href="/settings">Your profile setting</a>
+			<a class="btn primary" href="/settings#account">Share my profile</a>
 		</Empty>
 	{:else}
 		<ul class="people">
