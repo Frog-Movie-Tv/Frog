@@ -7,7 +7,7 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 0.5.0 "Ribbit"; 0.6.0 "Leapfrog" is in its pull request |
+| **Release** | 0.6.0 "Leapfrog"; 0.7.0 "Treefrog" is in its pull request |
 | **Next codenames** | Bullfrog (1.0) |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
@@ -21,24 +21,25 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 ## Next
 
-1. **Give the server its AniList client.** 0.6.0 syncs AniList through
-   AniList's own sign-in, which needs `ANILIST_CLIENT_ID`,
-   `ANILIST_CLIENT_SECRET` and `ANILIST_REDIRECT_URI` in
-   `/opt/frog/production/.env` (the client exists; its redirect URL is
-   `https://frogwatchlist.duckdns.org/api/anilist/callback`). Without them
-   AniList simply does not appear in Settings. `docs/DEPLOY-ORACLE.md` step 6.
-2. **Back up somewhere other than the server.** `BACKUP_REPO_DIR` is blank, so
+1. **Back up somewhere other than the server.** `BACKUP_REPO_DIR` is blank, so
    nightly backups land in `/opt/frog/backups` and nowhere else — lose the
    instance and they go with it. Needs a private repository and a deploy key.
-3. **Restore once, for real.** `restore.sh` has never been run. Do it against
+2. **Restore once, for real.** `restore.sh` has never been run. Do it against
    a throwaway instance before it is ever needed in anger.
-4. **The screenshots, the rest.** Refreshed for 0.6.0, but there is still no
-   shelves shot and the calendar one is empty because the demo titles have
-   no upcoming episodes — seed a currently airing show in
-   `scripts/screenshots.mjs`.
-5. **The Projects board.** Backlog / In progress / Review / Done. Needs
+3. **A development AniList client.** A client has one redirect URL, and the
+   one in use points at production, so AniList sign-in cannot finish on a
+   laptop. Register a second client with
+   `http://127.0.0.1:8080/api/anilist/callback` for the local `.env`.
+4. **AniList specials.** Entries that TMDB files under season 0 (OVAs,
+   specials) are never placed automatically; they wait under "not matched
+   yet". Fribb's list gives season 0 and an offset for some of them.
+5. **More streaming links.** Services without a known search address (Rakuten
+   TV, Streamz, VRT MAX, GoPlay…) still open TMDB's watch page. Add each one
+   to `frontend/src/lib/providers.ts` once its search URL is confirmed.
+6. **The screenshots, the rest.** There is still no shelves shot.
+7. **The Projects board.** Backlog / In progress / Review / Done. Needs
    `gh auth refresh -s project` from an owner before it can be created.
-6. **Smaller things.** Customisable keyboard shortcuts, renaming and
+8. **Smaller things.** Customisable keyboard shortcuts, renaming and
    recolouring statuses, muted trailer autoplay, per-shelf layout defaults.
 
 ## Known issues
@@ -47,6 +48,7 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 | --- | --- |
 | **Rebase merging doubles the changelog** | "Rebase and merge" rewrites commit hashes, so a change can land twice and release-please lists both. Untick *Allow rebase merging* in the repository settings. |
 | **Backups are only on the server** | See Next 1. Until then a lost instance is a lost history. |
+| **Characters come from what Frog has seen** | Search finds anime characters through AniList, and everyone else from the casts of titles somebody on this Frog has opened. TMDB has no character search. |
 | **No staging** | 954 MB will not carry a second instance. `install.sh --with-staging` sets one up if it ever moves to a bigger machine. |
 | **Notifications untested on a real phone** | Verified through FCM in Chrome; not on Android, and tapping one is untested. |
 | **Server messages are English only** | Validation errors and notification text. Fine while the interface is English only. |
@@ -92,11 +94,16 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   and Playwright's `--disable-background-networking` cuts it off from FCM.
   `verify-push.mjs` keeps background networking and records the worker's
   `showNotification` calls instead.
-- **AniList sync** (`backend/src/anilist.rs`) places entries by id from the
-  Kometa Anime-IDs list, turning TVDB season and offset into TMDB numbering
-  through absolute positions. Each entry keeps a snapshot of both sides from
-  the last sync; whichever side differs from its snapshot changed and wins.
-  A Frog title never on AniList is not added there, and removing one in Frog
+- **AniList sync** (`backend/src/anilist.rs`) places entries in this order:
+  Fribb's anime-lists (TMDB id, TMDB season and offset, used only when no
+  other entry claims the same spot), then Kometa's Anime-IDs (TVDB season and
+  offset, turned into TMDB numbering through absolute positions), then an
+  exact name and year on TMDB (animation only, unambiguous only), then
+  AniList's own prequel chain counted on from the first season. Both lists
+  reload weekly; the prequel chain is cached in `anilist_chain`. Each entry
+  keeps a snapshot of both sides from the last sync; whichever side differs
+  from its snapshot changed and wins. Lists are re-read every 5 minutes. A
+  Frog title never on AniList is not added there, and removing one in Frog
   never removes it on AniList — both on purpose.
 - **Stats count only titles in the library.** Watches of removed titles stay
   in the database (the diary keeps them) but leave every total.
@@ -106,6 +113,15 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   `lib/settings.svelte.ts`. Add the id to `HOME_ROWS` and to the default list.
 
 ## Shipped
+
+**0.7.0 Treefrog** — One search for titles, people, characters, studios and
+members, with studio pages. AniList placed by TMDB id from Fribb's list, by
+exact name and by prequel chain, re-read every 5 minutes, leftovers kept out
+of the way. Trailers play (they needed a referrer). Streaming logos open the
+service. Completed shows tick their aired episodes and offer the specials.
+Settings that did nothing (date style, complete automatically) work, and one
+that never could is gone. Phones get three posters across. Emptying a library,
+four mascots and the 0.6.1 fixes ride along.
 
 **0.6.0 Leapfrog** — AniList both ways through AniList's own sign-in, placed by
 id rather than by name, with anything uncertain left for the person to choose;

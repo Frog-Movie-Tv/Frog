@@ -16,6 +16,8 @@
 		initialSeason?: number | null;
 		/** Shown in the "When did you watch this?" prompt. */
 		showName?: string;
+		/** The show's backdrop, for episodes TMDB has no still of. */
+		fallbackStill?: string | null;
 		onprogress?: (item: LibraryItem) => void;
 	}
 
@@ -25,6 +27,7 @@
 		seasons,
 		initialSeason = null,
 		showName = 'This show',
+		fallbackStill = null,
 		onprogress
 	}: Props = $props();
 
@@ -243,6 +246,8 @@
 								<div class="still" class:blurred={blurStill(ep)}>
 									{#if ep.still_path}
 										<img src={img(ep.still_path, 'w300')} alt="" loading="lazy" />
+									{:else if fallbackStill}
+										<img class="stand-in" src={img(fallbackStill, 'w300')} alt="" loading="lazy" />
 									{:else}
 										<span class="no-still" aria-hidden="true">
 											{episodeCode(ep.season_number, ep.episode_number)}
@@ -471,6 +476,13 @@
 		height: 100%;
 		object-fit: cover;
 		display: block;
+	}
+
+	/* The show's backdrop where the episode has no still: faded, so a page of
+	   identical pictures reads as a placeholder rather than as content. */
+	.still .stand-in {
+		opacity: 0.4;
+		filter: saturate(0.4);
 	}
 
 	.still.blurred img {

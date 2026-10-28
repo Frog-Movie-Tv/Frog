@@ -1,3 +1,4 @@
+import { settings } from './settings.svelte';
 /**
  * Ratings live as 0..100 in the database no matter how they are shown, so the
  * score format is purely a display concern and switching it never rewrites
@@ -96,11 +97,22 @@ export function prettyDate(date: string | null | undefined): string {
 	if (!date) return '';
 	const d = new Date(date);
 	if (Number.isNaN(d.getTime())) return '';
-	return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+	const style = settings.current.dateStyle;
+	if (style === 'iso') {
+		const pad = (n: number) => String(n).padStart(2, '0');
+		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+	}
+	return d.toLocaleDateString(undefined, {
+		day: 'numeric',
+		month: style === 'long' ? 'long' : 'short',
+		year: 'numeric'
+	});
 }
 
 export function relativeDate(iso: string | null | undefined): string {
 	if (!iso) return '';
+	// "3 days ago" is the friendly style; the others always show the date.
+	if (settings.current.dateStyle !== 'friendly') return prettyDate(iso);
 	const then = new Date(iso).getTime();
 	if (Number.isNaN(then)) return '';
 

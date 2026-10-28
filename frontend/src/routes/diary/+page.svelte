@@ -86,18 +86,43 @@
 		return out;
 	});
 
-	/** "S04E08" for one, "S04E08–S07E16" for a run. */
+	/**
+	 * "S04E08" for one, "S04E08–E12" for a run, "S01E01–E04, E29–E38" for
+	 * two runs with a gap. More gaps than that and only the ends are shown,
+	 * beside the count.
+	 */
 	function range(episodes: Episode[]): string {
 		if (!episodes.length) return '';
-		const first = episodes[0];
-		const last = episodes[episodes.length - 1];
-		const start = episodeCode(first.season_number, first.episode_number);
-		if (episodes.length === 1) return start;
-		const end =
-			last.season_number === first.season_number
-				? `E${String(last.episode_number).padStart(2, '0')}`
-				: episodeCode(last.season_number, last.episode_number);
-		return `${start}–${end}`;
+		const runs: [Episode, Episode][] = [];
+		for (const ep of episodes) {
+			const run = runs.at(-1);
+			if (
+				run &&
+				run[1].season_number === ep.season_number &&
+				run[1].episode_number + 1 === ep.episode_number
+			) {
+				run[1] = ep;
+			} else {
+				runs.push([ep, ep]);
+			}
+		}
+		const shown = runs.length <= 2 ? runs : [[runs[0][0], runs[runs.length - 1][1]] as const];
+		let season: number | null = null;
+		return shown
+			.map(([a, b]) => {
+				const start =
+					a.season_number === season
+						? `E${String(a.episode_number).padStart(2, '0')}`
+						: episodeCode(a.season_number, a.episode_number);
+				season = b.season_number;
+				if (a === b) return start;
+				const end =
+					b.season_number === a.season_number
+						? `E${String(b.episode_number).padStart(2, '0')}`
+						: episodeCode(b.season_number, b.episode_number);
+				return `${start}–${end}`;
+			})
+			.join(', ');
 	}
 
 	async function changeDate(entry: Entry) {
@@ -252,6 +277,12 @@
 </div>
 
 <style>
+	/* A diary is read down, not across: on a wide screen a full-width row
+	   puts the rating a metre away from the title it belongs to. */
+	.page > :global(*) {
+		max-width: 980px;
+	}
+
 	.month {
 		margin-bottom: 34px;
 	}

@@ -4,6 +4,7 @@
 	import Empty from '#lib/components/Empty.svelte';
 	import Grid from '#lib/components/Grid.svelte';
 	import Poster from '#lib/components/Poster.svelte';
+	import Rail from '#lib/components/Rail.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { prettyDate } from '#lib/format';
 	import type { PersonDetail } from '#lib/types';
@@ -38,9 +39,11 @@
 		}
 	}
 
-	const credits = $derived(
+	const shown = $derived(
 		(person?.credits ?? []).filter((c) => !seenOnly || c.item.in_library !== null)
 	);
+	const credits = $derived(shown.filter((c) => !c.appearance));
+	const appearances = $derived(shown.filter((c) => c.appearance));
 	const seenCount = $derived(
 		(person?.credits ?? []).filter((c) => c.item.in_library !== null).length
 	);
@@ -99,20 +102,21 @@
 			</button>
 		</div>
 
-		{#if !credits.length}
+		{#if !shown.length}
 			<Empty
 				title={seenOnly ? 'Nothing of theirs is in your library yet' : 'No credits found'}
 				hint={seenOnly ? 'Turn the filter off to see everything.' : undefined}
 			/>
 		{:else}
 			<Grid>
-				{#each credits as credit (`${credit.department}-${credit.item.kind}-${credit.item.tmdb_id}-${credit.role}`)}
+				{#each credits as credit (`${credit.item.kind}-${credit.item.tmdb_id}`)}
 					<div class="credit" class:seen={credit.item.in_library !== null}>
 						<Poster
 							kind={credit.item.kind}
 							tmdbId={credit.item.tmdb_id}
 							name={credit.item.name}
 							posterPath={credit.item.poster_path}
+							fallbackPath={credit.item.backdrop_path}
 							year={credit.item.year}
 							status={credit.item.in_library}
 						/>
@@ -122,6 +126,26 @@
 					</div>
 				{/each}
 			</Grid>
+		{/if}
+
+		{#if appearances.length}
+			<div class="appearances">
+				<Rail title="Appearances">
+					{#each appearances as credit (`${credit.item.kind}-${credit.item.tmdb_id}`)}
+						<div class="credit" class:seen={credit.item.in_library !== null}>
+							<Poster
+								kind={credit.item.kind}
+								tmdbId={credit.item.tmdb_id}
+								name={credit.item.name}
+								posterPath={credit.item.poster_path}
+								fallbackPath={credit.item.backdrop_path}
+								year={credit.item.year}
+								status={credit.item.in_library}
+							/>
+						</div>
+					{/each}
+				</Rail>
+			</div>
 		{/if}
 	{/if}
 </div>
@@ -228,5 +252,9 @@
 		.photo {
 			width: 110px;
 		}
+	}
+
+	.appearances {
+		margin-top: 44px;
 	}
 </style>

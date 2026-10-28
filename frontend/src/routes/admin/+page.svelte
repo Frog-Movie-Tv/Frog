@@ -369,15 +369,18 @@
 </div>
 
 <style>
+	/* Same frame and heading as every other page; only the column narrows. */
 	.page {
-		max-width: 760px;
 		display: grid;
 		gap: 28px;
 	}
 
+	.page > :global(*) {
+		max-width: 760px;
+	}
+
 	header h1 {
 		margin: 0;
-		font-size: 1.6rem;
 	}
 
 	header p {

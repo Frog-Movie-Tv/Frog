@@ -57,6 +57,16 @@ their own. It costs nothing at all.
 <p align="center"><b>Bring your history</b><br><sub>Letterboxd, Trakt, IMDb, TV Time and MyAnimeList, with AniList kept in step</sub></p>
 </td>
 </tr>
+<tr>
+<td>
+<img src="docs/screenshots/search-desktop-pond.png" alt="Search results for a name: films and shows, then people and studios">
+<p align="center"><b>Search everything</b><br><sub>Films, shows, people, characters, studios and members</sub></p>
+</td>
+<td>
+<img src="docs/screenshots/calendar-desktop-pond.png" alt="The calendar of upcoming episodes">
+<p align="center"><b>What airs next</b><br><sub>The month ahead for every show you follow</sub></p>
+</td>
+</tr>
 </table>
 
 <div align="center">
@@ -94,14 +104,22 @@ written. Anime seasons land on the right season, parts and all.
 
 **Keep AniList in step.** Connect your AniList account in Settings and the two
 stay the same: episodes, statuses and scores, whichever side you change them
-on.
+on. Frog places every season where TMDB numbers it by itself, and changes on
+AniList arrive within minutes.
 
-**Find anything.** Search every film and show on TMDB and add it with one tap.
-Results lead with the thing you actually meant, rather than obscure shorts that
-happen to share a word.
+**Find anything.** One search for films, shows, people, characters, studios
+and the other members of your Frog, each with a tab of its own. Results lead
+with the thing you actually meant, a few letters of something you track are
+enough, and every studio has a page of what it made.
+
+**Watch the trailer, then where to watch it.** Trailers play right on the
+title page, and each streaming logo opens that service searching for the
+title.
 
 **Tick episodes off.** There is a circle beside every episode. Tap it and the
-show moves itself to Watching; tick the last one and it completes itself. Rate
+show moves itself to Watching; tick the last one and it completes itself. Mark
+a show completed and Frog ticks every aired episode, asking when you watched
+them and which specials you saw. Rate
 episodes one by one, leave notes on them, and see a whole series at a glance as
 a grid of coloured squares.
 

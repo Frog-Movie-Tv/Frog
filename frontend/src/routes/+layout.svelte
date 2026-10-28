@@ -97,6 +97,7 @@
 	);
 	const more = $derived([
 		...ordered.filter((p) => !tabs.includes(p)),
+		{ href: '/people', label: 'People', icon: 'users' },
 		{ href: '/import', label: 'Import & export', icon: 'upload' },
 		{ href: '/whats-new', label: 'Release notes', icon: 'sparkle' },
 		// Only an administrator can do anything there, so only they see it.
@@ -117,6 +118,11 @@
 		moreOpen = false;
 	});
 	const isActive = (href: string) => (href === '/' ? current === '/' : current.startsWith(href));
+
+	/** Escape closes the More sheet, like every other sheet and dialog. */
+	function closeMore(event: KeyboardEvent) {
+		if (event.key === 'Escape' && moreOpen) moreOpen = false;
+	}
 	const showChrome = $derived(session.authenticated && !current.startsWith('/login'));
 
 	const version = $derived(session.status?.version ?? '');
@@ -124,6 +130,8 @@
 		!!version && settings.loaded && settings.current.lastSeenVersion !== version
 	);
 </script>
+
+<svelte:window onkeydown={closeMore} />
 
 {#if !checked}
 	<div class="boot"><Spinner label="Starting Frog" /></div>

@@ -13,18 +13,70 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
-## [0.6.1] — Leapfrog — 2026-10-27
+## [0.7.0] — Treefrog — 2026-10-28
 
-Four new mascots, and a tidier profile and Stats page.
+One search for everything, AniList that looks after itself, and trailers that
+play.
+
+![Search in the Pond theme](docs/screenshots/search-desktop-pond.png)
+
+### Highlights
+
+- **Search everything.** Films and shows, people, characters, studios and the
+  members of your Frog, all from one search, each with a tab of its own. A few
+  letters of something you track are enough to find it.
+- **Studios.** Every studio has a page with what it made, films and shows
+  together. The studios on Stats open it.
+- **AniList on its own.** Far more of your list lands on the right film, show
+  and season by itself, later seasons included, and changes made on AniList
+  reach Frog within minutes. Anything left over waits out of the way while
+  Frog keeps looking.
+- **Finish a show in one go.** Marking a show completed ticks every aired
+  episode, asks when you watched them, and lets you pick the specials you saw.
+- **Start again.** Empty your library from Settings, Your data, and keep your
+  account, settings and devices.
+- **Your profile, framed.** Drag your banner to choose which part shows, and
+  frame your profile picture in its circle when you add it.
 
 ### Improvements
 
+- Trailers play inside Frog, in a row you can scroll, each with the title's
+  own artwork.
+- Streaming logos open the service itself, already searching for the title.
+- A person's page lists each title once with every role, and keeps talk shows
+  and award nights in a row of their own.
+- Crew shows each person once, with all of their jobs.
+- Shows list their whole cast, from every season, wherever the latest season
+  lists nobody, as with a lot of anime.
+- Three posters across on a phone, in the library and everywhere else.
+- Settings that turn something on or off are switches.
+- Choosing a date style in Settings changes every date in Frog.
+- With Complete automatically off, a show stays as it is when you tick its
+  last episode.
+- Episodes without a picture of their own show the show's artwork, faded, and
+  titles without a poster show a backdrop instead.
+- Search leads with titles that have artwork; the few with none at all get a
+  card of their own with their name on it.
+- Title pages in a poster's colours keep their buttons easy to read in the
+  light themes.
+- The diary reads as one column on a wide screen.
+- Your search stays in the address, so Back returns to your results and a
+  search can be shared.
+- People is in the More menu on a phone.
 - Four new mascots to choose from: Starry-eyed, Bow, Delighted and Sprout.
 - Actors, directors and studios sit side by side on Stats.
+- Rows with nothing more to show have no scroll arrows.
 
 ### Fixes
 
-- Your profile picture sits in front of your banner.
+- The ratings chart on Stats puts every rating under its own score, and
+  watch time under an hour reads in minutes.
+- Your profile picture sits in front of your banner, and on a phone the banner
+  buttons stay clear of it.
+- Escape closes the More menu.
+- Your name on your profile sits clear of your banner.
+- Notices on a narrow window sit above the tab bar.
+- If TMDB is briefly out of reach, AniList tries again on its own.
 - A sign-in that doesn't match says so in plain words.
 
 ## [0.6.0] — Leapfrog — 2026-10-27
@@ -342,7 +394,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
-[0.6.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.6.1
+[0.7.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.5.0
 [0.4.5]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.4.5

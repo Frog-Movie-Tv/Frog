@@ -194,6 +194,8 @@ export interface PersonCredit {
 	item: SearchItem;
 	role: string | null;
 	department: 'cast' | 'crew';
+	/** Only ever themselves in it: a talk show, an awards night. */
+	appearance?: boolean;
 }
 
 export interface PersonDetail {
@@ -394,6 +396,8 @@ export interface Account {
 	bio: string | null;
 	/** A TMDB backdrop path used as the banner when no picture is uploaded. */
 	banner_backdrop: string | null;
+	/** Which part of the banner shows, as "x% y%". */
+	banner_position: string | null;
 	pins: { kind: Kind; tmdb_id: number }[];
 	/** Whether a picture of each kind is uploaded. */
 	avatar: boolean;
@@ -406,6 +410,7 @@ export interface ProfileEdit {
 	display_name?: string;
 	bio?: string;
 	banner_backdrop?: string;
+	banner_position?: string;
 	pins?: { kind: Kind; tmdb_id: number }[];
 }
 
@@ -505,6 +510,7 @@ export interface Profile {
 	avatar: string | null;
 	banner: string | null;
 	banner_backdrop: string | null;
+	banner_position: string | null;
 	stats: {
 		films: number;
 		episodes: number;
@@ -529,4 +535,50 @@ export interface NewInvite {
 	path: string;
 	role: 'admin' | 'user';
 	expires_at: string;
+}
+
+/** Someone on TMDB, from a search. */
+export interface PersonResult {
+	id: number;
+	name: string;
+	profile_path: string | null;
+	department: string | null;
+	known_for: string[];
+}
+
+export interface StudioResult {
+	id: number;
+	name: string;
+	logo_path: string | null;
+	country: string | null;
+}
+
+/** A character: from a cast list (TMDB), or from AniList for anime. */
+export interface CharacterResult {
+	name: string;
+	image: { source: 'tmdb' | 'anilist'; path: string } | null;
+	actor: { id: number; name: string } | null;
+	title: {
+		kind: Kind | null;
+		tmdb_id: number | null;
+		name: string | null;
+		poster_path: string | null;
+	};
+}
+
+export interface MoreResults {
+	people: PersonResult[];
+	studios: StudioResult[];
+	characters: CharacterResult[];
+}
+
+export interface StudioDetail {
+	id: number;
+	name: string | null;
+	logo_path: string | null;
+	description: string | null;
+	headquarters: string | null;
+	country: string | null;
+	homepage: string | null;
+	titles: SearchItem[];
 }

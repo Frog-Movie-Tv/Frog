@@ -91,6 +91,11 @@ pub async fn get(
     let (user_id, username, joined, public, display_name, bio, banner_backdrop, pins_json) =
         visible(&state, &auth, &username).await?;
     let pool = &state.pool;
+    let (banner_position,): (Option<String>,) =
+        sqlx::query_as("SELECT banner_position FROM app_user WHERE id = ?")
+            .bind(user_id)
+            .fetch_one(pool)
+            .await?;
 
     let watching: Vec<CardRow> = sqlx::query_as(
         "SELECT t.kind, t.tmdb_id, t.name, t.poster_path, l.rating
@@ -215,6 +220,7 @@ pub async fn get(
         "avatar": image_url("avatar"),
         "banner": image_url("banner"),
         "banner_backdrop": banner_backdrop,
+        "banner_position": banner_position,
         "stats": {
             "films": films,
             "episodes": episodes,

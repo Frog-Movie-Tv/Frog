@@ -1010,7 +1010,7 @@ async fn stats_cover_all_time_and_a_single_year() {
         json!([{ "decade": 1990, "titles": 1 }, { "decade": 2020, "titles": 1 }])
     );
     assert_eq!(all["ratings"][9], json!(1));
-    assert_eq!(all["ratings"][7], json!(1));
+    assert_eq!(all["ratings"][6], json!(1));
     assert_eq!(all["streaks"]["longest"]["days"], json!(2));
     assert_eq!(all["people"]["actors"][0]["name"], json!("Lead Actor"));
     assert_eq!(all["people"]["actors"][0]["titles"], json!(2));
@@ -1033,7 +1033,7 @@ async fn stats_cover_all_time_and_a_single_year() {
     assert_eq!(y["timeline"].as_array().unwrap().len(), 12);
     assert_eq!(y["timeline"][11]["films"], json!(2));
     assert_eq!(y["people"]["actors"][0]["titles"], json!(1));
-    assert_eq!(y["ratings"][7], json!(0), "only titles watched that year");
+    assert_eq!(y["ratings"][6], json!(0), "only titles watched that year");
     assert_eq!(y["decades"], json!([{ "decade": 1990, "titles": 1 }]));
 
     let (status, _) = h.get("/api/stats?year=12", Some(&cookie)).await;
@@ -2933,4 +2933,248 @@ async fn a_wrong_sign_in_says_so_plainly() {
         wrong_password, wrong_name,
         "never says which part was wrong"
     );
+}
+
+/// One search finds people, studios and characters besides titles: people
+/// and studios from TMDB, characters from the casts of titles already looked
+/// up. Studios named exactly that come first.
+#[tokio::test]
+async fn search_finds_people_studios_and_characters() {
+    let h = Harness::new().await;
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+
+    let cache = |key: String, body: Value| {
+        let pool = h.state.pool.clone();
+        async move {
+            sqlx::query(
+                "INSERT INTO tmdb_cache (cache_key, body, fetched_at, expires_at)
+                 VALUES (?, ?, '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')",
+            )
+            .bind(key)
+            .bind(body.to_string())
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+    };
+    cache(
+        "/search/person?lang=en-US&query=pond&include_adult=false".into(),
+        json!({ "results": [{ "id": 7, "name": "Pond Person", "known_for_department": "Acting",
+                              "known_for": [{ "title": "Pond Movie" }] }] }),
+    )
+    .await;
+    cache(
+        "/search/company?lang=en-US&query=pond".into(),
+        json!({ "results": [
+            { "id": 2, "name": "Pond Pictures Holding", "logo_path": null },
+            { "id": 1, "name": "Pond", "logo_path": "/logo.png", "origin_country": "BE" }
+        ] }),
+    )
+    .await;
+    cache(
+        "/movie/11?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null".into(),
+        json!({ "id": 11, "title": "Lily", "popularity": 5.0, "poster_path": "/lily.jpg",
+                "credits": { "cast": [
+                    { "id": 30, "name": "An Actor", "character": "Captain Pond", "profile_path": "/a.jpg" },
+                    { "id": 31, "name": "Someone", "character": "Self" }
+                ] } }),
+    )
+    .await;
+
+    let (status, found) = h.get("/api/search/more?q=pond", Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{found}");
+    assert_eq!(found["people"][0]["name"], json!("Pond Person"));
+    assert_eq!(found["people"][0]["known_for"][0], json!("Pond Movie"));
+    assert_eq!(
+        found["studios"][0]["name"],
+        json!("Pond"),
+        "exact name first"
+    );
+    assert_eq!(found["studios"].as_array().unwrap().len(), 2);
+    let characters = found["characters"].as_array().unwrap();
+    assert_eq!(characters.len(), 1, "{found}");
+    assert_eq!(characters[0]["name"], json!("Captain Pond"));
+    assert_eq!(characters[0]["actor"]["id"], json!(30));
+    assert_eq!(characters[0]["title"]["tmdb_id"], json!(11));
+
+    // Signed out: nothing.
+    let (status, _) = h.get("/api/search/more?q=pond", None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+/// Marking a whole show leaves specials alone unless they are named: a
+/// finished show means its seasons, and the specials seen are chosen.
+#[tokio::test]
+async fn marking_a_show_ticks_only_the_specials_chosen() {
+    let h = Harness::new().await;
+    let cookie = show_with_seasons(&h).await;
+    sqlx::query(
+        "INSERT INTO episode (title_id, season_number, episode_number, name, air_date)
+         VALUES (1, 0, 2, 'Another special', '2015-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let (status, body, _) = h
+        .post(
+            "/api/titles/tv/48866/episodes/watch",
+            json!({ "watched": true, "when": "unknown", "specials": [2] }),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let ticked: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT e.season_number, e.episode_number FROM watch_event w
+           JOIN episode e ON e.id = w.episode_id
+          WHERE w.user_id = 1 AND e.season_number = 0",
+    )
+    .fetch_all(&h.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(ticked, vec![(0, 2)], "only the special that was chosen");
+}
+
+/// "Complete automatically" decides whether ticking the last aired episode
+/// completes the show; with it off the show stays where it was.
+#[tokio::test]
+async fn completing_on_the_last_episode_follows_the_setting() {
+    let h = Harness::new().await;
+    let cookie = show_with_seasons(&h).await;
+    // Only aired episodes, so ticking them all finishes the show.
+    sqlx::query("DELETE FROM episode WHERE air_date > date('now')")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    let mark_all = json!({ "watched": true, "when": "unknown" });
+
+    let (status, _) = h
+        .send(
+            "PUT",
+            "/api/settings",
+            json!({ "autoComplete": false }),
+            &cookie,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body, _) = h
+        .post(
+            "/api/titles/tv/48866/episodes/watch",
+            mark_all.clone(),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(body["item"]["entry"]["status"], json!("watching"), "{body}");
+
+    let (status, _) = h
+        .send(
+            "PUT",
+            "/api/settings",
+            json!({ "autoComplete": true }),
+            &cookie,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body, _) = h
+        .post(
+            "/api/titles/tv/48866/episodes/watch",
+            mark_all,
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(
+        body["item"]["entry"]["status"],
+        json!("completed"),
+        "{body}"
+    );
+}
+
+/// TMDB matches whole words, so a few letters of a title this Frog already
+/// knows find it anyway, ahead of TMDB's own results.
+#[tokio::test]
+async fn search_finds_known_titles_by_their_first_letters() {
+    let h = Harness::new().await;
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+    sqlx::query(
+        "INSERT INTO title (kind, tmdb_id, name, release_date) VALUES ('movie', 157336, 'Interstellar', '2014-11-05')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO tmdb_cache (cache_key, body, fetched_at, expires_at)
+         VALUES ('/search/multi?lang=en-US&query=inter&page=1&include_adult=false', ?,
+                 '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')",
+    )
+    .bind(
+        json!({ "results": [
+            { "media_type": "movie", "id": 1, "title": "Inter-Pol", "release_date": "1967-01-01" }
+        ] })
+        .to_string(),
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let (status, body) = h.get("/api/search?q=inter", Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let names: Vec<&str> = body["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|r| r["name"].as_str())
+        .collect();
+    assert_eq!(names, ["Interstellar", "Inter-Pol"]);
+}
+
+/// Which part of the banner shows is kept, and only as a real position.
+#[tokio::test]
+async fn the_banner_position_is_kept_and_checked() {
+    let h = Harness::new().await;
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+
+    let (status, _) = h
+        .send(
+            "PUT",
+            "/api/account/profile",
+            json!({ "banner_position": "50% 22.5%" }),
+            &cookie,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, account) = h.get("/api/account", Some(&cookie)).await;
+    assert_eq!(account["banner_position"], json!("50% 22.5%"));
+
+    for bad in ["50%", "50% 120%", "url(x) 1%", "50px 10px"] {
+        let (status, _) = h
+            .send(
+                "PUT",
+                "/api/account/profile",
+                json!({ "banner_position": bad }),
+                &cookie,
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    }
 }

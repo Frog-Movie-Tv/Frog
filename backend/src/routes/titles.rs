@@ -265,7 +265,8 @@ pub async fn person(
 ) -> AppResult<Json<Value>> {
     let raw = state.tmdb.person(person_id).await?;
 
-    let mut credits: Vec<Value> = Vec::new();
+    let mut credits_by_title: Vec<(Value, Vec<String>)> = Vec::new();
+    let mut seen: std::collections::HashMap<(String, i64), usize> = Default::default();
     for section in ["cast", "crew"] {
         let Some(list) = raw
             .get("combined_credits")
@@ -288,13 +289,46 @@ pub async fn person(
                 continue;
             }
             item.overview = None;
-            credits.push(json!({
-                "item": item,
-                "role": models::str_at(c, "character").or_else(|| models::str_at(c, "job")),
-                "department": section,
-            }));
+            let role = models::str_at(c, "character")
+                .or_else(|| models::str_at(c, "job"))
+                .filter(|r| !r.trim().is_empty());
+            // One card per title: an actor who also produced it, or a talk
+            // show visited three times, reads as one entry with every role.
+            let key = (item.kind.clone(), item.tmdb_id);
+            if let Some(&at) = seen.get(&key) {
+                let merged: &mut (Value, Vec<String>) = &mut credits_by_title[at];
+                if let Some(role) = role {
+                    if !merged.1.contains(&role) {
+                        merged.1.push(role);
+                    }
+                }
+                continue;
+            }
+            seen.insert(key, credits_by_title.len());
+            credits_by_title.push((
+                json!({ "item": item, "department": section }),
+                role.into_iter().collect(),
+            ));
         }
     }
+    let mut credits: Vec<Value> = credits_by_title
+        .into_iter()
+        .map(|(mut credit, roles)| {
+            // "Self", "Self - Guest", "Himself": a talk show or an awards
+            // night rather than a part, which the page shows apart.
+            let appearance = !roles.is_empty()
+                && roles.iter().all(|r| {
+                    let r = r.to_ascii_lowercase();
+                    r.starts_with("self") || r.starts_with("himself") || r.starts_with("herself")
+                });
+            if let Some(obj) = credit.as_object_mut() {
+                let role = (!roles.is_empty()).then(|| roles.join(" / "));
+                obj.insert("role".into(), json!(role));
+                obj.insert("appearance".into(), json!(appearance));
+            }
+            credit
+        })
+        .collect();
 
     // Newest first; undated credits (announced projects) sink to the bottom.
     credits.sort_by_key(|c| {

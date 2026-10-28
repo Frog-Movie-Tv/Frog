@@ -431,47 +431,6 @@
 		margin-bottom: 26px;
 	}
 
-	.chips {
-		display: flex;
-		gap: 7px;
-		overflow-x: auto;
-		scrollbar-width: none;
-		padding-bottom: 2px;
-	}
-
-	.chips::-webkit-scrollbar {
-		display: none;
-	}
-
-	.chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 7px;
-		padding: 7px 14px;
-		border-radius: var(--radius-pill);
-		border: 1px solid var(--line);
-		background: var(--bg-elev);
-		color: var(--text-dim);
-		font-size: 0.84rem;
-		font-weight: 600;
-		cursor: pointer;
-		white-space: nowrap;
-		transition:
-			background var(--fast) var(--ease),
-			color var(--fast) var(--ease);
-	}
-
-	.chip:hover {
-		color: var(--text);
-		background: var(--bg-elev-2);
-	}
-
-	.chip.on {
-		background: var(--accent);
-		border-color: transparent;
-		color: var(--accent-ink);
-	}
-
 	.sdot {
 		width: 8px;
 		height: 8px;

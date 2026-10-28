@@ -11,6 +11,7 @@
 	import Spinner from '#lib/components/Spinner.svelte';
 	import TrackControls from '#lib/components/TrackControls.svelte';
 	import { episodeCode, prettyDate, runtime, year } from '#lib/format';
+	import { providerLink } from '#lib/providers';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import { whenWatched } from '#lib/when.svelte';
@@ -65,6 +66,17 @@
 	const item = $derived(detail?.item);
 	const accent = $derived(settings.current.followPoster && item ? item.accent : null);
 
+	/** Text on the poster's colour: dark on a light one, white on a dark one. */
+	function inkFor(hex: string): string {
+		const n = parseInt(hex.replace('#', '').padEnd(6, '0').slice(0, 6), 16);
+		const lin = (c: number) => {
+			const v = c / 255;
+			return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+		};
+		const l = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+		return l > 0.36 ? '#0b1410' : '#ffffff';
+	}
+
 	const metaLine = $derived.by(() => {
 		if (!item) return [];
 		const bits: string[] = [];
@@ -78,6 +90,22 @@
 		if (item.tmdb_status && item.kind === 'tv') bits.push(item.tmdb_status);
 		return bits;
 	});
+
+	/** One card per person: a writer-director reads as one name, not two. */
+	const crew = $derived.by(() => {
+		const people: { id: number; name: string; jobs: string[] }[] = [];
+		for (const c of detail?.crew ?? []) {
+			const known = people.find((p) => p.id === c.id);
+			if (known) {
+				if (!known.jobs.includes(c.job)) known.jobs.push(c.job);
+			} else {
+				people.push({ id: c.id, name: c.name, jobs: [c.job] });
+			}
+		}
+		return people;
+	});
+
+	const playing = $derived(detail?.trailers.find((t) => t.key === trailerOpen) ?? null);
 
 	const providers = $derived(detail?.providers);
 	const providerGroups = $derived(
@@ -147,7 +175,9 @@
 {:else if detail && item}
 	<article
 		class="title-page"
-		style:--accent={accent?.accent}
+		class:tinted={!!accent}
+		style:--poster-accent={accent?.accent}
+		style:--poster-ink={accent ? inkFor(accent.accent) : undefined}
 		style:--accent-soft={accent
 			? `color-mix(in srgb, ${accent.accent} 18%, transparent)`
 			: undefined}
@@ -195,7 +225,14 @@
 					{/if}
 
 					<div class="actions">
-						<TrackControls {item} onchange={updateItem} />
+						<TrackControls
+							{item}
+							onchange={updateItem}
+							onepisodes={async (updated) => {
+								await refreshAfterEpisodes(updated);
+								seasonsVersion++;
+							}}
+						/>
 						{#if item.kind === 'movie' && item.entry && item.entry.status !== 'completed'}
 							<button class="btn" onclick={markFilmWatched}>Mark watched</button>
 						{/if}
@@ -264,15 +301,13 @@
 									<span class="eyebrow">{label}</span>
 									<div class="logos">
 										{#each list as p (p.id)}
-											<!-- TMDB gives one watch link per region, not per provider, so
-											     every logo opens the same official page for this title. -->
+											{@const href = providerLink(p.name, item.name, providers?.link ?? null)}
 											<a
 												class="plogo"
-												href={providers?.link ??
-													`https://www.themoviedb.org/search?query=${encodeURIComponent(item.name)}`}
+												{href}
 												target="_blank"
 												rel="noreferrer noopener"
-												title="{p.name} — open watch options"
+												title="Find {item.name} on {p.name}"
 											>
 												{#if p.logo_path}
 													<img src={img(p.logo_path, 'w92')} alt={p.name} loading="lazy" />
@@ -285,11 +320,6 @@
 								</div>
 							{/if}
 						{/each}
-						{#if providers.link}
-							<a class="btn ghost" href={providers.link} target="_blank" rel="noreferrer noopener">
-								Open on TMDB
-							</a>
-						{/if}
 					</div>
 				</section>
 			{/if}
@@ -308,6 +338,7 @@
 							{kind}
 							{tmdbId}
 							showName={item.name}
+							fallbackStill={item.backdrop_path}
 							seasons={detail.seasons}
 							initialSeason={detail.next_up?.season_number ?? null}
 							onprogress={refreshAfterEpisodes}
@@ -343,14 +374,14 @@
 				</section>
 			{/if}
 
-			{#if detail.crew.length}
+			{#if crew.length}
 				<section class="block crew">
 					<div class="section-head"><h2>Crew</h2></div>
 					<div class="crew-list">
-						{#each detail.crew as c (`${c.id}-${c.job}`)}
+						{#each crew as c (c.id)}
 							<a href="/person/{c.id}" class="crew-item">
 								<strong>{c.name}</strong>
-								<span class="faint">{c.job}</span>
+								<span class="faint">{c.jobs.join(', ')}</span>
 							</a>
 						{/each}
 					</div>
@@ -359,35 +390,45 @@
 
 			{#if detail.trailers.length}
 				<section class="block">
-					<div class="section-head"><h2>Trailers</h2></div>
-					<div class="trailers">
+					{#if playing}
+						<div class="player">
+							<!-- YouTube refuses to play (error 153) without knowing which site
+							     embeds it, and the site sends no referrer anywhere else, so this
+							     one frame gets the address of Frog and nothing more. -->
+							<iframe
+								src="https://www.youtube-nocookie.com/embed/{playing.key}?autoplay=1"
+								title={playing.name}
+								referrerpolicy="strict-origin-when-cross-origin"
+								allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture"
+								allowfullscreen
+							></iframe>
+						</div>
+					{/if}
+					<Rail title={detail.trailers.length === 1 ? 'Trailer' : 'Trailers'} wide>
 						{#each detail.trailers as t (t.key)}
-							{#if trailerOpen === t.key}
-								<div class="player">
-									<iframe
-										src="https://www.youtube-nocookie.com/embed/{t.key}?autoplay=1"
-										title={t.name}
-										allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture"
-										allowfullscreen
-									></iframe>
-								</div>
-							{:else}
-								<button class="trailer" onclick={() => (trailerOpen = t.key)}>
-									<span class="sheen" aria-hidden="true"></span>
-									<span class="play" aria-hidden="true">
-										<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-											<path
-												d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z"
-											/>
-										</svg>
-									</span>
-									<span class="tname">{t.name}</span>
-									<span class="tkind">{t.kind}</span>
-								</button>
-							{/if}
+							<button
+								class="trailer"
+								class:on={trailerOpen === t.key}
+								aria-pressed={trailerOpen === t.key}
+								onclick={() => (trailerOpen = t.key)}
+							>
+								{#if item.backdrop_path}
+									<img class="still" src={img(item.backdrop_path, 'w780')} alt="" loading="lazy" />
+								{/if}
+								<span class="sheen" aria-hidden="true"></span>
+								<span class="play" aria-hidden="true">
+									<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+										<path
+											d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z"
+										/>
+									</svg>
+								</span>
+								<span class="tname">{t.name}</span>
+								<span class="tkind">{t.kind}</span>
+							</button>
 						{/each}
-					</div>
-					<p class="faint tiny">Playing a trailer loads it from YouTube.</p>
+					</Rail>
+					<p class="faint tiny trailer-note">Playing a trailer loads it from YouTube.</p>
 				</section>
 			{/if}
 
@@ -430,6 +471,19 @@
 {/if}
 
 <style>
+	.title-page.tinted {
+		--accent: var(--poster-accent);
+		--accent-ink: var(--poster-ink);
+	}
+
+	/* On a light page a pale poster colour would vanish as text and icons:
+	   darken it, and put white on it. */
+	:global(:root[data-theme='light']) .title-page.tinted,
+	:global(:root[data-theme='pond-light']) .title-page.tinted {
+		--accent: color-mix(in oklab, var(--poster-accent) 58%, #000);
+		--accent-ink: #fff;
+	}
+
 	.title-page {
 		/* The poster's dark companion bleeds behind the whole page, which is
 		   what makes two different films feel like two different pages. */
@@ -712,14 +766,10 @@
 		font-size: 0.75rem;
 	}
 
-	.trailers {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-		gap: 14px;
-	}
-
 	.trailer {
 		position: relative;
+		display: block;
+		width: 100%;
 		padding: 0;
 		border: 1px solid var(--line);
 		border-radius: var(--radius-sm);
@@ -727,46 +777,84 @@
 		background: var(--bg-elev-2);
 		cursor: pointer;
 		aspect-ratio: 16 / 9;
+		transition: border-color var(--fast) var(--ease);
 	}
 
-	/* Drawn locally rather than pulled from YouTube: a removed video used to
-	   404 in the console, and nothing should reach a third party before you
-	   press play. */
+	.trailer.on {
+		border-color: var(--accent);
+	}
+
+	/* The title's own backdrop, never YouTube's thumbnail: nothing should
+	   reach a third party before you press play, and a removed video used to
+	   404 in the console. */
+	.still {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		transition: transform var(--slow) var(--ease);
+	}
+
+	.trailer:hover .still {
+		transform: scale(1.04);
+	}
+
 	.sheen {
 		position: absolute;
 		inset: 0;
 		background:
+			linear-gradient(
+				180deg,
+				color-mix(in srgb, var(--bg) 55%, transparent),
+				transparent 35%,
+				transparent 55%,
+				color-mix(in srgb, var(--bg) 88%, transparent)
+			),
 			radial-gradient(
 				120% 100% at 50% 0%,
-				color-mix(in srgb, var(--accent) 22%, transparent),
+				color-mix(in srgb, var(--accent) 14%, transparent),
 				transparent 70%
-			),
-			var(--bg-elev-2);
+			);
 	}
 
 	.play {
 		position: absolute;
-		inset: 0;
+		top: 50%;
+		left: 50%;
 		display: grid;
 		place-items: center;
-		color: var(--text);
-		transition: transform var(--fast) var(--ease);
+		width: 46px;
+		height: 46px;
+		margin: -23px 0 0 -23px;
+		padding-left: 3px;
+		border-radius: 50%;
+		color: #fff;
+		background: rgba(0, 0, 0, 0.45);
+		backdrop-filter: blur(6px);
+		border: 1px solid rgba(255, 255, 255, 0.25);
+		transition:
+			transform var(--fast) var(--ease),
+			background var(--fast) var(--ease);
 	}
 
-	.trailer:hover .play {
-		transform: scale(1.12);
-		color: var(--accent);
+	.trailer:hover .play,
+	.trailer.on .play {
+		transform: scale(1.1);
+		background: var(--accent);
+		color: var(--accent-ink);
+		border-color: transparent;
 	}
 
 	.tkind {
 		position: absolute;
-		top: 8px;
-		left: 10px;
+		top: 9px;
+		left: 11px;
 		font-size: 0.66rem;
 		font-weight: 650;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
-		color: var(--text-faint);
+		color: var(--text-dim);
 	}
 
 	.tname {
@@ -774,18 +862,28 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		padding: 18px 12px 9px;
-		font-size: 0.78rem;
+		padding: 0 12px 10px;
+		font-size: 0.82rem;
+		font-weight: 600;
 		text-align: left;
 		color: var(--text);
-		background: linear-gradient(transparent, color-mix(in srgb, var(--bg) 85%, transparent));
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.trailer-note {
+		margin-top: -26px;
 	}
 
 	.player {
 		aspect-ratio: 16 / 9;
+		max-width: 960px;
+		margin-bottom: 18px;
 		border-radius: var(--radius-sm);
 		overflow: hidden;
 		border: 1px solid var(--line-strong);
+		background: #000;
 	}
 
 	.player iframe {

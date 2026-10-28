@@ -208,12 +208,14 @@ pub async fn stats(
         .all(
             pool,
             &format!(
-                "SELECT MIN(CAST(l.rating / 10 AS INTEGER), 9) AS bucket, COUNT(*)
+                "SELECT MIN(MAX(CAST(ROUND(l.rating / 10.0) AS INTEGER), 1), 10) - 1 AS bucket, COUNT(*)
                    FROM library_entry l WHERE {rated}
                   GROUP BY bucket"
             ),
         )
         .await?;
+    // Bar i is the score (i + 1) out of ten, rounded to the nearest: an 8.5
+    // counts as a 9, and a 9 and a 10 stay apart.
     let mut ratings = [0i64; 10];
     for (b, n) in buckets {
         if let Some(slot) = ratings.get_mut(b.clamp(0, 9) as usize) {

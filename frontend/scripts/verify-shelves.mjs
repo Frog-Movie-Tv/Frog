@@ -266,7 +266,8 @@ let comfort;
 		(await rail.getByRole('link', { name: 'See all' }).getAttribute('href')) ===
 			`/shelves/${comfort}`
 	);
-	await page.goto(`${BASE}/settings`);
+	// Home rows live under Settings, Home and menus.
+	await page.goto(`${BASE}/settings#home`);
 	const builder = page.locator('.builder');
 	await builder.getByText('Comfort films').waitFor();
 	check(

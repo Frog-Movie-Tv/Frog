@@ -65,13 +65,13 @@
 		<Logo size={56} />
 		<div>
 			<h1>Frog</h1>
-			<p class="muted">Version {session.status?.version ?? '—'} · Leapfrog</p>
+			<p class="muted">Version {session.status?.version ?? '—'} · Treefrog</p>
 		</div>
 	</header>
 
 	<p class="lede">
-		A private film and television diary that runs on your own machine. Your library is one file on
-		your own disk, and nothing about it leaves the house.
+		A private film and television diary for a few people. Every library is its own, nobody gets in
+		without an invitation, and nothing about it is shared unless you choose to.
 	</p>
 
 	<section class="block">

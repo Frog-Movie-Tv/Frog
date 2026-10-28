@@ -63,6 +63,26 @@ async fn graphql(State(fake): State<Shared>, Json(body): Json<Value>) -> Json<Va
             "status": vars["status"], "progress": vars["progress"],
             "score": vars["scoreRaw"].as_i64().unwrap_or(0) as f64 } } }));
     }
+    if query.contains("relations") {
+        // Lily Pad Story has a second season that no list knows.
+        let media = match vars["id"].as_i64() {
+            Some(40002) => json!({ "id": 40002, "format": "TV", "episodes": 12,
+                "startDate": { "year": 2021 },
+                "title": { "english": "Lily Pad Story Season 2", "romaji": null, "native": null },
+                "relations": { "edges": [
+                    { "relationType": "PREQUEL", "node": { "id": 30000, "type": "ANIME", "format": "TV" } },
+                    { "relationType": "PREQUEL", "node": { "id": 30500, "type": "ANIME", "format": "MOVIE" } }
+                ] } }),
+            Some(30000) => json!({ "id": 30000, "format": "TV", "episodes": 12,
+                "startDate": { "year": 2020 },
+                "title": { "english": "Lily Pad Story", "romaji": null, "native": null },
+                "relations": { "edges": [
+                    { "relationType": "SEQUEL", "node": { "id": 40002, "type": "ANIME", "format": "TV" } }
+                ] } }),
+            _ => Value::Null,
+        };
+        return Json(json!({ "data": { "Media": media } }));
+    }
     if query.contains("Page") {
         // Episode counts of seasons not on this list.
         return Json(json!({ "data": { "Page": { "media": [
@@ -85,6 +105,20 @@ async fn anime_ids() -> Json<Value> {
     }))
 }
 
+/// Fribb's anime-lists: TMDB ids, and TMDB's own season and offset.
+async fn anime_lists() -> Json<Value> {
+    Json(json!([
+        { "anilist_id": 145064, "type": "TV", "themoviedb_id": { "tv": 95479 },
+          "season": { "tvdb": 2, "tmdb": 1 }, "episode_offset": { "tmdb": 24 } },
+        { "anilist_id": 20000, "type": "MOVIE", "themoviedb_id": { "movie": 600 } },
+        // Two remakes the list files under the same season: neither is placed.
+        { "anilist_id": 20001, "type": "TV", "themoviedb_id": { "tv": 800 },
+          "season": { "tmdb": 1 } },
+        { "anilist_id": 20002, "type": "TV", "themoviedb_id": { "tv": 800 },
+          "season": { "tmdb": 1 } }
+    ]))
+}
+
 struct Harness {
     state: AppState,
     fake: Shared,
@@ -98,6 +132,7 @@ impl Harness {
             .route("/graphql", post(graphql))
             .route("/api/v2/oauth/token", post(token))
             .route("/anime_ids.json", get(anime_ids))
+            .route("/anime_lists.json", get(anime_lists))
             .with_state(fake.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
@@ -127,6 +162,7 @@ impl Harness {
                 api_url: format!("{base}/graphql"),
                 site_url: base.clone(),
                 anime_ids_url: format!("{base}/anime_ids.json"),
+                anime_lists_url: format!("{base}/anime_lists.json"),
             }),
         };
         let pool = frog::db::connect(&url).await.unwrap();
@@ -539,6 +575,11 @@ async fn a_tmdb_outage_is_retried_not_left_for_the_person() {
     .unwrap();
 
     // Nothing from TMDB is cached and there is no key: TMDB is unreachable.
+    // Tests run side by side and all use account 1; a sync from another one
+    // would make this one return at once without trying.
+    while frog::anilist::is_syncing(1) {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
     assert!(frog::anilist::sync_user(&h.state, 1).await.is_err());
     let (_, status, _, _) = h.call("GET", "/api/anilist", None, Some(&cookie)).await;
     assert_eq!(status["unsure"], json!(0), "{status}");
@@ -556,4 +597,132 @@ async fn a_tmdb_outage_is_retried_not_left_for_the_person() {
         .call("GET", "/api/titles/tv/95479", None, Some(&cookie))
         .await;
     assert_eq!(show["item"]["watched_episodes"], json!(24));
+}
+
+/// What Anime-IDs cannot place: a film only Fribb's list knows, and a show
+/// neither list knows but TMDB has under exactly that name and year. A name
+/// shared by two animations, or a spot two entries claim, is left to choose.
+#[tokio::test]
+async fn ids_from_either_list_or_an_exact_name_place_entries() {
+    let h = Harness::new().await;
+    seed_tmdb(&h).await;
+    let detail = "append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids";
+    h.cache(
+        &format!("/movie/600?lang=en-US&{detail},release_dates&include_image_language=en,null"),
+        json!({ "id": 600, "title": "Pond Movie", "release_date": "2020-07-01", "runtime": 90 }),
+    )
+    .await;
+    h.cache(
+        "/search/multi?lang=en-US&query=Lily Pad Story&page=1&include_adult=false",
+        json!({ "results": [
+            { "media_type": "tv", "id": 701, "name": "Lily Pad Story", "genre_ids": [18],
+              "first_air_date": "2020-01-01" },
+            { "media_type": "tv", "id": 702, "name": "Lily Pad Story", "genre_ids": [16],
+              "first_air_date": "2008-01-01" },
+            { "media_type": "tv", "id": 700, "name": "Lily Pad Story!", "genre_ids": [16],
+              "first_air_date": "2020-04-01" }
+        ] }),
+    )
+    .await;
+    h.cache(
+        &format!("/tv/700?lang=en-US&{detail}&include_image_language=en,null"),
+        json!({ "id": 700, "name": "Lily Pad Story!", "first_air_date": "2020-04-01",
+                "seasons": [{ "season_number": 1, "name": "Season 1", "episode_count": 12 },
+                            { "season_number": 2, "name": "Season 2", "episode_count": 12 }] }),
+    )
+    .await;
+    let episodes: Vec<Value> = (1..=12)
+        .map(|e| json!({ "season_number": 1, "episode_number": e, "air_date": "2020-06-01" }))
+        .collect();
+    h.cache(
+        "/tv/700/season/1?lang=en-US",
+        json!({ "season_number": 1, "episodes": episodes }),
+    )
+    .await;
+    let episodes: Vec<Value> = (1..=12)
+        .map(|e| json!({ "season_number": 2, "episode_number": e, "air_date": "2021-06-01" }))
+        .collect();
+    h.cache(
+        "/tv/700/season/2?lang=en-US",
+        json!({ "season_number": 2, "episodes": episodes }),
+    )
+    .await;
+    h.cache(
+        "/search/multi?lang=en-US&query=Twin Name&page=1&include_adult=false",
+        json!({ "results": [
+            { "media_type": "tv", "id": 710, "name": "Twin Name", "genre_ids": [16],
+              "first_air_date": "2020-01-01" },
+            { "media_type": "tv", "id": 711, "name": "Twin Name", "genre_ids": [16, 18],
+              "first_air_date": "2020-10-01" }
+        ] }),
+    )
+    .await;
+    for name in ["Remake One", "Remake Two", "Lily Pad Story Season 2"] {
+        h.cache(
+            &format!("/search/multi?lang=en-US&query={name}&page=1&include_adult=false"),
+            json!({ "results": [] }),
+        )
+        .await;
+    }
+    h.fake.lock().unwrap().entries = vec![
+        entry(20000, "Pond Movie", "MOVIE", 1, "COMPLETED", 1, 70),
+        entry(30000, "Lily Pad Story", "TV", 12, "CURRENT", 4, 0),
+        entry(40002, "Lily Pad Story Season 2", "TV", 12, "CURRENT", 2, 0),
+        entry(30001, "Twin Name", "TV", 12, "PLANNING", 0, 0),
+        entry(20001, "Remake One", "TV", 12, "PLANNING", 0, 0),
+        entry(20002, "Remake Two", "TV", 12, "PLANNING", 0, 0),
+    ];
+    let (_, _, cookie, _) = h
+        .call(
+            "POST",
+            "/api/auth/setup",
+            Some(json!({ "username": "zjef", "password": "a-long-enough-pass" })),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+    sqlx::query(
+        "INSERT INTO anilist_link (user_id, anilist_user_id, anilist_name, token, expires_at, connected_at)
+         VALUES (1, 77, 'pondwatcher', 't', '2099-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    h.sync(1).await;
+
+    let (_, film, _, _) = h
+        .call("GET", "/api/titles/movie/600", None, Some(&cookie))
+        .await;
+    assert_eq!(
+        film["item"]["entry"]["status"],
+        json!("completed"),
+        "{film}"
+    );
+
+    let (_, show, _, _) = h
+        .call("GET", "/api/titles/tv/700", None, Some(&cookie))
+        .await;
+    assert_eq!(show["item"]["entry"]["status"], json!("watching"), "{show}");
+    assert_eq!(
+        show["item"]["watched_episodes"],
+        json!(6),
+        "season 2, found through its prequel, lands in TMDB season 2"
+    );
+    let (_, season, _, _) = h
+        .call("GET", "/api/titles/tv/700/seasons/2", None, Some(&cookie))
+        .await;
+    let watched: Vec<bool> = season["episodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["watched"].as_bool().unwrap_or(false))
+        .collect();
+    assert_eq!(&watched[..3], &[true, true, false], "{season}");
+
+    let (_, status, _, _) = h.call("GET", "/api/anilist", None, Some(&cookie)).await;
+    assert_eq!(
+        status["unsure"],
+        json!(3),
+        "the twin name and both remakes wait for a choice: {status}"
+    );
 }

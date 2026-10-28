@@ -87,6 +87,7 @@ const mock = createServer((req, res) => {
 			return json({ access_token: 'stand-in-token', expires_in: 31536000 });
 		}
 		if (url.pathname === '/anime_ids.json') return json(animeIds);
+		if (url.pathname === '/anime_lists.json') return json([]);
 		const { query = '', variables = {} } = body ? JSON.parse(body) : {};
 		if (query.includes('Viewer'))
 			return json({ data: { Viewer: { id: 77, name: 'pondwatcher' } } });
@@ -150,6 +151,7 @@ const server = spawn(binary, [], {
 		ANILIST_API_URL: `${ANILIST}/graphql`,
 		ANILIST_SITE_URL: ANILIST,
 		ANIME_IDS_URL: `${ANILIST}/anime_ids.json`,
+		ANIME_LISTS_URL: `${ANILIST}/anime_lists.json`,
 		RUST_LOG: 'frog=warn'
 	}
 });
@@ -267,13 +269,15 @@ console.log('    status:', JSON.stringify(await call('GET', '/api/anilist')));
 console.log('    url:', page.url());
 await page.reload();
 await page.screenshot({ path: join(out, '2a-before-unsure.png'), fullPage: true });
-await page.getByText('1 title needs a place').waitFor({ timeout: 20000 });
-check('the unknown entry waits for a choice', true);
+// Unmatched entries wait out of the way, behind one line.
+await page.getByRole('button', { name: '1 title not matched yet' }).waitFor({ timeout: 20000 });
+check('the unknown entry waits, out of the way', true);
+await page.getByRole('button', { name: '1 title not matched yet' }).click();
 await page.screenshot({ path: join(out, '2-connections.png'), fullPage: true });
 
-await page.getByRole('button', { name: 'Choose' }).click();
+await page.getByRole('button', { name: 'Match', exact: true }).click();
 await page.getByRole('button', { name: 'Not in Frog' }).click();
-await page.getByText('needs a place').waitFor({ state: 'detached', timeout: 10000 });
+await page.getByText('not matched yet').waitFor({ state: 'detached', timeout: 10000 });
 check('an entry can be left out of Frog', true);
 
 // A tick in Frog travels to AniList, on the season it belongs to.
@@ -322,6 +326,8 @@ const png = await page.evaluate(async () => {
 await page
 	.locator('.picture input[type=file]')
 	.setInputFiles({ name: 'me.png', mimeType: 'image/png', buffer: Buffer.from(png) });
+// A new picture is framed first: drag and zoom inside the circle, then use it.
+await page.getByRole('button', { name: 'Use this picture' }).click();
 await toast('Profile picture updated').waitFor({ timeout: 15000 });
 await page.getByRole('button', { name: 'Choose', exact: true }).click();
 await page.locator('.choice').first().click();

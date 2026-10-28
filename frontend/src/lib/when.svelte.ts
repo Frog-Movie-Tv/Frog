@@ -4,12 +4,23 @@ export interface WhenAnswer {
 	when: WhenMode;
 	/** yyyy-mm-dd, only for `date`. */
 	date?: string;
+	/** Which of the offered extras were ticked, by key. */
+	extras?: number[];
+}
+
+/** Something to tick on top, such as one special of a completed show. */
+export interface Extra {
+	key: number;
+	label: string;
+	hint?: string;
 }
 
 interface Pending {
 	title: string;
 	detail: string;
 	allowToday: boolean;
+	extras: Extra[];
+	extrasLabel: string;
 	resolve: (answer: WhenAnswer | null) => void;
 }
 
@@ -23,11 +34,17 @@ interface Pending {
 class WhenWatched {
 	pending = $state<Pending | null>(null);
 
-	ask(title: string, detail: string, allowToday = true): Promise<WhenAnswer | null> {
+	ask(
+		title: string,
+		detail: string,
+		allowToday = true,
+		extras: Extra[] = [],
+		extrasLabel = ''
+	): Promise<WhenAnswer | null> {
 		// A second request replaces the first rather than stacking dialogs.
 		this.pending?.resolve(null);
 		return new Promise((resolve) => {
-			this.pending = { title, detail, allowToday, resolve };
+			this.pending = { title, detail, allowToday, extras, extrasLabel, resolve };
 		});
 	}
 

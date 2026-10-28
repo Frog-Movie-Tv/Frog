@@ -354,7 +354,8 @@ class SettingsStore {
 		root.dataset.card = s.cardStyle;
 
 		const style = root.style;
-		style.setProperty('--poster-min', `${s.posterSize}px`);
+		// Not --poster-min itself: an inline value would beat the phone size.
+		style.setProperty('--poster-size', `${s.posterSize}px`);
 		style.setProperty('--gap', `${s.gridGap}px`);
 		style.setProperty('--blur', `${s.blur}px`);
 		const face = FONTS.find((f) => f.id === s.font) ?? FONTS[0];

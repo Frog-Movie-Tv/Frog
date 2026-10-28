@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 
@@ -33,11 +33,15 @@ use crate::tmdb::models;
 /// AniList allows 30 requests a minute at the moment; stay under it.
 const SPACING: Duration = Duration::from_millis(2_100);
 
-/// How often the worker re-reads a list nobody touched.
-pub const IDLE_SYNC_MINUTES: i64 = 30;
+/// How often the worker re-reads a list nobody touched. One request per
+/// account, so a change made on AniList shows up in Frog within minutes.
+pub const IDLE_SYNC_MINUTES: i64 = 5;
 
-/// Anime-IDs changes slowly; a week is plenty.
+/// Both id lists change slowly; a week is plenty.
 const MAP_DAYS: i64 = 7;
+
+/// TMDB's genre id for Animation.
+const ANIMATION: i64 = 16;
 
 static GATE: tokio::sync::Mutex<Option<Instant>> = tokio::sync::Mutex::const_new(None);
 
@@ -167,10 +171,12 @@ impl<'a> Api<'a> {
                 *last = Some(Instant::now());
             }
 
-            let resp = self
-                .http
-                .post(&self.client.api_url)
-                .bearer_auth(token)
+            let mut req = self.http.post(&self.client.api_url);
+            // No token is a public read, such as a search.
+            if !token.is_empty() {
+                req = req.bearer_auth(token);
+            }
+            let resp = req
                 .header("accept", "application/json")
                 .json(&json!({ "query": query, "variables": variables }))
                 .send()
@@ -233,7 +239,7 @@ const LIST_QUERY: &str = "query ($userId: Int) {
       status
       score(format: POINT_100)
       progress
-      media { id format episodes seasonYear title { english romaji } }
+      media { id format episodes seasonYear startDate { year } title { english romaji native } }
     } }
   }
 }";
@@ -254,6 +260,9 @@ const SAVE_MUTATION: &str =
 pub struct Remote {
     pub media_id: i64,
     pub name: String,
+    /// Every title AniList gives it (English, romaji, native), for matching
+    /// by name when no list knows the id.
+    pub titles: Vec<String>,
     pub format: Option<String>,
     pub episodes: Option<i64>,
     pub year: Option<i64>,
@@ -296,12 +305,25 @@ pub fn parse_list(data: &Value) -> Vec<Remote> {
                 continue;
             }
             let status = e["status"].as_str().unwrap_or("PLANNING");
+            let mut titles: Vec<String> = Vec::new();
+            for key in ["english", "romaji", "native"] {
+                if let Some(t) = media["title"][key].as_str().map(str::trim) {
+                    if !t.is_empty() && !titles.iter().any(|known| known == t) {
+                        titles.push(t.to_string());
+                    }
+                }
+            }
             out.push(Remote {
                 media_id,
                 name: media_name(media),
+                titles,
                 format: media["format"].as_str().map(str::to_string),
                 episodes: media["episodes"].as_i64().filter(|n| *n > 0),
-                year: media["seasonYear"].as_i64(),
+                // The year it started, which for a film is the year it came
+                // out; seasonYear is missing for most films.
+                year: media["startDate"]["year"]
+                    .as_i64()
+                    .or_else(|| media["seasonYear"].as_i64()),
                 view: View {
                     // A rewatch is still watching, as far as Frog is concerned.
                     status: if status == "REPEATING" {
@@ -318,10 +340,46 @@ pub fn parse_list(data: &Value) -> Vec<Remote> {
     out
 }
 
-// --- which TVDB / IMDb entry an AniList id is --------------------------------
+// --- which TMDB / TVDB / IMDb entry an AniList id is -------------------------
 
-/// Make sure the Anime-IDs list is loaded and not older than a week. A failed
-/// download keeps whatever was there.
+/// One entry of Fribb's anime-lists; everything else in it is left unread.
+#[derive(Deserialize)]
+struct ListEntry {
+    anilist_id: Option<i64>,
+    /// `{ "tv": 1429 }` or `{ "movie": 129 }`.
+    themoviedb_id: Option<Value>,
+    /// `{ "tvdb": 2, "tmdb": 1 }`.
+    season: Option<Value>,
+    /// `{ "tvdb": 0, "tmdb": 28 }`.
+    episode_offset: Option<Value>,
+    #[serde(rename = "type")]
+    format: Option<String>,
+}
+
+async fn download<T: serde::de::DeserializeOwned>(state: &AppState, url: &str) -> Option<T> {
+    match state.http.get(url).send().await {
+        Ok(r) if r.status().is_success() => match r.json::<T>().await {
+            Ok(v) => Some(v),
+            Err(e) => {
+                tracing::warn!(%url, error = %e, "an anime id list was not the expected JSON");
+                None
+            }
+        },
+        Ok(r) => {
+            tracing::warn!(%url, status = %r.status(), "could not download an anime id list");
+            None
+        }
+        Err(e) => {
+            tracing::warn!(%url, error = %e, "could not download an anime id list");
+            None
+        }
+    }
+}
+
+/// Make sure both id lists are loaded and not older than a week: Anime-IDs
+/// (TVDB and IMDb ids) and Fribb's anime-lists (TMDB ids and TMDB seasons).
+/// Each list replaces only its own columns, so one failed download keeps
+/// whatever that list said last time.
 pub async fn ensure_map(state: &AppState, client: &AniListClient) -> AppResult<()> {
     let row: Option<(String,)> = sqlx::query_as("SELECT fetched_at FROM anime_map_state")
         .fetch_optional(&state.pool)
@@ -333,53 +391,84 @@ pub async fn ensure_map(state: &AppState, client: &AniListClient) -> AppResult<(
         return Ok(());
     }
 
-    let body: Value = match state.http.get(&client.anime_ids_url).send().await {
-        Ok(r) if r.status().is_success() => match r.json().await {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::warn!(error = %e, "Anime-IDs list was not JSON");
-                return Ok(());
-            }
-        },
-        Ok(r) => {
-            tracing::warn!(status = %r.status(), "could not download the Anime-IDs list");
-            return Ok(());
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "could not download the Anime-IDs list");
-            return Ok(());
-        }
-    };
-    let Some(entries) = body.as_object() else {
+    let ids: Option<serde_json::Map<String, Value>> = download(state, &client.anime_ids_url).await;
+    let lists: Option<Vec<ListEntry>> = download(state, &client.anime_lists_url).await;
+    if ids.is_none() && lists.is_none() {
         return Ok(());
-    };
+    }
 
     let mut tx = state.pool.begin().await?;
-    sqlx::query("DELETE FROM anime_map")
-        .execute(&mut *tx)
-        .await?;
-    let mut count = 0;
-    for v in entries.values() {
-        let Some(anilist_id) = v["anilist_id"].as_i64() else {
-            continue;
-        };
-        let imdb = match &v["imdb_id"] {
-            Value::String(s) => s.split(',').next().map(|s| s.trim().to_string()),
-            _ => None,
-        }
-        .filter(|s| s.starts_with("tt"));
+    let mut from_ids = 0;
+    if let Some(entries) = &ids {
         sqlx::query(
-            "INSERT OR REPLACE INTO anime_map (anilist_id, tvdb_id, tvdb_season, tvdb_epoffset, imdb_id)
-             VALUES (?, ?, ?, ?, ?)",
+            "UPDATE anime_map
+                SET tvdb_id = NULL, tvdb_season = NULL, tvdb_epoffset = 0, imdb_id = NULL",
         )
-        .bind(anilist_id)
-        .bind(v["tvdb_id"].as_i64())
-        .bind(v["tvdb_season"].as_i64())
-        .bind(v["tvdb_epoffset"].as_i64().unwrap_or(0))
-        .bind(imdb)
         .execute(&mut *tx)
         .await?;
-        count += 1;
+        for v in entries.values() {
+            let Some(anilist_id) = v["anilist_id"].as_i64() else {
+                continue;
+            };
+            let imdb = match &v["imdb_id"] {
+                Value::String(s) => s.split(',').next().map(|s| s.trim().to_string()),
+                _ => None,
+            }
+            .filter(|s| s.starts_with("tt"));
+            sqlx::query(
+                "INSERT INTO anime_map (anilist_id, tvdb_id, tvdb_season, tvdb_epoffset, imdb_id)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT (anilist_id) DO UPDATE SET
+                    tvdb_id = excluded.tvdb_id, tvdb_season = excluded.tvdb_season,
+                    tvdb_epoffset = excluded.tvdb_epoffset, imdb_id = excluded.imdb_id",
+            )
+            .bind(anilist_id)
+            .bind(v["tvdb_id"].as_i64())
+            .bind(v["tvdb_season"].as_i64())
+            .bind(v["tvdb_epoffset"].as_i64().unwrap_or(0))
+            .bind(imdb)
+            .execute(&mut *tx)
+            .await?;
+            from_ids += 1;
+        }
+    }
+    let mut from_lists = 0;
+    if let Some(entries) = &lists {
+        sqlx::query(
+            "UPDATE anime_map
+                SET tmdb_kind = NULL, tmdb_id = NULL, tmdb_season = NULL, tmdb_offset = NULL",
+        )
+        .execute(&mut *tx)
+        .await?;
+        for e in entries {
+            let (Some(anilist_id), Some(tmdb)) = (e.anilist_id, e.themoviedb_id.as_ref()) else {
+                continue;
+            };
+            let film = e.format.as_deref() == Some("MOVIE");
+            let (kind, tmdb_id) = match (tmdb["movie"].as_i64(), tmdb["tv"].as_i64()) {
+                (Some(m), _) if film => ("movie", m),
+                (_, Some(t)) => ("tv", t),
+                (Some(m), None) => ("movie", m),
+                (None, None) => continue,
+            };
+            let season = e.season.as_ref().and_then(|s| s["tmdb"].as_i64());
+            let offset = e.episode_offset.as_ref().and_then(|o| o["tmdb"].as_i64());
+            sqlx::query(
+                "INSERT INTO anime_map (anilist_id, tmdb_kind, tmdb_id, tmdb_season, tmdb_offset)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT (anilist_id) DO UPDATE SET
+                    tmdb_kind = excluded.tmdb_kind, tmdb_id = excluded.tmdb_id,
+                    tmdb_season = excluded.tmdb_season, tmdb_offset = excluded.tmdb_offset",
+            )
+            .bind(anilist_id)
+            .bind(kind)
+            .bind(tmdb_id)
+            .bind(season)
+            .bind(offset)
+            .execute(&mut *tx)
+            .await?;
+            from_lists += 1;
+        }
     }
     sqlx::query(
         "INSERT INTO anime_map_state (id, fetched_at) VALUES (1, ?)
@@ -389,12 +478,22 @@ pub async fn ensure_map(state: &AppState, client: &AniListClient) -> AppResult<(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
-    tracing::info!(count, "loaded the Anime-IDs list");
+    tracing::info!(from_ids, from_lists, "loaded the anime id lists");
     Ok(())
 }
 
-/// (tvdb_id, tvdb_season, tvdb_epoffset, imdb_id)
-type MapRow = (Option<i64>, Option<i64>, i64, Option<String>);
+/// (tvdb_id, tvdb_season, tvdb_epoffset, imdb_id,
+///  tmdb_kind, tmdb_id, tmdb_season, tmdb_offset)
+type MapRow = (
+    Option<i64>,
+    Option<i64>,
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+);
 
 /// Where an AniList entry lives in Frog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -538,25 +637,124 @@ async fn tmdb_by_external(
     Ok(None)
 }
 
-/// Where this entry goes, or `None` when that is not certain.
+/// Where this entry goes, or `None` when that is not certain. By TMDB id
+/// first, then by TVDB or IMDb id, then by an exact name, and last by
+/// counting on from the first season of the series it continues.
 async fn place(
     state: &AppState,
     api: &Api<'_>,
     token: &str,
     remote: &Remote,
 ) -> AppResult<Option<Target>> {
+    if let Some(target) = place_known(state, api, token, remote).await? {
+        return Ok(Some(target));
+    }
+    place_after_prequels(state, api, token, remote).await
+}
+
+/// By id from either list or, for what neither list knows, by exact name.
+async fn place_known(
+    state: &AppState,
+    api: &Api<'_>,
+    token: &str,
+    remote: &Remote,
+) -> AppResult<Option<Target>> {
     let row: Option<MapRow> = sqlx::query_as(
-        "SELECT tvdb_id, tvdb_season, tvdb_epoffset, imdb_id FROM anime_map WHERE anilist_id = ?",
+        "SELECT tvdb_id, tvdb_season, tvdb_epoffset, imdb_id,
+                tmdb_kind, tmdb_id, tmdb_season, tmdb_offset
+           FROM anime_map WHERE anilist_id = ?",
     )
     .bind(remote.media_id)
     .fetch_optional(&state.pool)
     .await?;
-    let Some((tvdb_id, tvdb_season, offset, imdb_id)) = row else {
+    if let Some(row) = &row {
+        if let Some(target) = place_by_tmdb(state, remote, row).await? {
+            return Ok(Some(target));
+        }
+        if let Some(target) = place_by_tvdb(state, api, token, remote, row).await? {
+            return Ok(Some(target));
+        }
+        // Known to a list but not placeable from it: a name could only guess.
+        if row.0.is_some() || row.3.is_some() || row.5.is_some() {
+            return Ok(None);
+        }
+    }
+    place_by_name(state, remote).await
+}
+
+/// Fribb's anime-lists names the TMDB entry, and for a show TMDB's own season
+/// and offset, so nothing has to be worked out. Used only when no other
+/// AniList entry claims the same spot, which is what an unlisted second cour
+/// looks like.
+async fn place_by_tmdb(
+    state: &AppState,
+    remote: &Remote,
+    row: &MapRow,
+) -> AppResult<Option<Target>> {
+    let (kind, Some(tmdb_id), season, offset) = (row.4.as_deref(), row.5, row.6, row.7) else {
         return Ok(None);
     };
     let is_film = remote.format.as_deref() == Some("MOVIE");
+    match kind {
+        Some("movie") => {
+            // A twelve-episode series is not a film, whatever a list says.
+            let single = is_film || remote.episodes.is_none_or(|n| n <= 1);
+            Ok(single.then_some(Target::Movie(tmdb_id)))
+        }
+        Some("tv") if !is_film => {
+            // Specials are TMDB season 0, which Frog does not place entries in.
+            let Some(season) = season.filter(|s| *s >= 1) else {
+                return Ok(None);
+            };
+            let (shared,): (i64,) = sqlx::query_as(
+                "SELECT COUNT(*) FROM anime_map
+                  WHERE tmdb_kind = 'tv' AND tmdb_id = ? AND tmdb_season = ? AND tmdb_offset IS ?",
+            )
+            .bind(tmdb_id)
+            .bind(season)
+            .bind(offset)
+            .fetch_one(&state.pool)
+            .await?;
+            if shared > 1 {
+                return Ok(None);
+            }
+            let detail = state.tmdb.tv(tmdb_id).await?;
+            let Some(count) = models::seasons(&detail)
+                .into_iter()
+                .find(|s| s.season_number == season)
+                .map(|s| s.episode_count)
+            else {
+                return Ok(None);
+            };
+            let offset = offset.unwrap_or(0);
+            // A season TMDB has not filled in yet still exists; one too short
+            // to hold this entry means the list and TMDB disagree.
+            if count > 0 && offset >= count {
+                return Ok(None);
+            }
+            Ok(Some(Target::Show {
+                tmdb_id,
+                season,
+                offset,
+            }))
+        }
+        _ => Ok(None),
+    }
+}
 
-    if let Some(imdb) = imdb_id.as_deref() {
+/// Anime-IDs gives TVDB's season and offset, turned into TMDB's numbering
+/// through the lengths of the seasons before it.
+async fn place_by_tvdb(
+    state: &AppState,
+    api: &Api<'_>,
+    token: &str,
+    remote: &Remote,
+    row: &MapRow,
+) -> AppResult<Option<Target>> {
+    let (tvdb_id, tvdb_season, offset, imdb_id) = (row.0, row.1, row.2, row.3.as_deref());
+    let is_film = remote.format.as_deref() == Some("MOVIE");
+
+    if let Some(imdb) = imdb_id {
         if is_film || tvdb_id.is_none() {
             if let Some((kind, id)) = tmdb_by_external(state, imdb, "imdb_id").await? {
                 if kind == "movie" {
@@ -573,13 +771,20 @@ async fn place(
     let (Some(tvdb_id), Some(tvdb_season)) = (tvdb_id, tvdb_season) else {
         return Ok(None);
     };
-    let Some((kind, tmdb_id)) = tmdb_by_external(state, &tvdb_id.to_string(), "tvdb_id").await?
-    else {
-        return Ok(None);
+    // When Fribb's list already named the show, TVDB need not be asked.
+    let tmdb_id = match (row.4.as_deref(), row.5) {
+        (Some("tv"), Some(id)) => id,
+        _ => {
+            let Some((kind, id)) = tmdb_by_external(state, &tvdb_id.to_string(), "tvdb_id").await?
+            else {
+                return Ok(None);
+            };
+            if kind != "tv" {
+                return Ok(None);
+            }
+            id
+        }
     };
-    if kind != "tv" {
-        return Ok(None);
-    }
     let detail = state.tmdb.tv(tmdb_id).await?;
     let seasons: Vec<(i64, i64)> = models::seasons(&detail)
         .into_iter()
@@ -600,6 +805,282 @@ async fn place(
             },
         ),
     )
+}
+
+const CHAIN_QUERY: &str = "query ($id: Int) {
+  Media(id: $id, type: ANIME) {
+    id format episodes seasonYear startDate { year } title { english romaji native }
+    relations { edges { relationType node { id type format } } }
+  }
+}";
+
+/// The formats that make up a series' main run, as opposed to films, OVAs
+/// and specials hanging off it.
+fn main_run(format: Option<&str>) -> bool {
+    matches!(format, Some("TV" | "TV_SHORT" | "ONA"))
+}
+
+/// One step of a series as AniList links it.
+struct Link {
+    prequel: Option<i64>,
+    episodes: Option<i64>,
+    format: Option<String>,
+    year: Option<i64>,
+    titles: Vec<String>,
+}
+
+/// (prequel, episodes, format, year, titles, fetched_at)
+type ChainRow = (
+    Option<i64>,
+    Option<i64>,
+    Option<String>,
+    Option<i64>,
+    String,
+    String,
+);
+
+/// What comes before `id`, from the shared cache or AniList. An entry whose
+/// length was still unknown is asked about again after a day.
+async fn chain_link(
+    state: &AppState,
+    api: &Api<'_>,
+    token: &str,
+    id: i64,
+) -> AppResult<Option<Link>> {
+    let row: Option<ChainRow> = sqlx::query_as(
+        "SELECT prequel, episodes, format, year, titles, fetched_at FROM anilist_chain WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?;
+    if let Some((prequel, episodes, format, year, titles, at)) = row {
+        let recent = chrono::DateTime::parse_from_rfc3339(&at)
+            .is_ok_and(|at| Utc::now() - at.with_timezone(&Utc) < chrono::Duration::days(1));
+        if episodes.is_some() || recent {
+            return Ok(Some(Link {
+                prequel,
+                episodes,
+                format,
+                year,
+                titles: serde_json::from_str(&titles).unwrap_or_default(),
+            }));
+        }
+    }
+
+    let data = api.graphql(token, CHAIN_QUERY, json!({ "id": id })).await?;
+    let media = &data["Media"];
+    if media.is_null() {
+        return Ok(None);
+    }
+    // Exactly one main-run prequel; a film or OVA before it does not count,
+    // and two would be a guess.
+    let prequels: Vec<i64> = media["relations"]["edges"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|e| e["relationType"].as_str() == Some("PREQUEL"))
+        .filter(|e| e["node"]["type"].as_str() == Some("ANIME"))
+        .filter(|e| main_run(e["node"]["format"].as_str()))
+        .filter_map(|e| e["node"]["id"].as_i64())
+        .collect();
+    let mut titles: Vec<String> = Vec::new();
+    for key in ["english", "romaji", "native"] {
+        if let Some(t) = media["title"][key].as_str().map(str::trim) {
+            if !t.is_empty() && !titles.iter().any(|known| known == t) {
+                titles.push(t.to_string());
+            }
+        }
+    }
+    let link = Link {
+        prequel: match prequels[..] {
+            [one] => Some(one),
+            _ => None,
+        },
+        episodes: media["episodes"].as_i64().filter(|n| *n > 0),
+        format: media["format"].as_str().map(str::to_string),
+        year: media["startDate"]["year"]
+            .as_i64()
+            .or_else(|| media["seasonYear"].as_i64()),
+        titles,
+    };
+    sqlx::query(
+        "INSERT INTO anilist_chain (id, prequel, episodes, format, year, titles, fetched_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+            prequel = excluded.prequel, episodes = excluded.episodes, format = excluded.format,
+            year = excluded.year, titles = excluded.titles, fetched_at = excluded.fetched_at",
+    )
+    .bind(id)
+    .bind(link.prequel)
+    .bind(link.episodes)
+    .bind(link.format.as_deref())
+    .bind(link.year)
+    .bind(serde_json::to_string(&link.titles)?)
+    .bind(Utc::now().to_rfc3339())
+    .execute(&state.pool)
+    .await?;
+    Ok(Some(link))
+}
+
+/// A later season nobody lists: walk AniList's prequels back to the first
+/// season, place that, and count this one's start on from it through TMDB's
+/// seasons. Season 3 after a 25-episode and a 12-episode season starts at
+/// episode 38 of the series, wherever TMDB's seasons fall.
+async fn place_after_prequels(
+    state: &AppState,
+    api: &Api<'_>,
+    token: &str,
+    remote: &Remote,
+) -> AppResult<Option<Target>> {
+    if !main_run(remote.format.as_deref()) {
+        return Ok(None);
+    }
+    let mut before = 0;
+    let mut id = remote.media_id;
+    let mut root: Option<(i64, Link)> = None;
+    // Long-running series have a dozen seasons at most; a loop in the
+    // relations must not run forever.
+    for _ in 0..24 {
+        let Some(link) = chain_link(state, api, token, id).await? else {
+            return Ok(None);
+        };
+        let Some(prequel) = link.prequel else {
+            root = Some((id, link));
+            break;
+        };
+        let Some(earlier) = chain_link(state, api, token, prequel).await? else {
+            return Ok(None);
+        };
+        let Some(length) = earlier.episodes else {
+            return Ok(None);
+        };
+        before += length;
+        id = prequel;
+    }
+    let Some((root_id, link)) = root else {
+        return Ok(None);
+    };
+    if root_id == remote.media_id {
+        // Already the first season, and nothing placed it.
+        return Ok(None);
+    }
+    let first = Remote {
+        media_id: root_id,
+        name: link.titles.first().cloned().unwrap_or_default(),
+        titles: link.titles,
+        format: link.format,
+        episodes: link.episodes,
+        year: link.year,
+        view: remote.view.clone(),
+    };
+    let Some(Target::Show {
+        tmdb_id,
+        season,
+        offset,
+    }) = place_known(state, api, token, &first).await?
+    else {
+        return Ok(None);
+    };
+    let detail = state.tmdb.tv(tmdb_id).await?;
+    let mut seasons: Vec<(i64, i64)> = models::seasons(&detail)
+        .into_iter()
+        .map(|s| (s.season_number, s.episode_count))
+        .filter(|(n, _)| *n >= 1)
+        .collect();
+    seasons.sort_unstable();
+    let start: i64 = seasons
+        .iter()
+        .filter(|(n, _)| *n < season)
+        .map(|(_, count)| count)
+        .sum::<i64>()
+        + offset;
+    Ok(
+        locate(start + before, &seasons).map(|(season, offset)| Target::Show {
+            tmdb_id,
+            season,
+            offset,
+        }),
+    )
+}
+
+/// Letters and digits only, lower case: "Frieren: Beyond Journey's End" and
+/// "FRIEREN - Beyond Journey’s End" are the same name.
+pub fn plain(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// For entries neither list knows: one TMDB animation with exactly this name
+/// that started the same year, or failing that a year either side (a festival
+/// premiere, a late-December first broadcast). A show matched this way is its
+/// first season, since a later season starts later than the show does. Two
+/// equally good matches, or none, and it waits.
+async fn place_by_name(state: &AppState, remote: &Remote) -> AppResult<Option<Target>> {
+    let film = match remote.format.as_deref() {
+        Some("MOVIE") => true,
+        Some("TV" | "TV_SHORT" | "ONA") => false,
+        _ => return Ok(None),
+    };
+    let Some(year) = remote.year else {
+        return Ok(None);
+    };
+    let names: Vec<String> = remote
+        .titles
+        .iter()
+        .map(|t| plain(t))
+        .filter(|t| !t.is_empty())
+        .collect();
+
+    // (id, started the same year)
+    let mut found: Vec<(i64, bool)> = Vec::new();
+    for title in &remote.titles {
+        let results = state.tmdb.search_multi(title, 1).await?;
+        for r in results["results"].as_array().into_iter().flatten() {
+            if r["media_type"].as_str() != Some(if film { "movie" } else { "tv" }) {
+                continue;
+            }
+            let animated = r["genre_ids"]
+                .as_array()
+                .is_some_and(|g| g.iter().any(|id| id.as_i64() == Some(ANIMATION)));
+            let date = r["release_date"]
+                .as_str()
+                .or_else(|| r["first_air_date"].as_str())
+                .unwrap_or("");
+            let Some(started) = date.get(..4).and_then(|y| y.parse::<i64>().ok()) else {
+                continue;
+            };
+            let named = ["title", "name", "original_title", "original_name"]
+                .iter()
+                .filter_map(|k| r[*k].as_str())
+                .any(|n| names.contains(&plain(n)));
+            if let (true, true, Some(id)) = (animated, named, r["id"].as_i64()) {
+                if (started - year).abs() <= 1 && !found.iter().any(|(known, _)| *known == id) {
+                    found.push((id, started == year));
+                }
+            }
+        }
+    }
+    let exact: Vec<i64> = found.iter().filter(|f| f.1).map(|f| f.0).collect();
+    let near: Vec<i64> = found.iter().map(|f| f.0).collect();
+    let tmdb_id = match (&exact[..], &near[..]) {
+        ([one], _) => *one,
+        ([], [one]) => *one,
+        _ => return Ok(None),
+    };
+    if film {
+        return Ok(Some(Target::Movie(tmdb_id)));
+    }
+    let detail = state.tmdb.tv(tmdb_id).await?;
+    let has_first = models::seasons(&detail)
+        .into_iter()
+        .any(|s| s.season_number == 1);
+    Ok(has_first.then_some(Target::Show {
+        tmdb_id,
+        season: 1,
+        offset: 0,
+    }))
 }
 
 /// How many episodes TVDB seasons 1 .. `season - 1` of this show hold, from
@@ -637,32 +1118,56 @@ async fn earlier_episodes(
     Ok(Some(length.values().sum()))
 }
 
-/// What TMDB might mean by this entry, for the person to choose from.
+/// What TMDB might mean by this entry, for the person to choose from: found
+/// under every title AniList has, animation first, the right year next.
 async fn candidates(state: &AppState, remote: &Remote) -> Vec<Value> {
-    let Ok(found) = state.tmdb.search_multi(&remote.name, 1).await else {
-        return Vec::new();
+    let mut seen: HashSet<(String, i64)> = HashSet::new();
+    let mut ranked: Vec<(i64, usize, Value)> = Vec::new();
+    let titles = if remote.titles.is_empty() {
+        vec![remote.name.clone()]
+    } else {
+        remote.titles.clone()
     };
-    found["results"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|r| matches!(r["media_type"].as_str(), Some("movie" | "tv")))
-        .take(5)
-        .map(|r| {
+    for title in &titles {
+        let Ok(found) = state.tmdb.search_multi(title, 1).await else {
+            continue;
+        };
+        for r in found["results"].as_array().cloned().unwrap_or_default() {
+            let Some(kind) = r["media_type"]
+                .as_str()
+                .filter(|k| *k == "movie" || *k == "tv")
+            else {
+                continue;
+            };
+            let Some(id) = r["id"].as_i64() else { continue };
+            if !seen.insert((kind.to_string(), id)) {
+                continue;
+            }
             let date = r["release_date"]
                 .as_str()
                 .or_else(|| r["first_air_date"].as_str())
                 .unwrap_or("");
-            json!({
-                "kind": r["media_type"],
-                "tmdb_id": r["id"],
-                "name": r["title"].as_str().or_else(|| r["name"].as_str()).unwrap_or(""),
-                "year": date.get(..4),
-                "poster_path": r["poster_path"],
-            })
-        })
-        .collect()
+            let year = date.get(..4).and_then(|y| y.parse::<i64>().ok());
+            let animated = r["genre_ids"]
+                .as_array()
+                .is_some_and(|g| g.iter().any(|g| g.as_i64() == Some(ANIMATION)));
+            let rank = i64::from(!animated) * 2 + i64::from(year.is_none() || year != remote.year);
+            let order = ranked.len();
+            ranked.push((
+                rank,
+                order,
+                json!({
+                    "kind": kind,
+                    "tmdb_id": id,
+                    "name": r["title"].as_str().or_else(|| r["name"].as_str()).unwrap_or(""),
+                    "year": date.get(..4),
+                    "poster_path": r["poster_path"],
+                }),
+            ));
+        }
+    }
+    ranked.sort_by_key(|(rank, order, _)| (*rank, *order));
+    ranked.into_iter().take(6).map(|(_, _, v)| v).collect()
 }
 
 // --- what Frog says about an entry -------------------------------------------

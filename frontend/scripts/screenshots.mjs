@@ -38,6 +38,9 @@ const SEED = [
 	{ kind: 'movie', id: 1891, status: 'completed', rating: 91 },
 	{ kind: 'movie', id: 496243, status: 'planned' },
 	{ kind: 'tv', id: 87108, status: 'planned' },
+	// On air, so the calendar has the month ahead to show.
+	{ kind: 'tv', id: 456, status: 'planned' },
+	{ kind: 'tv', id: 1667, status: 'planned' },
 	{ kind: 'movie', id: 872585, status: 'planned' }
 ];
 
@@ -255,6 +258,12 @@ try {
 		theme: 'pond'
 	});
 	await shoot(browser, {
+		name: 'search-desktop-pond',
+		path: '/search?q=nolan',
+		viewport: DESKTOP,
+		theme: 'pond'
+	});
+	await shoot(browser, {
 		name: 'home-desktop-dark',
 		path: '/',
 		viewport: DESKTOP,
@@ -277,6 +286,13 @@ try {
 	await shoot(browser, {
 		name: 'title-phone-pond',
 		path: '/title/tv/95396',
+		viewport: PHONE,
+		theme: 'pond'
+	});
+
+	await shoot(browser, {
+		name: 'search-phone-pond',
+		path: '/search?q=nolan',
 		viewport: PHONE,
 		theme: 'pond'
 	});
