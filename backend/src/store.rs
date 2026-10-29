@@ -10,6 +10,7 @@ use sqlx::{FromRow, SqlitePool};
 use crate::error::{AppError, AppResult};
 use crate::palette::{self, Palette};
 use crate::state::AppState;
+use crate::text;
 use crate::tmdb::models::{self, EpisodeInfo, TitleCore};
 
 pub const STATUSES: [&str; 5] = ["watching", "completed", "planned", "paused", "dropped"];
@@ -111,11 +112,12 @@ pub async fn upsert_title(pool: &SqlitePool, core: &TitleCore) -> AppResult<i64>
         "INSERT INTO title (kind, tmdb_id, name, original_name, overview, poster_path,
                             backdrop_path, logo_path, release_date, last_air_date, tmdb_status,
                             runtime, episode_count, season_count, genres_json, tmdb_vote,
-                            imdb_id, collection_id, refreshed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            imdb_id, collection_id, refreshed_at, search_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (kind, tmdb_id) DO UPDATE SET
             name = excluded.name,
             original_name = excluded.original_name,
+            search_name = excluded.search_name,
             overview = excluded.overview,
             poster_path = excluded.poster_path,
             backdrop_path = excluded.backdrop_path,
@@ -151,6 +153,7 @@ pub async fn upsert_title(pool: &SqlitePool, core: &TitleCore) -> AppResult<i64>
     .bind(&core.imdb_id)
     .bind(core.collection_id)
     .bind(Utc::now().to_rfc3339())
+    .bind(text::search_name(&core.name, core.original_name.as_deref()))
     .execute(pool)
     .await?;
 

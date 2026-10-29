@@ -18,6 +18,8 @@ In progress.
   right season with the episodes you saw, found by their names and kept on
   the day you watched them, films keep their day too, and anything Netflix
   leaves unclear is set aside for you to check.
+- **Find it however you type it.** The library's name filter ignores accents
+  and capitals, so "pokemon" finds Pokémon and "shippuden" finds Shippūden.
 - **Pages that aren't there say so.** A mistyped address, or a title, person,
   studio or shelf that doesn't exist, gets a clear page with the way home.
 

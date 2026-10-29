@@ -35,6 +35,8 @@ qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 # Already in the tree through rustls; used directly for Web Push encryption.
 ring = "0.17"
 base64 = "0.22"
+# Already in the tree through sqlx; folds accents for the library filter.
+unicode-normalization = "0.1"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

@@ -135,6 +135,12 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   `npm test` runs it against `tests/fixtures/netflix-viewing-history.csv`,
   real titles with made-up dates; `node --test` reads the TypeScript directly
   through `tests/ts-paths.mjs`.
+- **The library filter matches `title.search_name`**, the name and original
+  name with case and accents folded out (`text::fold`), against the typed
+  term folded the same way. SQL cannot fold accents, so `upsert_title`
+  writes it and `db::fill_search_names` fills any row without one at
+  startup. Anything that inserts titles another way gets one on the next
+  start, and until then matches by its plain lower-cased name.
 - **A page that cannot load never shows the server's message.**
   `lib/failure.ts` picks the words from the status (404 and 400 are the
   page's own "isn't on TMDB" line; 502, 503 and offline have their own), and
