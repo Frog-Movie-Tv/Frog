@@ -365,8 +365,11 @@ private repository, which is the copy that survives losing the machine. The
 server reaches it with a deploy key of its own, `/opt/frog/backup-key`, that
 `install.sh` creates and prints.
 
-1. Create a **private**, empty repository, e.g. `Frog-Movie-Tv/frog-backups`
-   (on your computer: `gh repo create Frog-Movie-Tv/frog-backups --private`).
+1. Create a **private**, empty repository in an owner's own account:
+   `gh repo create zschaeken/frog-backups --private`. Not in Frog-Movie-Tv:
+   the organisation has deploy keys switched off, so its repositories cannot
+   take one. Add the other owner as a collaborator, so both can reach the
+   backups.
 2. In that repository: **Settings → Deploy keys → Add deploy key**. Paste the
    output of `sudo cat /opt/frog/backup-key.pub`, and tick **Allow write
    access**.
@@ -374,7 +377,7 @@ server reaches it with a deploy key of its own, `/opt/frog/backup-key`, that
    push, and records it in `backup.env`:
 
    ```bash
-   sudo /opt/frog/deploy/backup-repo.sh git@github.com:Frog-Movie-Tv/frog-backups.git
+   sudo /opt/frog/deploy/backup-repo.sh git@github.com:zschaeken/frog-backups.git
    ```
 
 4. Make a backup and see it arrive in the repository:
@@ -448,7 +451,7 @@ cd /opt/frog/restoretest && sudo docker compose up -d
 
 # The newest backup, fetched from the repository rather than this disk.
 sudo GIT_SSH_COMMAND="ssh -i /opt/frog/backup-key -o IdentitiesOnly=yes" \
-  git clone -q git@github.com:Frog-Movie-Tv/frog-backups.git /tmp/frog-backups-check
+  git clone -q git@github.com:zschaeken/frog-backups.git /tmp/frog-backups-check
 ARCHIVE="$(ls -1t /tmp/frog-backups-check/production/*.age | head -1)"
 
 # Asks you to type "restoretest", then to paste the age private key and press Ctrl-D.
