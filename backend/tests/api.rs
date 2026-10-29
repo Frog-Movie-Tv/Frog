@@ -375,6 +375,75 @@ async fn library_and_stats_survive_real_rows() {
     assert_eq!(body["mean_rating"], json!(90.0));
 }
 
+/// The library filter ignores case and accents: "pokemon" finds "Pokémon".
+/// It still only ever looks in your own library.
+#[tokio::test]
+async fn the_library_filter_ignores_accents_and_case() {
+    let h = Harness::new().await;
+    let (owner, other) = two_accounts(&h).await;
+
+    sqlx::query(
+        "INSERT INTO title (id, kind, tmdb_id, name, original_name) VALUES
+            (1, 'tv', 60572, 'Pokémon', 'ポケットモンスター'),
+            (2, 'tv', 31910, 'Naruto Shippūden', 'NARUTO -ナルト- 疾風伝'),
+            (3, 'tv', 1396, 'Breaking Bad', 'Breaking Bad'),
+            (4, 'movie', 11, '100% Wolf', NULL),
+            (5, 'movie', 12, 'Pokémon: The First Movie', NULL)",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    frog::db::fill_search_names(&h.state.pool).await.unwrap();
+
+    // The owner tracks the first four; the other account has the film.
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         SELECT u.id, t.id, 'planned', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'
+           FROM app_user u, title t
+          WHERE (u.username = 'mihai' AND t.id <= 4)
+             OR (u.username = 'zjef' AND t.id = 5)",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    // A title written by a binary from before search_name still matches by
+    // its plain name.
+    sqlx::query("UPDATE title SET search_name = NULL WHERE id = 3")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+
+    let found = |body: Value| -> Vec<String> {
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["name"].as_str().unwrap().to_string())
+            .collect()
+    };
+    for (term, expected) in [
+        ("pokemon", vec!["Pokémon"]),
+        ("Pok%C3%A9mon", vec!["Pokémon"]),
+        ("POK%C3%89MON", vec!["Pokémon"]),
+        ("shippuden", vec!["Naruto Shippūden"]),
+        ("SHIPPUDEN", vec!["Naruto Shippūden"]),
+        ("%E7%96%BE%E9%A2%A8%E4%BC%9D", vec!["Naruto Shippūden"]),
+        ("breaking", vec!["Breaking Bad"]),
+        ("100%25", vec!["100% Wolf"]),
+        ("0%25", vec!["100% Wolf"]),
+        ("%25", vec!["100% Wolf"]),
+        ("_", vec![]),
+    ] {
+        let (status, body) = h.get(&format!("/api/library?q={term}"), Some(&owner)).await;
+        assert_eq!(status, StatusCode::OK, "{term}: {body}");
+        assert_eq!(found(body), expected, "searching {term}");
+    }
+
+    let (_, body) = h.get("/api/library?q=pokemon", Some(&other)).await;
+    assert_eq!(found(body), ["Pokémon: The First Movie"], "only your own");
+}
+
 /// An internal fault must never put a database error on the screen.
 #[tokio::test]
 async fn internal_errors_are_not_shown_verbatim() {
@@ -1746,7 +1815,7 @@ async fn migrations_differing_only_in_line_endings_are_accepted() {
 
     let h = Harness::new().await;
     let pool = &h.state.pool;
-    let migrator = sqlx::migrate!("./migrations");
+    let migrator = frog::db::migrator();
     let first = migrator.iter().next().unwrap();
 
     // Record migration 1 as if it had been applied from the other ending.
@@ -1783,6 +1852,43 @@ async fn migrations_differing_only_in_line_endings_are_accepted() {
         .unwrap();
     frog::db::heal_line_endings(pool, &migrator).await.unwrap();
     assert!(migrator.run(pool).await.is_err());
+}
+
+/// After a failed update the previous image starts on a database that already
+/// holds the new release's migrations. It must come up rather than refuse, or
+/// a rollback leaves the site down.
+#[tokio::test]
+async fn an_older_binary_starts_on_a_newer_schema() {
+    let h = Harness::new().await;
+    let url = h.state.config.database_url.clone();
+
+    // A migration from a release this binary has never heard of, applied.
+    sqlx::query(
+        "INSERT INTO _sqlx_migrations
+             (version, description, success, checksum, execution_time)
+         VALUES (299912312359, 'from the future', 1, X'00', 0)",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    assert!(
+        sqlx::migrate!("./migrations")
+            .run(&h.state.pool)
+            .await
+            .is_err(),
+        "sqlx's default refuses it"
+    );
+    h.state.pool.close().await;
+
+    let pool = frog::db::connect(&url)
+        .await
+        .expect("starts on a schema one step ahead");
+    let (n,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM _sqlx_migrations WHERE version = ?")
+        .bind(299912312359_i64)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 1, "and leaves the newer record alone");
 }
 
 // ---------------------------------------------------------------------------

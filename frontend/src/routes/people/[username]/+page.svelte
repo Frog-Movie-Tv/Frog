@@ -39,7 +39,7 @@
 </script>
 
 <svelte:head>
-	<title>{profile ? `${shownName} · Frog` : 'Profile · Frog'}</title>
+	<title>{profile ? `${shownName} · Frog` : missing ? 'Not found · Frog' : 'Profile · Frog'}</title>
 </svelte:head>
 
 {#snippet rail(title: string, cards: ProfileCard[])}

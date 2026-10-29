@@ -418,8 +418,13 @@ Nothing is open to the internet except 80 and 443, and SSH by key. The machine
 - Otherwise: back up, start the new image, wait for `/healthz`, and on failure
   roll back to the previous digest and say so.
 - Migrations run as the server starts, so healthy means migrated and serving.
-  A rollback of the binary is **not** a rollback of the schema; if the old
-  image then refuses to start, restore the pre-update backup.
+  A rollback of the binary is **not** a rollback of the schema: the previous
+  image starts on the newer schema (it ignores migrations it does not know,
+  which is why migrations stay additive). If it still fails its health check,
+  `update.sh` puts back a plain snapshot it took just before the update,
+  keeps the database it replaced as `frog.db.failed-update-*`, and starts the
+  previous image again. The snapshot sits beside the encrypted backups only
+  while an update is in flight.
 
 Staging follows `:main`, so merging a pull request puts it on staging within a
 quarter of an hour. Production follows the newest release tag, so merging the

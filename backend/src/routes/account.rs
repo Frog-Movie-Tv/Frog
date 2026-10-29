@@ -314,7 +314,7 @@ pub async fn set_profile(
             )));
         }
         if pins.iter().any(|p| p.kind != "movie" && p.kind != "tv") {
-            return Err(AppError::BadRequest("kind must be movie or tv".into()));
+            return Err(AppError::BadRequest("That isn't a film or a show.".into()));
         }
         sqlx::query("UPDATE app_user SET pins_json = ? WHERE id = ?")
             .bind(serde_json::to_string(pins)?)

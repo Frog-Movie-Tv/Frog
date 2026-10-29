@@ -7,6 +7,7 @@ use crate::auth::Auth;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::store::{self, LibraryPatch, TitleRow};
+use crate::text;
 
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
@@ -77,7 +78,13 @@ pub async fn list(
         sql.push_str(" AND t.genres_json LIKE ?");
     }
     if q.q.is_some() {
-        sql.push_str(" AND (t.name LIKE ? OR t.original_name LIKE ?)");
+        // Folded on both sides, so neither case nor accents decide a match.
+        // A row written by an older binary has no search_name until the next
+        // start fills it; until then its plain name still matches.
+        sql.push_str(
+            " AND COALESCE(t.search_name, lower(t.name || char(10) || COALESCE(t.original_name, '')))
+                  LIKE ? ESCAPE '\\'",
+        );
     }
     if q.favourite == Some(true) {
         sql.push_str(" AND l.favourite = 1");
@@ -102,8 +109,12 @@ pub async fn list(
         query = query.bind(format!("%\"{genre}\"%"));
     }
     if let Some(term) = &q.q {
-        let like = format!("%{term}%");
-        query = query.bind(like.clone()).bind(like);
+        // Typed literally: a % or _ in a title is a character, not a wildcard.
+        let folded = text::fold(term.trim())
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        query = query.bind(format!("%{folded}%"));
     }
     // The whole library unless asked for less: a Netflix import alone brings
     // six hundred titles, and the page has no "load more".
@@ -204,7 +215,7 @@ pub async fn upsert(
     Json(body): Json<UpsertBody>,
 ) -> AppResult<Json<Value>> {
     if kind != "movie" && kind != "tv" {
-        return Err(AppError::BadRequest("kind must be movie or tv".into()));
+        return Err(AppError::BadRequest("That isn't a film or a show.".into()));
     }
 
     let (title_id, detail) = store::ensure_title(&state, &kind, tmdb_id).await?;
