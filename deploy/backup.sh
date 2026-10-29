@@ -25,8 +25,11 @@ log() { echo "[$(date -Is)] $*"; }
 # Frog to read (see ops-log.sh).
 VOLUME="$(docker volume inspect --format '{{.Mountpoint}}' \
 	"${COMPOSE_PROJECT_NAME:-frog-$INSTANCE}_data" 2>/dev/null || true)"
-WHAT="Nightly backup"
-[ "$LABEL" = "pre-update" ] && WHAT="Backup before updating"
+case "$LABEL" in
+	nightly) WHAT="Nightly backup" ;;
+	pre-update) WHAT="Backup before updating" ;;
+	*) WHAT="Backup" ;;
+esac
 fail() {
 	log "$1"
 	ops_record "$VOLUME" backup false "$WHAT failed: $2"
