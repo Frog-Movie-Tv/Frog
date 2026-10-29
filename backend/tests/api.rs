@@ -1746,7 +1746,7 @@ async fn migrations_differing_only_in_line_endings_are_accepted() {
 
     let h = Harness::new().await;
     let pool = &h.state.pool;
-    let migrator = sqlx::migrate!("./migrations");
+    let migrator = frog::db::migrator();
     let first = migrator.iter().next().unwrap();
 
     // Record migration 1 as if it had been applied from the other ending.
@@ -1783,6 +1783,43 @@ async fn migrations_differing_only_in_line_endings_are_accepted() {
         .unwrap();
     frog::db::heal_line_endings(pool, &migrator).await.unwrap();
     assert!(migrator.run(pool).await.is_err());
+}
+
+/// After a failed update the previous image starts on a database that already
+/// holds the new release's migrations. It must come up rather than refuse, or
+/// a rollback leaves the site down.
+#[tokio::test]
+async fn an_older_binary_starts_on_a_newer_schema() {
+    let h = Harness::new().await;
+    let url = h.state.config.database_url.clone();
+
+    // A migration from a release this binary has never heard of, applied.
+    sqlx::query(
+        "INSERT INTO _sqlx_migrations
+             (version, description, success, checksum, execution_time)
+         VALUES (299912312359, 'from the future', 1, X'00', 0)",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    assert!(
+        sqlx::migrate!("./migrations")
+            .run(&h.state.pool)
+            .await
+            .is_err(),
+        "sqlx's default refuses it"
+    );
+    h.state.pool.close().await;
+
+    let pool = frog::db::connect(&url)
+        .await
+        .expect("starts on a schema one step ahead");
+    let (n,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM _sqlx_migrations WHERE version = ?")
+        .bind(299912312359_i64)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 1, "and leaves the newer record alone");
 }
 
 // ---------------------------------------------------------------------------

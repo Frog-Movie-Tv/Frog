@@ -155,6 +155,18 @@ git commit --allow-empty -m "chore: release 0.5.0" -m "Release-As: 0.5.0"
   checksum and refuses to start if it changed, which takes a running instance
   down on its next deploy. Add another migration instead. The pre-commit hook
   refuses a change to an existing migration file.
+- **Migrations stay additive.** When an update fails its health check, the
+  server goes back to the previous image, and that older binary has to run on
+  the newer schema (it skips migrations it does not know). So add tables, add
+  columns that are nullable or have a default, add indexes, backfill data.
+  Never drop or rename a column or table the previous release still reads, and
+  never add a `NOT NULL` column without a default, since the previous release
+  inserts rows without it.
+- **A destructive change takes two releases.** First a release that stops
+  reading and writing the old column or table; then, once that one is live,
+  a release whose migration removes it.
+- A new migration file rebuilds the binary on its own: `backend/build.rs`
+  tells Cargo to watch `migrations/`.
 - CI applies every migration to an empty database *and* to one built by the
   previous release tag, which is what every existing install does.
 
