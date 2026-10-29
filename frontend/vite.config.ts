@@ -23,6 +23,12 @@ export default defineConfig({
 			}
 		})
 	],
+	build: {
+		// Vite inlines files under 4 KB as data: URLs, which put the smallest
+		// font subsets into the CSS as data:font, and the deployed policy
+		// (font-src 'self') blocks those. Fonts always ship as files.
+		assetsInlineLimit: (file) => (/\.(woff2?|ttf|otf)$/.test(file) ? false : undefined)
+	},
 	server: {
 		port: 5173,
 		// In dev the Rust API runs separately; proxying keeps cookies same-origin.
