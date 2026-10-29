@@ -215,7 +215,7 @@ pub async fn upsert(
     Json(body): Json<UpsertBody>,
 ) -> AppResult<Json<Value>> {
     if kind != "movie" && kind != "tv" {
-        return Err(AppError::BadRequest("kind must be movie or tv".into()));
+        return Err(AppError::BadRequest("That isn't a film or a show.".into()));
     }
 
     let (title_id, detail) = store::ensure_title(&state, &kind, tmdb_id).await?;

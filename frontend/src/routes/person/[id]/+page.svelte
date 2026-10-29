@@ -6,12 +6,13 @@
 	import Poster from '#lib/components/Poster.svelte';
 	import Rail from '#lib/components/Rail.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
+	import { failure, type Failure } from '#lib/failure';
 	import { prettyDate } from '#lib/format';
 	import type { PersonDetail } from '#lib/types';
 
 	let person = $state<PersonDetail | null>(null);
 	let loading = $state(true);
-	let error = $state<string | null>(null);
+	let error = $state<Failure | null>(null);
 	let seenOnly = $state(false);
 	let expanded = $state(false);
 
@@ -33,7 +34,10 @@
 			person = res;
 		} catch (e) {
 			if (mine !== token) return;
-			error = e instanceof Error ? e.message : 'Could not load this person';
+			error = failure(e, {
+				title: "This person isn't on TMDB",
+				hint: 'The link may be wrong, or TMDB has removed them.'
+			});
 		} finally {
 			if (mine === token) loading = false;
 		}
@@ -50,14 +54,21 @@
 </script>
 
 <svelte:head>
-	<title>{person?.name ? `${person.name} · Frog` : 'Frog'}</title>
+	<title>
+		{person?.name ? `${person.name} · Frog` : error ? `${error.heading} · Frog` : 'Frog'}
+	</title>
 </svelte:head>
 
 <div class="page">
 	{#if loading && !person}
 		<Spinner label="Loading" />
 	{:else if error}
-		<Empty title="Could not load this person" hint={error} />
+		<Empty art={error.missing ? 'search' : 'rest'} title={error.title} hint={error.hint}>
+			{#if !error.missing}
+				<button class="btn primary" onclick={() => load(id)}>Try again</button>
+			{/if}
+			<a class="btn" class:primary={error.missing} href="/">Go home</a>
+		</Empty>
 	{:else if person}
 		<header class="head">
 			<div class="photo">

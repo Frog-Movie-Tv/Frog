@@ -20,6 +20,8 @@ In progress.
   leaves unclear is set aside for you to check.
 - **Find it however you type it.** The library's name filter ignores accents
   and capitals, so "pokemon" finds Pokémon and "shippuden" finds Shippūden.
+- **Pages that aren't there say so.** A mistyped address, or a title, person,
+  studio or shelf that doesn't exist, gets a clear page with the way home.
 
 ## [0.7.0] — Treefrog — 2026-10-28
 

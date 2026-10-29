@@ -83,10 +83,11 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   Add another file. New ones get timestamped names, **digits only** before the
   first `_` (`202610271200_anilist.sql`): sqlx reads that part as a number and
   a `T` in it fails the build.
-  A new migration file alone does not rebuild the binary (there is no
-  `build.rs` watching `migrations/`): touch `backend/src/db.rs` before a
-  local build, or the server starts without it. CI builds clean, so it only
-  bites locally.
+  **Migrations stay additive**: a failed update rolls back to the previous
+  image, which skips migrations it does not know (`set_ignore_missing`) and
+  has to run on the newer schema. A destructive change takes two releases;
+  `docs/CONTRIBUTING.md` has the rule. If the previous image still fails,
+  `update.sh` puts back the plain snapshot it took just before the update.
   `db::heal_line_endings` forgives a checksum that differs only in line
   endings, which is what lets a database move between a Windows checkout and
   the server.
@@ -140,6 +141,11 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   writes it and `db::fill_search_names` fills any row without one at
   startup. Anything that inserts titles another way gets one on the next
   start, and until then matches by its plain lower-cased name.
+- **A page that cannot load never shows the server's message.**
+  `lib/failure.ts` picks the words from the status (404 and 400 are the
+  page's own "isn't on TMDB" line; 502, 503 and offline have their own), and
+  the server keeps the detail in its log. Unknown addresses land on
+  `routes/+error.svelte`.
 - **Imported shows get no title-level diary entry.** `apply` only writes one
   for films; a show's watches are its episodes, and a title-level watch
   would count the show as a film in Stats.
