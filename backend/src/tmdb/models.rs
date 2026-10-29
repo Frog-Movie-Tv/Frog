@@ -204,6 +204,10 @@ pub struct Provider {
     pub id: i64,
     pub name: String,
     pub logo_path: Option<String>,
+    /// The title's own page on the service, when the source gives one
+    /// (AniList does; TMDB only has its own watch page).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -415,6 +419,7 @@ pub fn providers(v: &Value, region: &str) -> ProviderGroup {
                             id: i64_at(p, "provider_id")?,
                             name: str_at(p, "provider_name")?,
                             logo_path: str_at(p, "logo_path"),
+                            url: str_at(p, "url"),
                         })
                     })
                     .collect()

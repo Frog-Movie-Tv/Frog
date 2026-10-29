@@ -166,6 +166,9 @@ pub async fn upsert_title(pool: &SqlitePool, core: &TitleCore) -> AppResult<i64>
 /// an accent palette for it. Returns the local row id plus the raw detail so
 /// callers can pull cast, videos and providers out of the same payload.
 pub async fn ensure_title(state: &AppState, kind: &str, tmdb_id: i64) -> AppResult<(i64, Value)> {
+    if is_local(tmdb_id) {
+        return local_detail(state, kind, tmdb_id).await;
+    }
     let detail = match kind {
         "movie" => state.tmdb.movie(tmdb_id).await?,
         "tv" => state.tmdb.tv(tmdb_id).await?,
@@ -174,15 +177,405 @@ pub async fn ensure_title(state: &AppState, kind: &str, tmdb_id: i64) -> AppResu
 
     let core = TitleCore::from_detail(kind, &detail)
         .ok_or_else(|| AppError::Tmdb("TMDB returned a title with no id or name".into()))?;
+    let id = keep_detail(state, &core, &detail).await?;
+    Ok((id, detail))
+}
+
+/// Store a title's detail, from TMDB or shaped like TMDB's: the row, what
+/// comes next, the page tint and the credits Stats ranks.
+async fn keep_detail(state: &AppState, core: &TitleCore, detail: &Value) -> AppResult<i64> {
     let poster = core.poster_path.clone();
-    let id = upsert_title(&state.pool, &core).await?;
+    let id = upsert_title(&state.pool, core).await?;
+    // What TMDB says comes next: a show between two episodes of one season is
+    // airing, one waiting for an episode 1 is between seasons.
+    let next = &detail["next_episode_to_air"];
+    sqlx::query(
+        "UPDATE title SET next_air_date = ?, next_air_season = ?, next_air_episode = ? WHERE id = ?",
+    )
+    .bind(next["air_date"].as_str().filter(|d| !d.is_empty()))
+    .bind(next["season_number"].as_i64())
+    .bind(next["episode_number"].as_i64())
+    .bind(id)
+    .execute(&state.pool)
+    .await?;
 
     ensure_palette(state, id, poster.as_deref()).await;
     // Stats are a nice-to-have on top of the title; never fail the page for them.
-    if let Err(e) = store_credits(&state.pool, id, &detail).await {
+    if let Err(e) = store_credits(&state.pool, id, detail).await {
         tracing::warn!(title_id = id, error = %e, "could not store credits");
     }
+    Ok(id)
+}
+
+/// A title TMDB does not have: its tmdb_id is the AniList id it came from,
+/// made negative (see the `anilist_resilience` migration).
+pub fn is_local(tmdb_id: i64) -> bool {
+    tmdb_id < 0
+}
+
+/// A title TMDB does not have, from AniList, in TMDB's shape
+/// (`anilist::media`): stored and returned like any other, episodes and all.
+/// AniList out of reach, the page still has what Frog kept last time.
+async fn local_detail(state: &AppState, kind: &str, tmdb_id: i64) -> AppResult<(i64, Value)> {
+    let pool = &state.pool;
+    let existing = find_title_id(pool, kind, tmdb_id).await?;
+    let media = match crate::anilist::media::fetch(state, -tmdb_id).await {
+        Ok(media) => media,
+        Err(e) => {
+            let Some(id) = existing else { return Err(e) };
+            tracing::debug!(tmdb_id, error = %e, "AniList detail unavailable; using what is kept");
+            let row = get_title(pool, id).await?;
+            return Ok((
+                id,
+                serde_json::json!({ "id": tmdb_id, "name": row.name, "overview": row.overview }),
+            ));
+        }
+    };
+    // A film is a film: an address with the other kind is not this title.
+    let film = media["format"].as_str() == Some("MOVIE");
+    if existing.is_none() && film != (kind == "movie") {
+        return Err(AppError::NotFound("no such title".into()));
+    }
+    let detail = crate::anilist::media::as_tmdb(state, kind, &media).await?;
+    let core = TitleCore::from_detail(kind, &detail)
+        .ok_or_else(|| AppError::AniList("AniList returned a title with no name".into()))?;
+    let id = keep_detail(state, &core, &detail).await?;
+    sqlx::query(
+        "UPDATE title SET anilist_id = ?
+          WHERE id = ? AND anilist_id IS NULL
+            AND NOT EXISTS (SELECT 1 FROM title o WHERE o.anilist_id = ?)",
+    )
+    .bind(-tmdb_id)
+    .bind(id)
+    .bind(-tmdb_id)
+    .execute(pool)
+    .await?;
+    if kind == "tv" {
+        upsert_episodes(pool, id, &crate::anilist::media::episodes(&media)).await?;
+    }
     Ok((id, detail))
+}
+
+/// What AniList says about an entry TMDB does not have.
+pub struct LocalTitle<'a> {
+    pub anilist_id: i64,
+    pub kind: &'a str,
+    pub name: &'a str,
+    pub original_name: Option<&'a str>,
+    pub release_date: Option<&'a str>,
+    pub episodes: Option<i64>,
+    /// AniList's release state, in the words TMDB uses for its own.
+    pub status: Option<&'a str>,
+}
+
+/// The title an AniList entry is kept as while TMDB has nothing for it.
+/// One per AniList id, shared like any title; refreshed from AniList each
+/// time, and brought back if it had been folded into a TMDB title before.
+pub async fn ensure_local_title(pool: &SqlitePool, t: &LocalTitle<'_>) -> AppResult<i64> {
+    let existing: Option<(i64, Option<String>)> =
+        sqlx::query_as("SELECT id, original_name FROM title WHERE anilist_id = ?")
+            .bind(t.anilist_id)
+            .fetch_optional(pool)
+            .await?;
+    let now = Utc::now().to_rfc3339();
+    if let Some((id, original)) = existing {
+        sqlx::query(
+            "UPDATE title SET name = ?, search_name = ?, release_date = COALESCE(?, release_date),
+                    episode_count = ?, tmdb_status = ?, merged_into = NULL
+              WHERE id = ? AND tmdb_id < 0",
+        )
+        .bind(t.name)
+        .bind(text::search_name(
+            t.name,
+            original.as_deref().or(t.original_name),
+        ))
+        .bind(t.release_date)
+        .bind(t.episodes)
+        .bind(t.status)
+        .bind(id)
+        .execute(pool)
+        .await?;
+        return Ok(id);
+    }
+    let result = sqlx::query(
+        "INSERT INTO title (kind, tmdb_id, name, original_name, release_date, episode_count,
+                            season_count, tmdb_status, genres_json, anilist_id, refreshed_at,
+                            people_synced_at, search_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, NULL, ?, ?)",
+    )
+    .bind(t.kind)
+    .bind(-t.anilist_id)
+    .bind(t.name)
+    .bind(t.original_name)
+    .bind(t.release_date)
+    .bind(t.episodes)
+    .bind((t.kind == "tv").then_some(1))
+    .bind(t.status)
+    .bind(t.anilist_id)
+    // Credits come with AniList's detail; the TMDB backfill leaves it be.
+    .bind(&now)
+    .bind(text::search_name(t.name, t.original_name))
+    .execute(pool)
+    .await?;
+    Ok(result.last_insert_rowid())
+}
+
+/// (status, rating, favourite, notes, started, finished, rewatches, added, notify, progress)
+type MergeEntryRow = (
+    String,
+    Option<f64>,
+    bool,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    i64,
+    String,
+    bool,
+    Option<i64>,
+);
+
+/// Move one account's data from one title to another: the library entry,
+/// shelves and film watches. Used when an AniList-only title turns out to be
+/// a TMDB one, or a person says where it belongs.
+///
+/// Nothing is dropped on a clash: the further-along status wins, the rating
+/// and dates already on the target stay, notes are kept side by side, and a
+/// film watch AniList made up is not copied onto a film that has a watch.
+/// What both sides held before is written to `title_merge`. All of it is one
+/// transaction, so a failure leaves both titles as they were, and running it
+/// again finds nothing left to move. Says whether anything moved.
+pub async fn move_title_data(
+    pool: &SqlitePool,
+    user_id: i64,
+    from: i64,
+    to: i64,
+    reason: &str,
+) -> AppResult<bool> {
+    if from == to {
+        return Ok(false);
+    }
+    let mut tx = pool.begin().await?;
+    let kinds: Vec<(i64, String)> = sqlx::query_as("SELECT id, kind FROM title WHERE id IN (?, ?)")
+        .bind(from)
+        .bind(to)
+        .fetch_all(&mut *tx)
+        .await?;
+    let kind_of = |id: i64| kinds.iter().find(|k| k.0 == id).map(|k| k.1.clone());
+    let (Some(from_kind), Some(to_kind)) = (kind_of(from), kind_of(to)) else {
+        return Err(AppError::NotFound("no such title".into()));
+    };
+
+    let entry_sql = "SELECT status, rating, favourite, notes, started_at, finished_at,
+                            rewatch_count, added_at, notify, progress
+                       FROM library_entry WHERE user_id = ? AND title_id = ?";
+    let old: Option<MergeEntryRow> = sqlx::query_as(entry_sql)
+        .bind(user_id)
+        .bind(from)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let have: Option<MergeEntryRow> = sqlx::query_as(entry_sql)
+        .bind(user_id)
+        .bind(to)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let (films,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM watch_event WHERE user_id = ? AND title_id = ? AND episode_id IS NULL",
+    )
+    .bind(user_id)
+    .bind(from)
+    .fetch_one(&mut *tx)
+    .await?;
+    let (shelved,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM shelf_item i JOIN shelf s ON s.id = i.shelf_id
+          WHERE s.user_id = ? AND i.title_id = ?",
+    )
+    .bind(user_id)
+    .bind(from)
+    .fetch_one(&mut *tx)
+    .await?;
+    if old.is_none() && films == 0 && shelved == 0 {
+        return Ok(false);
+    }
+
+    let as_json = |e: &Option<MergeEntryRow>| {
+        e.as_ref().map(|e| {
+            serde_json::json!({
+                "status": e.0, "rating": e.1, "favourite": e.2, "notes": e.3,
+                "started_at": e.4, "finished_at": e.5, "rewatch_count": e.6,
+                "added_at": e.7, "notify": e.8, "progress": e.9,
+            })
+        })
+    };
+    let before = serde_json::json!({
+        "from": as_json(&old),
+        "to": as_json(&have),
+        "film_watches": films,
+        "shelved": shelved,
+    });
+
+    if let Some(o) = &old {
+        let now = Utc::now().to_rfc3339();
+        let merged = match &have {
+            None => o.clone(),
+            Some(h) => {
+                let notes = match (&h.3, &o.3) {
+                    (Some(a), Some(b)) if a.trim() != b.trim() => Some(format!("{a}\n\n{b}")),
+                    (a, b) => a.clone().or_else(|| b.clone()),
+                };
+                (
+                    crate::routes::transfer::merged_status(&h.0, &o.0),
+                    h.1.or(o.1),
+                    h.2 || o.2,
+                    notes,
+                    min_opt(&h.4, &o.4),
+                    max_opt(&h.5, &o.5),
+                    h.6.max(o.6),
+                    h.7.clone().min(o.7.clone()),
+                    h.8,
+                    h.9,
+                )
+            }
+        };
+        // A film's rating is the film's. A show's own rating is not what one
+        // AniList entry was scored (that lands on its season when the entry
+        // is synced there), so it stays in the record rather than moving.
+        let rating = if to_kind == "tv" {
+            have.as_ref().and_then(|h| h.1)
+        } else {
+            merged.1
+        };
+        sqlx::query(
+            "INSERT INTO library_entry (user_id, title_id, status, rating, favourite, notes,
+                                        started_at, finished_at, rewatch_count, added_at,
+                                        updated_at, notify)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT (user_id, title_id) DO UPDATE SET
+                status = excluded.status, rating = excluded.rating,
+                favourite = excluded.favourite, notes = excluded.notes,
+                started_at = excluded.started_at, finished_at = excluded.finished_at,
+                rewatch_count = excluded.rewatch_count, added_at = excluded.added_at,
+                updated_at = excluded.updated_at",
+        )
+        .bind(user_id)
+        .bind(to)
+        .bind(&merged.0)
+        .bind(rating)
+        .bind(merged.2)
+        .bind(&merged.3)
+        .bind(&merged.4)
+        .bind(&merged.5)
+        .bind(merged.6)
+        .bind(&merged.7)
+        .bind(&now)
+        .bind(merged.8)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("DELETE FROM library_entry WHERE user_id = ? AND title_id = ?")
+            .bind(user_id)
+            .bind(from)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    if from_kind == "movie" && to_kind == "movie" {
+        // Made-up watches only go across when the film has none of its own.
+        sqlx::query(
+            "DELETE FROM watch_event
+              WHERE user_id = ? AND title_id = ? AND episode_id IS NULL
+                AND source = 'anilist' AND undated = 1
+                AND EXISTS (SELECT 1 FROM watch_event w
+                             WHERE w.user_id = ? AND w.title_id = ? AND w.episode_id IS NULL)",
+        )
+        .bind(user_id)
+        .bind(from)
+        .bind(user_id)
+        .bind(to)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "UPDATE watch_event SET title_id = ?
+              WHERE user_id = ? AND title_id = ? AND episode_id IS NULL",
+        )
+        .bind(to)
+        .bind(user_id)
+        .bind(from)
+        .execute(&mut *tx)
+        .await?;
+    } else {
+        // A film-level watch cannot become a show's: AniList's own made-up one
+        // goes (the show's episodes carry it now); any logged by hand stay on
+        // the old title, where the diary still has them.
+        sqlx::query(
+            "DELETE FROM watch_event
+              WHERE user_id = ? AND title_id = ? AND episode_id IS NULL
+                AND source = 'anilist' AND undated = 1",
+        )
+        .bind(user_id)
+        .bind(from)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    sqlx::query(
+        "INSERT OR IGNORE INTO shelf_item (shelf_id, title_id, position)
+         SELECT i.shelf_id, ?, i.position FROM shelf_item i JOIN shelf s ON s.id = i.shelf_id
+          WHERE s.user_id = ? AND i.title_id = ?",
+    )
+    .bind(to)
+    .bind(user_id)
+    .bind(from)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "DELETE FROM shelf_item
+          WHERE title_id = ? AND shelf_id IN (SELECT id FROM shelf WHERE user_id = ?)",
+    )
+    .bind(from)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO title_merge (user_id, from_title, to_title, reason, before_json, merged_at)
+         VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(user_id)
+    .bind(from)
+    .bind(to)
+    .bind(reason)
+    .bind(before.to_string())
+    .bind(Utc::now().to_rfc3339())
+    .execute(&mut *tx)
+    .await?;
+
+    // Once nobody keeps an AniList-only title, it points at where it went,
+    // so an old link still finds it.
+    sqlx::query(
+        "UPDATE title SET merged_into = ?
+          WHERE id = ? AND tmdb_id < 0
+            AND NOT EXISTS (SELECT 1 FROM library_entry l WHERE l.title_id = title.id)",
+    )
+    .bind(to)
+    .bind(from)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(true)
+}
+
+fn min_opt(a: &Option<String>, b: &Option<String>) -> Option<String> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.clone().min(b.clone())),
+        (a, b) => a.clone().or_else(|| b.clone()),
+    }
+}
+
+fn max_opt(a: &Option<String>, b: &Option<String>) -> Option<String> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.clone().max(b.clone())),
+        (a, b) => a.clone().or_else(|| b.clone()),
+    }
 }
 
 /// Replace the credits stats rank by. Marks the title as synced even when TMDB
@@ -292,6 +685,10 @@ pub async fn upsert_episodes(
 /// is added, so progress and "up next" work without opening each season.
 pub async fn sync_all_seasons(state: &AppState, title_id: i64, detail: &Value) -> AppResult<()> {
     let tmdb_id = models::i64_at(detail, "id").unwrap_or_default();
+    // A title from AniList has its episodes from AniList, with its detail.
+    if is_local(tmdb_id) {
+        return Ok(());
+    }
     for season in models::seasons(detail) {
         let payload = match state.tmdb.season(tmdb_id, season.season_number).await {
             Ok(v) => v,
@@ -435,16 +832,19 @@ pub struct Progress {
 }
 
 pub async fn progress(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppResult<Progress> {
-    // Specials (season 0) do not count towards finishing a show. The episode
-    // list is shared; only the watches are mine.
-    let row: (i64, i64) = sqlx::query_as(
+    // Specials (season 0) do not count towards finishing a show, and nor do
+    // episodes that have not come out. The episode list is shared; only the
+    // watches are mine.
+    let row: (i64, i64) = sqlx::query_as(concat!(
         "SELECT
             (SELECT COUNT(DISTINCT e.id)
                FROM episode e
                JOIN watch_event w ON w.episode_id = e.id AND w.user_id = ?
               WHERE e.title_id = ? AND e.season_number > 0),
-            (SELECT COUNT(*) FROM episode WHERE title_id = ? AND season_number > 0)",
-    )
+            (SELECT COUNT(*) FROM episode e WHERE e.title_id = ? AND e.season_number > 0 AND ",
+        crate::released!(),
+        ")"
+    ))
     .bind(user_id)
     .bind(title_id)
     .bind(title_id)
@@ -518,17 +918,27 @@ pub async fn next_episode(
     // Tuples compare season first, then episode.
     let here = latest.max(furthest_undated);
 
-    const NEXT: &str = "SELECT e.season_number, e.episode_number, e.name, e.still_path, e.air_date,
-                CASE WHEN e.air_date IS NULL OR e.air_date <= date('now') THEN 1 ELSE 0 END
+    // Out by `released!()`: an undated episode only once a later one aired.
+    // One with no date that is not out (an announced season TMDB lists
+    // early) is never next; one with a date to wait for is, as not aired.
+    const NEXT: &str = concat!(
+        "SELECT e.season_number, e.episode_number, e.name, e.still_path, e.air_date,
+                CASE WHEN ",
+        crate::released!(),
+        " THEN 1 ELSE 0 END
            FROM episode e
           WHERE e.title_id = ?1
             AND e.season_number > 0
+            AND (e.air_date IS NOT NULL OR ",
+        crate::released!(),
+        ")
             AND (e.season_number > ?3 OR (e.season_number = ?3 AND e.episode_number > ?4))
             AND NOT EXISTS (
                   SELECT 1 FROM watch_event w
                    WHERE w.user_id = ?2 AND w.episode_id = e.id)
           ORDER BY e.season_number, e.episode_number
-          LIMIT 1";
+          LIMIT 1"
+    );
     let (season, episode) = here.unwrap_or((0, 0));
     let mut row: Option<NextRow> = sqlx::query_as(NEXT)
         .bind(title_id)
@@ -584,7 +994,10 @@ pub async fn build_item(
     title: TitleRow,
 ) -> AppResult<LibraryItem> {
     let entry = get_entry(pool, user_id, title.id).await?;
-    let p = progress(pool, user_id, title.id).await?;
+    let mut p = progress(pool, user_id, title.id).await?;
+    if let Some(n) = local_progress(pool, user_id).await?.get(&title.id) {
+        p.watched = *n;
+    }
     let last = last_watched_at(pool, user_id, title.id).await?;
     let total = if p.total > 0 {
         p.total
@@ -601,6 +1014,41 @@ pub async fn build_item(
         last_watched_at: last,
         title,
     })
+}
+
+/// Episodes watched of each title that has no episode list (an AniList-only
+/// title AniList lists no episodes for), as a count.
+async fn local_progress(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> AppResult<std::collections::HashMap<i64, i64>> {
+    let rows: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT l.title_id, COALESCE(l.progress, 0)
+           FROM library_entry l JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = ? AND t.tmdb_id < 0
+            AND NOT EXISTS (SELECT 1 FROM episode e
+                             WHERE e.title_id = t.id AND e.season_number > 0)",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().collect())
+}
+
+/// Set the count of episodes watched of a title with no episode list.
+pub async fn set_local_progress(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    progress: i64,
+) -> AppResult<()> {
+    sqlx::query("UPDATE library_entry SET progress = ? WHERE user_id = ? AND title_id = ?")
+        .bind(progress.max(0))
+        .bind(user_id)
+        .bind(title_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// A library entry with the title it belongs to, for loading them all at once.
@@ -649,13 +1097,15 @@ pub async fn build_items(
     .into_iter()
     .collect();
 
-    let totals: HashMap<i64, i64> = sqlx::query_as::<_, (i64, i64)>(
+    let totals: HashMap<i64, i64> = sqlx::query_as::<_, (i64, i64)>(concat!(
         "SELECT e.title_id, COUNT(*)
            FROM episode e
           WHERE e.season_number > 0
             AND e.title_id IN (SELECT title_id FROM library_entry WHERE user_id = ?)
-          GROUP BY e.title_id",
-    )
+            AND ",
+        crate::released!(),
+        " GROUP BY e.title_id"
+    ))
     .bind(user_id)
     .fetch_all(pool)
     .await?
@@ -670,16 +1120,18 @@ pub async fn build_items(
     .await?
     .into_iter()
     .collect();
+    let counted = local_progress(pool, user_id).await?;
 
     Ok(titles
         .into_iter()
         .map(|title| {
             let total = totals.get(&title.id).copied().unwrap_or(0);
+            let seen = counted.get(&title.id).or_else(|| watched.get(&title.id));
             LibraryItem {
                 genres: parse_genres(&title.genres_json),
                 accent: parse_accent(title.accent_json.as_deref()),
                 entry: entries.get(&title.id).cloned(),
-                watched_episodes: watched.get(&title.id).copied().unwrap_or(0),
+                watched_episodes: seen.copied().unwrap_or(0),
                 total_episodes: if total > 0 {
                     total
                 } else {

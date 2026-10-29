@@ -255,7 +255,8 @@ async fn sync_anilist(state: AppState) {
             }
             Err(e) => tracing::warn!(error = %e, "could not list AniList accounts"),
         }
-        tokio::time::sleep(Duration::from_secs(60)).await;
+        // Looked at twice a minute; `due` decides who is actually synced.
+        tokio::time::sleep(Duration::from_secs(30)).await;
     }
 }
 
@@ -347,7 +348,7 @@ pub async fn backfill_credits_once(state: &AppState) -> usize {
     let rows: Vec<(String, i64)> = sqlx::query_as(
         "SELECT t.kind, t.tmdb_id
            FROM title t
-          WHERE t.people_synced_at IS NULL
+          WHERE t.people_synced_at IS NULL AND t.tmdb_id > 0
             AND (EXISTS (SELECT 1 FROM library_entry l WHERE l.title_id = t.id)
                  OR EXISTS (SELECT 1 FROM watch_event w WHERE w.title_id = t.id))
           LIMIT ?",
@@ -388,7 +389,7 @@ async fn refresh_airing_shows(state: &AppState) {
            FROM library_entry l
            JOIN title t ON t.id = l.title_id
           WHERE t.kind = 'tv'
-            AND l.status IN ('watching', 'paused', 'planned')
+            AND l.status IN ('watching', 'paused', 'planned', 'completed')
             AND COALESCE(t.tmdb_status, '') NOT IN ('Ended', 'Canceled')
             AND COALESCE(t.refreshed_at, '') < ?
           ORDER BY COALESCE(t.refreshed_at, '')
@@ -404,6 +405,21 @@ async fn refresh_airing_shows(state: &AppState) {
             Ok((_, detail)) => {
                 if let Err(e) = store::sync_all_seasons(state, title_id, &detail).await {
                     tracing::warn!(tmdb_id, error = %e, "season refresh failed");
+                    continue;
+                }
+                // New episodes out, or a season ended: everyone with the show
+                // gets the status that now fits.
+                let people: Vec<(i64,)> =
+                    sqlx::query_as("SELECT user_id FROM library_entry WHERE title_id = ?")
+                        .bind(title_id)
+                        .fetch_all(&state.pool)
+                        .await
+                        .unwrap_or_default();
+                for (user_id,) in people {
+                    if let Err(e) = crate::release::reconcile(&state.pool, user_id, title_id).await
+                    {
+                        tracing::warn!(tmdb_id, error = %e, "status refresh failed");
+                    }
                 }
             }
             Err(e) => tracing::warn!(tmdb_id, error = %e, "show refresh failed"),

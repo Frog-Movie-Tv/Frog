@@ -44,6 +44,18 @@ type CalendarRow = (
     i64,
 );
 
+/// (tmdb id, show, AniList entry name, poster, accent, premiere, season, offset)
+type PremiereRow = (
+    i64,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    Option<i64>,
+    i64,
+);
+
 /// Episodes of anything followed, plus release dates of films on the
 /// watchlist, inside a window.
 pub async fn calendar(
@@ -67,7 +79,9 @@ pub async fn calendar(
            FROM episode e
            JOIN title t ON t.id = e.title_id
            JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?
-          WHERE l.status IN ('watching', 'planned', 'paused')
+          -- Completed too: a finished season and a sequel on its way are not
+          -- mutually exclusive, and the sequel's dates belong here.
+          WHERE l.status IN ('watching', 'planned', 'paused', 'completed')
             AND e.air_date IS NOT NULL
             AND e.air_date >= ? AND e.air_date <= ?
           ORDER BY e.air_date, t.name, e.season_number, e.episode_number
@@ -132,6 +146,45 @@ pub async fn calendar(
             },
         ),
     );
+
+    // AniList knows premiere dates TMDB has not listed yet: a season that is
+    // not on TMDB at all, or not yet with dates. Only whole dates, and only
+    // when no episode of the same show is already on that day.
+    let premieres: Vec<PremiereRow> = sqlx::query_as(
+        "SELECT t.tmdb_id, t.name, a.name, t.poster_path, t.accent_json, a.start_date,
+                a.season, a.episode_offset
+           FROM anilist_entry a
+           JOIN title t ON t.id = a.title_id AND t.kind = 'tv'
+          WHERE a.user_id = ? AND a.state != 'ignored'
+            AND a.media_status = 'NOT_YET_RELEASED'
+            AND a.start_date IS NOT NULL
+            AND a.start_date >= ? AND a.start_date <= ?",
+    )
+    .bind(auth.user_id())
+    .bind(&from)
+    .bind(&to)
+    .fetch_all(&state.pool)
+    .await?;
+    for (tmdb_id, show, season_name, poster, accent, date, season, offset) in premieres {
+        let taken = entries
+            .iter()
+            .any(|e| e.kind == "tv" && e.tmdb_id == tmdb_id && e.date == date);
+        if taken {
+            continue;
+        }
+        entries.push(CalendarEntry {
+            kind: "tv".into(),
+            tmdb_id,
+            title: show,
+            poster_path: poster,
+            accent: accent_of(accent.as_deref()),
+            date,
+            season_number: season,
+            episode_number: season.map(|_| offset + 1),
+            episode_name: Some(season_name),
+            watched: false,
+        });
+    }
 
     entries.sort_by(|a, b| a.date.cmp(&b.date));
 

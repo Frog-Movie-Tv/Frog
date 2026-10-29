@@ -842,18 +842,20 @@ async fn tick_season(
         store::sync_all_seasons(state, title_id, detail).await?;
     }
 
-    sqlx::query(
+    sqlx::query(concat!(
         "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
                                   source, undated)
          SELECT ?1, ?2, e.id, ?3, 0, 'import', 1
            FROM episode e
           WHERE e.title_id = ?2 AND e.season_number = ?4
             AND e.episode_number > ?5 AND e.episode_number <= ?6
-            AND (e.air_date IS NULL OR e.air_date <= date('now'))
+            AND ",
+        crate::released!(),
+        "
             AND NOT EXISTS (
                   SELECT 1 FROM watch_event w
-                   WHERE w.user_id = ?1 AND w.episode_id = e.id)",
-    )
+                   WHERE w.user_id = ?1 AND w.episode_id = e.id)"
+    ))
     .bind(user_id)
     .bind(title_id)
     .bind(chrono::Utc::now().to_rfc3339())

@@ -7,7 +7,7 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 0.6.0 "Leapfrog"; 0.7.0 "Treefrog" is in its pull request |
+| **Release** | 0.7.0 "Treefrog" |
 | **Next codenames** | Bullfrog (1.0) |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
@@ -35,28 +35,46 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    one in use points at production, so AniList sign-in cannot finish on a
    laptop. Register a second client with
    `http://127.0.0.1:8080/api/anilist/callback` for the local `.env`.
-4. **AniList specials.** Entries that TMDB files under season 0 (OVAs,
-   specials) are never placed automatically; they wait under "not matched
-   yet". Fribb's list gives season 0 and an offset for some of them.
-5. **More streaming links.** Services without a known search address (Rakuten
+4. **AniList: check the overhaul on the live list.** On a copy of the owner's
+   list (221 entries) 213 are matched, 7 wait as not out yet, and one film
+   special ("ONE PIECE FILM: GOLD - episode 0") has nothing on TMDB. Once it
+   is deployed, open Settings → Connections and look through "Needs a check"
+   and the "Matched" methods for anything that reads wrong.
+5. **AniList-only titles, what AniList cannot give.** They have everything
+   else now (see the note below), but no title logo for the hero, no episode
+   synopses, and streaming links with no country (AniList does not say
+   where a service carries a show, so they show for everyone). AniList
+   voice actors and studios are AniList people in Stats, apart from the same
+   person on TMDB. Episode names and thumbnails are left out whenever the
+   streaming site numbers past AniList's episode count.
+6. **Old episode ratings that disagreed.** Seasons whose episodes were all
+   rated the same took that as their season rating
+   (`202610291800_anilist_resilience.sql`). The rest, and every episode of an
+   anime show AniList already scores, stay in `episode_state` untouched and
+   are not shown anywhere. The API no longer writes episode ratings. Show
+   them read-only, or let them go.
+7. **A merge you can undo from the app.** Every move of one account's data
+   from one title to another is in `title_merge` with what both sides held
+   before, but undoing one is still by hand in SQL.
+8. **More streaming links.** Services without a known search address (Rakuten
    TV, Streamz, VRT MAX, GoPlay…) still open TMDB's watch page. Add each one
    to `frontend/src/lib/providers.ts` once its search URL is confirmed.
-6. **The screenshots, the rest.** There is still no shelves shot.
-7. **The Projects board.** Backlog / In progress / Review / Done. Needs
+9. **The screenshots, the rest.** There is still no shelves shot.
+10. **The Projects board.** Backlog / In progress / Review / Done. Needs
    `gh auth refresh -s project` from an owner before it can be created.
-8. **Netflix: real dates on every episode.** Episodes TMDB finds by name
+11. **Netflix: real dates on every episode.** Episodes TMDB finds by name
    are ticked exactly, on the day Netflix gives. Seasons Netflix numbers
    itself are not looked up (that would mean reading every season of every
    show), so their episodes are still the first N, undated, and such a show
    reads "last watched today". Looking those up too, in the background after
    the import, would date everything. Films keep only their latest date;
    earlier watches of the same film are a rewatch flag, not entries.
-9. **Netflix: untested shapes.** The personal-data ZIP
+12. **Netflix: untested shapes.** The personal-data ZIP
    (`CONTENT_INTERACTION/ViewingActivity.csv`) is read from its documented
    columns but has never been tried on a real one. Netflix's "Part N"
    seasons are placed by their episode names; parts whose episodes are only
    called "Episode 3" (Money Heist Part 1) still wait for a person.
-10. **Smaller things.** Customisable keyboard shortcuts, renaming and
+13. **Smaller things.** Customisable keyboard shortcuts, renaming and
    recolouring statuses, muted trailer autoplay, per-shelf layout defaults.
 
 ## Known issues
@@ -135,17 +153,79 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   and Playwright's `--disable-background-networking` cuts it off from FCM.
   `verify-push.mjs` keeps background networking and records the worker's
   `showNotification` calls instead.
-- **AniList sync** (`backend/src/anilist.rs`) places entries in this order:
-  Fribb's anime-lists (TMDB id, TMDB season and offset, used only when no
-  other entry claims the same spot), then Kometa's Anime-IDs (TVDB season and
-  offset, turned into TMDB numbering through absolute positions), then an
-  exact name and year on TMDB (animation only, unambiguous only), then
-  AniList's own prequel chain counted on from the first season. Both lists
-  reload weekly; the prequel chain is cached in `anilist_chain`. Each entry
-  keeps a snapshot of both sides from the last sync; whichever side differs
-  from its snapshot changed and wins. Lists are re-read every 5 minutes. A
-  Frog title never on AniList is not added there, and removing one in Frog
+- **AniList sync** (`backend/src/anilist/`): `place.rs` decides where an
+  entry goes, `mod.rs` syncs. Evidence is gathered in this order and stops at
+  the first confident answer (confidence 70+): Fribb's anime-lists (TMDB
+  season and offset; a spot two entries claim scores 50), Kometa's Anime-IDs
+  (TVDB numbering turned into TMDB's), a film or unreleased entry by name,
+  the prequel chain counted on from the first season, the air date across
+  related shows (specials only ever in season 0), then the series by every
+  title and synonym AniList has. Every answer is checked against TMDB's air
+  dates. Below 70 nothing is applied: the entry is "not confident" with a
+  note and up to six candidates. Each placement records its method, note and
+  the `RESOLVER` version; a sync re-places automatic ones from an older
+  version, takes back only the ticks it gave (never ones another entry
+  covers) and counts them as repaired. Manual choices are never moved. An
+  entry of unknown length runs to the next entry's start or the end of the
+  show, across TMDB seasons. Each entry keeps a snapshot of both sides from
+  the last sync; whichever side differs from its snapshot changed and wins.
+  A Frog title never on AniList is not added there, and removing one in Frog
   never removes it on AniList — both on purpose.
+- **AniList, kept running** (also `anilist/mod.rs`). The worker looks every
+  30 s and syncs an account `ANILIST_SYNC_MINUTES` (default 3) after its last
+  finished sync, or 45 s after a change in Frog. The list is read in chunks
+  of 500 and a sync fails whole if any chunk fails. Requests retry a dropped
+  connection, a 5xx or an unreadable answer with jittered backoff (4 tries),
+  and wait out a 429 as long as Retry-After says (65 s at most). `synced_at`
+  moves only on success; a failure sets `retry_at` (1 min doubling to 60) and
+  a refused token sets `needs_reconnect`, which only a reconnect clears.
+  An entry TMDB cannot place is kept as an **AniList-only title**: a `title`
+  row with `tmdb_id = -anilist_id` and `anilist_id` set, so every
+  `(kind, tmdb_id)` lookup and address works; `store::is_local` tells them
+  apart and nothing sends one to TMDB. Its progress is
+  `library_entry.progress`, a count. It is looked for again on a schedule
+  (`tries`, `next_try_at`: an hour doubling to three days, twelve hours when
+  not out yet; at once when AniList's episodes, format, state or start date
+  change, or on Sync now). Once placed, `store::move_title_data` moves that
+  account's entry, shelves and film watch to the TMDB title in one
+  transaction, logs it in `title_merge`, and points the old title on with
+  `merged_into` once nobody keeps it. Progress lowered on AniList takes back
+  only `source = 'anilist'` ticks. Entries gone from the list get `gone_at`
+  and nothing else; an entirely empty answer marks nothing.
+- **AniList-only titles look like TMDB ones** (`backend/src/anilist/media.rs`).
+  One AniList query (plus its airing schedule, 50 a page) is rewritten into
+  TMDB's detail shape, so every reader in `tmdb/models.rs` works unchanged:
+  cover, banner, synopsis (HTML and Markdown stripped, spoilers dropped),
+  genres in TMDB's names plus Animation, score, runtime, voice cast,
+  director, creator and writer, main studio, YouTube trailer, streaming
+  links with their own address (`Provider.url`), recommendations and
+  related works (to the TMDB title when the anime lists map it), and season
+  1 episodes in AniList's numbering, dated from the schedule (else only the
+  first and last, from the start and end dates). Cached in `tmdb_cache`:
+  12 h while airing, a week once finished; the worker refreshes airing ones.
+  AniList people and studios are negative ids too, with their own person
+  and studio pages. Pictures are `/anilist/…` and `/crunchyroll/…` paths that
+  the image route fetches from those two hosts only, so Caddy's CSP needs
+  nothing new. An AniList address whose show the anime lists map to TMDB
+  answers `moved_to` instead of making a copy, unless a sync already keeps it.
+  With episodes listed, the sync ticks and syncs them like any show's
+  (`sync_local_episodes`), so Home, the calendar, statuses and season
+  ratings all apply; when TMDB later places the entry, watches logged in Frog
+  move to the episode at the same place in its run.
+- **Released and status** (`backend/src/release.rs`): an episode is out when
+  its date has passed, or, undated, when a later one has aired — the
+  `released!()` SQL fragment, used by progress, Home, bulk marking and the
+  export. `desired_status` keeps paused and dropped, makes anything with
+  nothing out planned, unwatched released episodes or caught up on a running
+  show watching, and the rest completed. `reconcile` runs after every tick,
+  every sync and every show refresh.
+- **Season ratings** live in `season_rating` (user, title, season, first
+  episode). A season split into AniList parts is rated part by part; a unit
+  is rateable once every episode of it is out. The show's own rating is no
+  longer pushed to AniList. Episodes are no longer rated (see Next 6).
+- **`cargo run --example anilist_check -- <user> [scratch.db]`** places a
+  public AniList list without writing anywhere and prints one JSON line per
+  entry: the quickest way to see what the matcher does with a real list.
 - **Netflix import** (`frontend/src/lib/import/netflix.ts`) groups plays into
   one row per show and season before matching, then `settleNetflix` finishes
   them with TMDB's answer: titles sent one by one fold back into their show,

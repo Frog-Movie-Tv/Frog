@@ -126,6 +126,10 @@ pub fn router(state: AppState) -> Router {
             "/titles/{kind}/{tmdb_id}/seasons/{season}",
             get(titles::season),
         )
+        .route(
+            "/titles/{kind}/{tmdb_id}/seasons/{season}/rating",
+            put(titles::rate_season),
+        )
         .route("/titles/{kind}/{tmdb_id}/library", put(library::upsert))
         .route("/titles/{kind}/{tmdb_id}/library", delete(library::remove))
         .route(

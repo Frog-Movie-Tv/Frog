@@ -71,8 +71,11 @@ pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
     // A show whose next episode has not aired is not something to continue,
     // it is something to wait for. Saying so beats a play button pointing at
     // an episode that does not exist yet.
+    // Nothing out yet is neither to continue nor caught up on: it is coming,
+    // and the calendar has it.
     let (waiting, continuing): (Vec<UpNext>, Vec<UpNext>) = in_flight
         .into_iter()
+        .filter(|u| u.item.total_episodes > 0)
         .partition(|u| matches!(&u.next, Some(n) if !n.aired));
 
     let recent = items(

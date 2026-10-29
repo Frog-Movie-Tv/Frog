@@ -104,6 +104,8 @@ export interface Provider {
 	id: number;
 	name: string;
 	logo_path: string | null;
+	/** The title's own page on the service, when known. */
+	url?: string;
 }
 
 export interface ProviderGroup {
@@ -188,6 +190,23 @@ export interface TitleDetail {
 	collection: Collection | null;
 	next_up: NextUp | null;
 	heatmap: HeatmapCell[];
+	/** Shows only: what can be rated, season by season (or AniList part by part). */
+	ratings?: RatingUnit[];
+	/** This title has since been found on TMDB and lives there now. */
+	moved_to?: { kind: Kind; tmdb_id: number } | null;
+	/** Known from AniList alone: no TMDB entry, so no cast, seasons or links. */
+	anilist_only?: boolean;
+}
+
+/** A season, or a part of one that AniList counts as its own entry. */
+export interface RatingUnit {
+	season: number;
+	first_episode: number;
+	episodes: number;
+	name: string | null;
+	rating: number | null;
+	/** Every episode of it is out. */
+	rateable: boolean;
 }
 
 export interface PersonCredit {
@@ -482,8 +501,28 @@ export interface AniListStatus {
 	synced_at?: string | null;
 	syncing?: boolean;
 	error?: string | null;
-	summary?: { to_frog: number; to_anilist: number; unsure: number; entries: number } | null;
+	summary?: {
+		to_frog: number;
+		to_anilist: number;
+		unsure: number;
+		entries: number;
+		upcoming?: number;
+		repaired?: number;
+		/** In the library from AniList alone, with no TMDB title yet. */
+		local?: number;
+		/** Could not be written this time; tried again next sync. */
+		failed?: number;
+		/** No longer on the AniList list; kept in Frog. */
+		removed?: number;
+	} | null;
 	unsure?: number;
+	/** The last attempt, successful or not. synced_at is the last one that finished. */
+	attempted_at?: string | null;
+	next_sync_at?: string | null;
+	/** AniList refused the token: only connecting again helps. */
+	needs_reconnect?: boolean;
+	failures?: number;
+	interval_minutes?: number;
 }
 
 export interface AniListCandidate {
@@ -492,6 +531,8 @@ export interface AniListCandidate {
 	name: string;
 	year: string | null;
 	poster_path: string | null;
+	/** What keeps it from being a sure match. */
+	problems?: string[];
 }
 
 export interface AniListEntry {
@@ -501,6 +542,16 @@ export interface AniListEntry {
 	episodes: number | null;
 	state: 'placed' | 'unsure' | 'ignored';
 	candidates: AniListCandidate[];
+	outcome: 'matched' | 'not_confident' | 'no_candidate' | 'upcoming' | 'apply_failed';
+	/** How it was placed: an id list, the air date, the season before it, your choice… */
+	method: string | null;
+	confidence: number | null;
+	/** Why it is where it is, or why it is not placed. */
+	note: string | null;
+	manual: boolean;
+	/** AniList's release state: FINISHED, RELEASING, NOT_YET_RELEASED, HIATUS, CANCELLED. */
+	media_status: string | null;
+	start_date: string | null;
 	title: {
 		name: string;
 		poster_path: string | null;
@@ -511,6 +562,12 @@ export interface AniListEntry {
 	} | null;
 	status: string | null;
 	progress: number | null;
+	/** No longer on the AniList list; kept in Frog as it is. */
+	gone?: boolean;
+	/** When Frog next looks for its place. */
+	next_try_at?: string | null;
+	/** In the library as it is on AniList until it is placed. */
+	kept?: { kind: Kind; tmdb_id: number } | null;
 }
 
 export type AniListChoice =

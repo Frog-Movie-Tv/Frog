@@ -190,7 +190,7 @@ const CHARACTER_QUERY: &str = "query ($q: String) {
     characters(search: $q, sort: [SEARCH_MATCH, FAVOURITES_DESC]) {
       id name { full native alternative } image { medium }
       media(perPage: 1, sort: POPULARITY_DESC, type: ANIME) {
-        nodes { id format title { english romaji } }
+        nodes { id format title { english romaji } coverImage { extraLarge } }
       }
     }
   }
@@ -207,7 +207,7 @@ async fn anime_characters(state: &AppState, term: &str) -> AppResult<Vec<Value>>
     if state.config.anilist.is_none() {
         return Ok(Vec::new());
     }
-    let key = format!("anilist:characters:2:{}", term.to_lowercase());
+    let key = format!("anilist:characters:3:{}", term.to_lowercase());
     let cached: Option<(String,)> =
         sqlx::query_as("SELECT body FROM tmdb_cache WHERE cache_key = ? AND expires_at > ?")
             .bind(&key)
@@ -282,7 +282,16 @@ async fn anime_characters(state: &AppState, term: &str) -> AppResult<Vec<Value>>
                 json!({ "kind": kind, "tmdb_id": tmdb_id, "name": show,
                         "poster_path": poster.and_then(|p| p.0) })
             }
-            None => json!({ "kind": null, "tmdb_id": null, "name": show, "poster_path": null }),
+            // Not on TMDB: the page Frog makes from AniList.
+            None => match media["id"].as_i64() {
+                Some(id) => json!({
+                    "kind": if media["format"].as_str() == Some("MOVIE") { "movie" } else { "tv" },
+                    "tmdb_id": -id,
+                    "name": show,
+                    "poster_path": anilist::media::image_path(media["coverImage"]["extraLarge"].as_str()),
+                }),
+                None => json!({ "kind": null, "tmdb_id": null, "name": show, "poster_path": null }),
+            },
         };
         out.push(json!({
             "name": name,
@@ -303,6 +312,13 @@ pub async fn studio(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<Value>> {
+    // A studio AniList knows: the same page, from AniList.
+    if id < 0 {
+        let (mut header, mut items) = anilist::media::studio(&state, -id).await?;
+        annotate_library(&state, auth.user_id(), &mut items).await?;
+        header["titles"] = json!(items);
+        return Ok(Json(header));
+    }
     let raw = state.tmdb.company(id).await?;
     let (films, shows) = tokio::join!(
         state.tmdb.by_company("movie", id, 1),
