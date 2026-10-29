@@ -32,6 +32,23 @@ pub async fn cached_image(
             "unsupported image size {size}"
         )));
     }
+    // Titles TMDB does not have carry AniList's pictures, under the same
+    // sizes as TMDB's so every page asks for them the same way.
+    let trimmed = path.trim_start_matches('/');
+    if let Some(rest) = trimmed.strip_prefix("anilist/") {
+        return anilist_image(state, &format!("/{}", cover_size(rest, size))).await;
+    }
+    if let Some(rest) = trimmed.strip_prefix("crunchyroll/") {
+        if rest.contains("..") {
+            return Err(AppError::BadRequest("bad image path".into()));
+        }
+        return remote_image(
+            state,
+            &format!("crunchyroll/{rest}"),
+            &format!("https://img1.ak.crunchyroll.com/{rest}"),
+        )
+        .await;
+    }
     let path = if path.starts_with('/') {
         path.to_string()
     } else {
@@ -71,17 +88,40 @@ pub async fn cached_image(
     Ok((content_type, bytes))
 }
 
-/// Character pictures from AniList's CDN, kept the same way. Only the
-/// character and staff folders, so this is no general relay either.
+/// AniList keeps a cover in three sizes, in three folders with the same
+/// file name: the smallest that is sharp at the size asked for.
+fn cover_size(path: &str, size: &str) -> String {
+    let folder = match size {
+        "w92" => "small",
+        "w154" | "w185" => "medium",
+        _ => return path.to_string(),
+    };
+    path.replacen("/cover/large/", &format!("/cover/{folder}/"), 1)
+}
+
+/// Pictures from AniList's CDN, kept the same way: covers, banners, people
+/// and the icons of streaming sites. Only those folders, so this is no
+/// general relay either.
 async fn anilist_image(state: &AppState, path: &str) -> AppResult<(String, Vec<u8>)> {
-    let allowed = path.starts_with("/character/") || path.starts_with("/staff/");
+    let allowed = ["/character/", "/staff/", "/media/", "/link/"]
+        .iter()
+        .any(|folder| path.starts_with(folder));
     if !allowed || path.contains("..") {
         return Err(AppError::BadRequest("bad image path".into()));
     }
-    let key = format!("anilist{path}");
+    remote_image(
+        state,
+        &format!("anilist{path}"),
+        &format!("https://s4.anilist.co/file/anilistcdn{path}"),
+    )
+    .await
+}
+
+/// One picture from a fixed host, cached under `key`.
+async fn remote_image(state: &AppState, key: &str, url: &str) -> AppResult<(String, Vec<u8>)> {
     let hit: Option<(String, Vec<u8>)> =
         sqlx::query_as("SELECT content_type, bytes FROM image_cache WHERE path = ?")
-            .bind(&key)
+            .bind(key)
             .fetch_optional(&state.pool)
             .await?;
     if let Some(found) = hit {
@@ -89,7 +129,7 @@ async fn anilist_image(state: &AppState, path: &str) -> AppResult<(String, Vec<u
     }
     let resp = state
         .http
-        .get(format!("https://s4.anilist.co/file/anilistcdn{path}"))
+        .get(url)
         .send()
         .await
         .map_err(|e| AppError::AniList(e.to_string()))?;
@@ -115,7 +155,7 @@ async fn anilist_image(state: &AppState, path: &str) -> AppResult<(String, Vec<u
             bytes = excluded.bytes,
             fetched_at = excluded.fetched_at",
     )
-    .bind(&key)
+    .bind(key)
     .bind(&content_type)
     .bind(&bytes)
     .bind(Utc::now().to_rfc3339())

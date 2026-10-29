@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
@@ -38,6 +39,11 @@
 		try {
 			const res = await api.title(k, id);
 			if (mine !== token) return;
+			// Known from AniList alone before, and on TMDB now: that is its page.
+			if (res.moved_to) {
+				await goto(`/title/${res.moved_to.kind}/${res.moved_to.tmdb_id}`, { replaceState: true });
+				return;
+			}
 			detail = res;
 		} catch (e) {
 			if (mine !== token) return;
@@ -88,6 +94,7 @@
 		}
 		if (item.kind === 'tv' && item.episode_count) bits.push(`${item.episode_count} episodes`);
 		if (item.tmdb_status && item.kind === 'tv') bits.push(item.tmdb_status);
+		if (detail?.anilist_only) bits.push('From AniList');
 		return bits;
 	});
 
@@ -214,7 +221,11 @@
 						{/each}
 						{#if item.tmdb_vote}
 							<span class="dot" aria-hidden="true">•</span>
-							<span class="tmdb">TMDB {item.tmdb_vote.toFixed(1)}</span>
+							<span class="tmdb"
+								>{detail.anilist_only
+									? `AniList ${Math.round(item.tmdb_vote * 10)}%`
+									: `TMDB ${item.tmdb_vote.toFixed(1)}`}</span
+							>
 						{/if}
 					</div>
 
@@ -290,7 +301,7 @@
 				<section class="block">
 					<div class="section-head">
 						<h2>Where to watch</h2>
-						<span class="faint">{detail.provider_region}</span>
+						{#if !detail.anilist_only}<span class="faint">{detail.provider_region}</span>{/if}
 					</div>
 					<div class="providers">
 						{#each providerGroups as group (group.label)}
@@ -301,7 +312,8 @@
 									<span class="eyebrow">{label}</span>
 									<div class="logos">
 										{#each list as p (p.id)}
-											{@const href = providerLink(p.name, item.name, providers?.link ?? null)}
+											{@const href =
+												p.url ?? providerLink(p.name, item.name, providers?.link ?? null)}
 											<a
 												class="plogo"
 												{href}
@@ -340,13 +352,15 @@
 							showName={item.name}
 							fallbackStill={item.backdrop_path}
 							seasons={detail.seasons}
+							ratings={detail.ratings ?? []}
 							initialSeason={detail.next_up?.season_number ?? null}
 							onprogress={refreshAfterEpisodes}
 						/>
 					{/key}
 				</section>
 
-				{#if detail.heatmap.length}
+				<!-- AniList scores shows, not episodes: nothing to chart. -->
+				{#if detail.heatmap.length && !detail.anilist_only}
 					<section class="block">
 						<div class="section-head"><h2>Episode ratings</h2></div>
 						<Heatmap cells={detail.heatmap} />

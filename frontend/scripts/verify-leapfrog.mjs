@@ -257,9 +257,11 @@ check(
 	`${jjk?.watched_episodes}`
 );
 check('watching, from its latest season', jjk?.entry?.status === 'watching', jjk?.entry?.status);
+const unknown = (await call('GET', '/api/library?q=Qwzx')).items;
 check(
-	'nothing was invented for the unknown entry',
-	(await call('GET', '/api/library?q=Qwzx')).items.length === 0
+	'the unknown entry is kept as AniList has it, matched to nothing on TMDB',
+	unknown.length === 1 && unknown[0].tmdb_id < 0,
+	JSON.stringify(unknown.map((i) => [i.name, i.tmdb_id]))
 );
 console.log(
 	'    entries:',
@@ -269,15 +271,17 @@ console.log('    status:', JSON.stringify(await call('GET', '/api/anilist')));
 console.log('    url:', page.url());
 await page.reload();
 await page.screenshot({ path: join(out, '2a-before-unsure.png'), fullPage: true });
-// Unmatched entries wait out of the way, behind one line.
-await page.getByRole('button', { name: '1 title not matched yet' }).waitFor({ timeout: 20000 });
+// Unmatched entries wait out of the way, in a group that says why.
+const notFound = page.getByRole('tab', { name: /^Not found/ });
+await notFound.waitFor({ timeout: 20000 });
 check('the unknown entry waits, out of the way', true);
-await page.getByRole('button', { name: '1 title not matched yet' }).click();
+await notFound.click();
 await page.screenshot({ path: join(out, '2-connections.png'), fullPage: true });
 
 await page.getByRole('button', { name: 'Match', exact: true }).click();
 await page.getByRole('button', { name: 'Not in Frog' }).click();
-await page.getByText('not matched yet').waitFor({ state: 'detached', timeout: 10000 });
+await notFound.waitFor({ state: 'detached', timeout: 10000 });
+await page.getByRole('tab', { name: /^Not in Frog/ }).waitFor({ timeout: 10000 });
 check('an entry can be left out of Frog', true);
 
 // A tick in Frog travels to AniList, on the season it belongs to.

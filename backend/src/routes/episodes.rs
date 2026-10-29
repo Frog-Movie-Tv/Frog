@@ -178,7 +178,7 @@ async fn bulk(
 
     // Only episodes with no watch yet, so this never inflates rewatches, and
     // only ones that have aired.
-    sqlx::query(
+    sqlx::query(concat!(
         "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
                                   source, undated)
          SELECT ?6, ?1, e.id,
@@ -193,11 +193,13 @@ async fn bulk(
           WHERE e.title_id = ?1
             AND (?5 IS NOT NULL OR e.season_number > 0)
             AND (?5 IS NULL OR e.season_number = ?5)
-            AND (e.air_date IS NULL OR e.air_date <= date('now'))
+            AND ",
+        crate::released!(),
+        "
             AND NOT EXISTS (
                   SELECT 1 FROM watch_event w
-                   WHERE w.user_id = ?6 AND w.episode_id = e.id)",
-    )
+                   WHERE w.user_id = ?6 AND w.episode_id = e.id)"
+    ))
     .bind(title_id)
     .bind(mode)
     .bind(Utc::now().to_rfc3339())
@@ -209,7 +211,7 @@ async fn bulk(
 
     if season.is_none() {
         for special in &body.specials {
-            sqlx::query(
+            sqlx::query(concat!(
                 "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
                                           source, undated)
                  SELECT ?6, ?1, e.id,
@@ -222,11 +224,13 @@ async fn bulk(
                                 ELSE 0 END
                    FROM episode e
                   WHERE e.title_id = ?1 AND e.season_number = 0 AND e.episode_number = ?5
-                    AND (e.air_date IS NULL OR e.air_date <= date('now'))
+                    AND ",
+                crate::released!(),
+                "
                     AND NOT EXISTS (
                           SELECT 1 FROM watch_event w
-                           WHERE w.user_id = ?6 AND w.episode_id = e.id)",
-            )
+                           WHERE w.user_id = ?6 AND w.episode_id = e.id)"
+            ))
             .bind(title_id)
             .bind(mode)
             .bind(Utc::now().to_rfc3339())
@@ -267,7 +271,9 @@ pub async fn set_show_watched(
 
 #[derive(Deserialize)]
 pub struct EpisodeStateBody {
-    /// 0..100, or null to clear.
+    /// Episodes are no longer rated: seasons are. Accepted from older
+    /// clients and ignored; a rating already stored stays as it was.
+    #[allow(dead_code)]
     pub rating: Option<f64>,
     pub notes: Option<String>,
 }
@@ -278,28 +284,18 @@ pub async fn set_state(
     Path((kind, tmdb_id, season, episode)): Path<(String, i64, i64, i64)>,
     Json(body): Json<EpisodeStateBody>,
 ) -> AppResult<Json<Value>> {
-    if let Some(r) = body.rating {
-        if !(0.0..=100.0).contains(&r) {
-            return Err(AppError::BadRequest(
-                "rating must be between 0 and 100".into(),
-            ));
-        }
-    }
-
     let title_id = resolve(&state, &kind, tmdb_id).await?;
     let ep_id = episode_id(&state.pool, title_id, season, episode).await?;
 
     sqlx::query(
         "INSERT INTO episode_state (user_id, episode_id, rating, notes, updated_at)
-         VALUES (?, ?, ?, ?, ?)
+         VALUES (?, ?, NULL, ?, ?)
          ON CONFLICT (user_id, episode_id) DO UPDATE SET
-            rating = excluded.rating,
             notes = excluded.notes,
             updated_at = excluded.updated_at",
     )
     .bind(auth.user_id())
     .bind(ep_id)
-    .bind(body.rating)
     .bind(&body.notes)
     .bind(Utc::now().to_rfc3339())
     .execute(&state.pool)
@@ -308,38 +304,25 @@ pub async fn set_state(
     Ok(Json(json!({ "ok": true })))
 }
 
-/// After any watch change, nudge the library entry to match reality: a show you
-/// start becomes "watching", and finishing the last episode completes it.
+/// After any watch change, move the library entry to match what has been
+/// watched against what has come out; `release::desired_status` has the rules.
 async fn after_change(state: &AppState, user_id: i64, title_id: i64) -> AppResult<Json<Value>> {
     crate::anilist::touch(&state.pool, user_id).await;
-    let progress = store::progress(&state.pool, user_id, title_id).await?;
-    let entry = store::get_entry(&state.pool, user_id, title_id).await?;
-
-    let desired = if progress.total > 0
-        && progress.watched >= progress.total
-        && crate::routes::settings::auto_complete(&state.pool, user_id).await
+    // Ticking an episode of a show not in the library puts it there.
+    if store::get_entry(&state.pool, user_id, title_id)
+        .await?
+        .is_none()
     {
-        Some("completed")
-    } else if progress.watched > 0 {
-        match entry.as_ref().map(|e| e.status.as_str()) {
-            // Never drag something out of paused or dropped behind your back.
-            Some("paused") | Some("dropped") => None,
-            Some("watching") => None,
-            _ => Some("watching"),
-        }
-    } else {
-        None
-    };
-
-    if let Some(status) = desired {
-        if entry.as_ref().map(|e| e.status.as_str()) != Some(status) {
+        let progress = store::progress(&state.pool, user_id, title_id).await?;
+        if progress.watched > 0 {
             let patch = store::LibraryPatch {
-                status: Some(status.to_string()),
+                status: Some("watching".into()),
                 ..Default::default()
             };
             store::apply_patch(&state.pool, user_id, title_id, &patch).await?;
         }
     }
+    crate::release::reconcile(&state.pool, user_id, title_id).await?;
 
     let row = store::get_title(&state.pool, title_id).await?;
     let item = store::build_item(&state.pool, user_id, row).await?;

@@ -309,6 +309,12 @@ export const api = {
 	redateDiary: (kind: Kind, id: number, day: string, when: WhenAnswer) =>
 		send<{ changed: number }>('POST', '/api/diary/redate', { kind, tmdb_id: id, day, ...when }),
 
+	rateSeason: (id: number, season: number, firstEpisode: number, rating: number | null) =>
+		send<{ ok: true }>('PUT', `/api/titles/tv/${id}/seasons/${season}/rating`, {
+			rating,
+			first_episode: firstEpisode
+		}),
+
 	setEpisodeState: (
 		kind: Kind,
 		id: number,

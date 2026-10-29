@@ -5,7 +5,14 @@
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import { whenWatched, type WhenAnswer } from '#lib/when.svelte';
-	import type { EpisodeView, Kind, LibraryItem, SeasonDetail, SeasonSummary } from '#lib/types';
+	import type {
+		EpisodeView,
+		Kind,
+		LibraryItem,
+		RatingUnit,
+		SeasonDetail,
+		SeasonSummary
+	} from '#lib/types';
 	import Rating from './Rating.svelte';
 
 	interface Props {
@@ -18,6 +25,8 @@
 		showName?: string;
 		/** The show's backdrop, for episodes TMDB has no still of. */
 		fallbackStill?: string | null;
+		/** What can be rated: whole seasons, or the AniList parts of one. */
+		ratings?: RatingUnit[];
 		onprogress?: (item: LibraryItem) => void;
 	}
 
@@ -28,6 +37,7 @@
 		initialSeason = null,
 		showName = 'This show',
 		fallbackStill = null,
+		ratings = [],
 		onprogress
 	}: Props = $props();
 
@@ -41,6 +51,23 @@
 	let loading = $state<number | null>(null);
 	let busy = $state<string | null>(null);
 	let noteFor = $state<string | null>(null);
+	/** Ratings changed here, ahead of the page reloading the title. */
+	let rated = $state<Record<string, number | null>>({});
+
+	const unitKey = (u: RatingUnit) => `${u.season}-${u.first_episode}`;
+	const unitsOf = (season: number) => ratings.filter((u) => u.season === season);
+	const ratingOf = (u: RatingUnit) => (unitKey(u) in rated ? rated[unitKey(u)] : u.rating);
+
+	async function rateUnit(u: RatingUnit, rating: number | null) {
+		const before = ratingOf(u);
+		rated = { ...rated, [unitKey(u)]: rating };
+		try {
+			await api.rateSeason(tmdbId, u.season, u.first_episode, rating);
+		} catch (e) {
+			rated = { ...rated, [unitKey(u)]: before };
+			toasts.error(e);
+		}
+	}
 
 	$effect(() => {
 		if (open !== null && !loaded[open] && loading !== open) void fetchSeason(open);
@@ -137,19 +164,6 @@
 		}
 	}
 
-	async function rate(ep: EpisodeView, rating: number | null) {
-		patch(ep.season_number, ep.episode_number, { rating });
-		try {
-			await api.setEpisodeState(kind, tmdbId, ep.season_number, ep.episode_number, {
-				rating,
-				notes: ep.notes
-			});
-		} catch (e) {
-			patch(ep.season_number, ep.episode_number, { rating: ep.rating });
-			toasts.error(e);
-		}
-	}
-
 	async function saveNote(ep: EpisodeView, notes: string) {
 		const trimmed = notes.trim() || null;
 		patch(ep.season_number, ep.episode_number, { notes: trimmed });
@@ -182,6 +196,9 @@
 	{#each seasons as season (season.season_number)}
 		{@const isOpen = open === season.season_number}
 		{@const detail = loaded[season.season_number]}
+		{@const units = unitsOf(season.season_number)}
+		{@const whole = units.length === 1 && units[0].first_episode === 1 ? units[0] : null}
+		{@const started = !!season.air_date && season.air_date <= today}
 		<section class="season" class:open={isOpen}>
 			<header>
 				<button
@@ -198,6 +215,17 @@
 					</span>
 				</button>
 
+				{#if whole && (whole.rateable || started)}
+					<div class="season-rating" class:unrated={ratingOf(whole) === null}>
+						{#if whole.rateable}
+							<Rating compact value={ratingOf(whole)} onchange={(v) => rateUnit(whole, v)} />
+						{:else}
+							<span class="wait faint" title="A season can be rated once every episode is out">
+								Rate when it ends
+							</span>
+						{/if}
+					</div>
+				{/if}
 				{#if isOpen && detail}
 					<button
 						class="btn ghost small season-action"
@@ -209,6 +237,30 @@
 					</button>
 				{/if}
 			</header>
+
+			{#if isOpen && units.length > 1}
+				<ul class="parts" aria-label="Parts of {season.name}">
+					{#each units as u (unitKey(u))}
+						<li>
+							<span class="part-name">
+								<strong>{u.name ?? `From episode ${u.first_episode}`}</strong>
+								<span class="faint">
+									{u.episodes === 1
+										? `Episode ${u.first_episode}`
+										: `Episodes ${u.first_episode}–${u.first_episode + u.episodes - 1}`}
+								</span>
+							</span>
+							{#if u.rateable}
+								<Rating compact value={ratingOf(u)} onchange={(v) => rateUnit(u, v)} />
+							{:else}
+								<span class="wait faint" title="A part can be rated once every episode is out">
+									Rate when it ends
+								</span>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
 
 			{#if isOpen}
 				{#if !detail}
@@ -288,7 +340,6 @@
 
 								<div class="controls">
 									{#if !unaired(ep)}
-										<Rating compact value={ep.rating} onchange={(v) => rate(ep, v)} />
 										<button
 											class="note-btn"
 											aria-label="Episode note"
@@ -315,11 +366,63 @@
 		gap: 10px;
 	}
 
+	/* Not clipped: a season's rating opens a popover past its own edge. */
 	.season {
 		border: 1px solid var(--line);
 		border-radius: var(--radius);
 		background: var(--bg-elev);
+	}
+
+	.season-rating {
+		flex: none;
+		display: flex;
+		align-items: center;
+	}
+
+	.wait {
+		font-size: 0.74rem;
+		white-space: nowrap;
+	}
+
+	.parts {
+		list-style: none;
+		margin: 0 10px 8px;
+		padding: 4px 12px;
+		border-radius: var(--radius-sm);
+		background: var(--bg-elev-2);
+		display: flex;
+		flex-direction: column;
+	}
+
+	.parts li {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 8px 0;
+	}
+
+	.parts li + li {
+		border-top: 1px solid var(--line);
+	}
+
+	.part-name {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+		font-size: 0.85rem;
+	}
+
+	.part-name strong {
+		font-weight: 600;
 		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.part-name .faint {
+		font-size: 0.74rem;
 	}
 
 	.season.open {
@@ -583,29 +686,29 @@
 			display: none;
 		}
 
-		/* The action drops to its own line under the season name rather than
-		   pushing past the edge of the card. */
+		/* The name keeps the whole first line; the rating and the action drop
+		   under it rather than squeezing it or pushing past the edge. */
+		.head {
+			flex-basis: 100%;
+		}
+
+		.season-rating,
 		.season-action {
 			margin: -4px 0 12px 43px;
 		}
 
-		.episode {
-			grid-template-columns: 26px minmax(0, 1fr);
-			grid-template-areas:
-				'check body'
-				'. controls';
-			row-gap: 6px;
+		.season-rating + .season-action {
+			margin-left: 0;
 		}
 
-		.check {
-			grid-area: check;
+		/* A closed season only shows a rating it already has: a row of empty
+		   chips down a long show is noise. */
+		.season:not(.open) .season-rating.unrated {
+			display: none;
 		}
-		.body {
-			grid-area: body;
-		}
-		.controls {
-			grid-area: controls;
-			justify-content: flex-start;
+
+		.episode {
+			grid-template-columns: 26px minmax(0, 1fr) auto;
 		}
 	}
 </style>

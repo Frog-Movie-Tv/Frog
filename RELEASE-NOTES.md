@@ -18,6 +18,26 @@ In progress.
   right season with the episodes you saw, found by their names and kept on
   the day you watched them, films keep their day too, and anything Netflix
   leaves unclear is set aside for you to check.
+- **AniList, matched with care.** Specials and OVAs, sequels with names of
+  their own and long runs like One Piece land on the right show, season and
+  episode by themselves. When Frog is not sure, it says why and waits for a
+  quick check instead of guessing, and your own choices always stay put.
+- **Everything on your AniList, in Frog.** A title TMDB does not have yet
+  gets a full page all the same: cover, synopsis, cast and crew, trailer,
+  where to stream it, related shows, and every episode with its air date,
+  ready to tick, on Home and on the calendar. Its voice actors and studio
+  have pages too. When TMDB adds it, it moves across by itself, progress and
+  all, without a second copy.
+- **Watch anywhere, it arrives.** Episodes you tick on AniList, or a site that
+  updates it for you, reach Frog within minutes, with Frog closed. Settings
+  says when it last synced, and asks you to reconnect only when AniList needs
+  it. Lowering a count on AniList never erases watches you logged in Frog.
+- **Rate seasons.** Every season gets a rating of its own once it has
+  finished airing, and on AniList each part keeps its own score. Seasons you
+  rated the same all the way through carry that rating over.
+- **Finished stays finished.** A completed season stays completed when the
+  next one is announced, and its premiere shows on the calendar. Nothing
+  turns up in Continue watching before it is out.
 
 ## [0.7.0] — Treefrog — 2026-10-28
 

@@ -470,6 +470,7 @@ pub async fn clear_library(
     for statement in [
         "DELETE FROM watch_event WHERE user_id = ?",
         "DELETE FROM episode_state WHERE user_id = ?",
+        "DELETE FROM season_rating WHERE user_id = ?",
         "DELETE FROM shelf WHERE user_id = ?",
         "DELETE FROM library_entry WHERE user_id = ?",
     ] {

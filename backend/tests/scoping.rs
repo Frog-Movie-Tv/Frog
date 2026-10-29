@@ -16,7 +16,9 @@ use std::path::{Path, PathBuf};
 
 /// Tables that gained a `user_id` in migration 0008, and personal tables
 /// added since.
-const PERSONAL: [&str; 13] = [
+const PERSONAL: [&str; 15] = [
+    "season_rating",
+    "title_merge",
     "user_image",
     "anilist_link",
     "anilist_entry",
@@ -44,7 +46,7 @@ const SCOPED_FRAGMENTS: [&str; 6] = [
 ];
 
 /// Statements that are global on purpose, each with its reason.
-const ALLOWED: [(&str, &str); 4] = [
+const ALLOWED: [(&str, &str); 5] = [
     (
         "DELETE FROM session WHERE expires_at",
         "housekeeping: expired sessions of every account go at once",
@@ -58,6 +60,10 @@ const ALLOWED: [(&str, &str); 4] = [
         "SELECT t.id, t.tmdb_id FROM library_entry l JOIN title t",
         "refreshes shared episode data for shows somebody tracks; writes only \
          title and episode",
+    ),
+    (
+        "UPDATE title SET merged_into = ?",
+        "marks a shared AniList-only title as folded into another once nobody          keeps it; reads library_entry only to see whether anybody still does",
     ),
     (
         "SELECT DISTINCT user_id FROM push_subscription",

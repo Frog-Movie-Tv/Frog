@@ -433,8 +433,8 @@ async fn bulk_season_marking_skips_unaired_episodes() {
         .await
         .unwrap();
     assert_eq!(
-        watched, 3,
-        "two aired plus the undated one, never the future one"
+        watched, 2,
+        "the two aired; never the future one, nor an undated one nothing later has aired after"
     );
 }
 
@@ -532,12 +532,13 @@ async fn bulk_marking_with_an_unknown_date_stays_out_of_the_diary() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    // Four aired episodes in seasons 1-2; never the future one or the special.
-    assert_eq!(body["item"]["watched_episodes"], json!(4));
+    // Three aired episodes in seasons 1-2; never the future one, the special,
+    // or the undated season 2 finale nothing has aired after.
+    assert_eq!(body["item"]["watched_episodes"], json!(3));
 
     let (_, diary) = h.get("/api/diary", Some(&cookie)).await;
     assert_eq!(diary["entries"], json!([]));
-    assert_eq!(diary["undated"], json!(4));
+    assert_eq!(diary["undated"], json!(3));
 }
 
 #[tokio::test]
@@ -565,7 +566,15 @@ async fn bulk_marking_on_release_dates_uses_each_air_date() {
         ]
     );
 
-    // An episode with no known air date is kept undated rather than lying.
+    // An episode that is out but has no known air date is kept undated
+    // rather than lying. It is out because a later one has aired.
+    sqlx::query(
+        "INSERT INTO episode (title_id, season_number, episode_number, name, air_date)
+         VALUES (1, 2, 3, 'Long Into an Abyss', '2014-11-05')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
     h.post(
         "/api/titles/tv/48866/episodes/2/watch",
         json!({ "watched": true, "when": "release" }),
@@ -612,9 +621,9 @@ async fn the_diary_groups_a_day_of_one_show_and_can_be_redated() {
     let (_, diary) = h.get("/api/diary", Some(&cookie)).await;
     let entries = diary["entries"].as_array().unwrap();
     assert_eq!(entries.len(), 1, "{diary}");
-    assert_eq!(entries[0]["count"], json!(4));
+    assert_eq!(entries[0]["count"], json!(3));
     assert_eq!(entries[0]["day"], json!("2026-10-24"));
-    assert_eq!(entries[0]["episodes"].as_array().unwrap().len(), 4);
+    assert_eq!(entries[0]["episodes"].as_array().unwrap().len(), 3);
     assert_eq!(entries[0]["episodes"][0]["season_number"], json!(1));
 
     let (status, body, _) = h
@@ -625,18 +634,18 @@ async fn the_diary_groups_a_day_of_one_show_and_can_be_redated() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["changed"], json!(4));
+    assert_eq!(body["changed"], json!(3));
 
     let (_, diary) = h.get("/api/diary", Some(&cookie)).await;
     assert_eq!(diary["entries"], json!([]));
-    assert_eq!(diary["undated"], json!(4));
+    assert_eq!(diary["undated"], json!(3));
 
     // Still watched: progress is untouched by dates.
     let (watched,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM watch_event")
         .fetch_one(&h.state.pool)
         .await
         .unwrap();
-    assert_eq!(watched, 4);
+    assert_eq!(watched, 3);
 }
 
 /// Put a show and its seasons into the TMDB cache, so code that "fetches"

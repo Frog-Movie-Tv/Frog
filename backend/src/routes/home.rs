@@ -92,8 +92,11 @@ pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
     // A show whose next episode has not aired is not something to continue,
     // it is something to wait for. Saying so beats a play button pointing at
     // an episode that does not exist yet.
+    // Nothing out yet is neither to continue nor caught up on: it is coming,
+    // and the calendar has it.
     let (waiting, continuing): (Vec<UpNext>, Vec<UpNext>) = in_flight
         .into_iter()
+        .filter(|u| u.item.total_episodes > 0)
         .partition(|u| matches!(&u.next, Some(n) if !n.aired));
 
     let recent = items(
@@ -340,13 +343,15 @@ async fn next_episode(
     user_id: i64,
     title_id: i64,
 ) -> AppResult<Option<NextEpisode>> {
-    let row: Option<NextRow> = sqlx::query_as(
+    let row: Option<NextRow> = sqlx::query_as(concat!(
         "SELECT e.season_number,
                 e.episode_number,
                 e.name,
                 e.still_path,
                 e.air_date,
-                CASE WHEN e.air_date IS NULL OR e.air_date <= date('now') THEN 1 ELSE 0 END
+                CASE WHEN ",
+        crate::released!(),
+        " THEN 1 ELSE 0 END
            FROM episode e
           WHERE e.title_id = ?
             AND e.season_number > 0
@@ -354,8 +359,8 @@ async fn next_episode(
                   SELECT 1 FROM watch_event w
                    WHERE w.user_id = ? AND w.episode_id = e.id)
           ORDER BY e.season_number, e.episode_number
-          LIMIT 1",
-    )
+          LIMIT 1"
+    ))
     .bind(title_id)
     .bind(user_id)
     .fetch_optional(pool)
