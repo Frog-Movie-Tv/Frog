@@ -134,6 +134,12 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   `npm test` runs it against `tests/fixtures/netflix-viewing-history.csv`,
   real titles with made-up dates; `node --test` reads the TypeScript directly
   through `tests/ts-paths.mjs`.
+- **The library filter matches `title.search_name`**, the name and original
+  name with case and accents folded out (`text::fold`), against the typed
+  term folded the same way. SQL cannot fold accents, so `upsert_title`
+  writes it and `db::fill_search_names` fills any row without one at
+  startup. Anything that inserts titles another way gets one on the next
+  start, and until then matches by its plain lower-cased name.
 - **Imported shows get no title-level diary entry.** `apply` only writes one
   for films; a show's watches are its episodes, and a title-level watch
   would count the show as a film in Stats.
