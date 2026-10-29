@@ -21,7 +21,11 @@ export default defineConfig({
 	reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : [['list']],
 	use: {
 		trace: 'on-first-retry',
-		screenshot: 'only-on-failure'
+		screenshot: 'only-on-failure',
+		// Every page is checked against the deployed Content-Security-Policy
+		// (see e2e/smoke.spec.ts), which only reaches pages loaded from the
+		// network; the offline worker would serve them out of its reach.
+		serviceWorkers: 'block'
 	},
 	projects: [
 		{

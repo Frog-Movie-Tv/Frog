@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { enforceDeployedCsp } from '../scripts/caddy-csp.mjs';
 
 /**
  * These run against the real Rust binary with an empty database and no TMDB
@@ -13,6 +14,17 @@ const PASS = 'a-long-enough-pass';
 // The database is created once per run, so the very first test does setup and
 // the rest reuse the session via the browser context.
 test.describe.configure({ mode: 'serial' });
+
+// Every page is served with the policy Caddy sends the live site, read from
+// deploy/caddy/Caddyfile, and anything it blocks fails the test. Nothing else
+// local ever sees that header, and it has broken the live site three times.
+let blocked: string[] = [];
+test.beforeEach(async ({ context, baseURL }) => {
+	blocked = await enforceDeployedCsp(context, baseURL ?? '');
+});
+test.afterEach(() => {
+	expect(blocked, 'blocked by the deployed Content-Security-Policy').toEqual([]);
+});
 
 // Retrying this one is pointless: the suite is serial and shares one
 // instance, so by the second attempt the account exists and the instance

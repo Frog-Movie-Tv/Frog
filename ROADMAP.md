@@ -94,10 +94,17 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   the server.
 - **The deployed Content-Security-Policy has broken the site three times** —
   the inline startup script, the update check, the old AniList import (the
-  browser no longer talks to AniList; the server does). It comes
-  from Caddy, so nothing local ever sees it: not a dev build, not the audit,
-  not Playwright. Anything fetched from another origin has to be named in
-  `deploy/caddy/Caddyfile`.
+  browser no longer talks to AniList; the server does). It comes from Caddy.
+  The audit and Playwright now read it from `deploy/caddy/Caddyfile`, serve
+  every page with it (the offline worker is blocked there, since it would
+  fetch pages out of the policy's reach) and fail on anything it blocks. The
+  audit also presses the two buttons that reach another origin (Check for
+  updates, a trailer). Their first run caught a fourth break, already live: a
+  JetBrains Mono subset under 4 KB was inlined as `data:font`, which
+  `font-src 'self'` refuses, so fonts now always ship as files. The header's
+  `script-src 'unsafe-inline'` stays: the inline script's hash changes with
+  every build, and the app's own meta policy already narrows it to that one
+  script.
 - **Rebuild `--release` before Playwright.** The e2e server picks whichever
   binary is newer, and a stale release build silently tests old code.
 - **Verify scripts** live in `frontend/scripts/`, each starting its own server
