@@ -18,6 +18,8 @@ In progress.
   right season with the episodes you saw, found by their names and kept on
   the day you watched them, films keep their day too, and anything Netflix
   leaves unclear is set aside for you to check.
+- **Find it however you type it.** The library's name filter ignores accents
+  and capitals, so "pokemon" finds Pokémon and "shippuden" finds Shippūden.
 
 ## [0.7.0] — Treefrog — 2026-10-28
 

@@ -9,6 +9,7 @@ pub mod push;
 pub mod routes;
 pub mod state;
 pub mod store;
+pub mod text;
 pub mod tmdb;
 pub mod totp;
 
