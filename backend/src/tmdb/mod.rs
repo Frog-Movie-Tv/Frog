@@ -177,7 +177,9 @@ impl Tmdb {
             let detail = resp.text().await.unwrap_or_default();
             let detail = detail.chars().take(300).collect::<String>();
             if status == reqwest::StatusCode::NOT_FOUND {
-                return Err(AppError::NotFound(format!("TMDB has nothing at {path}")));
+                // The path means nothing to the person reading the page.
+                tracing::info!(%path, "TMDB has nothing here");
+                return Err(AppError::NotFound("Not on TMDB.".into()));
             }
             if let Some(v) = self.stale(&key).await {
                 tracing::warn!(%path, %status, "TMDB error, serving stale cache");

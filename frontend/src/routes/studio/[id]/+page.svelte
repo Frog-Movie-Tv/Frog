@@ -5,11 +5,12 @@
 	import Grid from '#lib/components/Grid.svelte';
 	import Poster from '#lib/components/Poster.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
+	import { failure, type Failure } from '#lib/failure';
 	import type { Kind, StudioDetail } from '#lib/types';
 
 	let studio = $state<StudioDetail | null>(null);
 	let loading = $state(true);
-	let error = $state<string | null>(null);
+	let error = $state<Failure | null>(null);
 	let only = $state<Kind | null>(null);
 	let expanded = $state(false);
 
@@ -31,7 +32,10 @@
 			studio = res;
 		} catch (e) {
 			if (mine !== token) return;
-			error = e instanceof Error ? e.message : 'Could not load this studio';
+			error = failure(e, {
+				title: "This studio isn't on TMDB",
+				hint: 'The link may be wrong, or TMDB has removed it.'
+			});
 		} finally {
 			if (mine === token) loading = false;
 		}
@@ -44,14 +48,21 @@
 </script>
 
 <svelte:head>
-	<title>{studio?.name ? `${studio.name} · Frog` : 'Frog'}</title>
+	<title>
+		{studio?.name ? `${studio.name} · Frog` : error ? `${error.heading} · Frog` : 'Frog'}
+	</title>
 </svelte:head>
 
 <div class="page">
 	{#if loading && !studio}
 		<Spinner label="Loading" />
 	{:else if error}
-		<Empty title="Could not load this studio" hint={error} />
+		<Empty art={error.missing ? 'search' : 'rest'} title={error.title} hint={error.hint}>
+			{#if !error.missing}
+				<button class="btn primary" onclick={() => load(id)}>Try again</button>
+			{/if}
+			<a class="btn" class:primary={error.missing} href="/">Go home</a>
+		</Empty>
 	{:else if studio}
 		<header class="head">
 			<div class="mark" class:blank={!logo}>

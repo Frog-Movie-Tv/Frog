@@ -20,7 +20,7 @@ fn check_kind(kind: &str) -> AppResult<()> {
     if kind == "movie" || kind == "tv" {
         Ok(())
     } else {
-        Err(AppError::BadRequest("kind must be movie or tv".into()))
+        Err(AppError::BadRequest("That isn't a film or a show.".into()))
     }
 }
 

@@ -108,6 +108,31 @@ test('every page names itself in the browser tab', async ({ page }) => {
 	}
 });
 
+test('an unknown address says so and leads home', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/no-such-page');
+
+	await expect(page).toHaveTitle(/^Not found · Frog$/);
+	await expect(page.getByRole('heading', { name: 'Nothing here' })).toBeVisible();
+	await page.getByRole('link', { name: 'Go home' }).click();
+	await expect(page).toHaveURL(/\/$/);
+});
+
+test('a bad title or shelf address reads like Frog, not like the server', async ({ page }) => {
+	await signIn(page);
+
+	for (const [path, heading] of [
+		['/title/book/1', "That isn't a film or a show"],
+		['/title/movie/abc', "This title isn't on TMDB"],
+		['/shelves/99999', 'No shelf here']
+	] as const) {
+		await page.goto(path);
+		await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+		await expect(page).toHaveTitle(/^Not found · Frog$/);
+		await expect(page.getByText(/must be|Request failed|no such/i)).toHaveCount(0);
+	}
+});
+
 test('the stats page loads instead of showing a database error', async ({ page }) => {
 	await signIn(page);
 	await page.goto('/stats');

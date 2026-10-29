@@ -49,7 +49,7 @@ impl Rules {
         let bad = |m: &str| Err(AppError::BadRequest(m.into()));
         if let Some(k) = &self.kind {
             if k != "movie" && k != "tv" {
-                return bad("kind must be movie or tv");
+                return bad("That isn't a film or a show.");
             }
         }
         if self
