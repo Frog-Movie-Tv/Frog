@@ -30,10 +30,49 @@ pub async fn connect(database_url: &str) -> anyhow::Result<SqlitePool> {
         .connect_with(opts)
         .await?;
 
-    let migrator = sqlx::migrate!("./migrations");
+    let migrator = migrator();
     heal_line_endings(&pool, &migrator).await?;
     migrator.run(&pool).await?;
+
+    fill_search_names(&pool).await?;
     Ok(pool)
+}
+
+/// Give every title its folded `search_name`. The migration that added the
+/// column cannot compute it (SQL has no way to take accents out), and a
+/// binary from before it writes titles without one, so this runs at every
+/// start and only touches rows that still lack it.
+pub async fn fill_search_names(pool: &SqlitePool) -> anyhow::Result<()> {
+    let rows: Vec<(i64, String, Option<String>)> =
+        sqlx::query_as("SELECT id, name, original_name FROM title WHERE search_name IS NULL")
+            .fetch_all(pool)
+            .await?;
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    let mut tx = pool.begin().await?;
+    for (id, name, original) in &rows {
+        sqlx::query("UPDATE title SET search_name = ? WHERE id = ?")
+            .bind(crate::text::search_name(name, original.as_deref()))
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    tracing::info!(titles = rows.len(), "search names filled");
+    Ok(())
+}
+
+/// Every migration this binary carries. A database may already hold newer
+/// ones: when an update fails its health check, `deploy/update.sh` goes back
+/// to the previous image, and that binary has to start on a schema one step
+/// ahead of it rather than refuse and leave the site down. That only works
+/// because migrations stay additive (see `docs/CONTRIBUTING.md`).
+pub fn migrator() -> Migrator {
+    let mut migrator = sqlx::migrate!("./migrations");
+    migrator.set_ignore_missing(true);
+    migrator
 }
 
 /// sqlx checksums each migration byte for byte, and a Windows checkout can turn

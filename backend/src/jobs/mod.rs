@@ -18,6 +18,10 @@ const TICK: Duration = Duration::from_secs(60 * 30);
 const CREDITS_TICK: Duration = Duration::from_secs(60 * 2);
 const CREDITS_BATCH: i64 = 25;
 
+/// How often the server jobs' log is read for new failures. The update timer
+/// runs every 15 minutes, so this hears about a failed one well within that.
+const OPS_TICK: Duration = Duration::from_secs(60 * 5);
+
 pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         // Give the HTTP server a moment before the first sweep.
@@ -26,6 +30,8 @@ pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
         let _guard = AbortOnDrop(credits);
         let anilist = tokio::spawn(sync_anilist(state.clone()));
         let _anilist_guard = AbortOnDrop(anilist);
+        let ops = tokio::spawn(watch_ops(state.clone()));
+        let _ops_guard = AbortOnDrop(ops);
         loop {
             if let Err(e) = tick(&state).await {
                 tracing::warn!(error = %e, "worker tick failed");
@@ -252,6 +258,78 @@ async fn sync_anilist(state: AppState) {
         // Looked at twice a minute; `due` decides who is actually synced.
         tokio::time::sleep(Duration::from_secs(30)).await;
     }
+}
+
+async fn watch_ops(state: AppState) {
+    loop {
+        if let Err(e) = report_ops_failures(&state).await {
+            tracing::warn!(error = %e, "could not report server failures");
+        }
+        tokio::time::sleep(OPS_TICK).await;
+    }
+}
+
+/// Tell every administrator, once each, about failures the deploy scripts
+/// recorded since they were last told (see `crate::ops::new_failures`).
+/// Returns how many failures each administrator was told about.
+pub async fn report_ops_failures(state: &AppState) -> anyhow::Result<Vec<(i64, usize)>> {
+    let events = crate::ops::read(&state.config.database_url);
+    if events.is_empty() {
+        return Ok(Vec::new());
+    }
+    let admins: Vec<(i64,)> =
+        sqlx::query_as("SELECT id FROM app_user WHERE role IN ('owner', 'admin') AND disabled = 0")
+            .fetch_all(&state.pool)
+            .await?;
+
+    let mut told = Vec::with_capacity(admins.len());
+    for (user_id,) in admins {
+        let seen: Option<(String,)> =
+            sqlx::query_as("SELECT value FROM app_setting WHERE user_id = ? AND key = 'ops_seen'")
+                .bind(user_id)
+                .fetch_optional(&state.pool)
+                .await?;
+        let (failures, mark) =
+            crate::ops::new_failures(&events, seen.as_ref().map(|s| s.0.as_str()));
+
+        // Every browser out of reach: keep the mark where it was and try again
+        // next time, as new-episode alerts do.
+        let mut unreachable = false;
+        for f in &failures {
+            let result = crate::push::broadcast(state, user_id, &crate::ops::payload(f)).await?;
+            if result.sent == 0 && result.failed > 0 {
+                unreachable = true;
+                break;
+            }
+        }
+        if unreachable {
+            continue;
+        }
+
+        if let Some(mark) = mark {
+            sqlx::query(
+                "INSERT INTO app_setting (user_id, key, value, updated_at)
+                 VALUES (?, 'ops_seen', ?, ?)
+                 ON CONFLICT (user_id, key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at",
+            )
+            .bind(user_id)
+            .bind(&mark)
+            .bind(Utc::now().to_rfc3339())
+            .execute(&state.pool)
+            .await?;
+        }
+        if !failures.is_empty() {
+            tracing::info!(
+                user_id,
+                failures = failures.len(),
+                "told an administrator about server failures"
+            );
+        }
+        told.push((user_id, failures.len()));
+    }
+    Ok(told)
 }
 
 async fn backfill_credits(state: AppState) {

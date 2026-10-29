@@ -1,7 +1,8 @@
 /**
  * Drives every page of a seeded instance and reports anything that went wrong:
- * console errors, failed requests, uncaught exceptions, and whether a service
- * worker can register.
+ * console errors, failed requests, uncaught exceptions, anything the deployed
+ * Content-Security-Policy would block, and whether a service worker can
+ * register.
  *
  *   npm run audit
  *
@@ -12,6 +13,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CADDYFILE, deployedCsp, enforceDeployedCsp } from './caddy-csp.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..', '..');
@@ -34,6 +36,16 @@ function tmdbKey() {
 	}
 	return '';
 }
+
+// Before anything starts: an audit without the live policy would pass pages
+// the live site breaks.
+try {
+	deployedCsp();
+} catch (e) {
+	console.error(e.message);
+	process.exit(1);
+}
+console.log(`policy: the Content-Security-Policy from ${CADDYFILE}`);
 
 const binary = ['release', 'debug']
 	.map((p) =>
@@ -145,24 +157,46 @@ const ROUTES = [
 	'/person/73457'
 ];
 
+/**
+ * What reaches another origin only when somebody presses something. The
+ * policy has to name each of those hosts, and both of these have broken the
+ * live site before: the update check (GitHub) and a trailer (YouTube).
+ */
+const ACTIONS = [
+	{
+		route: '/settings#this-instance',
+		press: (page) => page.getByRole('button', { name: 'Check for updates' })
+	},
+	{ route: '/title/tv/95396', press: (page) => page.locator('button.trailer') }
+];
+
 const browser = await chromium.launch();
 
 for (const viewport of [
 	{ name: 'desktop', width: 1440, height: 900 },
 	{ name: 'phone', width: 390, height: 844 }
 ]) {
-	const context = await browser.newContext({
-		viewport: { width: viewport.width, height: viewport.height },
-		colorScheme: 'dark'
-	});
-	await context.addCookies([
-		{
-			name: cookie.split('=')[0],
-			value: cookie.split('=').slice(1).join('='),
-			domain: '127.0.0.1',
-			path: '/'
-		}
-	]);
+	// Signed in, and every document arriving with the deployed policy. The
+	// pages run without the offline worker: it fetches each page itself, out of
+	// reach of the policy, and the app carries on without it as it would in a
+	// browser that refuses one. The worker gets its own check below.
+	const signedIn = async (options) => {
+		const ctx = await browser.newContext({
+			viewport: { width: viewport.width, height: viewport.height },
+			colorScheme: 'dark',
+			...options
+		});
+		await ctx.addCookies([
+			{
+				name: cookie.split('=')[0],
+				value: cookie.split('=').slice(1).join('='),
+				domain: '127.0.0.1',
+				path: '/'
+			}
+		]);
+		return { ctx, blocked: await enforceDeployedCsp(ctx, BASE) };
+	};
+	const { ctx: context, blocked } = await signedIn({ serviceWorkers: 'block' });
 
 	const page = await context.newPage();
 	page.on('console', (msg) => {
@@ -190,8 +224,25 @@ for (const viewport of [
 		});
 	}
 
-	// Can a service worker actually register here?
-	const sw = await page.evaluate(async () => {
+	for (const action of ACTIONS) {
+		await page.goto(BASE + action.route, { waitUntil: 'domcontentloaded', timeout: 20000 });
+		const target = action.press(page).first();
+		try {
+			await target.click({ timeout: 10000 });
+		} catch {
+			problems.push(
+				`[${viewport.name}] ${action.route}: nothing to press, so its request went unchecked`
+			);
+			continue;
+		}
+		await page.waitForTimeout(3000);
+	}
+
+	// Can a service worker actually register here, under the same policy?
+	const { ctx: workerContext, blocked: workerBlocked } = await signedIn({});
+	const workerPage = await workerContext.newPage();
+	await workerPage.goto(BASE + '/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+	const sw = await workerPage.evaluate(async () => {
 		try {
 			const reg = await navigator.serviceWorker.register('/service-worker.js');
 			await reg.unregister();
@@ -202,7 +253,11 @@ for (const viewport of [
 	});
 	console.log(`[${viewport.name}] service worker: ${sw}`);
 	if (!sw.startsWith('registered')) problems.push(`[${viewport.name}] service worker ${sw}`);
+	for (const v of [...blocked, ...workerBlocked]) {
+		problems.push(`[${viewport.name}] Content-Security-Policy: ${v}`);
+	}
 
+	await workerContext.close();
 	await context.close();
 }
 

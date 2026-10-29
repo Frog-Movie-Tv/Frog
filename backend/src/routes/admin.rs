@@ -204,6 +204,18 @@ pub async fn instance(
     })))
 }
 
+/// What the server's own jobs last did: backups, updates, rollbacks. Written
+/// by the deploy scripts beside the database; see `crate::ops`.
+pub async fn server(
+    AdminAuth(_): AdminAuth,
+    State(state): State<AppState>,
+) -> AppResult<Json<Value>> {
+    let events = crate::ops::read(&state.config.database_url);
+    let mut out = crate::ops::summary(&events);
+    out["recorded"] = json!(!events.is_empty());
+    Ok(Json(out))
+}
+
 /// `deploy/backup.sh` writes `last-backup` beside the database after every
 /// snapshot: one line, `<UTC time> <label> <pushed|local>`. Running without
 /// the deploy scripts there is simply no file.

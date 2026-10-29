@@ -82,6 +82,7 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 | **No staging** | 954 MB will not carry a second instance. `install.sh --with-staging` sets one up if it ever moves to a bigger machine. |
 | **Notifications untested on a real phone** | Verified through FCM in Chrome; not on Android, and tapping one is untested. |
 | **Server messages are English only** | Validation errors and notification text. Fine while the interface is English only. |
+| **One AniList test is flaky** | `a_tmdb_outage_is_retried_not_left_for_the_person` failed once in a full `cargo test` on 2026-10-29 and passed alone and on the rerun. It races the other tests over account 1's sync flag. |
 
 ## Not doing
 
@@ -96,24 +97,42 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 ## Notes that save time
 
+- **Server jobs report to Frog through `ops.jsonl`** beside the database.
+  `update.sh` and `backup.sh` append one line per outcome through
+  `deploy/ops-log.sh` (kinds: backup, update, rollback, restore). `crate::ops`
+  reads it for Administration's Server section. A watcher every 5 minutes
+  pushes each new failure to administrators once; a failure that repeats the
+  previous one of its kind (the timer retrying a broken release) stays quiet.
+  Each administrator's mark is `app_setting` key `ops_seen`. The scripts
+  reach the server only by re-running `install.sh` from a checkout, never
+  with an image update.
+
 - **Migrations are never edited once applied** — sqlx compares checksums and
   refuses to start, which takes a running instance down on its next deploy.
   Add another file. New ones get timestamped names, **digits only** before the
   first `_` (`202610271200_anilist.sql`): sqlx reads that part as a number and
   a `T` in it fails the build.
-  A new migration file alone does not rebuild the binary (there is no
-  `build.rs` watching `migrations/`): touch `backend/src/db.rs` before a
-  local build, or the server starts without it. CI builds clean, so it only
-  bites locally.
+  **Migrations stay additive**: a failed update rolls back to the previous
+  image, which skips migrations it does not know (`set_ignore_missing`) and
+  has to run on the newer schema. A destructive change takes two releases;
+  `docs/CONTRIBUTING.md` has the rule. If the previous image still fails,
+  `update.sh` puts back the plain snapshot it took just before the update.
   `db::heal_line_endings` forgives a checksum that differs only in line
   endings, which is what lets a database move between a Windows checkout and
   the server.
 - **The deployed Content-Security-Policy has broken the site three times** —
   the inline startup script, the update check, the old AniList import (the
-  browser no longer talks to AniList; the server does). It comes
-  from Caddy, so nothing local ever sees it: not a dev build, not the audit,
-  not Playwright. Anything fetched from another origin has to be named in
-  `deploy/caddy/Caddyfile`.
+  browser no longer talks to AniList; the server does). It comes from Caddy.
+  The audit and Playwright now read it from `deploy/caddy/Caddyfile`, serve
+  every page with it (the offline worker is blocked there, since it would
+  fetch pages out of the policy's reach) and fail on anything it blocks. The
+  audit also presses the two buttons that reach another origin (Check for
+  updates, a trailer). Their first run caught a fourth break, already live: a
+  JetBrains Mono subset under 4 KB was inlined as `data:font`, which
+  `font-src 'self'` refuses, so fonts now always ship as files. The header's
+  `script-src 'unsafe-inline'` stays: the inline script's hash changes with
+  every build, and the app's own meta policy already narrows it to that one
+  script.
 - **Rebuild `--release` before Playwright.** The e2e server picks whichever
   binary is newer, and a stale release build silently tests old code.
 - **Verify scripts** live in `frontend/scripts/`, each starting its own server
@@ -214,6 +233,23 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   `npm test` runs it against `tests/fixtures/netflix-viewing-history.csv`,
   real titles with made-up dates; `node --test` reads the TypeScript directly
   through `tests/ts-paths.mjs`.
+- **The library filter matches `title.search_name`**, the name and original
+  name with case and accents folded out (`text::fold`), against the typed
+  term folded the same way. SQL cannot fold accents, so `upsert_title`
+  writes it and `db::fill_search_names` fills any row without one at
+  startup. Anything that inserts titles another way gets one on the next
+  start, and until then matches by its plain lower-cased name.
+- **A page that cannot load never shows the server's message.**
+  `lib/failure.ts` picks the words from the status (404 and 400 are the
+  page's own "isn't on TMDB" line; 502, 503 and offline have their own), and
+  the server keeps the detail in its log. Unknown addresses land on
+  `routes/+error.svelte`.
+- **Up next** (`store::next_episode`, shared by Home and the title page) is
+  the first unwatched episode after where you are: the latest dated watch,
+  or the furthest undated one when that lies later in the show. Only once
+  nothing after it is left does it go back to the first gap. On the
+  611-title Netflix library this moved 17 of 204 shows in progress, each to
+  the episode after the furthest watched, and changed nothing else.
 - **Imported shows get no title-level diary entry.** `apply` only writes one
   for films; a show's watches are its episodes, and a title-level watch
   would count the show as a film in Stats.

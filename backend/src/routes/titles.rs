@@ -10,9 +10,6 @@ use crate::state::AppState;
 use crate::store;
 use crate::tmdb::models::{self, EpisodeInfo, SearchItem};
 
-/// (season, episode, name, still_path, air_date)
-type NextUpRow = (i64, i64, Option<String>, Option<String>, Option<String>);
-
 /// (season, episode, my rating, my notes, number of watches)
 type EpisodeStateRow = (i64, i64, Option<f64>, Option<String>, i64);
 
@@ -20,7 +17,7 @@ fn check_kind(kind: &str) -> AppResult<()> {
     if kind == "movie" || kind == "tv" {
         Ok(())
     } else {
-        Err(AppError::BadRequest("kind must be movie or tv".into()))
+        Err(AppError::BadRequest("That isn't a film or a show.".into()))
     }
 }
 
@@ -32,15 +29,6 @@ pub struct EpisodeView {
     pub watch_count: i64,
     pub rating: Option<f64>,
     pub notes: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct NextUp {
-    pub season_number: i64,
-    pub episode_number: i64,
-    pub name: Option<String>,
-    pub still_path: Option<String>,
-    pub air_date: Option<String>,
 }
 
 /// One request per title page. Everything the page draws above the fold comes
@@ -99,7 +87,7 @@ pub async fn detail(
     .await?;
 
     let next_up = if kind == "tv" {
-        next_unwatched(&state, auth.user_id(), title_id).await?
+        store::next_episode(&state.pool, auth.user_id(), title_id).await?
     } else {
         None
     };
@@ -206,41 +194,6 @@ async fn collection_parts(state: &AppState, user_id: i64, collection_id: i64) ->
         "poster_path": models::str_at(&raw, "poster_path"),
         "backdrop_path": models::str_at(&raw, "backdrop_path"),
         "parts": parts,
-    }))
-}
-
-async fn next_unwatched(
-    state: &AppState,
-    user_id: i64,
-    title_id: i64,
-) -> AppResult<Option<NextUp>> {
-    // The next one out, or the next one with a date to wait for; never an
-    // announced episode nobody has a date for.
-    let row: Option<NextUpRow> = sqlx::query_as(concat!(
-        "SELECT e.season_number, e.episode_number, e.name, e.still_path, e.air_date
-           FROM episode e
-          WHERE e.title_id = ?
-            AND e.season_number > 0
-            AND (e.air_date IS NOT NULL OR ",
-        crate::released!(),
-        ")
-            AND NOT EXISTS (
-                  SELECT 1 FROM watch_event w
-                   WHERE w.user_id = ? AND w.episode_id = e.id)
-          ORDER BY e.season_number, e.episode_number
-          LIMIT 1"
-    ))
-    .bind(title_id)
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await?;
-
-    Ok(row.map(|(s, e, name, still_path, air_date)| NextUp {
-        season_number: s,
-        episode_number: e,
-        name,
-        still_path,
-        air_date,
     }))
 }
 

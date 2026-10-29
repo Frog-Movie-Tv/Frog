@@ -10,6 +10,7 @@ use sqlx::{FromRow, SqlitePool};
 use crate::error::{AppError, AppResult};
 use crate::palette::{self, Palette};
 use crate::state::AppState;
+use crate::text;
 use crate::tmdb::models::{self, EpisodeInfo, TitleCore};
 
 pub const STATUSES: [&str; 5] = ["watching", "completed", "planned", "paused", "dropped"];
@@ -111,11 +112,12 @@ pub async fn upsert_title(pool: &SqlitePool, core: &TitleCore) -> AppResult<i64>
         "INSERT INTO title (kind, tmdb_id, name, original_name, overview, poster_path,
                             backdrop_path, logo_path, release_date, last_air_date, tmdb_status,
                             runtime, episode_count, season_count, genres_json, tmdb_vote,
-                            imdb_id, collection_id, refreshed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            imdb_id, collection_id, refreshed_at, search_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (kind, tmdb_id) DO UPDATE SET
             name = excluded.name,
             original_name = excluded.original_name,
+            search_name = excluded.search_name,
             overview = excluded.overview,
             poster_path = excluded.poster_path,
             backdrop_path = excluded.backdrop_path,
@@ -151,6 +153,7 @@ pub async fn upsert_title(pool: &SqlitePool, core: &TitleCore) -> AppResult<i64>
     .bind(&core.imdb_id)
     .bind(core.collection_id)
     .bind(Utc::now().to_rfc3339())
+    .bind(text::search_name(&core.name, core.original_name.as_deref()))
     .execute(pool)
     .await?;
 
@@ -269,18 +272,23 @@ pub struct LocalTitle<'a> {
 /// One per AniList id, shared like any title; refreshed from AniList each
 /// time, and brought back if it had been folded into a TMDB title before.
 pub async fn ensure_local_title(pool: &SqlitePool, t: &LocalTitle<'_>) -> AppResult<i64> {
-    let existing: Option<(i64,)> = sqlx::query_as("SELECT id FROM title WHERE anilist_id = ?")
-        .bind(t.anilist_id)
-        .fetch_optional(pool)
-        .await?;
+    let existing: Option<(i64, Option<String>)> =
+        sqlx::query_as("SELECT id, original_name FROM title WHERE anilist_id = ?")
+            .bind(t.anilist_id)
+            .fetch_optional(pool)
+            .await?;
     let now = Utc::now().to_rfc3339();
-    if let Some((id,)) = existing {
+    if let Some((id, original)) = existing {
         sqlx::query(
-            "UPDATE title SET name = ?, release_date = COALESCE(?, release_date),
+            "UPDATE title SET name = ?, search_name = ?, release_date = COALESCE(?, release_date),
                     episode_count = ?, tmdb_status = ?, merged_into = NULL
               WHERE id = ? AND tmdb_id < 0",
         )
         .bind(t.name)
+        .bind(text::search_name(
+            t.name,
+            original.as_deref().or(t.original_name),
+        ))
         .bind(t.release_date)
         .bind(t.episodes)
         .bind(t.status)
@@ -292,8 +300,8 @@ pub async fn ensure_local_title(pool: &SqlitePool, t: &LocalTitle<'_>) -> AppRes
     let result = sqlx::query(
         "INSERT INTO title (kind, tmdb_id, name, original_name, release_date, episode_count,
                             season_count, tmdb_status, genres_json, anilist_id, refreshed_at,
-                            people_synced_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, NULL, ?)",
+                            people_synced_at, search_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, NULL, ?, ?)",
     )
     .bind(t.kind)
     .bind(-t.anilist_id)
@@ -306,6 +314,7 @@ pub async fn ensure_local_title(pool: &SqlitePool, t: &LocalTitle<'_>) -> AppRes
     .bind(t.anilist_id)
     // Credits come with AniList's detail; the TMDB backfill leaves it be.
     .bind(&now)
+    .bind(text::search_name(t.name, t.original_name))
     .execute(pool)
     .await?;
     Ok(result.last_insert_rowid())
@@ -846,6 +855,119 @@ pub async fn progress(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppResu
         watched: row.0,
         total: row.1,
     })
+}
+
+/// The next episode of a show, and whether it is out yet.
+#[derive(Debug, Serialize, Clone)]
+pub struct NextEpisode {
+    pub season_number: i64,
+    pub episode_number: i64,
+    pub name: Option<String>,
+    pub still_path: Option<String>,
+    pub air_date: Option<String>,
+    pub aired: bool,
+}
+
+/// (season, episode, name, still_path, air_date, aired)
+type NextRow = (
+    i64,
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    i64,
+);
+
+/// The episode to watch next: the first unwatched one after where you are,
+/// not the first gap anywhere in the show. An import that ticks season 23 of
+/// Pokémon but only the first two episodes of season 1 is at season 23.
+///
+/// Where you are is the most recently watched episode, by date. Undated
+/// watches (imports, bulk ticks) say how far you got but not when, so the
+/// furthest of them counts when it lies beyond the dated one. Only when
+/// nothing after that is left unwatched does it fall back to the first gap.
+pub async fn next_episode(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+) -> AppResult<Option<NextEpisode>> {
+    let latest: Option<(i64, i64)> = sqlx::query_as(
+        "SELECT e.season_number, e.episode_number
+           FROM watch_event w
+           JOIN episode e ON e.id = w.episode_id
+          WHERE w.user_id = ? AND e.title_id = ? AND e.season_number > 0 AND w.undated = 0
+          ORDER BY w.watched_at DESC, e.season_number DESC, e.episode_number DESC
+          LIMIT 1",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .fetch_optional(pool)
+    .await?;
+    let furthest_undated: Option<(i64, i64)> = sqlx::query_as(
+        "SELECT e.season_number, e.episode_number
+           FROM watch_event w
+           JOIN episode e ON e.id = w.episode_id
+          WHERE w.user_id = ? AND e.title_id = ? AND e.season_number > 0 AND w.undated = 1
+          ORDER BY e.season_number DESC, e.episode_number DESC
+          LIMIT 1",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .fetch_optional(pool)
+    .await?;
+    // Tuples compare season first, then episode.
+    let here = latest.max(furthest_undated);
+
+    // Out by `released!()`: an undated episode only once a later one aired.
+    // One with no date that is not out (an announced season TMDB lists
+    // early) is never next; one with a date to wait for is, as not aired.
+    const NEXT: &str = concat!(
+        "SELECT e.season_number, e.episode_number, e.name, e.still_path, e.air_date,
+                CASE WHEN ",
+        crate::released!(),
+        " THEN 1 ELSE 0 END
+           FROM episode e
+          WHERE e.title_id = ?1
+            AND e.season_number > 0
+            AND (e.air_date IS NOT NULL OR ",
+        crate::released!(),
+        ")
+            AND (e.season_number > ?3 OR (e.season_number = ?3 AND e.episode_number > ?4))
+            AND NOT EXISTS (
+                  SELECT 1 FROM watch_event w
+                   WHERE w.user_id = ?2 AND w.episode_id = e.id)
+          ORDER BY e.season_number, e.episode_number
+          LIMIT 1"
+    );
+    let (season, episode) = here.unwrap_or((0, 0));
+    let mut row: Option<NextRow> = sqlx::query_as(NEXT)
+        .bind(title_id)
+        .bind(user_id)
+        .bind(season)
+        .bind(episode)
+        .fetch_optional(pool)
+        .await?;
+    if row.is_none() && here.is_some() {
+        // Caught up from where you are: whatever was skipped on the way.
+        row = sqlx::query_as(NEXT)
+            .bind(title_id)
+            .bind(user_id)
+            .bind(0)
+            .bind(0)
+            .fetch_optional(pool)
+            .await?;
+    }
+
+    Ok(row.map(
+        |(season_number, episode_number, name, still_path, air_date, aired)| NextEpisode {
+            season_number,
+            episode_number,
+            name,
+            still_path,
+            air_date,
+            aired: aired == 1,
+        },
+    ))
 }
 
 pub async fn last_watched_at(

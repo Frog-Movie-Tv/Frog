@@ -14,6 +14,7 @@ import type {
 	AdminUser,
 	DeviceSession,
 	InstanceInfo,
+	ServerStatus,
 	Invite,
 	PersonSummary,
 	Profile,
@@ -192,6 +193,7 @@ export const api = {
 		),
 	deleteUser: (id: number) => send<{ ok: true }>('DELETE', `/api/admin/users/${id}`),
 	instance: () => get<InstanceInfo>('/api/admin/instance'),
+	server: () => get<ServerStatus>('/api/admin/server'),
 
 	anilist: () => get<AniListStatus>('/api/anilist'),
 	anilistConnect: () => send<{ url: string }>('POST', '/api/anilist/connect', {}),

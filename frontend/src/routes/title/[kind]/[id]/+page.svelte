@@ -11,6 +11,7 @@
 	import SeasonList from '#lib/components/SeasonList.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import TrackControls from '#lib/components/TrackControls.svelte';
+	import { failure, idParam, type Failure } from '#lib/failure';
 	import { episodeCode, prettyDate, runtime, year } from '#lib/format';
 	import { providerLink } from '#lib/providers';
 	import { settings } from '#lib/settings.svelte';
@@ -20,7 +21,7 @@
 
 	let detail = $state<TitleDetail | null>(null);
 	let loading = $state(true);
-	let error = $state<string | null>(null);
+	let error = $state<Failure | null>(null);
 	let trailerOpen = $state<string | null>(null);
 
 	const kind = $derived(page.params.kind as Kind);
@@ -32,8 +33,30 @@
 
 	let token = 0;
 
+	const NOT_ON_TMDB = {
+		title: "This title isn't on TMDB",
+		hint: 'The link may be wrong, or TMDB has removed it.'
+	};
+
 	async function load(k: Kind, id: number) {
 		const mine = ++token;
+		if (k !== 'movie' && k !== 'tv') {
+			error = {
+				missing: true,
+				heading: 'Not found',
+				title: "That isn't a film or a show",
+				hint: 'Check the address, or search for it instead.'
+			};
+			detail = null;
+			loading = false;
+			return;
+		}
+		if (idParam(page.params.id) === null) {
+			error = { missing: true, heading: 'Not found', ...NOT_ON_TMDB };
+			detail = null;
+			loading = false;
+			return;
+		}
 		loading = true;
 		error = null;
 		try {
@@ -47,7 +70,7 @@
 			detail = res;
 		} catch (e) {
 			if (mine !== token) return;
-			error = e instanceof Error ? e.message : 'Could not load this title';
+			error = failure(e, NOT_ON_TMDB);
 			detail = null;
 		} finally {
 			if (mine === token) loading = false;
@@ -172,13 +195,20 @@
 </script>
 
 <svelte:head>
-	<title>{item ? `${item.name} · Frog` : 'Frog'}</title>
+	<title>{item ? `${item.name} · Frog` : error ? `${error.heading} · Frog` : 'Frog'}</title>
 </svelte:head>
 
 {#if loading && !detail}
 	<div class="page"><Spinner label="Loading" /></div>
 {:else if error}
-	<div class="page"><Empty title="Could not load this title" hint={error} /></div>
+	<div class="page">
+		<Empty art={error.missing ? 'search' : 'rest'} title={error.title} hint={error.hint}>
+			{#if !error.missing}
+				<button class="btn primary" onclick={() => load(kind, tmdbId)}>Try again</button>
+			{/if}
+			<a class="btn" class:primary={error.missing} href="/">Go home</a>
+		</Empty>
+	</div>
 {:else if detail && item}
 	<article
 		class="title-page"

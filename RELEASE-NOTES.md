@@ -38,6 +38,16 @@ In progress.
 - **Finished stays finished.** A completed season stays completed when the
   next one is announced, and its premiere shows on the calendar. Nothing
   turns up in Continue watching before it is out.
+- **Find it however you type it.** The library's name filter ignores accents
+  and capitals, so "pokemon" finds Pokémon and "shippuden" finds Shippūden.
+- **Pages that aren't there say so.** A mistyped address, or a title, person,
+  studio or shelf that doesn't exist, gets a clear page with the way home.
+- **Up next picks up where you are.** It follows your latest episode rather
+  than the first one you skipped, and only goes back for what you missed once
+  you're caught up.
+- **Know how the server is doing.** Administration shows the last backup,
+  the last update and any rollback, and administrators get a notification
+  when one of them fails.
 
 ## [0.7.0] — Treefrog — 2026-10-28
 

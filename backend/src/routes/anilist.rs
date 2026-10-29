@@ -380,7 +380,7 @@ pub async fn choose(
         return Err(AppError::BadRequest("choose a title".into()));
     };
     if kind != "movie" && kind != "tv" {
-        return Err(AppError::BadRequest("kind must be movie or tv".into()));
+        return Err(AppError::BadRequest("That isn't a film or a show.".into()));
     }
     let season = match kind {
         "tv" => Some(choice.season.unwrap_or(1).max(0)),

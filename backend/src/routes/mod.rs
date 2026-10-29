@@ -104,6 +104,7 @@ pub fn router(state: AppState) -> Router {
             put(admin::update_user).delete(admin::delete_user),
         )
         .route("/admin/instance", get(admin::instance))
+        .route("/admin/server", get(admin::server))
         .route("/anilist", get(anilist::status).delete(anilist::disconnect))
         .route("/anilist/connect", post(anilist::connect))
         .route("/anilist/callback", get(anilist::callback))

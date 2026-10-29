@@ -473,6 +473,24 @@ export interface InstanceInfo {
 	last_backup: { at: string; label: string; pushed: boolean } | null;
 }
 
+/** One outcome of the server's own jobs, as its deploy scripts record it. */
+export interface ServerEvent {
+	at: string;
+	kind: 'backup' | 'update' | 'rollback' | 'restore';
+	ok: boolean;
+	reason: string;
+}
+
+/** The latest of each, for the admin page. */
+export interface ServerStatus {
+	/** False until a backup or an update has run with the deploy scripts. */
+	recorded: boolean;
+	backup: ServerEvent | null;
+	update: ServerEvent | null;
+	/** The latest rollback or restore, if there ever was one. */
+	rollback: ServerEvent | null;
+}
+
 /** The AniList connection as Settings shows it. */
 export interface AniListStatus {
 	/** False when this Frog has no AniList client set up. */

@@ -375,6 +375,75 @@ async fn library_and_stats_survive_real_rows() {
     assert_eq!(body["mean_rating"], json!(90.0));
 }
 
+/// The library filter ignores case and accents: "pokemon" finds "Pokémon".
+/// It still only ever looks in your own library.
+#[tokio::test]
+async fn the_library_filter_ignores_accents_and_case() {
+    let h = Harness::new().await;
+    let (owner, other) = two_accounts(&h).await;
+
+    sqlx::query(
+        "INSERT INTO title (id, kind, tmdb_id, name, original_name) VALUES
+            (1, 'tv', 60572, 'Pokémon', 'ポケットモンスター'),
+            (2, 'tv', 31910, 'Naruto Shippūden', 'NARUTO -ナルト- 疾風伝'),
+            (3, 'tv', 1396, 'Breaking Bad', 'Breaking Bad'),
+            (4, 'movie', 11, '100% Wolf', NULL),
+            (5, 'movie', 12, 'Pokémon: The First Movie', NULL)",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    frog::db::fill_search_names(&h.state.pool).await.unwrap();
+
+    // The owner tracks the first four; the other account has the film.
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         SELECT u.id, t.id, 'planned', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'
+           FROM app_user u, title t
+          WHERE (u.username = 'mihai' AND t.id <= 4)
+             OR (u.username = 'zjef' AND t.id = 5)",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    // A title written by a binary from before search_name still matches by
+    // its plain name.
+    sqlx::query("UPDATE title SET search_name = NULL WHERE id = 3")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+
+    let found = |body: Value| -> Vec<String> {
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["name"].as_str().unwrap().to_string())
+            .collect()
+    };
+    for (term, expected) in [
+        ("pokemon", vec!["Pokémon"]),
+        ("Pok%C3%A9mon", vec!["Pokémon"]),
+        ("POK%C3%89MON", vec!["Pokémon"]),
+        ("shippuden", vec!["Naruto Shippūden"]),
+        ("SHIPPUDEN", vec!["Naruto Shippūden"]),
+        ("%E7%96%BE%E9%A2%A8%E4%BC%9D", vec!["Naruto Shippūden"]),
+        ("breaking", vec!["Breaking Bad"]),
+        ("100%25", vec!["100% Wolf"]),
+        ("0%25", vec!["100% Wolf"]),
+        ("%25", vec!["100% Wolf"]),
+        ("_", vec![]),
+    ] {
+        let (status, body) = h.get(&format!("/api/library?q={term}"), Some(&owner)).await;
+        assert_eq!(status, StatusCode::OK, "{term}: {body}");
+        assert_eq!(found(body), expected, "searching {term}");
+    }
+
+    let (_, body) = h.get("/api/library?q=pokemon", Some(&other)).await;
+    assert_eq!(found(body), ["Pokémon: The First Movie"], "only your own");
+}
+
 /// An internal fault must never put a database error on the screen.
 #[tokio::test]
 async fn internal_errors_are_not_shown_verbatim() {
@@ -1755,7 +1824,7 @@ async fn migrations_differing_only_in_line_endings_are_accepted() {
 
     let h = Harness::new().await;
     let pool = &h.state.pool;
-    let migrator = sqlx::migrate!("./migrations");
+    let migrator = frog::db::migrator();
     let first = migrator.iter().next().unwrap();
 
     // Record migration 1 as if it had been applied from the other ending.
@@ -1792,6 +1861,211 @@ async fn migrations_differing_only_in_line_endings_are_accepted() {
         .unwrap();
     frog::db::heal_line_endings(pool, &migrator).await.unwrap();
     assert!(migrator.run(pool).await.is_err());
+}
+
+/// After a failed update the previous image starts on a database that already
+/// holds the new release's migrations. It must come up rather than refuse, or
+/// a rollback leaves the site down.
+#[tokio::test]
+async fn an_older_binary_starts_on_a_newer_schema() {
+    let h = Harness::new().await;
+    let url = h.state.config.database_url.clone();
+
+    // A migration from a release this binary has never heard of, applied.
+    sqlx::query(
+        "INSERT INTO _sqlx_migrations
+             (version, description, success, checksum, execution_time)
+         VALUES (299912312359, 'from the future', 1, X'00', 0)",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    assert!(
+        sqlx::migrate!("./migrations")
+            .run(&h.state.pool)
+            .await
+            .is_err(),
+        "sqlx's default refuses it"
+    );
+    h.state.pool.close().await;
+
+    let pool = frog::db::connect(&url)
+        .await
+        .expect("starts on a schema one step ahead");
+    let (n,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM _sqlx_migrations WHERE version = ?")
+        .bind(299912312359_i64)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 1, "and leaves the newer record alone");
+}
+
+// ---------------------------------------------------------------------------
+// Up next.
+// ---------------------------------------------------------------------------
+
+/// A signed-in owner watching a show of three aired seasons of four episodes,
+/// plus a special. Returns the cookie.
+async fn watching_a_long_show(h: &Harness) -> String {
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let pool = &h.state.pool;
+    sqlx::query("INSERT INTO title (id, kind, tmdb_id, name) VALUES (1, 'tv', 60572, 'Pokémon')")
+        .execute(pool)
+        .await
+        .unwrap();
+    for season in 0..=3 {
+        for episode in 1..=4 {
+            sqlx::query(
+                "INSERT INTO episode (title_id, season_number, episode_number, air_date)
+                 VALUES (1, ?, ?, '2020-01-01')",
+            )
+            .bind(season)
+            .bind(episode)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+    }
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, 1, 'watching', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    cookie.unwrap()
+}
+
+/// Record watches: (season, episode, when), `None` for an undated one.
+async fn watched(h: &Harness, watches: &[(i64, i64, Option<&str>)]) {
+    for (season, episode, at) in watches {
+        sqlx::query(
+            "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                      source, undated)
+             SELECT 1, 1, id, ?, 0, 'manual', ?
+               FROM episode WHERE title_id = 1 AND season_number = ? AND episode_number = ?",
+        )
+        .bind(at.unwrap_or("2026-10-29T12:00:00Z"))
+        .bind(at.is_none())
+        .bind(season)
+        .bind(episode)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    }
+}
+
+async fn next_up(h: &Harness) -> Option<(i64, i64)> {
+    frog::store::next_episode(&h.state.pool, 1, 1)
+        .await
+        .unwrap()
+        .map(|n| (n.season_number, n.episode_number))
+}
+
+async fn clear_watches(h: &Harness) {
+    sqlx::query("DELETE FROM watch_event WHERE user_id = 1")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+}
+
+/// Watched in order, the next episode is simply the next one, across a
+/// season boundary, and a show not started begins at the beginning.
+#[tokio::test]
+async fn up_next_follows_a_show_watched_in_order() {
+    let h = Harness::new().await;
+    watching_a_long_show(&h).await;
+
+    assert_eq!(next_up(&h).await, Some((1, 1)), "nothing watched yet");
+
+    watched(
+        &h,
+        &[
+            (1, 1, Some("2026-01-01T20:00:00Z")),
+            (1, 2, Some("2026-01-02T20:00:00Z")),
+        ],
+    )
+    .await;
+    assert_eq!(next_up(&h).await, Some((1, 3)));
+
+    watched(
+        &h,
+        &[
+            (1, 3, Some("2026-01-03T20:00:00Z")),
+            (1, 4, Some("2026-01-04T20:00:00Z")),
+        ],
+    )
+    .await;
+    assert_eq!(next_up(&h).await, Some((2, 1)), "on to the next season");
+
+    // A special never counts as where you are.
+    watched(&h, &[(0, 4, Some("2026-01-05T20:00:00Z"))]).await;
+    assert_eq!(next_up(&h).await, Some((2, 1)));
+}
+
+/// After an import, up next follows the latest watching, not the first gap
+/// left somewhere early in the show.
+#[tokio::test]
+async fn up_next_continues_from_the_latest_watch_not_the_first_gap() {
+    let h = Harness::new().await;
+    watching_a_long_show(&h).await;
+
+    // Undated, as an import ticks them: two from season 1, most of season 3.
+    watched(
+        &h,
+        &[(1, 1, None), (1, 2, None), (3, 1, None), (3, 2, None)],
+    )
+    .await;
+    assert_eq!(next_up(&h).await, Some((3, 3)), "not S01E03");
+
+    // Dated: the most recent watch decides, wherever it is in the show.
+    clear_watches(&h).await;
+    watched(
+        &h,
+        &[
+            (2, 2, Some("2026-03-01T20:00:00Z")),
+            (1, 1, Some("2026-01-01T20:00:00Z")),
+            (1, 2, Some("2026-01-02T20:00:00Z")),
+        ],
+    )
+    .await;
+    assert_eq!(next_up(&h).await, Some((2, 3)));
+
+    // A dated watch earlier in the show than the furthest undated one does
+    // not pull it back.
+    watched(&h, &[(3, 3, None)]).await;
+    assert_eq!(next_up(&h).await, Some((3, 4)));
+
+    // Nothing left after where you are: back to what was skipped.
+    watched(&h, &[(3, 4, Some("2026-03-02T20:00:00Z"))]).await;
+    assert_eq!(next_up(&h).await, Some((1, 3)));
+}
+
+/// Home shows the same episode the title page does.
+#[tokio::test]
+async fn home_continues_from_where_you_are() {
+    let h = Harness::new().await;
+    let cookie = watching_a_long_show(&h).await;
+    watched(&h, &[(1, 1, None), (3, 1, None)]).await;
+
+    let (status, body) = h.get("/api/home", Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // The only show in progress leads Home, so it is the hero.
+    let next = &body["hero"]["next"];
+    assert_eq!(
+        (
+            next["season_number"].as_i64(),
+            next["episode_number"].as_i64()
+        ),
+        (Some(3), Some(2)),
+        "{body}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -2087,6 +2361,170 @@ async fn only_administrators_reach_the_admin_routes() {
         .post("/api/invites", json!({ "role": "admin" }), Some(&owner))
         .await;
     assert_eq!(code, StatusCode::OK);
+}
+
+// ---------------------------------------------------------------------------
+// What the server's jobs did (deploy/ops-log.sh writes it, Frog reads it).
+// ---------------------------------------------------------------------------
+
+/// Append lines to the log beside the test database, as the scripts do.
+fn ops_log(h: &Harness, lines: &[(&str, &str, bool, &str)]) {
+    use std::io::Write;
+    let path = frog::ops::log_path(&h.state.config.database_url).unwrap();
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .unwrap();
+    for (at, kind, ok, reason) in lines {
+        let line = json!({ "at": at, "kind": kind, "ok": ok, "reason": reason });
+        writeln!(file, "{line}").unwrap();
+    }
+}
+
+/// The admin page reads the latest backup, update and rollback, and nobody
+/// below administrator can.
+#[tokio::test]
+async fn administrators_see_what_the_server_jobs_did() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+
+    let (code, body) = h.get("/api/admin/server", Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(body["recorded"], json!(false), "no log yet: {body}");
+    assert_eq!(body["backup"], Value::Null);
+
+    ops_log(
+        &h,
+        &[
+            (
+                "2026-10-28T03:00:00.000Z",
+                "backup",
+                true,
+                "Nightly backup copied off the server.",
+            ),
+            (
+                "2026-10-29T03:00:00.000Z",
+                "backup",
+                false,
+                "Nightly backup could not be copied off the server; it is kept on the server.",
+            ),
+            (
+                "2026-10-29T04:00:00.000Z",
+                "update",
+                false,
+                "The new image (0123456789ab) never became healthy.",
+            ),
+            (
+                "2026-10-29T04:02:00.000Z",
+                "rollback",
+                true,
+                "Back on the previous image.",
+            ),
+        ],
+    );
+    // A torn line from a script killed half way does not hide the rest.
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(frog::ops::log_path(&h.state.config.database_url).unwrap())
+        .and_then(|mut f| std::io::Write::write_all(&mut f, b"{\"at\":\"2026-10-29T05"))
+        .unwrap();
+
+    let (_, body) = h.get("/api/admin/server", Some(&owner)).await;
+    assert_eq!(body["recorded"], json!(true));
+    assert_eq!(body["backup"]["ok"], json!(false), "{body}");
+    assert_eq!(body["backup"]["at"], "2026-10-29T03:00:00.000Z");
+    assert_eq!(body["update"]["ok"], json!(false));
+    assert_eq!(body["rollback"]["reason"], "Back on the previous image.");
+
+    let (code, _) = h.get("/api/admin/server", Some(&guest)).await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    let (code, _) = h.get("/api/admin/server", None).await;
+    assert_eq!(code, StatusCode::UNAUTHORIZED);
+}
+
+/// Each failure reaches administrators once: not again on the next check,
+/// and not again when the update timer retries the same broken release.
+#[tokio::test]
+async fn administrators_are_told_about_each_failure_once() {
+    let h = Harness::new().await;
+    two_accounts(&h).await;
+    let owner_id = 1;
+    let told = || frog::jobs::report_ops_failures(&h.state);
+
+    assert_eq!(told().await.unwrap(), vec![], "no log, nothing to do");
+
+    // The first look starts from now rather than replaying old history.
+    ops_log(
+        &h,
+        &[(
+            "2026-10-27T03:00:00.000Z",
+            "backup",
+            false,
+            "An old failure.",
+        )],
+    );
+    assert_eq!(
+        told().await.unwrap(),
+        vec![(owner_id, 0)],
+        "only administrators"
+    );
+
+    let broken = "The new image (0123456789ab) never became healthy.";
+    ops_log(
+        &h,
+        &[
+            ("2026-10-29T04:00:00.000Z", "update", false, broken),
+            (
+                "2026-10-29T04:02:00.000Z",
+                "rollback",
+                true,
+                "Back on the previous image.",
+            ),
+        ],
+    );
+    assert_eq!(told().await.unwrap(), vec![(owner_id, 1)]);
+    assert_eq!(told().await.unwrap(), vec![(owner_id, 0)], "not twice");
+
+    // The timer tries the same release again a quarter of an hour later.
+    ops_log(&h, &[("2026-10-29T04:15:00.000Z", "update", false, broken)]);
+    assert_eq!(
+        told().await.unwrap(),
+        vec![(owner_id, 0)],
+        "a repeat is not news"
+    );
+
+    // A different release failing is.
+    ops_log(
+        &h,
+        &[(
+            "2026-10-29T06:00:00.000Z",
+            "update",
+            false,
+            "The new image (ba9876543210) never became healthy.",
+        )],
+    );
+    assert_eq!(told().await.unwrap(), vec![(owner_id, 1)]);
+
+    // So is the same failure coming back after things worked again.
+    ops_log(
+        &h,
+        &[
+            (
+                "2026-10-30T03:00:00.000Z",
+                "backup",
+                true,
+                "Nightly backup copied off the server.",
+            ),
+            (
+                "2026-10-31T03:00:00.000Z",
+                "backup",
+                false,
+                "An old failure.",
+            ),
+        ],
+    );
+    assert_eq!(told().await.unwrap(), vec![(owner_id, 1)]);
 }
 
 #[tokio::test]

@@ -8,6 +8,7 @@
 	import Poster from '#lib/components/Poster.svelte';
 	import ShelfRules from '#lib/components/ShelfRules.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
+	import { failure, type Failure } from '#lib/failure';
 	import { year, plural } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 	import { moved, sortable } from '#lib/sortable';
@@ -20,7 +21,7 @@
 	let shelf = $state<Shelf | null>(null);
 	let items = $state<LibraryItem[]>([]);
 	let loading = $state(true);
-	let error = $state<string | null>(null);
+	let error = $state<Failure | null>(null);
 	let editing = $state(false);
 	let editingRules = $state(page.url.searchParams.get('edit') === '1');
 	let renaming = $state(false);
@@ -33,7 +34,10 @@
 			items = r.items;
 			error = null;
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Could not load this shelf';
+			error = failure(e, {
+				title: 'No shelf here',
+				hint: 'It may have been deleted, or it belongs to someone else.'
+			});
 		} finally {
 			loading = false;
 		}
@@ -129,7 +133,9 @@
 </script>
 
 <svelte:head>
-	<title>{shelf ? `${shelf.name} · Frog` : 'Shelf · Frog'}</title>
+	<title
+		>{shelf ? `${shelf.name} · Frog` : error ? `${error.heading} · Frog` : 'Shelf · Frog'}</title
+	>
 </svelte:head>
 
 <div class="page">
@@ -138,8 +144,15 @@
 	{#if loading}
 		<Spinner label="Loading shelf" />
 	{:else if error || !shelf}
-		<Empty title="Could not load this shelf" hint={error ?? undefined}>
-			<a class="btn" href="/shelves">All shelves</a>
+		<Empty
+			art={error && !error.missing ? 'rest' : 'search'}
+			title={error?.title ?? 'No shelf here'}
+			hint={error?.hint}
+		>
+			{#if error && !error.missing}
+				<button class="btn primary" onclick={load}>Try again</button>
+			{/if}
+			<a class="btn" class:primary={!error || error.missing} href="/shelves">All shelves</a>
 		</Empty>
 	{:else}
 		<div class="head">

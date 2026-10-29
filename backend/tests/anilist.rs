@@ -1626,6 +1626,12 @@ async fn an_entry_tmdb_lacks_is_kept_and_linked_once_tmdb_has_it() {
     assert_eq!(kept["total_episodes"], json!(16), "{kept}");
     let page = h.get("/api/titles/tv/-99423", &cookie).await;
     assert_eq!(page["anilist_only"], json!(true), "{page}");
+    let found = h.get("/api/library?q=angels%20of%20DEATH", &cookie).await;
+    assert_eq!(
+        found["items"].as_array().map(Vec::len),
+        Some(1),
+        "found by name like any title: {found}"
+    );
     let entry = h.entry(&cookie, 99423).await;
     assert_eq!(entry["kept"]["tmdb_id"], json!(-99423), "{entry}");
     assert_eq!(entry["state"], json!("unsure"));

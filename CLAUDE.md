@@ -107,10 +107,12 @@ each with its own throwaway database.
   plain HTTP, so it works on the deployed site and on localhost, but not over
   a bare IP. About shows the status.
 - **The deployed Content-Security-Policy has broken the site three times.**
-  It is sent by Caddy, so nothing local ever sees it: not a dev build, not the
-  audit, not Playwright. Anything the browser fetches from another origin, and
-  any inline script, has to be named in `deploy/caddy/Caddyfile` or it fails
-  only once it is live.
+  It is sent by Caddy, so a dev build never sees it. `npm run audit` and the
+  Playwright suite read it from `deploy/caddy/Caddyfile`
+  (`frontend/scripts/caddy-csp.mjs`), serve every page with it and fail on
+  anything it blocks. Anything the browser fetches from another origin, and
+  any inline script, still has to be named there. A request that only happens
+  on a click is checked only if the audit's `ACTIONS` presses that button.
 
 ## Conventions
 

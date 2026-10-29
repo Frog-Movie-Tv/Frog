@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { enforceDeployedCsp } from '../scripts/caddy-csp.mjs';
 
 /**
  * These run against the real Rust binary with an empty database and no TMDB
@@ -13,6 +14,17 @@ const PASS = 'a-long-enough-pass';
 // The database is created once per run, so the very first test does setup and
 // the rest reuse the session via the browser context.
 test.describe.configure({ mode: 'serial' });
+
+// Every page is served with the policy Caddy sends the live site, read from
+// deploy/caddy/Caddyfile, and anything it blocks fails the test. Nothing else
+// local ever sees that header, and it has broken the live site three times.
+let blocked: string[] = [];
+test.beforeEach(async ({ context, baseURL }) => {
+	blocked = await enforceDeployedCsp(context, baseURL ?? '');
+});
+test.afterEach(() => {
+	expect(blocked, 'blocked by the deployed Content-Security-Policy').toEqual([]);
+});
 
 // Retrying this one is pointless: the suite is serial and shares one
 // instance, so by the second attempt the account exists and the instance
@@ -105,6 +117,31 @@ test('every page names itself in the browser tab', async ({ page }) => {
 	] as const) {
 		await page.goto(path);
 		await expect(page).toHaveTitle(expected);
+	}
+});
+
+test('an unknown address says so and leads home', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/no-such-page');
+
+	await expect(page).toHaveTitle(/^Not found · Frog$/);
+	await expect(page.getByRole('heading', { name: 'Nothing here' })).toBeVisible();
+	await page.getByRole('link', { name: 'Go home' }).click();
+	await expect(page).toHaveURL(/\/$/);
+});
+
+test('a bad title or shelf address reads like Frog, not like the server', async ({ page }) => {
+	await signIn(page);
+
+	for (const [path, heading] of [
+		['/title/book/1', "That isn't a film or a show"],
+		['/title/movie/abc', "This title isn't on TMDB"],
+		['/shelves/99999', 'No shelf here']
+	] as const) {
+		await page.goto(path);
+		await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+		await expect(page).toHaveTitle(/^Not found · Frog$/);
+		await expect(page.getByText(/must be|Request failed|no such/i)).toHaveCount(0);
 	}
 });
 
@@ -358,6 +395,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/account/sessions',
 		'/api/admin/users',
 		'/api/admin/instance',
+		'/api/admin/server',
 		'/api/profiles',
 		'/api/profiles/someone',
 		'/api/profiles/someone/images/avatar',

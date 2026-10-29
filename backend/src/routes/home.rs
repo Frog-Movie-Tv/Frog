@@ -7,18 +7,7 @@ use sqlx::SqlitePool;
 use crate::auth::Auth;
 use crate::error::AppResult;
 use crate::state::AppState;
-use crate::store::{self, LibraryItem, TitleRow};
-
-/// The next episode of a show, and whether it is out yet.
-#[derive(Debug, Serialize, Clone)]
-pub struct NextEpisode {
-    pub season_number: i64,
-    pub episode_number: i64,
-    pub name: Option<String>,
-    pub still_path: Option<String>,
-    pub air_date: Option<String>,
-    pub aired: bool,
-}
+use crate::store::{self, LibraryItem, NextEpisode, TitleRow};
 
 #[derive(Debug, Serialize)]
 pub struct UpNext {
@@ -44,16 +33,6 @@ pub struct Airing {
 
 /// (title_id, season, episode, name, air_date)
 type AiringRow = (i64, i64, i64, Option<String>, Option<String>);
-
-/// (season, episode, name, still_path, air_date, aired)
-type NextRow = (
-    i64,
-    i64,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    i64,
-);
 
 const TITLE_COLUMNS: &str = "t.id, t.kind, t.tmdb_id, t.name, t.overview, t.poster_path,
         t.backdrop_path, t.logo_path, t.release_date, t.last_air_date, t.tmdb_status, t.runtime,
@@ -85,7 +64,7 @@ pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
     for row in watching {
         let id = row.id;
         let item = store::build_item(pool, me, row).await?;
-        let next = next_episode(pool, me, id).await?;
+        let next = store::next_episode(pool, me, id).await?;
         in_flight.push(UpNext { item, next });
     }
 
@@ -336,46 +315,6 @@ async fn items(pool: &SqlitePool, sql: &str, user_id: i64) -> AppResult<Vec<Libr
         out.push(store::build_item(pool, user_id, row).await?);
     }
     Ok(out)
-}
-
-async fn next_episode(
-    pool: &SqlitePool,
-    user_id: i64,
-    title_id: i64,
-) -> AppResult<Option<NextEpisode>> {
-    let row: Option<NextRow> = sqlx::query_as(concat!(
-        "SELECT e.season_number,
-                e.episode_number,
-                e.name,
-                e.still_path,
-                e.air_date,
-                CASE WHEN ",
-        crate::released!(),
-        " THEN 1 ELSE 0 END
-           FROM episode e
-          WHERE e.title_id = ?
-            AND e.season_number > 0
-            AND NOT EXISTS (
-                  SELECT 1 FROM watch_event w
-                   WHERE w.user_id = ? AND w.episode_id = e.id)
-          ORDER BY e.season_number, e.episode_number
-          LIMIT 1"
-    ))
-    .bind(title_id)
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
-
-    Ok(row.map(
-        |(season_number, episode_number, name, still_path, air_date, aired)| NextEpisode {
-            season_number,
-            episode_number,
-            name,
-            still_path,
-            air_date,
-            aired: aired == 1,
-        },
-    ))
 }
 
 #[cfg(test)]
