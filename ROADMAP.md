@@ -134,6 +134,11 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   `npm test` runs it against `tests/fixtures/netflix-viewing-history.csv`,
   real titles with made-up dates; `node --test` reads the TypeScript directly
   through `tests/ts-paths.mjs`.
+- **A page that cannot load never shows the server's message.**
+  `lib/failure.ts` picks the words from the status (404 and 400 are the
+  page's own "isn't on TMDB" line; 502, 503 and offline have their own), and
+  the server keeps the detail in its log. Unknown addresses land on
+  `routes/+error.svelte`.
 - **Imported shows get no title-level diary entry.** `apply` only writes one
   for films; a show's watches are its episodes, and a title-level watch
   would count the show as a film in Stats.
