@@ -1786,6 +1786,174 @@ async fn migrations_differing_only_in_line_endings_are_accepted() {
 }
 
 // ---------------------------------------------------------------------------
+// Up next.
+// ---------------------------------------------------------------------------
+
+/// A signed-in owner watching a show of three aired seasons of four episodes,
+/// plus a special. Returns the cookie.
+async fn watching_a_long_show(h: &Harness) -> String {
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let pool = &h.state.pool;
+    sqlx::query("INSERT INTO title (id, kind, tmdb_id, name) VALUES (1, 'tv', 60572, 'Pokémon')")
+        .execute(pool)
+        .await
+        .unwrap();
+    for season in 0..=3 {
+        for episode in 1..=4 {
+            sqlx::query(
+                "INSERT INTO episode (title_id, season_number, episode_number, air_date)
+                 VALUES (1, ?, ?, '2020-01-01')",
+            )
+            .bind(season)
+            .bind(episode)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+    }
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, 1, 'watching', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    cookie.unwrap()
+}
+
+/// Record watches: (season, episode, when), `None` for an undated one.
+async fn watched(h: &Harness, watches: &[(i64, i64, Option<&str>)]) {
+    for (season, episode, at) in watches {
+        sqlx::query(
+            "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                      source, undated)
+             SELECT 1, 1, id, ?, 0, 'manual', ?
+               FROM episode WHERE title_id = 1 AND season_number = ? AND episode_number = ?",
+        )
+        .bind(at.unwrap_or("2026-10-29T12:00:00Z"))
+        .bind(at.is_none())
+        .bind(season)
+        .bind(episode)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    }
+}
+
+async fn next_up(h: &Harness) -> Option<(i64, i64)> {
+    frog::store::next_episode(&h.state.pool, 1, 1)
+        .await
+        .unwrap()
+        .map(|n| (n.season_number, n.episode_number))
+}
+
+async fn clear_watches(h: &Harness) {
+    sqlx::query("DELETE FROM watch_event WHERE user_id = 1")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+}
+
+/// Watched in order, the next episode is simply the next one, across a
+/// season boundary, and a show not started begins at the beginning.
+#[tokio::test]
+async fn up_next_follows_a_show_watched_in_order() {
+    let h = Harness::new().await;
+    watching_a_long_show(&h).await;
+
+    assert_eq!(next_up(&h).await, Some((1, 1)), "nothing watched yet");
+
+    watched(
+        &h,
+        &[
+            (1, 1, Some("2026-01-01T20:00:00Z")),
+            (1, 2, Some("2026-01-02T20:00:00Z")),
+        ],
+    )
+    .await;
+    assert_eq!(next_up(&h).await, Some((1, 3)));
+
+    watched(
+        &h,
+        &[
+            (1, 3, Some("2026-01-03T20:00:00Z")),
+            (1, 4, Some("2026-01-04T20:00:00Z")),
+        ],
+    )
+    .await;
+    assert_eq!(next_up(&h).await, Some((2, 1)), "on to the next season");
+
+    // A special never counts as where you are.
+    watched(&h, &[(0, 4, Some("2026-01-05T20:00:00Z"))]).await;
+    assert_eq!(next_up(&h).await, Some((2, 1)));
+}
+
+/// After an import, up next follows the latest watching, not the first gap
+/// left somewhere early in the show.
+#[tokio::test]
+async fn up_next_continues_from_the_latest_watch_not_the_first_gap() {
+    let h = Harness::new().await;
+    watching_a_long_show(&h).await;
+
+    // Undated, as an import ticks them: two from season 1, most of season 3.
+    watched(
+        &h,
+        &[(1, 1, None), (1, 2, None), (3, 1, None), (3, 2, None)],
+    )
+    .await;
+    assert_eq!(next_up(&h).await, Some((3, 3)), "not S01E03");
+
+    // Dated: the most recent watch decides, wherever it is in the show.
+    clear_watches(&h).await;
+    watched(
+        &h,
+        &[
+            (2, 2, Some("2026-03-01T20:00:00Z")),
+            (1, 1, Some("2026-01-01T20:00:00Z")),
+            (1, 2, Some("2026-01-02T20:00:00Z")),
+        ],
+    )
+    .await;
+    assert_eq!(next_up(&h).await, Some((2, 3)));
+
+    // A dated watch earlier in the show than the furthest undated one does
+    // not pull it back.
+    watched(&h, &[(3, 3, None)]).await;
+    assert_eq!(next_up(&h).await, Some((3, 4)));
+
+    // Nothing left after where you are: back to what was skipped.
+    watched(&h, &[(3, 4, Some("2026-03-02T20:00:00Z"))]).await;
+    assert_eq!(next_up(&h).await, Some((1, 3)));
+}
+
+/// Home shows the same episode the title page does.
+#[tokio::test]
+async fn home_continues_from_where_you_are() {
+    let h = Harness::new().await;
+    let cookie = watching_a_long_show(&h).await;
+    watched(&h, &[(1, 1, None), (3, 1, None)]).await;
+
+    let (status, body) = h.get("/api/home", Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    // The only show in progress leads Home, so it is the hero.
+    let next = &body["hero"]["next"];
+    assert_eq!(
+        (
+            next["season_number"].as_i64(),
+            next["episode_number"].as_i64()
+        ),
+        (Some(3), Some(2)),
+        "{body}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Isolation between accounts.
 //
 // Frog was single-user, so these are the tests that have to keep being true:

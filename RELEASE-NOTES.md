@@ -18,6 +18,9 @@ In progress.
   right season with the episodes you saw, found by their names and kept on
   the day you watched them, films keep their day too, and anything Netflix
   leaves unclear is set aside for you to check.
+- **Up next picks up where you are.** It follows your latest episode rather
+  than the first one you skipped, and only goes back for what you missed once
+  you're caught up.
 
 ## [0.7.0] — Treefrog — 2026-10-28
 
