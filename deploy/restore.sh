@@ -16,6 +16,8 @@ DIR="$ROOT/$INSTANCE"
 STORE="$ROOT/backups/$INSTANCE"
 
 log() { echo "[$(date -Is)] $*"; }
+# shellcheck source=ops-log.sh
+. "$ROOT/deploy/ops-log.sh"
 
 if [ "$WHICH" = "--list" ]; then
 	ls -1t "$STORE"/*.age 2>/dev/null || echo "no backups in $STORE"
@@ -74,10 +76,12 @@ for _ in $(seq 1 60); do
 	if docker compose exec -T frog curl -fsS http://127.0.0.1:8080/healthz > /dev/null 2>&1; then
 		log "restored and healthy"
 		log "the database it replaced is kept beside it as frog.db.replaced-*"
+		ops_record "$VOLUME" restore true "Restored by hand from $(basename "$ARCHIVE")."
 		exit 0
 	fi
 	sleep 2
 done
 
 log "it did not come back healthy; check: docker compose logs frog"
+ops_record "$VOLUME" restore false "A restore by hand from $(basename "$ARCHIVE") did not come back healthy."
 exit 1

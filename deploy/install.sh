@@ -18,7 +18,7 @@ step "packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
-	ca-certificates curl git gnupg sqlite3 age fail2ban \
+	ca-certificates curl git gnupg sqlite3 age openssh-client fail2ban \
 	unattended-upgrades netfilter-persistent iptables-persistent
 
 step "docker"
@@ -92,6 +92,18 @@ if [ ! -f "$ROOT/backup.env" ]; then
 	echo "    created $ROOT/backup.env — fill it in"
 fi
 chmod 600 "$ROOT/backup.env"
+
+step "backup key"
+# Used for one thing: pushing encrypted backups to the private backup
+# repository, where its public half is a deploy key. backup-repo.sh connects
+# them; docs/DEPLOY-ORACLE.md has the steps.
+if [ ! -f "$ROOT/backup-key" ]; then
+	ssh-keygen -q -t ed25519 -N "" -C "frog-backup@$(hostname)" -f "$ROOT/backup-key"
+	echo "    created $ROOT/backup-key"
+fi
+chmod 600 "$ROOT/backup-key"
+echo "    its public half, to add as a deploy key with write access:"
+sed 's/^/      /' "$ROOT/backup-key.pub"
 
 step "network"
 docker network inspect frog-edge > /dev/null 2>&1 || docker network create frog-edge

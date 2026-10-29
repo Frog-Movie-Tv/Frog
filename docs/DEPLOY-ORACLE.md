@@ -360,10 +360,47 @@ With any of the three missing, AniList simply does not appear in Settings.
 
 ### 7. The backup repository
 
-1. Create a **private** repository, e.g. `Frog-Movie-Tv/frog-backups`.
-2. Add a deploy key with write access, using a key generated on the server:
-   `sudo -u root ssh-keygen -t ed25519 -f /root/.ssh/backup -N ""`
-3. `sudo git clone git@github.com:Frog-Movie-Tv/frog-backups.git /opt/frog/backup-repo`
+Backups are encrypted on the server, kept there for 30 days, and pushed to a
+private repository, which is the copy that survives losing the machine. The
+server reaches it with a deploy key of its own, `/opt/frog/backup-key`, that
+`install.sh` creates and prints.
+
+1. Create a **private**, empty repository, e.g. `Frog-Movie-Tv/frog-backups`
+   (on your computer: `gh repo create Frog-Movie-Tv/frog-backups --private`).
+2. In that repository: **Settings → Deploy keys → Add deploy key**. Paste the
+   output of `sudo cat /opt/frog/backup-key.pub`, and tick **Allow write
+   access**.
+3. On the server, connect it. This clones it with the key, proves the key can
+   push, and records it in `backup.env`:
+
+   ```bash
+   sudo /opt/frog/deploy/backup-repo.sh git@github.com:Frog-Movie-Tv/frog-backups.git
+   ```
+
+4. Make a backup and see it arrive in the repository:
+
+   ```bash
+   sudo /opt/frog/deploy/backup.sh production manual
+   ```
+
+   Administration → Server should say "Manual backup copied off the server",
+   or, with the label `nightly`, "Nightly backup copied off the server".
+
+A backup leaves out TMDB's cached answers and the cached posters: they are
+most of the database (133 MB of 151 for a library of 611 titles) and Frog
+fetches them again by itself. That library backs up in about 3 MB.
+
+**The repository still grows**, because git keeps every backup it was ever
+sent, even after the 30-day clean-up removes them from the working tree.
+Somewhere around a gigabyte, start its history over with only the last 30
+days:
+
+```bash
+cd /opt/frog/backup-repo
+sudo git checkout -q --orphan fresh && sudo git commit -qm "backups: the last 30 days"
+sudo git branch -D main && sudo git branch -m main
+sudo GIT_SSH_COMMAND="ssh -i /opt/frog/backup-key -o IdentitiesOnly=yes" git push -f origin main
+```
 
 ### 8. Start it
 
@@ -397,15 +434,44 @@ closes for good once an account exists.
 
 ### 10. Test the restore, before you need it
 
-A backup nobody has restored is a rumour:
+A backup nobody has restored is a rumour. Restore the copy in the backup
+repository, the one that survives losing the machine, into a throwaway
+instance beside production, so production is never touched:
 
 ```bash
-sudo /opt/frog/deploy/backup.sh staging manual
-sudo /opt/frog/deploy/restore.sh staging latest
+# A throwaway instance: its own container and volume, not reachable from outside.
+sudo mkdir -p /opt/frog/restoretest
+sudo cp /opt/frog/production/compose.yml /opt/frog/production/.env /opt/frog/restoretest/
+sudo sed -i 's/^COMPOSE_PROJECT_NAME=.*/COMPOSE_PROJECT_NAME=frog-restoretest/' /opt/frog/restoretest/.env
+cd /opt/frog/restoretest && sudo docker compose up -d
+
+# The newest backup, fetched from the repository rather than this disk.
+sudo GIT_SSH_COMMAND="ssh -i /opt/frog/backup-key -o IdentitiesOnly=yes" \
+  git clone -q git@github.com:Frog-Movie-Tv/frog-backups.git /tmp/frog-backups-check
+ARCHIVE="$(ls -1t /tmp/frog-backups-check/production/*.age | head -1)"
+
+# Asks you to type "restoretest", then to paste the age private key and press Ctrl-D.
+sudo /opt/frog/deploy/restore.sh restoretest "$ARCHIVE"
+
+# The same accounts, library and watches as production:
+for v in frog-production_data frog-restoretest_data; do
+  echo "$v: $(sudo sqlite3 "/var/lib/docker/volumes/$v/_data/frog.db" \
+    'SELECT COUNT(*) FROM app_user; SELECT COUNT(*) FROM library_entry; SELECT COUNT(*) FROM watch_event;' | tr '\n' ' ')"
+done
+
+# And gone again.
+cd /opt/frog/restoretest && sudo docker compose down -v
+cd / && sudo rm -rf /opt/frog/restoretest /tmp/frog-backups-check
 ```
 
-It asks for the age private key and for the instance name as confirmation, and
-keeps the database it replaced beside the new one.
+Production may count a few more if somebody used Frog since the backup.
+
+**After losing the machine**, the same steps rebuild it: a new machine
+through steps 2–6, a new `backup-key` added to the repository as a deploy key
+(read access is enough), then clone the repository and run
+`restore.sh production <the newest file>` before starting the timers.
+`restore.sh` keeps whatever database it replaces beside the new one as
+`frog.db.replaced-*`.
 
 ## How updates work
 

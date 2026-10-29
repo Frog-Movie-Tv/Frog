@@ -21,11 +21,16 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 ## Next
 
-1. **Back up somewhere other than the server.** `BACKUP_REPO_DIR` is blank, so
-   nightly backups land in `/opt/frog/backups` and nowhere else — lose the
-   instance and they go with it. Needs a private repository and a deploy key.
-2. **Restore once, for real.** `restore.sh` has never been run. Do it against
-   a throwaway instance before it is ever needed in anger.
+1. **Back up somewhere other than the server — on the server.** The scripts
+   are ready (`backup-repo.sh`, the deploy key from `install.sh`, backups
+   without the caches) and a full cycle passed in Docker on 2026-10-29:
+   backup pushed over a deploy key, volume wiped, restored from a fresh
+   clone. What is left needs an owner on the server: create the private
+   repository, add the key, run `backup-repo.sh`. `docs/DEPLOY-ORACLE.md`
+   step 7 has the commands.
+2. **Restore once, for real, on the server.** Step 10 restores the copy in
+   the repository into a throwaway `restoretest` instance beside production.
+   The same commands passed in Docker; not yet run on the server.
 3. **A development AniList client.** A client has one redirect URL, and the
    one in use points at production, so AniList sign-in cannot finish on a
    laptop. Register a second client with
@@ -60,6 +65,7 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 | --- | --- |
 | **Rebase merging doubles the changelog** | "Rebase and merge" rewrites commit hashes, so a change can land twice and release-please lists both. Untick *Allow rebase merging* in the repository settings. |
 | **Backups are only on the server** | See Next 1. Until then a lost instance is a lost history. |
+| **The backup repository grows without end** | Git keeps every backup it was sent. About 3 MB a copy for 611 titles, one nightly plus one per update. `docs/DEPLOY-ORACLE.md` step 7 has the reset; doing it automatically, say yearly, is not built. |
 | **Characters come from what Frog has seen** | Search finds anime characters through AniList, and everyone else from the casts of titles somebody on this Frog has opened. TMDB has no character search. |
 | **No staging** | 954 MB will not carry a second instance. `install.sh --with-staging` sets one up if it ever moves to a bigger machine. |
 | **Notifications untested on a real phone** | Verified through FCM in Chrome; not on Android, and tapping one is untested. |

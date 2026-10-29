@@ -70,6 +70,13 @@ if [ "$(sqlite3 "$TMP/$NAME" 'PRAGMA integrity_check;')" != "ok" ]; then
 		"the copy failed its integrity check, so it was not kept."
 fi
 
+# Leave out what Frog fetches again by itself. TMDB's answers and the cached
+# posters are most of the file (133 MB of 151 for a library of 611 titles),
+# and a month of copies of them would outgrow the backup repository; without
+# them that library backs up in 3 MB. A restored Frog refills both on demand.
+# Only this copy changes, never the live database.
+sqlite3 "$TMP/$NAME" "DELETE FROM tmdb_cache; DELETE FROM image_cache; VACUUM;"
+
 gzip -9 "$TMP/$NAME"
 age --encrypt --recipient "$AGE_RECIPIENT" \
 	--output "$STORE/$NAME.gz.age" "$TMP/$NAME.gz"
@@ -79,29 +86,40 @@ log "wrote $STORE/$NAME.gz.age ($(du -h "$STORE/$NAME.gz.age" | cut -f1))"
 find "$STORE" -name '*.age' -mtime +"$KEEP_DAYS" -delete
 
 # And push to the private repository, which is the copy that survives the VM.
-if [ -n "${BACKUP_REPO_DIR:-}" ] && [ -d "$BACKUP_REPO_DIR/.git" ]; then
+# backup-repo.sh sets this up: a clone in BACKUP_REPO_DIR, reached with the
+# deploy key in BACKUP_SSH_KEY and nothing else.
+if [ -z "${BACKUP_REPO_DIR:-}" ]; then
+	log "BACKUP_REPO_DIR is not set up; keeping the local copy only"
+elif [ ! -d "$BACKUP_REPO_DIR/.git" ]; then
+	log "WARNING: BACKUP_REPO_DIR=$BACKUP_REPO_DIR is not a clone; run backup-repo.sh"
+	PUSHED=failed
+else
+	if [ -n "${BACKUP_SSH_KEY:-}" ]; then
+		export GIT_SSH_COMMAND="ssh -i $BACKUP_SSH_KEY -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+	fi
 	cd "$BACKUP_REPO_DIR"
 	mkdir -p "$INSTANCE"
 	cp "$STORE/$NAME.gz.age" "$INSTANCE/"
-	# Thirty days there too, so the repository does not grow without end.
+	# Thirty days in the working tree. Git history keeps the older ones, so the
+	# repository still grows; docs/DEPLOY-ORACLE.md says how to trim it.
 	find "$INSTANCE" -name '*.age' -mtime +"$KEEP_DAYS" -delete
 	git add -A
-	if git diff --cached --quiet; then
-		log "nothing new to push"
-		PUSHED=pushed
-	else
+	if ! git diff --cached --quiet; then
 		git -c user.name='frog-backup' -c user.email='backup@frog.invalid' \
 			commit -q -m "backup: $INSTANCE $STAMP ($LABEL)"
-		if git push -q origin HEAD 2>/dev/null; then
-			log "pushed to the backup repository"
-			PUSHED=pushed
-		else
-			log "WARNING: could not push the backup; the local copy is kept"
-			PUSHED=failed
-		fi
 	fi
-else
-	log "BACKUP_REPO_DIR is not set up; keeping the local copy only"
+	# Always push: a copy that failed to go out last time goes out now. When
+	# the other instance pushed in between, catch up once and try again.
+	if git push -q origin HEAD 2> "$TMP/push.err" \
+		|| { git pull -q --rebase origin HEAD 2>> "$TMP/push.err" \
+			&& git push -q origin HEAD 2>> "$TMP/push.err"; }; then
+		log "pushed to the backup repository"
+		PUSHED=pushed
+	else
+		log "WARNING: could not push the backup; the local copy is kept"
+		sed 's/^/    /' "$TMP/push.err"
+		PUSHED=failed
+	fi
 fi
 
 # One line beside the database, read by the admin page: when, why, and whether
