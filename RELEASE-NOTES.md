@@ -22,6 +22,9 @@ In progress.
   and capitals, so "pokemon" finds Pokémon and "shippuden" finds Shippūden.
 - **Pages that aren't there say so.** A mistyped address, or a title, person,
   studio or shelf that doesn't exist, gets a clear page with the way home.
+- **Up next picks up where you are.** It follows your latest episode rather
+  than the first one you skipped, and only goes back for what you missed once
+  you're caught up.
 
 ## [0.7.0] — Treefrog — 2026-10-28
 

@@ -457,6 +457,109 @@ pub async fn progress(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppResu
     })
 }
 
+/// The next episode of a show, and whether it is out yet.
+#[derive(Debug, Serialize, Clone)]
+pub struct NextEpisode {
+    pub season_number: i64,
+    pub episode_number: i64,
+    pub name: Option<String>,
+    pub still_path: Option<String>,
+    pub air_date: Option<String>,
+    pub aired: bool,
+}
+
+/// (season, episode, name, still_path, air_date, aired)
+type NextRow = (
+    i64,
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    i64,
+);
+
+/// The episode to watch next: the first unwatched one after where you are,
+/// not the first gap anywhere in the show. An import that ticks season 23 of
+/// Pokémon but only the first two episodes of season 1 is at season 23.
+///
+/// Where you are is the most recently watched episode, by date. Undated
+/// watches (imports, bulk ticks) say how far you got but not when, so the
+/// furthest of them counts when it lies beyond the dated one. Only when
+/// nothing after that is left unwatched does it fall back to the first gap.
+pub async fn next_episode(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+) -> AppResult<Option<NextEpisode>> {
+    let latest: Option<(i64, i64)> = sqlx::query_as(
+        "SELECT e.season_number, e.episode_number
+           FROM watch_event w
+           JOIN episode e ON e.id = w.episode_id
+          WHERE w.user_id = ? AND e.title_id = ? AND e.season_number > 0 AND w.undated = 0
+          ORDER BY w.watched_at DESC, e.season_number DESC, e.episode_number DESC
+          LIMIT 1",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .fetch_optional(pool)
+    .await?;
+    let furthest_undated: Option<(i64, i64)> = sqlx::query_as(
+        "SELECT e.season_number, e.episode_number
+           FROM watch_event w
+           JOIN episode e ON e.id = w.episode_id
+          WHERE w.user_id = ? AND e.title_id = ? AND e.season_number > 0 AND w.undated = 1
+          ORDER BY e.season_number DESC, e.episode_number DESC
+          LIMIT 1",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .fetch_optional(pool)
+    .await?;
+    // Tuples compare season first, then episode.
+    let here = latest.max(furthest_undated);
+
+    const NEXT: &str = "SELECT e.season_number, e.episode_number, e.name, e.still_path, e.air_date,
+                CASE WHEN e.air_date IS NULL OR e.air_date <= date('now') THEN 1 ELSE 0 END
+           FROM episode e
+          WHERE e.title_id = ?1
+            AND e.season_number > 0
+            AND (e.season_number > ?3 OR (e.season_number = ?3 AND e.episode_number > ?4))
+            AND NOT EXISTS (
+                  SELECT 1 FROM watch_event w
+                   WHERE w.user_id = ?2 AND w.episode_id = e.id)
+          ORDER BY e.season_number, e.episode_number
+          LIMIT 1";
+    let (season, episode) = here.unwrap_or((0, 0));
+    let mut row: Option<NextRow> = sqlx::query_as(NEXT)
+        .bind(title_id)
+        .bind(user_id)
+        .bind(season)
+        .bind(episode)
+        .fetch_optional(pool)
+        .await?;
+    if row.is_none() && here.is_some() {
+        // Caught up from where you are: whatever was skipped on the way.
+        row = sqlx::query_as(NEXT)
+            .bind(title_id)
+            .bind(user_id)
+            .bind(0)
+            .bind(0)
+            .fetch_optional(pool)
+            .await?;
+    }
+
+    Ok(row.map(
+        |(season_number, episode_number, name, still_path, air_date, aired)| NextEpisode {
+            season_number,
+            episode_number,
+            name,
+            still_path,
+            air_date,
+            aired: aired == 1,
+        },
+    ))
+}
+
 pub async fn last_watched_at(
     pool: &SqlitePool,
     user_id: i64,

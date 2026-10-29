@@ -64,6 +64,7 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 | **No staging** | 954 MB will not carry a second instance. `install.sh --with-staging` sets one up if it ever moves to a bigger machine. |
 | **Notifications untested on a real phone** | Verified through FCM in Chrome; not on Android, and tapping one is untested. |
 | **Server messages are English only** | Validation errors and notification text. Fine while the interface is English only. |
+| **One AniList test is flaky** | `a_tmdb_outage_is_retried_not_left_for_the_person` failed once in a full `cargo test` on 2026-10-29 and passed alone and on the rerun. It races the other tests over account 1's sync flag. |
 
 ## Not doing
 
@@ -146,6 +147,12 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   page's own "isn't on TMDB" line; 502, 503 and offline have their own), and
   the server keeps the detail in its log. Unknown addresses land on
   `routes/+error.svelte`.
+- **Up next** (`store::next_episode`, shared by Home and the title page) is
+  the first unwatched episode after where you are: the latest dated watch,
+  or the furthest undated one when that lies later in the show. Only once
+  nothing after it is left does it go back to the first gap. On the
+  611-title Netflix library this moved 17 of 204 shows in progress, each to
+  the episode after the furthest watched, and changed nothing else.
 - **Imported shows get no title-level diary entry.** `apply` only writes one
   for films; a show's watches are its episodes, and a title-level watch
   would count the show as a film in Stats.
