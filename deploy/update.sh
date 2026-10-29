@@ -15,6 +15,17 @@ DIR="$ROOT/$INSTANCE"
 cd "$DIR"
 
 log() { echo "[$(date -Is)] $*"; }
+# shellcheck source=ops-log.sh
+. "$ROOT/deploy/ops-log.sh"
+
+# Where the database lives, which is also where outcomes are recorded for
+# Frog to read (see ops-log.sh).
+VOLUME="$(docker volume inspect --format '{{.Mountpoint}}' \
+	"${COMPOSE_PROJECT_NAME:-frog-$INSTANCE}_data" 2>/dev/null || true)"
+record() { ops_record "$VOLUME" "$@"; }
+
+# The image's own digest, short enough to read in a notification.
+short() { printf '%s' "${1##*:}" | cut -c1-12; }
 
 # The digest actually running, so rollback goes back to a specific image
 # rather than to whatever the old tag points at by then.
@@ -43,6 +54,7 @@ fi
 log "backing up before the change"
 "$ROOT/deploy/backup.sh" "$INSTANCE" pre-update || {
 	log "backup failed; refusing to update"
+	record update false "The backup before updating failed, so nothing was changed."
 	exit 1
 }
 
@@ -50,8 +62,6 @@ log "backing up before the change"
 # deliberately elsewhere), so keep a plain copy too, for the one case where
 # rollback has to put the database back by itself. It sits on the same disk as
 # the live database and is removed as soon as the update is healthy.
-VOLUME="$(docker volume inspect --format '{{.Mountpoint}}' \
-	"${COMPOSE_PROJECT_NAME:-frog-$INSTANCE}_data" 2>/dev/null || true)"
 SNAPSHOT="$ROOT/backups/$INSTANCE/pre-update.db"
 if [ -z "$VOLUME" ] || [ ! -f "$VOLUME/frog.db" ]; then
 	log "could not find the database volume; refusing to update"
@@ -60,6 +70,7 @@ fi
 rm -f "$SNAPSHOT"
 (umask 077 && sqlite3 "$VOLUME/frog.db" ".backup '$SNAPSHOT'") || {
 	log "could not snapshot the database; refusing to update"
+	record update false "Could not copy the database before updating, so nothing was changed."
 	exit 1
 }
 
@@ -87,17 +98,20 @@ log "waiting for /healthz"
 if wait_healthy; then
 	version="$(docker compose exec -T frog curl -fsS http://127.0.0.1:8080/healthz 2>/dev/null || true)"
 	log "$INSTANCE is healthy: $version"
+	record update true "Now running $(printf '%s' "$version" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')."
 	rm -f "$SNAPSHOT"
 	docker image prune -f > /dev/null 2>&1 || true
 	exit 0
 fi
 
 log "the new image never became healthy; rolling back"
+record update false "The new image ($(short "$AFTER")) never became healthy."
 docker compose logs --tail 50 frog || true
 
 if [ -z "$BEFORE" ]; then
 	log "no previous image recorded; restore the database by hand:"
 	log "      $SNAPSHOT (plain), or $ROOT/deploy/restore.sh $INSTANCE latest"
+	record rollback false "No previous image to go back to; it needs a person."
 	exit 1
 fi
 
@@ -106,6 +120,7 @@ fi
 up_previous
 if wait_healthy; then
 	log "rolled back to $BEFORE; the newer migrations stay applied"
+	record rollback true "Back on the previous image."
 	rm -f "$SNAPSHOT"
 	exit 1
 fi
@@ -113,6 +128,7 @@ fi
 # The previous binary will not run on what the new one left behind, so put the
 # database back as it was before the update.
 log "the previous image is not healthy either; restoring the pre-update database"
+record rollback false "The previous image did not start on the updated database."
 docker compose logs --tail 50 frog || true
 docker compose down
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -124,10 +140,12 @@ up_previous
 if wait_healthy; then
 	log "rolled back to $BEFORE with the pre-update database"
 	log "the database it replaced is kept as frog.db.failed-update-$STAMP"
+	record restore true "Put back the database from before the update; the previous image is running."
 	rm -f "$SNAPSHOT"
 	exit 1
 fi
 
 log "still not healthy after restoring; check: docker compose logs frog"
 log "the pre-update database is kept at $SNAPSHOT"
+record restore false "Still down after putting back the database; it needs a person."
 exit 1

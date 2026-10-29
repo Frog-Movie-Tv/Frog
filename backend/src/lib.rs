@@ -4,6 +4,7 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod jobs;
+pub mod ops;
 pub mod palette;
 pub mod push;
 pub mod routes;

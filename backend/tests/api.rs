@@ -2354,6 +2354,170 @@ async fn only_administrators_reach_the_admin_routes() {
     assert_eq!(code, StatusCode::OK);
 }
 
+// ---------------------------------------------------------------------------
+// What the server's jobs did (deploy/ops-log.sh writes it, Frog reads it).
+// ---------------------------------------------------------------------------
+
+/// Append lines to the log beside the test database, as the scripts do.
+fn ops_log(h: &Harness, lines: &[(&str, &str, bool, &str)]) {
+    use std::io::Write;
+    let path = frog::ops::log_path(&h.state.config.database_url).unwrap();
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .unwrap();
+    for (at, kind, ok, reason) in lines {
+        let line = json!({ "at": at, "kind": kind, "ok": ok, "reason": reason });
+        writeln!(file, "{line}").unwrap();
+    }
+}
+
+/// The admin page reads the latest backup, update and rollback, and nobody
+/// below administrator can.
+#[tokio::test]
+async fn administrators_see_what_the_server_jobs_did() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+
+    let (code, body) = h.get("/api/admin/server", Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(body["recorded"], json!(false), "no log yet: {body}");
+    assert_eq!(body["backup"], Value::Null);
+
+    ops_log(
+        &h,
+        &[
+            (
+                "2026-10-28T03:00:00.000Z",
+                "backup",
+                true,
+                "Nightly backup copied off the server.",
+            ),
+            (
+                "2026-10-29T03:00:00.000Z",
+                "backup",
+                false,
+                "Nightly backup could not be copied off the server; it is kept on the server.",
+            ),
+            (
+                "2026-10-29T04:00:00.000Z",
+                "update",
+                false,
+                "The new image (0123456789ab) never became healthy.",
+            ),
+            (
+                "2026-10-29T04:02:00.000Z",
+                "rollback",
+                true,
+                "Back on the previous image.",
+            ),
+        ],
+    );
+    // A torn line from a script killed half way does not hide the rest.
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(frog::ops::log_path(&h.state.config.database_url).unwrap())
+        .and_then(|mut f| std::io::Write::write_all(&mut f, b"{\"at\":\"2026-10-29T05"))
+        .unwrap();
+
+    let (_, body) = h.get("/api/admin/server", Some(&owner)).await;
+    assert_eq!(body["recorded"], json!(true));
+    assert_eq!(body["backup"]["ok"], json!(false), "{body}");
+    assert_eq!(body["backup"]["at"], "2026-10-29T03:00:00.000Z");
+    assert_eq!(body["update"]["ok"], json!(false));
+    assert_eq!(body["rollback"]["reason"], "Back on the previous image.");
+
+    let (code, _) = h.get("/api/admin/server", Some(&guest)).await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    let (code, _) = h.get("/api/admin/server", None).await;
+    assert_eq!(code, StatusCode::UNAUTHORIZED);
+}
+
+/// Each failure reaches administrators once: not again on the next check,
+/// and not again when the update timer retries the same broken release.
+#[tokio::test]
+async fn administrators_are_told_about_each_failure_once() {
+    let h = Harness::new().await;
+    two_accounts(&h).await;
+    let owner_id = 1;
+    let told = || frog::jobs::report_ops_failures(&h.state);
+
+    assert_eq!(told().await.unwrap(), vec![], "no log, nothing to do");
+
+    // The first look starts from now rather than replaying old history.
+    ops_log(
+        &h,
+        &[(
+            "2026-10-27T03:00:00.000Z",
+            "backup",
+            false,
+            "An old failure.",
+        )],
+    );
+    assert_eq!(
+        told().await.unwrap(),
+        vec![(owner_id, 0)],
+        "only administrators"
+    );
+
+    let broken = "The new image (0123456789ab) never became healthy.";
+    ops_log(
+        &h,
+        &[
+            ("2026-10-29T04:00:00.000Z", "update", false, broken),
+            (
+                "2026-10-29T04:02:00.000Z",
+                "rollback",
+                true,
+                "Back on the previous image.",
+            ),
+        ],
+    );
+    assert_eq!(told().await.unwrap(), vec![(owner_id, 1)]);
+    assert_eq!(told().await.unwrap(), vec![(owner_id, 0)], "not twice");
+
+    // The timer tries the same release again a quarter of an hour later.
+    ops_log(&h, &[("2026-10-29T04:15:00.000Z", "update", false, broken)]);
+    assert_eq!(
+        told().await.unwrap(),
+        vec![(owner_id, 0)],
+        "a repeat is not news"
+    );
+
+    // A different release failing is.
+    ops_log(
+        &h,
+        &[(
+            "2026-10-29T06:00:00.000Z",
+            "update",
+            false,
+            "The new image (ba9876543210) never became healthy.",
+        )],
+    );
+    assert_eq!(told().await.unwrap(), vec![(owner_id, 1)]);
+
+    // So is the same failure coming back after things worked again.
+    ops_log(
+        &h,
+        &[
+            (
+                "2026-10-30T03:00:00.000Z",
+                "backup",
+                true,
+                "Nightly backup copied off the server.",
+            ),
+            (
+                "2026-10-31T03:00:00.000Z",
+                "backup",
+                false,
+                "An old failure.",
+            ),
+        ],
+    );
+    assert_eq!(told().await.unwrap(), vec![(owner_id, 1)]);
+}
+
 #[tokio::test]
 async fn an_invite_works_once_and_there_is_no_open_sign_up() {
     let h = Harness::new().await;
