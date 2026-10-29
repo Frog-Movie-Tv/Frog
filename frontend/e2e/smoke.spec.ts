@@ -383,6 +383,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/account/sessions',
 		'/api/admin/users',
 		'/api/admin/instance',
+		'/api/admin/server',
 		'/api/profiles',
 		'/api/profiles/someone',
 		'/api/profiles/someone/images/avatar',

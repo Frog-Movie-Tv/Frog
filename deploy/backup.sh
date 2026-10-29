@@ -17,14 +17,35 @@ DIR="$ROOT/$INSTANCE"
 STORE="$ROOT/backups/$INSTANCE"
 KEEP_DAYS=30
 
+log() { echo "[$(date -Is)] $*"; }
+# shellcheck source=ops-log.sh
+. "$ROOT/deploy/ops-log.sh"
+
+# Where the database lives, which is also where the outcome is recorded for
+# Frog to read (see ops-log.sh).
+VOLUME="$(docker volume inspect --format '{{.Mountpoint}}' \
+	"${COMPOSE_PROJECT_NAME:-frog-$INSTANCE}_data" 2>/dev/null || true)"
+case "$LABEL" in
+	nightly) WHAT="Nightly backup" ;;
+	pre-update) WHAT="Backup before updating" ;;
+	*) WHAT="Backup" ;;
+esac
+fail() {
+	log "$1"
+	ops_record "$VOLUME" backup false "$WHAT failed: $2"
+	exit 1
+}
+# Anything else that stops the script part way is a failure too.
+trap 'ops_record "$VOLUME" backup false "$WHAT stopped at line $LINENO of backup.sh."' ERR
+
 # shellcheck source=/dev/null
 [ -f "$ROOT/backup.env" ] && . "$ROOT/backup.env"
-: "${AGE_RECIPIENT:?set AGE_RECIPIENT in /opt/frog/backup.env}"
+[ -n "${AGE_RECIPIENT:-}" ] \
+	|| fail "set AGE_RECIPIENT in /opt/frog/backup.env" "no encryption key is set up."
 
 cd "$DIR"
 mkdir -p "$STORE"
 PUSHED=local
-log() { echo "[$(date -Is)] $*"; }
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 NAME="frog-$INSTANCE-$STAMP-$LABEL.db"
@@ -35,10 +56,8 @@ trap 'rm -rf "$TMP"' EXIT
 # own online copy; it understands WAL, which cp does not — copying the file
 # under a running writer gives you a torn database that restores into nothing.
 # The image has no sqlite3, so this runs on the host against the volume.
-command -v sqlite3 > /dev/null || { log "sqlite3 is not installed"; exit 1; }
+command -v sqlite3 > /dev/null || fail "sqlite3 is not installed" "sqlite3 is not installed."
 
-VOLUME="$(docker volume inspect --format '{{.Mountpoint}}' \
-	"${COMPOSE_PROJECT_NAME:-frog-$INSTANCE}_data" 2>/dev/null || true)"
 if [ -z "$VOLUME" ] || [ ! -f "$VOLUME/frog.db" ]; then
 	log "could not find the database volume for $INSTANCE"
 	exit 1
@@ -50,8 +69,8 @@ sqlite3 "$VOLUME/frog.db" ".backup '$TMP/$NAME'"
 # Checked before it is trusted, so a corrupt database does not quietly replace
 # thirty days of good ones.
 if [ "$(sqlite3 "$TMP/$NAME" 'PRAGMA integrity_check;')" != "ok" ]; then
-	log "the snapshot failed its integrity check; not keeping it"
-	exit 1
+	fail "the snapshot failed its integrity check; not keeping it" \
+		"the copy failed its integrity check, so it was not kept."
 fi
 
 gzip -9 "$TMP/$NAME"
@@ -81,6 +100,7 @@ if [ -n "${BACKUP_REPO_DIR:-}" ] && [ -d "$BACKUP_REPO_DIR/.git" ]; then
 			PUSHED=pushed
 		else
 			log "WARNING: could not push the backup; the local copy is kept"
+			PUSHED=failed
 		fi
 	fi
 else
@@ -89,4 +109,12 @@ fi
 
 # One line beside the database, read by the admin page: when, why, and whether
 # the copy reached the backup repository.
-echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $LABEL $PUSHED" > "$VOLUME/last-backup"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $LABEL $([ "$PUSHED" = pushed ] && echo pushed || echo local)" \
+	> "$VOLUME/last-backup"
+
+case "$PUSHED" in
+	pushed) ops_record "$VOLUME" backup true "$WHAT copied off the server." ;;
+	failed) ops_record "$VOLUME" backup false \
+		"$WHAT could not be copied off the server; it is kept on the server." ;;
+	*) ops_record "$VOLUME" backup true "$WHAT kept on the server only." ;;
+esac

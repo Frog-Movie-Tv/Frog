@@ -6,7 +6,14 @@
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import { relativeDate } from '#lib/format';
-	import type { AdminUser, InstanceInfo, Invite, NewInvite } from '#lib/types';
+	import type {
+		AdminUser,
+		InstanceInfo,
+		Invite,
+		NewInvite,
+		ServerEvent,
+		ServerStatus
+	} from '#lib/types';
 
 	let invites = $state<Invite[]>([]);
 	let loading = $state(true);
@@ -22,6 +29,7 @@
 
 	let users = $state<AdminUser[]>([]);
 	let instance = $state<InstanceInfo | null>(null);
+	let server = $state<ServerStatus | null>(null);
 
 	const ROLE: Record<AdminUser['role'], string> = {
 		owner: 'Owner',
@@ -31,9 +39,10 @@
 
 	async function loadPeople() {
 		try {
-			[users, instance] = await Promise.all([
+			[users, instance, server] = await Promise.all([
 				api.adminUsers().then((r) => r.users),
-				api.instance()
+				api.instance(),
+				api.server()
 			]);
 		} catch {
 			// The invites request already reports a refusal.
@@ -348,27 +357,77 @@
 					<dd>{instance ? size(instance.image_cache_bytes) : '—'}</dd>
 				</div>
 				<div>
-					<dt>Last backup</dt>
-					<dd>
-						{#if instance?.last_backup}
-							{relativeDate(instance.last_backup.at)}{instance.last_backup.pushed
-								? ''
-								: ' · kept on the server only'}
-						{:else}
-							None recorded on this server
-						{/if}
-					</dd>
-				</div>
-				<div>
 					<dt>Updates</dt>
 					<dd><a href="/settings#this-instance">Check in Settings</a></dd>
 				</div>
 			</dl>
 		</section>
+
+		<section class="block" id="server">
+			<h2>Server</h2>
+			<dl class="facts card">
+				<div>
+					<dt>Last backup</dt>
+					<dd>
+						{#if server?.backup}
+							{@render outcome(server.backup)}
+						{:else if instance?.last_backup}
+							{relativeDate(instance.last_backup.at)}{instance.last_backup.pushed
+								? ''
+								: ' · kept on the server only'}
+						{:else}
+							None recorded yet
+						{/if}
+					</dd>
+				</div>
+				<div>
+					<dt>Last update</dt>
+					<dd>
+						{#if server?.update}
+							{@render outcome(server.update)}
+						{:else}
+							None recorded yet
+						{/if}
+					</dd>
+				</div>
+				{#if server?.rollback}
+					<div>
+						<dt>{server.rollback.kind === 'restore' ? 'Last restore' : 'Last rollback'}</dt>
+						<dd>{@render outcome(server.rollback)}</dd>
+					</div>
+				{/if}
+			</dl>
+			<p class="faint">Administrators get a notification when one of these fails.</p>
+		</section>
 	{/if}
 </div>
 
+{#snippet outcome(event: ServerEvent)}
+	<span class="outcome" class:failed={!event.ok}>
+		{#if !event.ok}<Icon name="x" size={14} />{/if}
+		<span>{event.reason}</span>
+		<span class="faint">{relativeDate(event.at)}</span>
+	</span>
+{/snippet}
+
 <style>
+	#server dt {
+		white-space: nowrap;
+	}
+
+	.outcome {
+		display: inline-flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		align-items: center;
+		gap: 4px 8px;
+		text-align: right;
+	}
+
+	.outcome.failed {
+		color: var(--bad);
+	}
+
 	/* Same frame and heading as every other page; only the column narrows. */
 	.page {
 		display: grid;

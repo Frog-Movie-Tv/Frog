@@ -79,6 +79,16 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 ## Notes that save time
 
+- **Server jobs report to Frog through `ops.jsonl`** beside the database.
+  `update.sh` and `backup.sh` append one line per outcome through
+  `deploy/ops-log.sh` (kinds: backup, update, rollback, restore). `crate::ops`
+  reads it for Administration's Server section. A watcher every 5 minutes
+  pushes each new failure to administrators once; a failure that repeats the
+  previous one of its kind (the timer retrying a broken release) stays quiet.
+  Each administrator's mark is `app_setting` key `ops_seen`. The scripts
+  reach the server only by re-running `install.sh` from a checkout, never
+  with an image update.
+
 - **Migrations are never edited once applied** — sqlx compares checksums and
   refuses to start, which takes a running instance down on its next deploy.
   Add another file. New ones get timestamped names, **digits only** before the

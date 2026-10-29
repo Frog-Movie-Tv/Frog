@@ -425,6 +425,12 @@ Nothing is open to the internet except 80 and 443, and SSH by key. The machine
   keeps the database it replaced as `frog.db.failed-update-*`, and starts the
   previous image again. The snapshot sits beside the encrypted backups only
   while an update is in flight.
+- Every outcome (backup, update, rollback, restore) is also written to
+  `ops.jsonl` in the data volume. Administration shows the latest of each
+  under Server, and administrators get a notification the first time one
+  fails. A site that is down cannot send one, so a failure that leaves Frog
+  unreachable is still only in the timer's journal:
+  `journalctl -u frog-update@production`.
 
 Staging follows `:main`, so merging a pull request puts it on staging within a
 quarter of an hour. Production follows the newest release tag, so merging the

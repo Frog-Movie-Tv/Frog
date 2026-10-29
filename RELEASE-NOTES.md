@@ -25,6 +25,9 @@ In progress.
 - **Up next picks up where you are.** It follows your latest episode rather
   than the first one you skipped, and only goes back for what you missed once
   you're caught up.
+- **Know how the server is doing.** Administration shows the last backup,
+  the last update and any rollback, and administrators get a notification
+  when one of them fails.
 
 ## [0.7.0] — Treefrog — 2026-10-28
 
