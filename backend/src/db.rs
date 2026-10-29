@@ -30,10 +30,21 @@ pub async fn connect(database_url: &str) -> anyhow::Result<SqlitePool> {
         .connect_with(opts)
         .await?;
 
-    let migrator = sqlx::migrate!("./migrations");
+    let migrator = migrator();
     heal_line_endings(&pool, &migrator).await?;
     migrator.run(&pool).await?;
     Ok(pool)
+}
+
+/// Every migration this binary carries. A database may already hold newer
+/// ones: when an update fails its health check, `deploy/update.sh` goes back
+/// to the previous image, and that binary has to start on a schema one step
+/// ahead of it rather than refuse and leave the site down. That only works
+/// because migrations stay additive (see `docs/CONTRIBUTING.md`).
+pub fn migrator() -> Migrator {
+    let mut migrator = sqlx::migrate!("./migrations");
+    migrator.set_ignore_missing(true);
+    migrator
 }
 
 /// sqlx checksums each migration byte for byte, and a Windows checkout can turn
