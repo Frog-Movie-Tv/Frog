@@ -383,8 +383,9 @@ server reaches it with a deploy key of its own, `/opt/frog/backup-key`, that
    sudo /opt/frog/deploy/backup.sh production manual
    ```
 
-   Administration → Server should say "Manual backup copied off the server",
-   or, with the label `nightly`, "Nightly backup copied off the server".
+   It should log "pushed to the backup repository", the file should be under
+   `production/` in the repository, and Administration → Server should say
+   "Backup copied off the server."
 
 A backup leaves out TMDB's cached answers and the cached posters: they are
 most of the database (133 MB of 151 for a library of 611 titles) and Frog
