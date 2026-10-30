@@ -51,6 +51,7 @@ impl Harness {
             session_days: 7,
             notify_hour: 18,
             anilist: None,
+            fanart: None,
             mdblist: None,
         };
 

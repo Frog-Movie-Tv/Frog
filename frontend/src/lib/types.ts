@@ -157,15 +157,6 @@ export interface SeasonDetail {
 	episodes: EpisodeView[];
 }
 
-export interface HeatmapCell {
-	s: number;
-	e: number;
-	rating: number | null;
-	/** TMDB's own episode score, rescaled to 0..100. */
-	tmdb: number | null;
-	watched: boolean;
-}
-
 export interface NextUp {
 	season_number: number;
 	episode_number: number;
@@ -198,7 +189,6 @@ export interface TitleDetail {
 	similar: SearchItem[];
 	collection: Collection | null;
 	next_up: NextUp | null;
-	heatmap: HeatmapCell[];
 	/** Shows only: what can be rated, season by season (or AniList part by part). */
 	ratings?: RatingUnit[];
 	/** This title has since been found on TMDB and lives there now. */

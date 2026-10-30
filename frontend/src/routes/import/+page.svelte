@@ -309,9 +309,11 @@
 </svelte:head>
 
 <div class="page">
-	<header class="head">
-		<h1>Import</h1>
-		<p class="muted">Bring a library across from another tracker, or restore a backup.</p>
+	<header class="head page-head">
+		<div>
+			<h1>Import</h1>
+			<p class="sub">Bring a library across from another tracker, or restore a backup.</p>
+		</div>
 	</header>
 
 	{#if step === 'source'}

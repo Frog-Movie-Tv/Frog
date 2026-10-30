@@ -7,11 +7,11 @@
 	import { api, frogId, img } from '#lib/api';
 	import Avatar from '#lib/components/Avatar.svelte';
 	import Empty from '#lib/components/Empty.svelte';
+	import FilterMenu from '#lib/components/FilterMenu.svelte';
 	import Grid from '#lib/components/Grid.svelte';
 	import Poster from '#lib/components/Poster.svelte';
 	import Rail from '#lib/components/Rail.svelte';
 	import RailSkeleton from '#lib/components/RailSkeleton.svelte';
-	import Select from '#lib/components/Select.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
@@ -122,7 +122,6 @@
 
 	function currentFilters(): SearchFilters {
 		return {
-			kind: tab === 'movies' ? 'movie' : tab === 'shows' ? 'tv' : undefined,
 			genres: genres.length ? genres : undefined,
 			from_year: fromYear,
 			to_year: toYear,
@@ -137,9 +136,8 @@
 	$effect(() => {
 		const q = term.trim();
 		const filtered = filterCount > 0;
-		const scope = tab === 'movies' || tab === 'shows' ? tab : '';
 		// Read here, so a change to any of them searches again.
-		void [genres.length, fromYear, toYear, minScore, statuses.length, sort, scope];
+		void [genres.length, fromYear, toYear, minScore, statuses.length, sort];
 		if (!q && !filtered) {
 			token++;
 			results = [];
@@ -203,9 +201,13 @@
 		sort = 'best';
 	}
 
-	function yearInput(value: string): number | null {
-		const n = Number(value);
-		return value.trim() && Number.isInteger(n) && n > 1800 && n < 2200 ? n : null;
+	/** A year applies as soon as all four digits are in; clearing it clears it. */
+	function yearInput(value: string, was: number | null): number | null {
+		const v = value.trim();
+		if (!v) return null;
+		const n = Number(v);
+		if (/^\d{4}$/.test(v) && n > 1800 && n < 2200) return n;
+		return was;
 	}
 
 	let token = 0;
@@ -309,6 +311,53 @@
 		members: foundMembers.length
 	});
 	const asking = $derived(!!q || filterCount > 0);
+	/** People, characters, studios and members are found by name; filters
+	 *  alone only find films and shows. */
+	const byName = (t: Tab) => !['all', 'movies', 'shows'].includes(t);
+	$effect(() => {
+		if (!q && byName(tab)) untrack(() => choose('all'));
+	});
+	/** Trending, narrowed to films or shows when that tab is open. */
+	const trendingShown = $derived(
+		tab === 'movies'
+			? trending.filter((t) => t.kind === 'movie')
+			: tab === 'shows'
+				? trending.filter((t) => t.kind === 'tv')
+				: trending
+	);
+
+	/** What each filter menu says it is set to. */
+	const genreValue = $derived(
+		genres.length === 0
+			? null
+			: genres.length === 1
+				? genres[0]
+				: `${genres[0]} +${genres.length - 1}`
+	);
+	const yearValue = $derived(
+		fromYear && toYear
+			? fromYear === toYear
+				? String(fromYear)
+				: `${fromYear}–${toYear}`
+			: fromYear
+				? `${fromYear} on`
+				: toYear
+					? `to ${toYear}`
+					: null
+	);
+	const scoreValue = $derived(
+		minScore === '0' ? null : (SCORES.find((s) => s.value === minScore)?.label ?? null)
+	);
+	const statusValue = $derived(
+		statuses.length === 0
+			? null
+			: statuses.length === 1
+				? (WHERE.find((w) => w.id === statuses[0])?.label ?? null)
+				: `${statuses.length} chosen`
+	);
+	const sortValue = $derived(
+		sort === 'best' ? null : (SORTS.find((s) => s.value === sort)?.label ?? null)
+	);
 	const nothing = $derived(
 		searched && !loading && TABS.every((t) => t.id === 'all' || counts[t.id] === 0)
 	);
@@ -496,150 +545,188 @@
 	</div>
 
 	{#if panelOpen}
-		<div class="filters card" id="search-filters">
-			<div class="group">
-				<span class="group-label">Genre</span>
-				<div class="wrap-chips">
+		<div class="filterbar" id="search-filters" aria-label="Filters">
+			<FilterMenu label="Genre" value={genreValue} wide>
+				<div class="choices">
 					{#each allGenres as g (g)}
 						<button class="chip" class:on={genres.includes(g)} onclick={() => toggleGenre(g)}>
 							{g}
 						</button>
 					{/each}
 				</div>
-			</div>
-			<div class="group">
-				<span class="group-label">In your library</span>
-				<div class="wrap-chips">
+			</FilterMenu>
+
+			<FilterMenu label="Year" value={yearValue}>
+				<div class="years">
+					<label class="field">
+						<span>From</span>
+						<input
+							class="input"
+							inputmode="numeric"
+							placeholder="Any"
+							value={fromYear ?? ''}
+							oninput={(e) => (fromYear = yearInput(e.currentTarget.value, fromYear))}
+						/>
+					</label>
+					<label class="field">
+						<span>To</span>
+						<input
+							class="input"
+							inputmode="numeric"
+							placeholder="Any"
+							value={toYear ?? ''}
+							oninput={(e) => (toYear = yearInput(e.currentTarget.value, toYear))}
+						/>
+					</label>
+				</div>
+			</FilterMenu>
+
+			<FilterMenu label="Rated" value={scoreValue}>
+				<div class="list" role="radiogroup" aria-label="Rated at least">
+					{#each SCORES as o (o.value)}
+						<button
+							class="opt"
+							role="radio"
+							aria-checked={minScore === o.value}
+							onclick={() => (minScore = o.value)}
+						>
+							<span class="tick"
+								>{#if minScore === o.value}<Icon name="check" size={15} />{/if}</span
+							>
+							{o.value === '0' ? 'Any score' : `${o.label} on TMDB`}
+						</button>
+					{/each}
+				</div>
+			</FilterMenu>
+
+			<FilterMenu label="In my library" value={statusValue}>
+				<div class="list">
 					{#each WHERE as w (w.id)}
 						<button
-							class="chip"
-							class:on={statuses.includes(w.id)}
+							class="opt"
+							role="menuitemcheckbox"
+							aria-checked={statuses.includes(w.id)}
 							onclick={() => toggleStatus(w.id)}
 						>
+							<span class="tick box" class:on={statuses.includes(w.id)}
+								>{#if statuses.includes(w.id)}<Icon name="check" size={13} />{/if}</span
+							>
 							{w.label}
 						</button>
 					{/each}
 				</div>
-			</div>
-			<div class="fields">
-				<label class="field">
-					<span class="group-label">From year</span>
-					<input
-						class="input"
-						inputmode="numeric"
-						placeholder="Any"
-						value={fromYear ?? ''}
-						onchange={(e) => (fromYear = yearInput(e.currentTarget.value))}
-					/>
-				</label>
-				<label class="field">
-					<span class="group-label">To year</span>
-					<input
-						class="input"
-						inputmode="numeric"
-						placeholder="Any"
-						value={toYear ?? ''}
-						onchange={(e) => (toYear = yearInput(e.currentTarget.value))}
-					/>
-				</label>
-				<div class="field">
-					<span class="group-label">Rated at least</span>
-					<Select
-						label="Rated at least"
-						options={SCORES}
-						value={minScore}
-						onchange={(v) => (minScore = v)}
-					/>
+			</FilterMenu>
+
+			<FilterMenu label="Sort" value={sortValue}>
+				<div class="list" role="radiogroup" aria-label="Sort by">
+					{#each SORTS as o (o.value)}
+						<button
+							class="opt"
+							role="radio"
+							aria-checked={sort === o.value}
+							onclick={() => (sort = o.value)}
+						>
+							<span class="tick"
+								>{#if sort === o.value}<Icon name="check" size={15} />{/if}</span
+							>
+							{o.label}
+						</button>
+					{/each}
 				</div>
-				<div class="field">
-					<span class="group-label">Sort by</span>
-					<Select label="Sort by" options={SORTS} value={sort} onchange={(v) => (sort = v)} />
-				</div>
-			</div>
+			</FilterMenu>
+
 			{#if filterCount}
-				<button class="link" onclick={clearFilters}>Clear filters</button>
+				<button class="link clear-all" onclick={clearFilters}>Clear filters</button>
 			{/if}
 		</div>
 	{/if}
 
-	<div class="chips tabs" role="tablist" aria-label="What to search">
+	<div class="tabbar" role="tablist" aria-label="What to search">
 		{#each TABS as t (t.id)}
 			<button
-				class="chip"
+				class="tab"
 				role="tab"
 				aria-selected={tab === t.id}
 				class:on={tab === t.id}
+				disabled={!q && byName(t.id)}
+				title={!q && byName(t.id) ? 'Type a name to find these' : undefined}
 				onclick={() => choose(t.id)}
 			>
 				{t.label}
-				{#if t.id !== 'all' && searched}<span class="count">{counts[t.id]}</span>{/if}
+				{#if t.id !== 'all' && searched && (q || !byName(t.id))}
+					<span class="count">{counts[t.id]}</span>
+				{/if}
 			</button>
 		{/each}
 	</div>
 
-	{#if session.status && !session.status.tmdb_configured}
-		<p class="notice">
-			Search is unavailable until metadata is connected.
-			<a href="/about">More</a>
-		</p>
-	{/if}
+	<div class="body">
+		<div class="results">
+			{#if session.status && !session.status.tmdb_configured}
+				<p class="notice">
+					Search is unavailable until metadata is connected.
+					<a href="/about">More</a>
+				</p>
+			{/if}
 
-	{#if !asking || !searched}
-		<!-- What was on screen stays until the first answer replaces it, so a
+			{#if !asking || !searched}
+				<!-- What was on screen stays until the first answer replaces it, so a
 		     search starting moves nothing. -->
-		<div class:dim={asking}>
-			{#if trending.length}
-				<div class="section-head"><h2>Trending this week</h2></div>
+				<div class:dim={asking}>
+					{#if trendingShown.length}
+						<div class="section-head"><h2>Trending this week</h2></div>
+						<Grid>
+							{#each trendingShown as item (titleKey(item))}{@render titleCard(item)}{/each}
+						</Grid>
+					{:else if asking}
+						<Spinner label="Searching" />
+					{:else}
+						<Empty art="search" title="Find something to watch" hint="Start typing." />
+					{/if}
+				</div>
+			{:else if nothing}
+				<Empty
+					art="search"
+					title="Nothing found"
+					hint={filterCount
+						? 'Try fewer filters, or a shorter name.'
+						: 'Try a shorter name, or the original language.'}
+				/>
+			{:else if tab === 'all'}
+				{#if personFirst}{@render section('people', 'People')}{/if}
+				{@render section('movies', 'Films')}
+				{@render section('shows', 'Shows')}
+				{#if !personFirst && q}{@render section('people', 'People')}{/if}
+				{@render section('characters', 'Characters')}
+				{@render section('studios', 'Studios')}
+				{@render section('members', 'Members')}
+				{@render showMore()}
+			{:else if !counts[tab]}
+				{#if moreReady || tab === 'movies' || tab === 'shows'}
+					<Empty art="search" title="Nothing here" hint="Try All, or another name." />
+				{/if}
+			{:else if tab === 'movies' || tab === 'shows'}
 				<Grid>
-					{#each trending as item (titleKey(item))}{@render titleCard(item)}{/each}
+					{#each tab === 'movies' ? films : shows as item (titleKey(item))}
+						{@render titleCard(item)}
+					{/each}
 				</Grid>
-			{:else if asking}
-				<Spinner label="Searching" />
+				{@render showMore()}
 			{:else}
-				<Empty art="search" title="Find something to watch" hint="Start typing." />
+				<div class="cards">
+					{#if tab === 'people'}
+						{#each more.people as p (p.id)}{@render personCard(p)}{/each}
+					{:else if tab === 'characters'}
+						{#each more.characters as c, i (i)}{@render characterCard(c)}{/each}
+					{:else if tab === 'studios'}
+						{#each more.studios as s (s.id)}{@render studioCard(s)}{/each}
+					{:else if tab === 'members'}
+						{#each foundMembers as m (m.username)}{@render memberCard(m)}{/each}
+					{/if}
+				</div>
 			{/if}
 		</div>
-	{:else if nothing}
-		<Empty
-			art="search"
-			title="Nothing found"
-			hint={filterCount
-				? 'Try fewer filters, or a shorter name.'
-				: 'Try a shorter name, or the original language.'}
-		/>
-	{:else if tab === 'all'}
-		{#if personFirst}{@render section('people', 'People')}{/if}
-		{@render section('movies', 'Films')}
-		{@render section('shows', 'Shows')}
-		{#if !personFirst && q}{@render section('people', 'People')}{/if}
-		{@render section('characters', 'Characters')}
-		{@render section('studios', 'Studios')}
-		{@render section('members', 'Members')}
-		{@render showMore()}
-	{:else if !counts[tab]}
-		{#if moreReady || tab === 'movies' || tab === 'shows'}
-			<Empty art="search" title="Nothing here" hint="Try All, or another name." />
-		{/if}
-	{:else if tab === 'movies' || tab === 'shows'}
-		<Grid>
-			{#each tab === 'movies' ? films : shows as item (titleKey(item))}
-				{@render titleCard(item)}
-			{/each}
-		</Grid>
-		{@render showMore()}
-	{:else}
-		<div class="cards">
-			{#if tab === 'people'}
-				{#each more.people as p (p.id)}{@render personCard(p)}{/each}
-			{:else if tab === 'characters'}
-				{#each more.characters as c, i (i)}{@render characterCard(c)}{/each}
-			{:else if tab === 'studios'}
-				{#each more.studios as s (s.id)}{@render studioCard(s)}{/each}
-			{:else if tab === 'members'}
-				{#each foundMembers as m (m.username)}{@render memberCard(m)}{/each}
-			{/if}
-		</div>
-	{/if}
+	</div>
 </div>
 
 <style>
@@ -649,7 +736,162 @@
 	}
 
 	.title {
-		margin-bottom: 18px;
+		font-size: clamp(1.7rem, 3vw, 2.25rem);
+		letter-spacing: -0.025em;
+		margin-bottom: 20px;
+	}
+
+	.tabbar {
+		display: flex;
+		gap: 4px;
+		margin-bottom: 24px;
+		border-bottom: 1px solid var(--line);
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+
+	.tabbar::-webkit-scrollbar {
+		display: none;
+	}
+
+	.tab {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		flex: none;
+		padding: 10px 12px 12px;
+		border: 0;
+		background: none;
+		color: var(--text-faint);
+		font-size: 0.92rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: color var(--fast) var(--ease);
+	}
+
+	.tab:hover {
+		color: var(--text);
+	}
+
+	.tab.on {
+		color: var(--text);
+	}
+
+	.tab:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	.tab.on::after {
+		content: '';
+		position: absolute;
+		left: 10px;
+		right: 10px;
+		bottom: -1px;
+		height: 2px;
+		border-radius: 2px;
+		background: var(--accent);
+	}
+
+	.tab .count {
+		font-size: 0.74rem;
+		font-weight: 600;
+		color: var(--text-faint);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.filterbar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		margin: -4px 0 18px;
+	}
+
+	.clear-all {
+		margin-left: 4px;
+	}
+
+	.choices {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.years {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 10px;
+		width: 240px;
+		max-width: 100%;
+	}
+
+	.list {
+		display: grid;
+		gap: 2px;
+		min-width: 200px;
+	}
+
+	.opt {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 9px 10px;
+		border: 0;
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--text);
+		font-size: 0.9rem;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.opt:hover {
+		background: var(--bg-elev-2);
+	}
+
+	.tick {
+		display: grid;
+		place-items: center;
+		flex: none;
+		width: 18px;
+		height: 18px;
+		color: var(--accent);
+	}
+
+	.tick.box {
+		border: 1.5px solid var(--line-strong);
+		border-radius: 5px;
+	}
+
+	.tick.box.on {
+		border-color: var(--accent);
+		background: var(--accent);
+		color: var(--accent-ink);
+	}
+
+	@media (max-width: 760px) {
+		/* One row that scrolls sideways, like the tabs under it. */
+		.filterbar {
+			flex-wrap: nowrap;
+			overflow-x: auto;
+			scrollbar-width: none;
+			margin-inline: calc(var(--page-pad) * -1);
+			padding: 2px var(--page-pad);
+		}
+
+		.filterbar::-webkit-scrollbar {
+			display: none;
+		}
+
+		.clear-all {
+			flex: none;
+		}
+	}
+
+	.results {
+		min-width: 0;
 	}
 
 	.dim {
@@ -690,36 +932,6 @@
 		font-size: 0.72rem;
 	}
 
-	.filters {
-		display: grid;
-		gap: 16px;
-		padding: 16px;
-		margin-bottom: 16px;
-	}
-
-	.group {
-		display: grid;
-		gap: 8px;
-	}
-
-	.group-label {
-		font-size: 0.78rem;
-		font-weight: 600;
-		color: var(--text-dim);
-	}
-
-	.wrap-chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 7px;
-	}
-
-	.fields {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-		gap: 12px;
-	}
-
 	.field {
 		display: grid;
 		gap: 6px;
@@ -736,11 +948,12 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		padding: 0 16px;
-		margin-bottom: 16px;
+		padding: 0 10px 0 20px;
+		margin-bottom: 18px;
 		background: var(--bg-elev);
 		border: 1px solid var(--line-strong);
 		border-radius: var(--radius-pill);
+		box-shadow: var(--shadow-2);
 		transition: border-color var(--fast) var(--ease);
 	}
 
@@ -751,11 +964,11 @@
 	.field-input {
 		flex: 1;
 		min-width: 0;
-		padding: 15px 0;
+		padding: 17px 0;
 		background: none;
 		border: none;
 		outline: none;
-		font-size: 1rem;
+		font-size: 1.1rem;
 	}
 
 	.clear {
@@ -772,17 +985,13 @@
 		color: var(--text);
 	}
 
-	/* Bled to the phone's edge like a rail, so the last tab scrolls into
-	   view instead of being cut off at the gutter. */
-	.tabs {
-		margin: 0 calc(var(--page-pad) * -1) 26px;
-		padding: 0 var(--page-pad) 2px;
-	}
-
-	.count {
-		font-size: 0.74rem;
-		font-weight: 600;
-		opacity: 0.7;
+	@media (max-width: 760px) {
+		/* Bled to the phone's edge like a rail, so the last tab scrolls into
+		   view instead of being cut off at the gutter. */
+		.tabbar {
+			margin-inline: calc(var(--page-pad) * -1);
+			padding-inline: calc(var(--page-pad) - 10px);
+		}
 	}
 
 	.notice {

@@ -5,7 +5,6 @@
 	import Empty from '#lib/components/Empty.svelte';
 	import AddToShelf from '#lib/components/AddToShelf.svelte';
 	import Icon from '#lib/components/Icon.svelte';
-	import Heatmap from '#lib/components/Heatmap.svelte';
 	import Poster from '#lib/components/Poster.svelte';
 	import Rail from '#lib/components/Rail.svelte';
 	import Scores from '#lib/components/Scores.svelte';
@@ -25,6 +24,7 @@
 	let loading = $state(true);
 	let error = $state<Failure | null>(null);
 	let trailerOpen = $state<string | null>(null);
+	const today = new Date().toISOString().slice(0, 10);
 	let outside = $state<TitleScores | null>(null);
 
 	/** Frog's id for the title: the page's own address. */
@@ -86,13 +86,13 @@
 
 	async function refreshAfterEpisodes(item: LibraryItem) {
 		updateItem(item);
-		// Pull the heatmap and "up next" again, cheaply, after a tick change.
+		// Pull "up next" and the progress again, cheaply, after a tick change.
 		try {
 			if (titleId === null) return;
 			const fresh = await api.title(titleId);
 			detail = fresh;
 		} catch {
-			// The optimistic update already landed; a stale heatmap can wait.
+			// The optimistic update already landed; the rest can wait.
 		}
 	}
 
@@ -291,18 +291,15 @@
 
 					<div class="meta">
 						{#each metaLine as bit, i (bit)}
-							{#if i > 0}<span class="dot" aria-hidden="true">•</span>{/if}
+							{#if i > 0}<span class="dot" aria-hidden="true">·</span>{/if}
 							<span>{bit}</span>
 						{/each}
 					</div>
+					{#if item.genres.length}
+						<p class="genres">{item.genres.slice(0, 3).join(', ')}</p>
+					{/if}
 
 					<Scores {scores} />
-
-					{#if item.genres.length}
-						<div class="genres">
-							{#each item.genres as g (g)}<span class="pill">{g}</span>{/each}
-						</div>
-					{/if}
 
 					<div class="actions">
 						<TrackControls
@@ -332,105 +329,121 @@
 						<AddToShelf titleId={item.id} name={item.name} />
 					</div>
 
-					{#if detail.next_up && item.entry}
-						<a class="next" href="#seasons">
-							<span class="eyebrow">Up next</span>
-							<strong>
-								{episodeCode(detail.next_up.season_number, detail.next_up.episode_number)}
-								{detail.next_up.name ?? ''}
-							</strong>
-							{#if detail.next_up.air_date}
-								<span class="faint">{prettyDate(detail.next_up.air_date)}</span>
+					{#if item.total_episodes > 0 && item.entry}
+						<a class="progress-line" href="#seasons">
+							<span class="bar">
+								<i style:width="{(item.watched_episodes / item.total_episodes) * 100}%"></i>
+							</span>
+							<span class="count">{item.watched_episodes} of {item.total_episodes}</span>
+							{#if detail.next_up}
+								<span class="next">
+									Up next
+									<strong>
+										{episodeCode(detail.next_up.season_number, detail.next_up.episode_number)}
+									</strong>
+									{#if detail.next_up.air_date && detail.next_up.air_date > today}
+										· {prettyDate(detail.next_up.air_date)}
+									{/if}
+								</span>
 							{/if}
 						</a>
-					{/if}
-
-					{#if item.total_episodes > 0}
-						<div class="progress-line">
-							<div class="bar">
-								<i style:width="{(item.watched_episodes / item.total_episodes) * 100}%"></i>
-							</div>
-							<span class="faint">
-								{item.watched_episodes} / {item.total_episodes} episodes
-							</span>
-						</div>
 					{/if}
 				</div>
 			</div>
 		</header>
 
 		<div class="page body">
-			{#if item.overview}
-				<section class="block">
-					<p class="overview">{item.overview}</p>
-				</section>
-			{/if}
-
-			{#if item.entry}
-				<section class="block notes">
-					<div class="section-head"><h2>Your notes</h2></div>
-					<textarea
-						class="input"
-						rows="3"
-						maxlength="2000"
-						aria-label="Your notes on {item.name}"
-						placeholder="What stayed with you, who you watched it with, where you left off."
-						value={noteText}
-						oninput={(e) => (noteDraft = e.currentTarget.value)}></textarea>
-					{#if noteText.trim() !== savedNote}
-						<div class="note-actions">
-							<button class="btn ghost" onclick={() => (noteDraft = null)}>Cancel</button>
-							<button class="btn primary" disabled={savingNote} onclick={saveNote}>
-								{noteText.trim() ? 'Save note' : 'Remove note'}
-							</button>
-						</div>
+			<div class="layout">
+				<div class="main">
+					{#if item.overview}
+						<section class="block">
+							<p class="overview">{item.overview}</p>
+						</section>
 					{/if}
-				</section>
-			{/if}
 
-			{#if hasProviders && providers}
-				<section class="block">
-					<div class="section-head">
-						<h2>Where to watch</h2>
-						{#if !detail.anilist_only}<span class="faint">{detail.provider_region}</span>{/if}
-					</div>
-					<div class="providers">
-						{#each providerGroups as group (group.label)}
-							{@const label = group.label}
-							{@const list = group.list}
-							{#if list.length}
-								<div class="pgroup">
-									<span class="eyebrow">{label}</span>
-									<div class="logos">
-										{#each list as p (p.id)}
-											{@const href =
-												p.url ?? providerLink(p.name, item.name, providers?.link ?? null)}
-											<a
-												class="plogo"
-												{href}
-												target="_blank"
-												rel="noreferrer noopener"
-												title="Find {item.name} on {p.name}"
-											>
-												{#if p.logo_path}
-													<img src={img(p.logo_path, 'w92')} alt={p.name} loading="lazy" />
-												{:else}
-													{p.name}
-												{/if}
-											</a>
-										{/each}
-									</div>
+					{#if item.entry}
+						<section class="block notes">
+							<div class="section-head"><h2>Your notes</h2></div>
+							<textarea
+								class="input"
+								rows="3"
+								maxlength="2000"
+								aria-label="Your notes on {item.name}"
+								placeholder="What stayed with you, who you watched it with, where you left off."
+								value={noteText}
+								oninput={(e) => (noteDraft = e.currentTarget.value)}></textarea>
+							{#if noteText.trim() !== savedNote}
+								<div class="note-actions">
+									<button class="btn ghost" onclick={() => (noteDraft = null)}>Cancel</button>
+									<button class="btn primary" disabled={savingNote} onclick={saveNote}>
+										{noteText.trim() ? 'Save note' : 'Remove note'}
+									</button>
 								</div>
 							{/if}
-						{/each}
-					</div>
-				</section>
-			{/if}
+						</section>
+					{/if}
+				</div>
+
+				<aside class="side">
+					{#if hasProviders && providers}
+						<section class="block">
+							<div class="section-head">
+								<h2>Where to watch</h2>
+								{#if !detail.anilist_only}<span class="faint">{detail.provider_region}</span>{/if}
+							</div>
+							<div class="providers">
+								{#each providerGroups as group (group.label)}
+									{@const label = group.label}
+									{@const list = group.list}
+									{#if list.length}
+										<div class="pgroup">
+											<span class="eyebrow">{label}</span>
+											<div class="logos">
+												{#each list as p (p.id)}
+													{@const href =
+														p.url ?? providerLink(p.name, item.name, providers?.link ?? null)}
+													<a
+														class="plogo"
+														{href}
+														target="_blank"
+														rel="noreferrer noopener"
+														title="Find {item.name} on {p.name}"
+													>
+														{#if p.logo_path}
+															<img src={img(p.logo_path, 'w92')} alt={p.name} loading="lazy" />
+														{:else}
+															{p.name}
+														{/if}
+													</a>
+												{/each}
+											</div>
+										</div>
+									{/if}
+								{/each}
+							</div>
+						</section>
+					{/if}
+
+					{#if crew.length}
+						<section class="block crew">
+							<div class="section-head"><h2>Crew</h2></div>
+							<div class="crew-list">
+								{#each crew as c (c.id)}
+									<a href="/person/{c.id}" class="crew-item">
+										<strong>{c.name}</strong>
+										<span class="faint">{c.jobs.join(', ')}</span>
+									</a>
+								{/each}
+							</div>
+						</section>
+					{/if}
+				</aside>
+			</div>
 
 			{#if item.kind === 'tv' && detail.seasons.length}
 				<section class="block" id="seasons">
 					<div class="section-head">
-						<h2>Seasons</h2>
+						<h2>Episodes</h2>
 						<button class="btn ghost small" disabled={markingAll} onclick={markAllWatched}>
 							<Icon name="check" size={14} />
 							Mark all watched
@@ -448,14 +461,6 @@
 						/>
 					{/key}
 				</section>
-
-				<!-- AniList scores shows, not episodes: nothing to chart. -->
-				{#if detail.heatmap.length && !detail.anilist_only}
-					<section class="block">
-						<div class="section-head"><h2>Episode ratings</h2></div>
-						<Heatmap cells={detail.heatmap} />
-					</section>
-				{/if}
 			{/if}
 
 			{#if detail.cast.length}
@@ -475,20 +480,6 @@
 							</a>
 						{/each}
 					</Rail>
-				</section>
-			{/if}
-
-			{#if crew.length}
-				<section class="block crew">
-					<div class="section-head"><h2>Crew</h2></div>
-					<div class="crew-list">
-						{#each crew as c (c.id)}
-							<a href="/person/{c.id}" class="crew-item">
-								<strong>{c.name}</strong>
-								<span class="faint">{c.jobs.join(', ')}</span>
-							</a>
-						{/each}
-					</div>
 				</section>
 			{/if}
 
@@ -590,25 +581,6 @@
 		margin-top: 10px;
 	}
 
-	.next .faint {
-		white-space: nowrap;
-	}
-
-	/* Too narrow for one line: the label on top, the episode and its date
-	   under it, rather than each wrapping on its own. */
-	@media (max-width: 560px) {
-		.next {
-			display: grid;
-			grid-template-columns: minmax(0, 1fr) auto;
-			gap: 2px 12px;
-			width: 100%;
-		}
-
-		.next .eyebrow {
-			grid-column: 1 / -1;
-		}
-	}
-
 	.title-page.tinted {
 		--accent: var(--poster-accent);
 		--accent-ink: var(--poster-ink);
@@ -623,16 +595,18 @@
 	}
 
 	.title-page {
-		/* The poster's dark companion bleeds behind the whole page, which is
-		   what makes two different films feel like two different pages. */
-		background: linear-gradient(var(--page-shade), transparent 680px), var(--bg);
+		/* The poster's dark companion sits behind the artwork, which is what
+		   makes two different films feel like two different pages. It stays
+		   inside the hero, which fades to the page, so nothing shows a seam. */
+		background: var(--bg);
 		min-height: 100dvh;
 	}
 
 	.hero {
 		position: relative;
 		isolation: isolate;
-		padding: calc(var(--header-h) + 40px) var(--page-pad) 30px;
+		background: linear-gradient(var(--page-shade) 50%, var(--bg));
+		padding: calc(var(--header-h) + 56px) var(--page-pad) 32px;
 	}
 
 	.backdrop {
@@ -643,6 +617,9 @@
 		object-fit: cover;
 		object-position: center 18%;
 		z-index: -2;
+		/* The picture fades out itself, so its edge never shows as a line where
+		   the page begins. */
+		mask-image: linear-gradient(to top, transparent, #000 30%);
 	}
 
 	.veil {
@@ -664,17 +641,17 @@
 	}
 
 	.hero-inner {
-		max-width: 1500px;
+		max-width: 1440px;
 		margin: 0 auto;
 		display: flex;
-		gap: 30px;
+		gap: 36px;
 		align-items: flex-end;
-		min-height: 330px;
+		min-height: 360px;
 	}
 
 	.poster-slot {
 		flex: none;
-		width: 190px;
+		width: 210px;
 		aspect-ratio: 2 / 3;
 		border-radius: var(--radius);
 		overflow: hidden;
@@ -692,17 +669,25 @@
 	.hero-text {
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
+		gap: 10px;
 		min-width: 0;
-		padding-bottom: 6px;
+		padding-bottom: 4px;
 	}
 
 	.logo {
 		max-width: min(420px, 70vw);
-		max-height: 130px;
+		max-height: 120px;
+		margin-bottom: 6px;
 		object-fit: contain;
 		object-position: left bottom;
 		filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.6));
+	}
+
+	/* On a dark theme a black logo would vanish into the page; a faint light
+	   halo keeps its outline without changing a coloured one. */
+	:global(:root:not([data-theme='light']):not([data-theme='pond-light'])) .logo {
+		filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.45))
+			drop-shadow(0 0 14px rgb(255 255 255 / 0.12)) drop-shadow(0 4px 18px rgb(0 0 0 / 0.5));
 	}
 
 	.tagline {
@@ -715,54 +700,105 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 8px;
-		font-size: 0.88rem;
-		color: var(--text-dim);
+		gap: 4px 8px;
+		font-size: 0.9rem;
+		color: var(--text);
 	}
 
 	.dot {
-		opacity: 0.5;
+		color: var(--text-faint);
 	}
 
 	.genres {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
+		font-size: 0.86rem;
+		color: var(--text-dim);
 	}
 
+	/* Every control here is one family: the same height, the same pill, the
+	   same surface over the artwork. Only "Add to library" stands out. */
 	.actions {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 10px;
-		margin-top: 4px;
+		align-items: center;
+		gap: 8px;
+		margin-top: 8px;
 	}
 
-	.next {
-		display: inline-flex;
-		align-items: baseline;
-		gap: 10px;
-		padding: 10px 16px;
-		border-radius: var(--radius-sm);
-		background: var(--accent-soft);
-		border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-		width: fit-content;
-		max-width: 100%;
-	}
-
-	.next strong {
+	.actions :global(.btn),
+	.actions :global(.trigger),
+	.actions :global(.rating > .chip) {
+		height: 42px;
+		min-height: 42px;
+		padding: 0 16px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-pill);
+		background: color-mix(in srgb, var(--bg-elev) 86%, transparent);
+		color: var(--text);
+		font-size: 0.88rem;
 		font-weight: 600;
-		font-size: 0.92rem;
+	}
+
+	.actions :global(.btn:hover),
+	.actions :global(.trigger:hover),
+	.actions :global(.rating > .chip:hover) {
+		border-color: var(--line-strong);
+		background: var(--bg-elev);
+	}
+
+	.actions :global(.btn.primary) {
+		background: var(--accent);
+		border-color: transparent;
+		color: var(--accent-ink);
+	}
+
+	.actions :global(.btn.icon),
+	.actions :global(.bell) {
+		width: 42px;
+		padding: 0;
+	}
+
+	.actions :global(.rating > .chip.rated) {
+		color: var(--text);
+	}
+
+	.actions :global(.rating > .chip.rated svg) {
+		color: var(--accent);
+	}
+
+	/* The status menu leads the row, a touch wider than the rest. */
+	.actions :global(.select) {
+		width: auto;
+		min-width: 140px;
 	}
 
 	.progress-line {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 12px;
-		font-size: 0.8rem;
+		gap: 6px 12px;
+		margin-top: 6px;
+		font-size: 0.84rem;
+		color: var(--text-dim);
+	}
+
+	.progress-line:hover .next strong {
+		color: var(--accent);
+	}
+
+	.count {
+		font-variant-numeric: tabular-nums;
+	}
+
+	.next strong {
+		margin-left: 4px;
+		color: var(--text);
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.bar {
-		width: min(280px, 50vw);
+		display: block;
+		width: min(220px, 40vw);
 		height: 4px;
 		border-radius: var(--radius-pill);
 		background: var(--line-strong);
@@ -777,7 +813,39 @@
 	}
 
 	.body {
-		padding-top: 28px;
+		padding-top: 32px;
+	}
+
+	/* What you came for on the left; where to watch and who made it beside
+	   it, at hand without pushing the episodes down. */
+	.layout {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 300px;
+		gap: 48px;
+		align-items: start;
+	}
+
+	.main {
+		min-width: 0;
+	}
+
+	.side .block {
+		margin-bottom: 32px;
+	}
+
+	.side .section-head h2 {
+		font-size: 1rem;
+	}
+
+	.side .crew-list {
+		grid-template-columns: 1fr;
+	}
+
+	@media (max-width: 1100px) {
+		.layout {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 0;
+		}
 	}
 
 	.block {
@@ -790,8 +858,9 @@
 	}
 
 	.overview {
-		max-width: 76ch;
-		font-size: 1rem;
+		max-width: 72ch;
+		font-size: 1.05rem;
+		line-height: 1.65;
 		color: var(--text-dim);
 	}
 
@@ -878,21 +947,19 @@
 	.crew-list {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-		gap: 10px;
+		gap: 0 16px;
 	}
 
 	.crew-item {
 		display: flex;
 		flex-direction: column;
-		padding: 10px 14px;
-		border-radius: var(--radius-sm);
-		background: var(--bg-elev);
-		border: 1px solid var(--line);
-		font-size: 0.86rem;
+		padding: 9px 0;
+		border-bottom: 1px solid var(--line);
+		font-size: 0.88rem;
 	}
 
-	.crew-item:hover {
-		border-color: var(--line-strong);
+	.crew-item:hover strong {
+		color: var(--accent);
 	}
 
 	.crew-item span {
@@ -1032,24 +1099,43 @@
 
 	@media (max-width: 860px) {
 		.hero-inner {
-			flex-direction: column;
-			align-items: flex-start;
-			gap: 18px;
 			min-height: 0;
+			gap: 24px;
 		}
 
 		.poster-slot {
-			width: 124px;
+			width: 150px;
 		}
 
 		.hero {
-			padding-top: calc(var(--header-h) + 24px);
+			padding-top: calc(var(--header-h) + 120px);
 		}
 	}
 
-	.bell {
-		padding: 10px 12px;
-		color: var(--text-dim);
+	/* A phone: the artwork and the logo already say what this is, so the
+	   poster steps aside and the shelf button keeps only its icon. */
+	@media (max-width: 600px) {
+		.poster-slot,
+		.tagline {
+			display: none;
+		}
+
+		.hero {
+			padding-top: calc(var(--header-h) + 150px);
+		}
+
+		.logo {
+			max-height: 90px;
+		}
+
+		.actions :global(.btn .label) {
+			display: none;
+		}
+
+		.actions :global(.btn:has(.label)) {
+			width: 42px;
+			padding: 0;
+		}
 	}
 
 	.bell.on {

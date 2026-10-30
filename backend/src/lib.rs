@@ -4,6 +4,7 @@ pub mod catalog;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod fanart;
 pub mod images;
 pub mod jobs;
 pub mod ops;

@@ -282,3 +282,28 @@ AniList's through `title_external` or `anime_map`, and MyAnimeList's through
 AniList. MDBList carries IMDb, Rotten Tomatoes, Metacritic and the rest; its
 key stays on the server. The worker refreshes what somebody tracks, a few
 titles at a time, and `/api/t/{id}/scores` gives a title page its first look.
+A title page shows four of them as percentages: AniList, IMDb, Rotten
+Tomatoes and Metacritic. While MDBList has nothing for a title (its daily
+limit, or no match yet), TMDB's own score stands in beside AniList's.
+
+## Logos
+
+A title's logo comes from TMDB. Where TMDB has none, `backend/src/fanart.rs`
+looks further, in this order:
+
+1. fanart.tv, for anything TMDB knows: films by TMDB's id, shows by TheTVDB's
+   (from TMDB's external ids). An anime Frog keeps from AniList uses the TMDB
+   entry `anime_map` gives it, TMDB's own logo first.
+2. The show it belongs to. AniList names a special's parent and a season's
+   prequel; the chain is followed up to five steps back until one has a logo
+   in Frog, on TMDB or on fanart.tv. That is how a third season nobody has
+   mapped yet still shows the show's logo.
+
+It only fills an empty `title.logo_path`: fanart.tv's files are stored as
+`/fanart/<file>` and served through `images` like every other picture, a
+parent's TMDB logo by TMDB's own path. TMDB wins: `catalog` writes
+`COALESCE(new, old)`. `title_logo_check` (shared) says when a title may be
+asked again, a month after nothing was found. The worker fills tracked titles
+a batch every ten minutes; a title page opened for the first time waits a
+moment for its own. Without `FANART_API_KEY` step 1 is skipped and the rest
+still runs.

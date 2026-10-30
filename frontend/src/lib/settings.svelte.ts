@@ -143,7 +143,7 @@ export const DEFAULTS: Settings = {
 	autoComplete: true,
 
 	landingPage: '/',
-	homeRows: ['continue', 'upnext', 'thisweek', 'because', 'recent', 'favourites'],
+	homeRows: ['continue', 'thisweek', 'because'],
 
 	dateStyle: 'friendly',
 	clock24: true,
@@ -171,8 +171,11 @@ export const MAX_TABS = 4;
 
 export const HOME_ROWS: { id: string; label: string; hint: string }[] = [
 	{ id: 'shelves', label: 'Your shelves', hint: 'Every shelf, one tap away' },
-	{ id: 'continue', label: 'Continue watching', hint: 'Shows you are part-way through' },
-	{ id: 'upnext', label: 'Caught up', hint: 'Shows waiting on their next episode' },
+	{
+		id: 'continue',
+		label: 'Continue watching',
+		hint: 'Shows you are part-way through, then those waiting on an episode'
+	},
 	{ id: 'thisweek', label: 'Airing this week', hint: 'Episodes due in the next seven days' },
 	{ id: 'because', label: 'Because you watched', hint: 'More like what you rated highly' },
 	{ id: 'recent', label: 'Recently added', hint: 'The newest things in your library' },

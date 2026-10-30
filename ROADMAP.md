@@ -7,8 +7,8 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 0.8.1 "Toad" |
-| **Next codenames** | Bullfrog (1.0) |
+| **Release** | 1.0.0 "Bullfrog" (once its release pull request is merged) |
+| **Next codenames** | Spring Peeper, Glass Frog, Horned Frog |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
 | **Updates** | by itself: a timer pulls the newest release every 15 minutes, backs up first, rolls back on an unhealthy `/healthz` |
@@ -105,6 +105,18 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    not centralised yet.
 13. **Smaller things.** Customisable keyboard shortcuts, renaming and
    recolouring statuses, muted trailer autoplay, per-shelf layout defaults.
+14. **Carry the 1.0 design to the pages it has not reached.** Settings,
+   People and profiles, a person's page, the Calendar and Stats bodies,
+   What's new and About still have their earlier layout. Then one pass over
+   dialogs, menus and toasts so they share a surface. Home, Search, title
+   pages, the Diary, Shelves and Administration show the way.
+15. **Home rows already saved.** A layout saved before 1.0 keeps the rows it
+   had, Recently added and Favourites among them, so long-time accounts see a
+   busier Home than a new one until they switch rows off in Settings → Home.
+   Offer a one-tap "use the new layout" there.
+16. **Logos still missing.** Titles nobody has made a logo for anywhere (most
+   are films not out yet) show their name; they are asked again after a
+   month.
 
 8. **Left from the UX pass.** Each small, none urgent:
    - A person's filmography leads with talk-show and documentary appearances;
@@ -283,6 +295,18 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   `lib/settings.svelte.ts`. Add the id to `HOME_ROWS` and to the default list.
 
 ## Shipped
+
+**1.0.0 Bullfrog** — The bar on top with a search field. Home with one idea
+per row: continue watching (caught-up shows at its end), shelves as covers,
+the week's episodes, one row of recommendations. Search with tabs that filter
+the answer and filters as menus under the bar; a genre only one side has no
+longer brings the other side back unfiltered. Title pages with one line of
+facts, AniList / IMDb / Rotten Tomatoes / Metacritic as percentages with
+TMDB standing in, one family of controls, and episodes as cards under season
+tabs; the episode ratings chart is gone (MDBList has no episode scores).
+Logos from fanart.tv and from the show a season or special belongs to. A
+centred diary. Measured against 0.8 with the CPU slowed four times: the same
+load and scroll times on every main page.
 
 **0.8.0 and 0.8.1 Toad** — search ranked by how well a name answers, with films, shows,
 people, characters and studios apart, and filters with or without a name. Scores

@@ -197,7 +197,7 @@ pub struct UpsertBody {
     #[serde(flatten)]
     pub patch: LibraryPatch,
     /// Pull every season into the local database. Default on for shows: it is
-    /// what makes progress, "up next" and the heatmap work straight away.
+    /// what makes progress, and "up next" work straight away.
     #[serde(default = "yes")]
     pub sync_seasons: bool,
 }

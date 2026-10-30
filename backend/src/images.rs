@@ -82,6 +82,21 @@ pub async fn cached_image(
         )
         .await;
     }
+    // Title logos from fanart.tv, for titles TMDB has none for.
+    if let Some(rest) = trimmed.strip_prefix("fanart/") {
+        if rest.is_empty() || rest.contains("..") {
+            return Err(AppError::BadRequest("bad image path".into()));
+        }
+        let base = state
+            .config
+            .fanart
+            .as_ref()
+            .map_or("https://assets.fanart.tv", |f| f.assets_url.as_str());
+        let url = crate::fanart::asset_url(base, rest, size);
+        let small = url.contains("/preview/");
+        let key = format!("fanart/{}{rest}", if small { "preview/" } else { "" });
+        return remote_image(state, &key, &url).await;
+    }
     let path = if path.starts_with('/') {
         path.to_string()
     } else {

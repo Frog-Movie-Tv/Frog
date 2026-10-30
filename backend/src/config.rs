@@ -23,6 +23,28 @@ pub struct Config {
     /// MDBList, for IMDb, Rotten Tomatoes and Metacritic scores. Without a
     /// key those simply do not appear.
     pub mdblist: Option<MdbListClient>,
+    /// fanart.tv, for title logos TMDB has none of. Without a key titles
+    /// simply keep the logo TMDB gives, or none.
+    pub fanart: Option<FanartClient>,
+}
+
+/// A free personal key from fanart.tv. Sent as a header, so it is in no
+/// address and no log.
+#[derive(Clone)]
+pub struct FanartClient {
+    pub key: String,
+    /// Only tests point these elsewhere.
+    pub api_url: String,
+    pub assets_url: String,
+}
+
+/// Never the key: a config dump must not carry it.
+impl std::fmt::Debug for FanartClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FanartClient")
+            .field("api_url", &self.api_url)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A free key from mdblist.com/preferences. It stays on the server: only
@@ -138,6 +160,11 @@ impl Config {
                 key,
                 api_url: env_or("MDBLIST_API_URL", "https://api.mdblist.com"),
                 budget: Arc::default(),
+            }),
+            fanart: env_opt("FANART_API_KEY").map(|key| FanartClient {
+                key,
+                api_url: env_or("FANART_API_URL", "https://webservice.fanart.tv/v3"),
+                assets_url: env_or("FANART_ASSETS_URL", "https://assets.fanart.tv"),
             }),
         })
     }

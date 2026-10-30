@@ -82,6 +82,11 @@ TMDB_API_KEY=your_key_here
 Tomatoes, Metacritic and other scores to title pages. Without one those scores
 simply do not appear.
 
+`FANART_API_KEY` is optional too: a free personal key from
+[fanart.tv](https://fanart.tv/get-an-api-key/) fills in title logos TMDB has
+none of, which matters most for anime kept from AniList. TMDB's own logo
+always wins when it has one.
+
 Leave `TMDB_API_KEY` empty and the app still starts, but search finds nothing
 and no artwork loads — the header shows a **No TMDB key** badge until you set
 it.

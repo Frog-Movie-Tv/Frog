@@ -7,10 +7,12 @@
 		action?: Snippet;
 		/** Wider cards, for the 16:9 continue-watching tiles. */
 		wide?: boolean;
+		/** A fixed card width of its own, for cards that are neither. */
+		width?: string;
 		children: Snippet;
 	}
 
-	let { title, action, wide = false, children }: Props = $props();
+	let { title, action, wide = false, width, children }: Props = $props();
 
 	let track: HTMLDivElement | undefined = $state();
 	let atStart = $state(true);
@@ -39,7 +41,7 @@
 <!-- Resizing changes whether a row still fits, so the arrows re-decide. -->
 <svelte:window onresize={measure} />
 
-<section class="rail" class:wide>
+<section class="rail" class:wide class:sized={!!width} style:--card-w={width}>
 	{#if title || action}
 		<div class="section-head">
 			{#if title}<h2>{title}</h2>{/if}
@@ -78,7 +80,7 @@
 
 <style>
 	.rail {
-		margin-bottom: 40px;
+		margin-bottom: 44px;
 	}
 
 	.tools {
@@ -164,5 +166,9 @@
 		.rail.wide .track {
 			grid-auto-columns: 340px;
 		}
+	}
+
+	.rail.sized .track {
+		grid-auto-columns: var(--card-w);
 	}
 </style>

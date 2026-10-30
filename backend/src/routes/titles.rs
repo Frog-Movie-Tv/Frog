@@ -109,7 +109,10 @@ pub async fn scores(
 }
 
 async fn detail_of(state: &AppState, user_id: i64, title_id: i64) -> AppResult<Json<Value>> {
-    let (row, raw) = catalog::load(state, title_id).await?;
+    let (mut row, raw) = catalog::load(state, title_id).await?;
+    if row.logo_path.is_none() {
+        row.logo_path = crate::fanart::first_look(state, title_id).await;
+    }
     let kind = row.kind.clone();
     let external = catalog::externals(&state.pool, title_id).await?;
     let anilist_only = external.primary == Some("anilist");
@@ -162,7 +165,6 @@ async fn detail_of(state: &AppState, user_id: i64, title_id: i64) -> AppResult<J
         } else {
             json!([])
         },
-        "heatmap": heatmap(state, user_id, title_id).await?,
         "moved_to": moved.map(|id| json!({ "id": id })),
         // Kept from AniList alone: no TMDB entry, so no cast, seasons or links.
         "anilist_only": anilist_only,
@@ -244,48 +246,6 @@ async fn collection_parts(state: &AppState, user_id: i64, collection_id: i64) ->
         "backdrop_path": models::str_at(&raw, "backdrop_path"),
         "parts": parts,
     }))
-}
-
-/// (season, episode, my rating, TMDB score, watch count)
-type HeatRow = (i64, i64, Option<f64>, Option<f64>, i64);
-
-/// Compact grid data for the per-show episode heatmap.
-///
-/// Carries TMDB's own episode score alongside mine, so a show you have just
-/// added already shows the shape of its seasons instead of an empty grid.
-async fn heatmap(state: &AppState, user_id: i64, title_id: i64) -> AppResult<Value> {
-    let rows: Vec<HeatRow> = sqlx::query_as(
-        "SELECT e.season_number,
-                e.episode_number,
-                s.rating,
-                e.tmdb_vote,
-                (SELECT COUNT(*) FROM watch_event w
-                  WHERE w.user_id = ?1 AND w.episode_id = e.id)
-           FROM episode e
-           LEFT JOIN episode_state s ON s.episode_id = e.id AND s.user_id = ?1
-          WHERE e.title_id = ?2 AND e.season_number > 0
-          ORDER BY e.season_number, e.episode_number",
-    )
-    .bind(user_id)
-    .bind(title_id)
-    .fetch_all(&state.pool)
-    .await?;
-
-    let cells: Vec<Value> = rows
-        .into_iter()
-        .map(|(s, e, rating, tmdb, watches)| {
-            json!({
-                "s": s,
-                "e": e,
-                "rating": rating,
-                // TMDB scores out of ten; everything else here is out of 100.
-                "tmdb": tmdb.map(|v| v * 10.0),
-                "watched": watches > 0,
-            })
-        })
-        .collect();
-
-    Ok(Value::Array(cells))
 }
 
 /// Episodes of one season, merged with my watches, ratings and notes.

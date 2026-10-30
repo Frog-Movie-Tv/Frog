@@ -68,8 +68,11 @@
 	--shadow-3: 0 30px 60px -20px rgba(0, 0, 0, 0.8);
 
 	--gap: 16px;
-	--page-pad: 20px;
-	--header-h: 60px;
+	--page-pad: 32px;
+	--header-h: 64px;
+	/* The bars sit a step below the page, so the artwork on a page is what
+	   catches the eye. */
+	--bg-bar: color-mix(in srgb, var(--bg) 55%, var(--bg-elev));
 	/* --poster-size is the Poster size setting; each screen scales it. */
 	--poster-min: var(--poster-size, 132px);
 
@@ -250,7 +253,7 @@ h1 {
 	font-size: clamp(1.75rem, 4vw, 2.6rem);
 }
 h2 {
-	font-size: 1.15rem;
+	font-size: 1.2rem;
 }
 
 p {
@@ -301,9 +304,39 @@ textarea {
 /* --- shared primitives ---------------------------------------------------- */
 
 .page {
-	max-width: 1500px;
+	max-width: 1440px;
 	margin: 0 auto;
-	padding: calc(var(--header-h) + 18px) var(--page-pad) 96px;
+	padding: calc(var(--header-h) + 24px) var(--page-pad) 96px;
+}
+
+/* The head of every page: a title, a line under it, actions on the right.
+   One shape everywhere, so moving between pages never feels like moving
+   between apps. */
+.page-head {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 12px 20px;
+	margin-bottom: 28px;
+}
+
+.page-head h1 {
+	font-size: clamp(1.7rem, 3vw, 2.25rem);
+	letter-spacing: -0.025em;
+}
+
+.page-head .sub {
+	margin-top: 6px;
+	color: var(--text-dim);
+	font-size: 0.95rem;
+}
+
+.page-head .actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
 }
 
 /* Filter chips: a row of pill toggles that scrolls sideways on a phone. */
@@ -319,16 +352,16 @@ textarea {
 	display: none;
 }
 
-.chips > .chip {
+.chip {
 	display: inline-flex;
 	align-items: center;
 	gap: 7px;
-	padding: 7px 14px;
+	padding: 6px 13px;
 	border-radius: var(--radius-pill);
 	border: 1px solid var(--line);
 	background: var(--bg-elev);
 	color: var(--text-dim);
-	font-size: 0.84rem;
+	font-size: 0.82rem;
 	font-weight: 600;
 	cursor: pointer;
 	white-space: nowrap;
@@ -337,12 +370,12 @@ textarea {
 		color var(--fast) var(--ease);
 }
 
-.chips > .chip:hover {
+.chip:hover {
 	color: var(--text);
 	background: var(--bg-elev-2);
 }
 
-.chips > .chip.on {
+.chip.on {
 	background: var(--accent);
 	border-color: transparent;
 	color: var(--accent-ink);
@@ -421,8 +454,9 @@ textarea {
 	align-items: center;
 	justify-content: center;
 	gap: 8px;
-	padding: 10px 16px;
-	border: 1px solid var(--line-strong);
+	min-height: 40px;
+	padding: 9px 18px;
+	border: 1px solid transparent;
 	border-radius: var(--radius-pill);
 	background: var(--bg-elev-2);
 	color: var(--text);
@@ -454,6 +488,7 @@ textarea {
 
 .btn.ghost {
 	background: transparent;
+	border-color: var(--line-strong);
 }
 .btn.ghost:hover {
 	background: var(--bg-elev-2);
@@ -494,7 +529,7 @@ textarea.input {
 
 .card {
 	background: var(--bg-elev);
-	border: 1px solid var(--line);
+	border: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
 	border-radius: var(--radius);
 }
 
@@ -513,9 +548,10 @@ textarea.input {
 
 .section-head {
 	display: flex;
-	align-items: baseline;
+	align-items: center;
 	justify-content: space-between;
 	gap: 16px;
+	min-height: 32px;
 	margin-bottom: 14px;
 }
 
@@ -570,9 +606,21 @@ textarea.input {
 	}
 }
 
+@media (max-width: 1179px) {
+	:root {
+		--page-pad: 24px;
+	}
+}
+
+@media (max-width: 759px) {
+	:root {
+		--header-h: 56px;
+	}
+}
+
 @media (max-width: 720px) {
 	:root {
-		--page-pad: 14px;
+		--page-pad: 16px;
 		/* Three columns on a phone at the default size. */
 		--poster-min: calc(var(--poster-size, 132px) * 0.79);
 	}
