@@ -94,6 +94,44 @@
 		renaming = true;
 	}
 
+	/** Ready to type over: the old name selected, as in any rename. */
+	function focusName(input: HTMLInputElement) {
+		input.focus();
+		input.select();
+	}
+
+	/** Adding from your own library, without a trip to each title's page. */
+	let adding = $state(false);
+	let library = $state<LibraryItem[]>([]);
+	let pick = $state('');
+	const candidates = $derived.by(() => {
+		const needle = pick.trim().toLowerCase();
+		const on = new Set(items.map((i) => i.id));
+		return library
+			.filter((i) => !on.has(i.id) && (!needle || i.name.toLowerCase().includes(needle)))
+			.slice(0, 40);
+	});
+
+	async function openAdding() {
+		adding = true;
+		if (library.length) return;
+		try {
+			library = (await api.library({ sort: 'name', order: 'asc', limit: 2000 })).items;
+		} catch (e) {
+			toasts.error(e);
+		}
+	}
+
+	async function add(item: LibraryItem) {
+		try {
+			await api.addToShelf(id, item.id);
+			items = [...items, item];
+			if (shelf) shelf.count = items.length;
+		} catch (e) {
+			toasts.error(e);
+		}
+	}
+
 	async function rename(event: SubmitEvent) {
 		event.preventDefault();
 		if (!shelf || !draftName.trim()) return;
@@ -159,13 +197,15 @@
 			<div class="title">
 				{#if renaming}
 					<form class="rename" onsubmit={rename}>
-						<!-- svelte-ignore a11y_autofocus -->
 						<input
 							class="input"
 							bind:value={draftName}
 							maxlength="60"
 							aria-label="Shelf name"
-							autofocus
+							use:focusName
+							onkeydown={(e) => {
+								if (e.key === 'Escape') renaming = false;
+							}}
 						/>
 						<button class="btn primary">Save</button>
 						<button type="button" class="btn ghost" onclick={() => (renaming = false)}
@@ -189,10 +229,19 @@
 					>
 						<Icon name="filter" size={16} /> Rules
 					</button>
-				{:else if items.length}
-					<button class="btn" class:primary={editing} onclick={() => (editing = !editing)}>
-						{#if editing}<Icon name="check" size={16} /> Done{:else}<Icon name="grip" size={16} /> Edit{/if}
+				{:else}
+					<button
+						class="btn"
+						class:primary={adding}
+						onclick={() => (adding ? (adding = false) : openAdding())}
+					>
+						{#if adding}<Icon name="check" size={16} /> Done{:else}<Icon name="plus" size={16} /> Add{/if}
 					</button>
+					{#if items.length}
+						<button class="btn" class:primary={editing} onclick={() => (editing = !editing)}>
+							{#if editing}<Icon name="check" size={16} /> Done{:else}<Icon name="grip" size={16} /> Edit{/if}
+						</button>
+					{/if}
 				{/if}
 				<button
 					class="btn ghost icon"
@@ -222,6 +271,42 @@
 			<ShelfRules rules={shelf.rules} onsave={saveRules} oncancel={() => (editingRules = false)} />
 		{/if}
 
+		{#if adding}
+			<section class="adder card" aria-label="Add from your library">
+				<input
+					class="input"
+					placeholder="Filter your library"
+					aria-label="Filter your library"
+					bind:value={pick}
+					use:focusName
+				/>
+				{#if candidates.length}
+					<ul>
+						{#each candidates as item (item.id)}
+							<li>
+								<button class="candidate" onclick={() => add(item)}>
+									{#if item.poster_path}
+										<img src={img(item.poster_path, 'w92')} alt="" loading="lazy" />
+									{:else}
+										<span class="thumb"></span>
+									{/if}
+									<span class="who">
+										<strong>{item.name}</strong>
+										<span class="faint">{year(item.release_date)}</span>
+									</span>
+									<Icon name="plus" size={16} />
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="faint">
+						{library.length ? 'Everything that matches is already here.' : 'Loading your library'}
+					</p>
+				{/if}
+			</section>
+		{/if}
+
 		{#if items.length === 0}
 			{#if shelf.kind === 'smart'}
 				<Empty title="Nothing matches yet" hint="Loosen the rules to let more in." art="search">
@@ -230,12 +315,14 @@
 					{/if}
 				</Empty>
 			{:else}
-				<Empty
-					title="Nothing on this shelf yet"
-					hint="Add titles from their page with Add to shelf."
-				>
-					<a class="btn primary" href="/search">Find something</a>
-				</Empty>
+				{#if !adding}
+					<Empty
+						title="Nothing on this shelf yet"
+						hint="Pick from your library, or use Add to shelf on any title."
+					>
+						<button class="btn primary" onclick={openAdding}>Add from your library</button>
+					</Empty>
+				{/if}
 			{/if}
 		{:else if editing}
 			<p class="faint hint">Drag to reorder.</p>
@@ -254,7 +341,7 @@
 							>
 							<span class="name">{item.name}</span>
 						</button>
-						<button class="remove" aria-label="Remove {item.name}" onclick={() => remove(item)}>
+						<button class="remove hit" aria-label="Remove {item.name}" onclick={() => remove(item)}>
 							<Icon name="x" size={14} />
 						</button>
 					</li>
@@ -430,5 +517,70 @@
 	.remove:hover {
 		background: var(--bad);
 		color: #fff;
+	}
+
+	.adder {
+		padding: 14px;
+		margin-bottom: 22px;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.adder ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		max-height: 340px;
+		overflow-y: auto;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.candidate {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		width: 100%;
+		min-height: 48px;
+		padding: 6px 10px;
+		border: 0;
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--text);
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.candidate:hover {
+		background: var(--bg-elev-2);
+	}
+
+	.candidate img,
+	.candidate .thumb {
+		width: 28px;
+		aspect-ratio: 2 / 3;
+		border-radius: 4px;
+		object-fit: cover;
+		background: var(--bg-elev-2);
+		flex: none;
+	}
+
+	.candidate .who {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-width: 0;
+		font-size: 0.88rem;
+	}
+
+	.candidate .who .faint {
+		font-size: 0.76rem;
+	}
+
+	.adder p {
+		font-size: 0.86rem;
+		padding: 4px 2px;
 	}
 </style>

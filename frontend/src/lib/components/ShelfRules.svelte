@@ -40,13 +40,21 @@
 
 	const ANY = 'any';
 	const scores = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-	const scoreOptions = $derived([
-		{ value: ANY, label: 'Any' },
-		...scores.map((v) => ({
-			value: String(v),
-			label: formatScore(v, settings.current.scoreFormat)
-		}))
-	]);
+	/** Steps of ten, plus whatever the rule already holds, so opening the
+	 *  editor never shows a saved 85 as "Any" and drops it on save. */
+	function scoreOptions(current: number | null | undefined) {
+		const values =
+			current != null && !scores.includes(current)
+				? [...scores, current].sort((a, b) => a - b)
+				: scores;
+		return [
+			{ value: ANY, label: 'Any' },
+			...values.map((v) => ({
+				value: String(v),
+				label: formatScore(v, settings.current.scoreFormat)
+			}))
+		];
+	}
 
 	const num = (v: string) => (v === ANY ? null : Number(v));
 	const str = (v: number | string | null | undefined) =>
@@ -116,7 +124,7 @@
 				label="Rated at least"
 				full
 				value={str(draft.min_rating)}
-				options={scoreOptions}
+				options={scoreOptions(draft.min_rating)}
 				onchange={(v) => (draft.min_rating = num(v))}
 			/>
 		</div>
@@ -127,7 +135,7 @@
 				label="Rated at most"
 				full
 				value={str(draft.max_rating)}
-				options={scoreOptions}
+				options={scoreOptions(draft.max_rating)}
 				onchange={(v) => (draft.max_rating = num(v))}
 			/>
 		</div>

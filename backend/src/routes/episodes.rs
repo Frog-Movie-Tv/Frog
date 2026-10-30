@@ -13,6 +13,10 @@ use crate::store;
 
 #[derive(Deserialize)]
 pub struct WatchBody {
+    /// Counted, but kept out of the diary. Lets undo put back a watch that
+    /// had no date exactly as it was.
+    #[serde(default)]
+    pub undated: bool,
     /// false clears every watch of this episode; true adds one.
     #[serde(default = "yes")]
     pub watched: bool,
@@ -68,14 +72,16 @@ pub async fn set_watched(
                 .await?;
 
         sqlx::query(
-            "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch, source)
-             VALUES (?, ?, ?, ?, ?, 'manual')",
+            "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                      source, undated)
+             VALUES (?, ?, ?, ?, ?, 'manual', ?)",
         )
         .bind(auth.user_id())
         .bind(title_id)
         .bind(ep_id)
         .bind(&when)
         .bind(i64::from(seen_before.0 > 0))
+        .bind(i64::from(body.undated))
         .execute(&state.pool)
         .await?;
     } else {

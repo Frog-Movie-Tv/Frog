@@ -17,7 +17,7 @@
 	$effect(() => {
 		if (pending) {
 			mode = 'release';
-			date = today;
+			date = pending.day ?? today;
 			picked = [];
 			queueMicrotask(() => dialog?.querySelector<HTMLButtonElement>('.option.on')?.focus());
 		}
@@ -26,13 +26,20 @@
 	const options = $derived(
 		[
 			{ id: 'today', label: 'Today', hint: 'Just now', icon: 'clock' },
+			pending?.film
+				? { id: 'release', label: 'On release day', hint: 'The day it came out', icon: 'calendar' }
+				: {
+						id: 'release',
+						label: 'On release dates',
+						hint: 'Each episode on the day it aired',
+						icon: 'calendar'
+					},
 			{
-				id: 'release',
-				label: 'On release dates',
-				hint: 'Each episode on the day it aired',
+				id: 'date',
+				label: 'On a date',
+				hint: pending?.film ? 'Pick the day' : 'Pick one day for all of them',
 				icon: 'calendar'
 			},
-			{ id: 'date', label: 'On a date', hint: 'Pick one day for all of them', icon: 'calendar' },
 			{
 				id: 'unknown',
 				label: "I don't know",
@@ -128,7 +135,7 @@
 		<div class="actions">
 			<button class="btn ghost" onclick={() => whenWatched.answer(null)}>Cancel</button>
 			<button class="btn primary" disabled={mode === 'date' && !date} onclick={confirm}>
-				Mark watched
+				{pending.confirm}
 			</button>
 		</div>
 	</div>

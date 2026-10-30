@@ -95,7 +95,7 @@
 		{
 			id: 'p-new',
 			group: GO,
-			label: 'Release notes',
+			label: "What's new",
 			icon: 'sparkle',
 			run: () => goto('/whats-new')
 		}

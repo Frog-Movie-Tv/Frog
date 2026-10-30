@@ -6,6 +6,9 @@ import type {
 	AniListEntry,
 	AniListStatus,
 	MoreResults,
+	SearchAnswer,
+	SearchFilters,
+	TitleScores,
 	StudioDetail,
 	AuthStatus,
 	BecauseRow,
@@ -212,10 +215,23 @@ export const api = {
 		send<NewInvite>('POST', '/api/invites', { role, days }),
 	revokeInvite: (id: string) => send<{ ok: true }>('DELETE', `/api/invites/${id}`),
 
-	search: (q: string, page = 1, hideAnimation = false) =>
-		get<{ page: number; total_pages: number; results: SearchItem[] }>(
-			`/api/search${qs({ q, page, hide_animation: hideAnimation || undefined })}`
+	search: (q: string, page = 1, hideAnimation = false, filters: SearchFilters = {}) =>
+		get<SearchAnswer>(
+			`/api/search${qs({
+				q,
+				page,
+				hide_animation: hideAnimation || undefined,
+				kind: filters.kind,
+				genres: filters.genres?.join(','),
+				from_year: filters.from_year,
+				to_year: filters.to_year,
+				min_score: filters.min_score,
+				statuses: filters.statuses?.join(','),
+				sort: filters.sort
+			})}`
 		),
+	searchGenres: () => get<{ genres: string[] }>('/api/search/genres'),
+	scores: (id: number) => get<TitleScores>(`/api/t/${id}/scores`),
 	trending: () => get<{ results: SearchItem[] }>('/api/discover/trending'),
 	searchMore: (q: string) => get<MoreResults>(`/api/search/more${qs({ q })}`),
 	studio: (id: number) => get<StudioDetail>(`/api/studios/${id}`),
@@ -287,9 +303,18 @@ export const api = {
 
 	untrack: (titleId: number) => send<{ ok: true }>('DELETE', `/api/t/${titleId}/library`),
 
-	setEpisodeWatched: (titleId: number, season: number, episode: number, watched: boolean) =>
+	/** `at` puts back a watch exactly as it was, for undo. */
+	setEpisodeWatched: (
+		titleId: number,
+		season: number,
+		episode: number,
+		watched: boolean,
+		at?: { watched_at: string | null; undated: boolean }
+	) =>
 		send<{ item: LibraryItem }>('POST', `/api/t/${titleId}/episodes/${season}/${episode}/watch`, {
-			watched
+			watched,
+			watched_at: at?.watched_at ?? undefined,
+			undated: at?.undated ?? false
 		}),
 
 	setSeasonWatched: (titleId: number, season: number, watched: boolean, when?: WhenAnswer) =>

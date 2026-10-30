@@ -15,12 +15,23 @@ export interface Extra {
 	hint?: string;
 }
 
-interface Pending {
+export interface AskOptions {
+	/** Offer "Today". Off when moving something that already has a date. */
+	allowToday?: boolean;
+	/** A film has one release date, not one per episode. */
+	film?: boolean;
+	/** Moving an existing entry: start the date picker on its day. */
+	day?: string;
+	/** The confirm button; "Mark watched" unless this is a move. */
+	confirm?: string;
+	extras?: Extra[];
+	extrasLabel?: string;
+}
+
+interface Pending extends Required<Omit<AskOptions, 'day'>> {
 	title: string;
 	detail: string;
-	allowToday: boolean;
-	extras: Extra[];
-	extrasLabel: string;
+	day: string | null;
 	resolve: (answer: WhenAnswer | null) => void;
 }
 
@@ -34,17 +45,21 @@ interface Pending {
 class WhenWatched {
 	pending = $state<Pending | null>(null);
 
-	ask(
-		title: string,
-		detail: string,
-		allowToday = true,
-		extras: Extra[] = [],
-		extrasLabel = ''
-	): Promise<WhenAnswer | null> {
+	ask(title: string, detail: string, options: AskOptions = {}): Promise<WhenAnswer | null> {
 		// A second request replaces the first rather than stacking dialogs.
 		this.pending?.resolve(null);
 		return new Promise((resolve) => {
-			this.pending = { title, detail, allowToday, extras, extrasLabel, resolve };
+			this.pending = {
+				title,
+				detail,
+				allowToday: options.allowToday ?? true,
+				film: options.film ?? false,
+				day: options.day ?? null,
+				confirm: options.confirm ?? 'Mark watched',
+				extras: options.extras ?? [],
+				extrasLabel: options.extrasLabel ?? '',
+				resolve
+			};
 		});
 	}
 

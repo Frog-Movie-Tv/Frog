@@ -154,6 +154,17 @@
 		font-size: 0.8rem;
 	}
 
+	@media (max-width: 760px) {
+		.trigger {
+			min-height: 44px;
+		}
+
+		.option {
+			min-height: 44px;
+			align-items: center;
+		}
+	}
+
 	.current {
 		overflow: hidden;
 		text-overflow: ellipsis;

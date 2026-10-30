@@ -490,7 +490,7 @@
 				{:else if !status.available}
 					Not set up on this Frog.
 				{:else if !status.connected || leaving}
-					Episodes, statuses and scores, kept the same in both places.
+					Your episodes, statuses and scores, brought into Frog. Frog never changes your AniList.
 				{:else if status.syncing}
 					Syncing with {status.name}…
 				{:else if status.synced_at}
@@ -545,13 +545,12 @@
 		{#if status.summary}
 			{@const s = status.summary}
 			<p class="faint small">
-				{plural(s.entries, 'entry', 'entries')} on AniList · last sync brought {s.to_frog} into Frog and
-				sent {s.to_anilist} to AniList{#if s.repaired}&nbsp;· moved {plural(
-						s.repaired,
-						'match',
-						'matches'
-					)} to a better place{/if}{#if s.failed}&nbsp;· {plural(s.failed, 'entry', 'entries')} to try
-					again{/if}
+				{plural(s.entries, 'entry', 'entries')} on AniList · last sync brought {s.to_frog} into Frog{#if s.repaired}&nbsp;·
+					moved {plural(s.repaired, 'match', 'matches')} to a better place{/if}{#if s.failed}&nbsp;· {plural(
+						s.failed,
+						'entry',
+						'entries'
+					)} to try again{/if}
 			</p>
 		{/if}
 

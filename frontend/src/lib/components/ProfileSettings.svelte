@@ -193,12 +193,31 @@
 
 	async function removeImage(kind: 'avatar' | 'banner') {
 		try {
+			// Hold on to the picture, so undo puts back the same one.
+			const kept = await fetch(imageUrl(kind)).then((r) => (r.ok ? r.blob() : null));
 			await api.removeProfileImage(kind);
 			account = await api.account();
 			await session.refresh();
+			const what = kind === 'avatar' ? 'Profile picture' : 'Banner';
+			if (!kept) {
+				toasts.push(`${what} removed`);
+				return;
+			}
+			toasts.undoable(`${what} removed`, async () => {
+				await api.uploadProfileImage(kind, kept);
+				version = Date.now();
+				account = await api.account();
+				await session.refresh();
+			});
 		} catch (e) {
 			toasts.error(e);
 		}
+	}
+
+	async function removeBackdrop() {
+		const before = account?.banner_backdrop ?? '';
+		await save({ banner_backdrop: '' });
+		if (before) toasts.undoable('Banner removed', () => save({ banner_backdrop: before }));
 	}
 
 	async function chooseBackdrop(path: string) {
@@ -252,7 +271,7 @@
 			{#if account?.banner || account?.banner_backdrop}
 				<button
 					class="btn small"
-					onclick={() => (account?.banner ? removeImage('banner') : save({ banner_backdrop: '' }))}
+					onclick={() => (account?.banner ? removeImage('banner') : removeBackdrop())}
 				>
 					Remove
 				</button>

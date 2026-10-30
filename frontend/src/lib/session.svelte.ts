@@ -1,5 +1,6 @@
 import { browser } from '$app/env';
 import { api, ApiError } from './api';
+import { settings } from './settings.svelte';
 import type { AuthStatus } from './types';
 
 const REMEMBERED = 'frog.session.v1';
@@ -44,6 +45,7 @@ class Session {
 	}
 
 	async logout() {
+		await settings.flush();
 		this.forget();
 		// Take the offline copy of the library with us.
 		if (browser) navigator.serviceWorker?.controller?.postMessage('frog:signed-out');
@@ -51,6 +53,7 @@ class Session {
 			await api.logout();
 		} finally {
 			await this.refresh();
+			settings.forget();
 		}
 	}
 

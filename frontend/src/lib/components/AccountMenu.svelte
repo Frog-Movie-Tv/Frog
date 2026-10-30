@@ -18,7 +18,7 @@
 	);
 
 	const links = $derived([
-		{ href: `/people/${encodeURIComponent(name)}`, label: 'Your profile', icon: 'heart' },
+		{ href: `/people/${encodeURIComponent(name)}`, label: 'Your profile', icon: 'user' },
 		{ href: '/people', label: 'People', icon: 'users' },
 		{ href: '/settings', label: 'Settings', icon: 'settings' },
 		...(session.status?.is_admin
@@ -45,7 +45,7 @@
 
 <div class="account" bind:this={root}>
 	<button
-		class="avatar"
+		class="avatar hit"
 		aria-haspopup="menu"
 		aria-expanded={open}
 		aria-label="Account: {name}"
@@ -91,7 +91,6 @@
 		padding: 0;
 		display: grid;
 		place-items: center;
-		overflow: hidden;
 		border-radius: 50%;
 		border: 1px solid var(--line-strong);
 		background: var(--accent-soft);

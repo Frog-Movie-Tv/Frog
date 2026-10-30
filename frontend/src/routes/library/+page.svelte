@@ -15,6 +15,8 @@
 	import { STATUS_LABEL, STATUSES } from '#lib/types';
 
 	let items = $state<LibraryItem[]>([]);
+	/** The whole library, unfiltered: what the counts and genres describe. */
+	let everything = $state<LibraryItem[]>([]);
 	let loading = $state(true);
 	let failed = $state(false);
 	let sheetOpen = $state(false);
@@ -38,7 +40,7 @@
 	);
 
 	const genres = $derived(
-		[...new Set(items.flatMap((i) => i.genres))].sort((a, b) => a.localeCompare(b))
+		[...new Set(everything.flatMap((i) => i.genres))].sort((a, b) => a.localeCompare(b))
 	);
 
 	const kindOptions = [
@@ -63,7 +65,7 @@
 
 	const counts = $derived.by(() => {
 		const out: Partial<Record<Status, number>> = {};
-		for (const i of items) if (i.entry) out[i.entry.status] = (out[i.entry.status] ?? 0) + 1;
+		for (const i of everything) if (i.entry) out[i.entry.status] = (out[i.entry.status] ?? 0) + 1;
 		return out;
 	});
 
@@ -90,6 +92,12 @@
 			const all = await api.library(query);
 			if (mine !== token) return;
 			items = all.items;
+			// Unfiltered, this is the whole library; keep it for the counts.
+			const unfiltered =
+				!query.status && !query.kind && !query.genre && !query.q && !query.favourite;
+			if (unfiltered || !everything.length) {
+				everything = unfiltered ? all.items : (await api.library({ limit: 2000 })).items;
+			}
 			failed = false;
 		} catch (e) {
 			if (mine !== token) return;
@@ -119,6 +127,14 @@
 <svelte:head>
 	<title>Library · Frog</title>
 </svelte:head>
+
+<svelte:window
+	onkeydown={(e) => {
+		if (e.key !== 'Escape') return;
+		menuOpen = false;
+		sheetOpen = false;
+	}}
+/>
 
 <div class="page">
 	<div class="section-head">
@@ -732,6 +748,10 @@
 	}
 
 	@media (max-width: 760px) {
+		.chip {
+			min-height: 44px;
+		}
+
 		.controls {
 			display: none;
 		}

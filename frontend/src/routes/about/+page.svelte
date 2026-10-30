@@ -168,7 +168,7 @@
 			that lives in the repository.
 		</p>
 		<div class="actions">
-			<a class="btn" href="/whats-new">Release notes</a>
+			<a class="btn" href="/whats-new">What's new</a>
 			<a
 				class="btn ghost"
 				href="https://github.com/Frog-Movie-Tv/Frog"
