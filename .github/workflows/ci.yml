@@ -50,6 +50,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The notes check reads every commit of the pull request.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -73,6 +76,13 @@ jobs:
       # which is in Frog's voice and written by hand. Without a section for
       # the running version, What's new has nothing to mark as installed. On
       # the release pull request this fails until the notes are written there.
+      - name: Release notes come with the change
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/check-release-notes.mjs "$BASE" "$HEAD"
+
       - name: Release notes cover this version
         run: |
           version="$(cat version.txt)"

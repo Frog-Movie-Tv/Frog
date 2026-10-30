@@ -27,6 +27,11 @@ release with a red test.
 
 ## 2. Write the changelog entry
 
+Every `fix` or `feat` a person can notice adds its own line here in its own
+pull request, and CI fails without one. A small release needs nothing more:
+`scripts/draft-release-notes.mjs` gives these notes their version in the release
+pull request. This skill is for reading them through, or writing a big release.
+
 Work in progress collects under the heading at the top of `RELEASE-NOTES.md`:
 
 ```
