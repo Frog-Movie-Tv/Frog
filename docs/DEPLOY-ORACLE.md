@@ -451,10 +451,14 @@ sudo cp /opt/frog/production/compose.yml /opt/frog/production/.env /opt/frog/res
 sudo sed -i 's/^COMPOSE_PROJECT_NAME=.*/COMPOSE_PROJECT_NAME=frog-restoretest/' /opt/frog/restoretest/.env
 cd /opt/frog/restoretest && sudo docker compose up -d
 
-# The newest backup, fetched from the repository rather than this disk.
+# The newest backup, fetched from the repository rather than this disk. A
+# fresh clone gives every file the same time, so pick by name: names start
+# with the date.
+sudo rm -rf /tmp/frog-backups-check
 sudo GIT_SSH_COMMAND="ssh -i /opt/frog/backup-key -o IdentitiesOnly=yes" \
   git clone -q git@github.com:Frog-Movie-Tv/Frog-Backups.git /tmp/frog-backups-check
-ARCHIVE="$(ls -1t /tmp/frog-backups-check/production/*.age | head -1)"
+ARCHIVE="$(ls -1 /tmp/frog-backups-check/production/*.age | sort | tail -1)"
+echo "$ARCHIVE"
 
 # Asks you to type "restoretest", then to paste the age private key and press Ctrl-D.
 sudo /opt/frog/deploy/restore.sh restoretest "$ARCHIVE"
