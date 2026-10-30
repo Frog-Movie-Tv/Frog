@@ -99,6 +99,73 @@ In progress.
   the last update and any rollback, and administrators get a notification
   when one of them fails.
 
+## [0.8.0] — Treefrog — 2026-10-30
+
+<!-- Drafted from the commit messages so the release is not blocked.
+     Rewrite it in Frog's voice before merging: say what a person can now
+     do, not what changed in the code. -->
+
+### Changes
+
+- Remove custom CSS and other technical settings
+- Read from AniList and never write to it
+- Show what the server did and tell administrators when it fails
+- Show what the server did and tell administrators when it fails
+- Place entries with care, keep what TMDB lacks, sync reliably
+- Place entries with care, keep what TMDB lacks, sync reliably
+- Read from AniList and never write to it
+- Give every title a Frog id of its own
+- Give every title a Frog id of its own
+- Send backups to a private repository with a deploy key
+- Send backups to a private repository with a deploy key
+- Put shelves at the top
+- Bring in Netflix viewing activity
+- Group review rows by the title itself
+- Netflix viewing activity, and a fast library at any size
+- Place Netflix episodes by name
+- Put every Netflix episode on its real day
+- Put every Netflix episode on its real day
+- Review a long import quickly
+- Search members and film and TV people from one bar
+- Search, ratings, shelves on Home, read-only AniList and the UX pass
+- Rank by how well a name answers, and filter films and shows
+- Separate films, shows and people, and add filters
+- Show scores from other sites and the age rating
+- Use the same frame as every other page, and keep last sign-in
+- Leave out watchlisted shows that are already releasing
+- Carry the UX pass over to the current code
+- Back up to the organisation's repository, and restore the newest backup
+- Let a rollback start on a newer schema ([#43](https://github.com/Frog-Movie-Tv/Frog/issues/43))
+- Name a manual backup as one, not as the nightly
+- Pick the newest backup by its name, not its file time
+- Continue from the latest episode, not the first gap
+- Bring back watched episodes from a Frog backup
+- Count a Trakt episode as an episode, not its show
+- Keep numbers that are part of an anime name
+- Keep the day of a date in any other format
+- Keep titles apart that only share a number
+- Leave Letterboxd lists out of a ZIP
+- Tick nothing for a finished anime special
+- Ignore accents and case in the name filter ([#45](https://github.com/Frog-Movie-Tv/Frog/issues/45))
+- Keep a library of hundreds fast
+- Keep the MDBList budget with its client
+- Say plainly when a page or title is not there
+- Load every font under the live policy, and check pages against it
+- Ship fonts as files so the deployed policy loads them
+- Build shelves and Home from one reading
+- Build shelves and Home from one reading
+- Remove custom CSS and other technical settings
+- Keep backups in an owner's account, since the organisation has no deploy keys
+- Keep backups in the organisation's repository
+- Say what a manual backup reports
+- Use the backup repository's exact name
+- Describe read-only AniList, ratings and the new key
+- Say what the readers do and still leave out
+- Backups leave the server, and a real restore passed
+- Note how pages word a failed load
+- Note how up next is chosen, and a flaky AniList test
+- Release 0.8.0
+
 ## [0.7.0] — Treefrog — 2026-10-28
 
 One search for everything, AniList that looks after itself, and trailers that
@@ -480,6 +547,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[0.8.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.5.0
