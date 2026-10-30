@@ -406,7 +406,7 @@
 		{#if !item.in_library}
 			<div class="quick">
 				<button
-					class="q"
+					class="q hit"
 					disabled={adding === key}
 					title="Add to your library"
 					aria-label="Add {item.name} to your library"
@@ -475,7 +475,7 @@
 {/snippet}
 
 {#snippet seeAll(id: Tab)}
-	<button class="link" onclick={() => choose(id)}>See all</button>
+	<button class="link hit" onclick={() => choose(id)}>See all</button>
 {/snippet}
 
 {#snippet section(id: Tab, title: string)}
@@ -527,7 +527,7 @@
 			aria-label="Search"
 		/>
 		{#if term}
-			<button class="clear" aria-label="Clear search" onclick={() => (term = '')}>
+			<button class="clear hit" aria-label="Clear search" onclick={() => (term = '')}>
 				<Icon name="x" size={17} />
 			</button>
 		{/if}

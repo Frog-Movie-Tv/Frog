@@ -145,7 +145,7 @@
 {:else}
 	{#if showChrome}
 		<header class="bar">
-			<a class="brand" href="/" aria-label="Frog, home">
+			<a class="brand hit" href="/" aria-label="Frog, home">
 				<Logo size={28} word />
 			</a>
 

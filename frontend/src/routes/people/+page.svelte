@@ -95,7 +95,7 @@
 				spellcheck="false"
 			/>
 			{#if term}
-				<button class="clear" aria-label="Clear search" onclick={() => (term = '')}>
+				<button class="clear hit" aria-label="Clear search" onclick={() => (term = '')}>
 					<Icon name="x" size={17} />
 				</button>
 			{/if}

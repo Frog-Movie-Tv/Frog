@@ -48,6 +48,7 @@
 	--good: #5fcf9e;
 	--warn: #e0a458;
 	--bad: #f4738f;
+	--bad-ink: #1a0508;
 
 	/* One colour per status, used by badges, stats and filters alike. Five
 	   distinct hues, so Watching and Completed never read as the same green. */
@@ -110,9 +111,10 @@
 	--accent-ink: #ffffff;
 	--accent-soft: rgba(42, 114, 71, 0.14);
 
-	--good: #2f8f6d;
+	--good: #1f7355;
 	--warn: #935d17;
 	--bad: #b53a57;
+	--bad-ink: #ffffff;
 
 	--shadow-2: 0 10px 30px -14px rgba(16, 40, 28, 0.3);
 	--shadow-3: 0 30px 60px -24px rgba(16, 40, 28, 0.35);
@@ -146,6 +148,7 @@
 	--good: #3ecf8e;
 	--warn: #f5a524;
 	--bad: #f3506c;
+	--bad-ink: #1a0508;
 }
 
 :root[data-theme='amoled'] {
@@ -187,9 +190,10 @@
 	--accent-ink: #ffffff;
 	--accent-soft: rgba(91, 63, 214, 0.13);
 
-	--good: #1f8f63;
+	--good: #17754f;
 	--warn: #9a6512;
 	--bad: #c62f4d;
+	--bad-ink: #ffffff;
 
 	--shadow-2: 0 10px 30px -14px rgba(20, 16, 40, 0.3);
 	--shadow-3: 0 30px 60px -24px rgba(20, 16, 40, 0.35);

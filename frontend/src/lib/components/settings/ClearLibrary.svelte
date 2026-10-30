@@ -131,7 +131,7 @@
 	.danger-btn {
 		background: var(--bad);
 		border-color: transparent;
-		color: #fff;
+		color: var(--bad-ink);
 	}
 
 	.danger-btn:hover:not(:disabled) {

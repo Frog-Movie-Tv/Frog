@@ -155,7 +155,7 @@
 		const y = year(item.release_date);
 		if (y) bits.push(y);
 		const age = detail?.age_rating ?? outside?.age_rating;
-		if (age) bits.push(age);
+		if (age) bits.push(`Rated ${age}`);
 		if (item.kind === 'movie' && item.runtime) bits.push(runtime(item.runtime));
 		if (item.kind === 'tv' && item.season_count) {
 			bits.push(`${item.season_count} season${item.season_count === 1 ? '' : 's'}`);

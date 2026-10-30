@@ -159,9 +159,23 @@
 		const name = shelf.name;
 		try {
 			const gone = await api.deleteShelf(id);
+			// Home names its rows by shelf id, and an undone shelf gets a new one.
+			const row = `shelf:${id}`;
+			const at = settings.current.homeRows.indexOf(row);
+			if (at >= 0) {
+				settings.set(
+					'homeRows',
+					settings.current.homeRows.filter((r) => r !== row)
+				);
+			}
 			await goto('/shelves');
 			toasts.undoable(`Deleted ${name}`, async () => {
 				const { shelf: back } = await api.createShelf(gone);
+				if (at >= 0) {
+					const rows = [...settings.current.homeRows];
+					rows.splice(at, 0, `shelf:${back.id}`);
+					settings.set('homeRows', rows);
+				}
 				await goto(`/shelves/${back.id}`);
 			});
 		} catch (e) {

@@ -608,17 +608,48 @@ test('the next account on this device starts from its own preferences', async ({
 test('controls are big enough to touch on a phone', async ({ page, isMobile }) => {
 	test.skip(!isMobile, 'touch targets only apply to the phone layout');
 	await signIn(page);
-	for (const path of ['/library', '/settings#home', '/shelves', '/stats']) {
+	for (const path of ['/library', '/settings#home', '/shelves', '/stats', '/calendar']) {
 		await page.goto(path);
 		await page.waitForLoadState('networkidle');
 		const small = await page.evaluate(() =>
-			[...document.querySelectorAll('main .btn, main .icon-btn, main .chip, main .trigger')]
+			[
+				...document.querySelectorAll(
+					'main .btn, main .icon-btn, main .chip, main .trigger, main .switch button'
+				)
+			]
 				.map((el) => ({ el, r: el.getBoundingClientRect() }))
 				.filter(({ r }) => r.width > 0 && (r.height < 44 || r.width < 44))
 				.map(({ el, r }) => `${el.textContent?.trim() || el.className} ${r.width}x${r.height}`)
 		);
 		expect(small, `${path} has controls under 44px`).toEqual([]);
 	}
+});
+
+test('a shelf on Home goes with its delete and comes back with its undo', async ({ page }) => {
+	await signIn(page);
+	const made = await page.request.post('/api/shelves', {
+		data: { name: 'Keep', kind: 'manual', title_ids: [] }
+	});
+	const { shelf } = await made.json();
+	const homeRows = async () => {
+		const stored = await (await page.request.get('/api/settings')).json();
+		return (stored.settings ?? stored).homeRows.filter((r: string) => r.startsWith('shelf:'));
+	};
+
+	await page.goto(`/shelves/${shelf.id}`);
+	await page.getByRole('button', { name: 'Show on Home' }).click();
+	await expect.poll(homeRows).toEqual([`shelf:${shelf.id}`]);
+
+	await page.getByRole('button', { name: /^Delete/ }).click();
+	await expect(page).toHaveURL('/shelves');
+	await expect.poll(homeRows).toEqual([]);
+
+	await page.getByRole('button', { name: 'Undo' }).click();
+	await expect(page).toHaveURL(/\/shelves\/\d+/);
+	const back = Number(page.url().split('/').pop());
+	expect(back).not.toBe(shelf.id);
+	await expect.poll(homeRows).toEqual([`shelf:${back}`]);
+	await page.request.delete(`/api/shelves/${back}`);
 });
 
 test('signing out closes the door behind you', async ({ page }) => {

@@ -27,7 +27,9 @@
 		<a class="row card link-row" href="/import">
 			<span class="label">
 				<strong>Import</strong>
-				<span class="faint">Letterboxd, Trakt, IMDb, MyAnimeList, TV Time or a Frog backup</span>
+				<span class="faint">
+					Letterboxd, Trakt, IMDb, MyAnimeList, TV Time, Netflix or a Frog backup
+				</span>
 			</span>
 			<Icon name="chevron-right" size={18} />
 		</a>
@@ -104,13 +106,5 @@
 
 	.link-row:hover {
 		border-color: var(--line-strong);
-	}
-
-	@media (max-width: 720px) {
-		.row {
-			align-items: flex-start;
-			flex-direction: column;
-			gap: 10px;
-		}
 	}
 </style>
