@@ -249,6 +249,14 @@ function readFrogJson(text: string): Incoming[] {
 
 		const watches = t.watches as { watched_at?: string }[] | undefined;
 		row.watched_at = watches?.[0]?.watched_at ?? null;
+
+		// The backup says which episodes, not when: they come back undated.
+		const episodes = (t.episodes ?? []) as { season: number; episode: number; watched?: boolean }[];
+		const seen = episodes.filter((e) => e.watched);
+		if (seen.length) {
+			row.watches = seen.map((e) => ({ season: e.season, episode: e.episode, watched_at: null }));
+			row.progress = seen.length;
+		}
 		return row;
 	});
 }

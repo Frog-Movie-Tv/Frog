@@ -579,3 +579,32 @@ test('TV Time: its other column names, the first date, and an empty file', async
 	);
 	assert.deepEqual(await rows('tvtime', 'empty.csv', 'show_name\n'), []);
 });
+
+test('a Frog backup brings back the episodes that were watched', async () => {
+	const backup = {
+		format: 'frog-library',
+		version: 2,
+		titles: [
+			{
+				kind: 'tv',
+				tmdb_id: 1399,
+				name: 'Game of Thrones',
+				status: 'watching',
+				episodes: [
+					{ season: 1, episode: 1, rating: null, notes: null, watched: true },
+					{ season: 1, episode: 2, rating: null, notes: 'a note', watched: false },
+					{ season: 2, episode: 1, rating: null, notes: null, watched: true }
+				]
+			},
+			{ kind: 'tv', tmdb_id: 70523, name: 'Dark', status: 'planned', episodes: [] }
+		]
+	};
+	const [thrones, dark] = await rows('frog', 'frog-library.json', JSON.stringify(backup));
+	assert.deepEqual(thrones.watches, [
+		{ season: 1, episode: 1, watched_at: null },
+		{ season: 2, episode: 1, watched_at: null }
+	]);
+	assert.equal(thrones.progress, 2);
+	assert.equal(dark.watches, undefined);
+	assert.equal(dark.progress, undefined);
+});
