@@ -1,5 +1,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicI64;
+use std::sync::Arc;
 
 /// Everything the process needs from the environment, read once at startup.
 #[derive(Clone, Debug)]
@@ -21,6 +23,28 @@ pub struct Config {
     /// MDBList, for IMDb, Rotten Tomatoes and Metacritic scores. Without a
     /// key those simply do not appear.
     pub mdblist: Option<MdbListClient>,
+    /// fanart.tv, for title logos TMDB has none of. Without a key titles
+    /// simply keep the logo TMDB gives, or none.
+    pub fanart: Option<FanartClient>,
+}
+
+/// A free personal key from fanart.tv. Sent as a header, so it is in no
+/// address and no log.
+#[derive(Clone)]
+pub struct FanartClient {
+    pub key: String,
+    /// Only tests point these elsewhere.
+    pub api_url: String,
+    pub assets_url: String,
+}
+
+/// Never the key: a config dump must not carry it.
+impl std::fmt::Debug for FanartClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FanartClient")
+            .field("api_url", &self.api_url)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A free key from mdblist.com/preferences. It stays on the server: only
@@ -30,6 +54,24 @@ pub struct MdbListClient {
     pub key: String,
     /// Only tests point this elsewhere.
     pub api_url: String,
+    pub budget: Arc<Budget>,
+}
+
+/// Requests left today, as MDBList last said, and when that resets. Kept in
+/// memory: a restart forgets it, and the next answer says it again.
+#[derive(Debug)]
+pub struct Budget {
+    pub remaining: AtomicI64,
+    pub resets_at: AtomicI64,
+}
+
+impl Default for Budget {
+    fn default() -> Self {
+        Self {
+            remaining: AtomicI64::new(i64::MAX),
+            resets_at: AtomicI64::new(0),
+        }
+    }
 }
 
 impl std::fmt::Debug for MdbListClient {
@@ -117,6 +159,12 @@ impl Config {
             mdblist: env_opt("MDBLIST_API_KEY").map(|key| MdbListClient {
                 key,
                 api_url: env_or("MDBLIST_API_URL", "https://api.mdblist.com"),
+                budget: Arc::default(),
+            }),
+            fanart: env_opt("FANART_API_KEY").map(|key| FanartClient {
+                key,
+                api_url: env_or("FANART_API_URL", "https://webservice.fanart.tv/v3"),
+                assets_url: env_or("FANART_ASSETS_URL", "https://assets.fanart.tv"),
             }),
         })
     }

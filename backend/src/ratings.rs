@@ -17,7 +17,7 @@
 //! time, in batches, and a title is not asked about again for days
 //! (`next_check`). Without a key, MDBList is simply not asked.
 
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::Ordering;
 
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde::Serialize;
@@ -56,14 +56,10 @@ const WORKER_FLOOR: i64 = 200;
 /// How long a title page waits for a first look before showing what it has.
 const FIRST_LOOK: std::time::Duration = std::time::Duration::from_millis(3500);
 
-/// Requests left today, as MDBList last said, and when that resets. Kept in
-/// memory: a restart forgets it, and the next answer says it again.
-static REMAINING: AtomicI64 = AtomicI64::new(i64::MAX);
-static RESETS_AT: AtomicI64 = AtomicI64::new(0);
-
-fn budget_left(floor: i64) -> bool {
-    let resets = RESETS_AT.load(Ordering::Relaxed);
-    Utc::now().timestamp() >= resets || REMAINING.load(Ordering::Relaxed) > floor
+fn budget_left(client: &MdbListClient, floor: i64) -> bool {
+    let budget = &client.budget;
+    Utc::now().timestamp() >= budget.resets_at.load(Ordering::Relaxed)
+        || budget.remaining.load(Ordering::Relaxed) > floor
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -169,10 +165,10 @@ async fn call(
             .and_then(|v| v.parse::<i64>().ok())
     };
     if let Some(left) = header("x-ratelimit-remaining") {
-        REMAINING.store(left, Ordering::Relaxed);
+        client.budget.remaining.store(left, Ordering::Relaxed);
     }
     if let Some(reset) = header("x-ratelimit-reset") {
-        RESETS_AT.store(reset, Ordering::Relaxed);
+        client.budget.resets_at.store(reset, Ordering::Relaxed);
     }
 
     match resp.status().as_u16() {
@@ -180,10 +176,10 @@ async fn call(
         404 => Ok(None),
         401 | 402 | 403 | 429 => {
             // Nothing is asked of it for an hour, unless it said how long.
-            REMAINING.store(0, Ordering::Relaxed);
+            client.budget.remaining.store(0, Ordering::Relaxed);
             if header("x-ratelimit-reset").is_none() {
                 let later = (Utc::now() + Duration::hours(1)).timestamp();
-                RESETS_AT.store(later, Ordering::Relaxed);
+                client.budget.resets_at.store(later, Ordering::Relaxed);
             }
             Err(Failure::Limited)
         }
@@ -443,7 +439,7 @@ pub async fn refresh(state: &AppState, titles: &[i64], floor: i64) -> AppResult<
                 })
                 .collect();
             for chunk in group.chunks(BATCH) {
-                if !budget_left(floor) {
+                if !budget_left(client, floor) {
                     failed.extend(chunk.iter().map(|c| c.0));
                     continue;
                 }
@@ -469,7 +465,7 @@ pub async fn refresh(state: &AppState, titles: &[i64], floor: i64) -> AppResult<
         }
         // No batch for MyAnimeList's ids, and they are few.
         for (title_id, id) in mal {
-            if !budget_left(floor) {
+            if !budget_left(client, floor) {
                 failed.push(title_id);
                 continue;
             }

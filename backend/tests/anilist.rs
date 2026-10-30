@@ -243,6 +243,7 @@ impl Harness {
                 anime_ids_url: format!("{base}/anime_ids.json"),
                 anime_lists_url: format!("{base}/anime_lists.json"),
             }),
+            fanart: None,
             mdblist: None,
         };
         let pool = frog::db::connect(&url).await.unwrap();

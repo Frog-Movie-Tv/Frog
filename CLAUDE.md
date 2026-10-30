@@ -16,8 +16,8 @@ something.
 ## Hard rules
 
 - **Zero cost.** No paid APIs, no AI/LLM features, no services that need a card,
-  no runtime CDNs (fonts and icons are bundled). TMDB's free key and MDBList's
-  free key (optional) are the only credentials. If something would cost money,
+  no runtime CDNs (fonts and icons are bundled). TMDB's free key, and the free
+  MDBList and fanart.tv keys (both optional), are the only credentials. If something would cost money,
   say so and leave it out.
 - **AniList is read only.** Frog never writes to it. `Api::graphql` refuses
   anything that is not a query; keep it that way.
@@ -30,9 +30,10 @@ something.
   push keys are shared. A query that reads or writes personal data without
   naming whose it is fails `backend/tests/scoping.rs`, and that is a real
   guard, not a style rule — it is what stops one account seeing another's.
-- **Never print or commit `TMDB_API_KEY` or `MDBLIST_API_KEY`.** They live in
-  `.env`, which is gitignored. MDBList's key travels in the request's address,
-  so errors from those requests are logged without it (`ratings::quiet`).
+- **Never print or commit `TMDB_API_KEY`, `MDBLIST_API_KEY` or
+  `FANART_API_KEY`.** They live in `.env`, which is gitignored. MDBList's key
+  travels in the request's address, so errors from those requests are logged
+  without it (`ratings::quiet`); fanart.tv's goes in a header.
 - **Product voice everywhere the user reads** — UI copy, changelog, README.
   Short, confident, neutral, like Apple TV or Letterboxd. Never explain the
   implementation or the roadmap in the UI. Never write "alpha", "finally",
@@ -51,6 +52,7 @@ backend/            Rust: axum 0.8, sqlx 0.8 (SQLite), tokio
   src/anilist/      AniList: client, idmap, place, reconcile, library, local,
                     media, records, sync — docs/ANILIST.md has the map
   src/ratings.rs    scores from other sites, on the title itself
+  src/fanart.rs     title logos from fanart.tv where TMDB has none
   src/tmdb/         TMDB client, cache, and the JSON → view mapping
   src/auth.rs       sessions, roles, the Auth and AdminAuth extractors
   src/jobs/         background worker (sessions, caches, shows, AniList, ops)

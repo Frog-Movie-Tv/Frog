@@ -46,7 +46,11 @@ const SCOPED_FRAGMENTS: [&str; 6] = [
 ];
 
 /// Statements that are global on purpose, each with its reason.
-const ALLOWED: [(&str, &str); 6] = [
+const ALLOWED: [(&str, &str); 7] = [
+    (
+        "SELECT t.id FROM title t LEFT JOIN title_logo_check",
+        "decides which shared titles anyone tracks still lack a logo; writes only          title.logo_path and title_logo_check",
+    ),
     (
         "SELECT DISTINCT t.id\n           FROM library_entry l\n           JOIN title t ON t.id = l.title_id\n           LEFT JOIN title_rating_check",
         "decides which shared titles need their outside scores read; writes only \

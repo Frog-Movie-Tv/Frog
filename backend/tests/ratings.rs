@@ -124,9 +124,11 @@ impl Harness {
                 anime_ids_url: base.clone(),
                 anime_lists_url: base.clone(),
             }),
+            fanart: None,
             mdblist: Some(MdbListClient {
                 key: "secret-key".into(),
                 api_url: base,
+                budget: Arc::default(),
             }),
         };
         let pool = frog::db::connect(&url).await.unwrap();

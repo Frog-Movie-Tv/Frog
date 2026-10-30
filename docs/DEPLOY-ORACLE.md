@@ -352,6 +352,7 @@ AniList). Then add all three to that instance's `.env` and restart it:
 
 ```bash
 MDBLIST_API_KEY=your-free-key   # scores from IMDb, Rotten Tomatoes, Metacritic
+FANART_API_KEY=your-free-key    # title logos TMDB lacks, from fanart.tv
 ANILIST_CLIENT_ID=12345
 ANILIST_CLIENT_SECRET=…
 ANILIST_REDIRECT_URI=https://<production domain>/api/anilist/callback

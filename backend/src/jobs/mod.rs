@@ -22,6 +22,9 @@ const CREDITS_BATCH: i64 = 25;
 /// runs every 15 minutes, so this hears about a failed one well within that.
 const OPS_TICK: Duration = Duration::from_secs(60 * 5);
 
+/// Logos from fanart.tv for tracked titles that have none, a batch at a time.
+const LOGO_TICK: Duration = Duration::from_secs(60 * 10);
+
 pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         // Give the HTTP server a moment before the first sweep.
@@ -32,6 +35,8 @@ pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
         let _anilist_guard = AbortOnDrop(anilist);
         let ops = tokio::spawn(watch_ops(state.clone()));
         let _ops_guard = AbortOnDrop(ops);
+        let logos = tokio::spawn(fill_logos(state.clone()));
+        let _logos_guard = AbortOnDrop(logos);
         loop {
             if let Err(e) = tick(&state).await {
                 tracing::warn!(error = %e, "worker tick failed");
@@ -76,6 +81,13 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
         tracing::warn!(error = %e, "new-episode notifications failed");
     }
     Ok(())
+}
+
+async fn fill_logos(state: AppState) {
+    loop {
+        crate::fanart::fill_due(&state).await;
+        tokio::time::sleep(LOGO_TICK).await;
+    }
 }
 
 /// One notification: every new episode of one show on one day.
