@@ -80,7 +80,13 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    columns but has never been tried on a real one. Netflix's "Part N"
    seasons are placed by their episode names; parts whose episodes are only
    called "Episode 3" (Money Heist Part 1) still wait for a person.
-11. **Finish the data-ownership pass.** The AniList, import, catalog and
+11. **What the readers still leave out.** A Frog backup restores which
+   episodes were watched but not when, because the export does not write
+   their dates, and only a film's first watch. A Trakt episode marks its show
+   in progress without ticking that episode, though the file says which one.
+   Letterboxd's ZIP may hold a `deleted/` folder that would be read as
+   library; no real export has been tried.
+12. **Finish the data-ownership pass.** The AniList, import, catalog and
    emptying-a-library code no longer lives in routes. Every route below was
    read for the catalog change on 2026-10-30: each now goes by Frog's title
    id, and the TMDB ids left in them are TMDB's own (its cache, credits,
@@ -97,7 +103,7 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    `routes/browse.rs`, `routes/admin.rs`, `routes/invites.rs`,
    `routes/auth.rs`, `routes/push.rs`, `routes/settings.rs`. Persistence is
    not centralised yet.
-12. **Smaller things.** Customisable keyboard shortcuts, renaming and
+13. **Smaller things.** Customisable keyboard shortcuts, renaming and
    recolouring statuses, muted trailer autoplay, per-shelf layout defaults.
 
 ## Known issues

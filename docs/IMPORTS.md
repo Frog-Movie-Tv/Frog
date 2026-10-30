@@ -58,6 +58,12 @@ a new source is a new reader and nothing else.
   Progress without dates is undated (in totals, not in the diary).
   A dated film is one diary entry, once, with its rewatch flag; a finished
   film with no date gets one undated watch.
+- **A count of zero is not a missing count.** A finished row with no
+  `progress` ticks its whole season; `progress: 0` ticks nothing, which is how
+  a finished anime special stays unticked.
+- **A row about one episode or season says nothing of the show.** A Trakt entry
+  for an episode makes the show `watching`, never `completed`, and its rating
+  is not the show's.
 - **Shows never get a title-level watch.**
 - **A planned later season** does not send a show you are part-way through
   back to planned.
@@ -71,7 +77,8 @@ a new source is a new reader and nothing else.
   `ids` (`tmdb`, `anilist`, `imdb`) to every version 1 field; `tmdb_id` is
   null for an anime TMDB lacks. The CSV added `Frog ID` and `AniList ID` as
   its last columns. A Frog backup of either version is read back by
-  `parsers.ts` (`readFrogJson`).
+  `parsers.ts` (`readFrogJson`), with the episodes that were watched, undated:
+  the file says which, not when.
 
 ## Tests
 
@@ -84,8 +91,10 @@ a new source is a new reader and nothing else.
 - `transfer/matching.rs` and `transfer/apply.rs` unit tests: the choosing and
   merging rules on plain values.
 - `frontend/tests/parsers.test.mjs`: every reader on a small file in its
-  source's shape; `frontend/tests/netflix.test.mjs`: the Netflix reader on a
-  real 4,054-line export.
+  source's shape, with gzip and ZIP handling; `frontend/tests/netflix.test.mjs`:
+  the Netflix reader on a real 4,054-line export. Node has no `DOMParser`, so
+  a small stand-in reads MyAnimeList's XML there; the XML itself is only ever
+  parsed by a real browser.
 
 ## Behaviour in detail
 
