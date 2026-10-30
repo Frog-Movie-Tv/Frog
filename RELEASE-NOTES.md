@@ -417,13 +417,13 @@ everything you have watched.
   importer reads the export, finds each title on TMDB and shows you the
   matches before anything is written. Anything uncertain is flagged so you can
   choose the right one, and you decide whether the file or your library wins.
-- **Export your library** as a full JSON backup or a CSV, from the Import page
-  or the command palette.
+- **Export your library.** A full JSON backup or a CSV, from the Import page or
+  the command palette.
 - **Calendar.** A month view and an agenda of every episode and release you
   follow, with the days you have already watched marked off.
 - **Diary.** Everything you have watched, newest first, grouped by month, with
   rewatches and episode ratings in line.
-- **About page** with version, credits and licences.
+- **About page.** Version, credits and licences in one place.
 
 ### Improvements
 
@@ -467,14 +467,15 @@ A face, a home screen and a great deal to adjust.
 - **Frog has a mascot.** A round green face with big eyes and pink cheeks,
   readable down to 16 pixels, used as the app icon and the favicon. Four
   variants to choose from: Classic, Sleepy, Popcorn and 3D glasses.
-- **The Pond theme**, built from the mascot's colours, alongside Pond Light,
+- **The Pond theme.** Built from the mascot's colours, alongside Pond Light,
   Dark and AMOLED.
-- **A home screen** separate from the library, opening on whatever you are in
-  the middle of, with what to continue, what airs this week and what you added
-  recently.
-- **A command palette** on <kbd>Ctrl</kbd>+<kbd>K</kbd>.
-- **A theme editor** with live preview, and themes you can save, duplicate,
-  export and import.
+- **A home screen.** Separate from the library and opening on whatever you are
+  in the middle of, with what to continue, what airs this week and what you
+  added recently.
+- **A command palette.** Everything within reach on
+  <kbd>Ctrl</kbd>+<kbd>K</kbd>.
+- **A theme editor.** Live preview, and themes you can save, duplicate, export
+  and import.
 
 ### Improvements
 
@@ -505,13 +506,13 @@ The first release.
 
 ### Highlights
 
-- **Track films and shows** from TMDB, with five statuses, ratings, favourites
-  and notes.
-- **Episode tracking**, one at a time or a season at once, with per-episode
+- **Track films and shows.** Everything on TMDB, with five statuses, ratings,
+  favourites and notes.
+- **Episode tracking.** One at a time or a season at once, with per-episode
   ratings and notes.
-- **Title pages** coloured from their own artwork, with cast, crew, seasons,
+- **Title pages.** Coloured from their own artwork, with cast, crew, seasons,
   trailers, franchise order and where to stream.
-- **Install it on a phone** and keep what you have opened available offline.
+- **Install it on a phone.** What you have opened stays available offline.
 
 ### Improvements
 

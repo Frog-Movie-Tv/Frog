@@ -14,7 +14,6 @@
 		version: string;
 		codename: string;
 		date: string;
-		image?: string;
 		intro: string;
 		groups: Group[];
 	}
@@ -102,10 +101,6 @@
 					<div class="body">
 						{#if release.intro}<p class="intro">{release.intro}</p>{/if}
 
-						{#if release.image}
-							<img class="shot" src="/{release.image}" alt="" loading="lazy" />
-						{/if}
-
 						{#each release.groups as group (group.title)}
 							<section class="group" data-tone={tone(group.title)}>
 								<h3>{group.title}</h3>
@@ -173,13 +168,6 @@
 		font-size: 0.92rem;
 		color: var(--accent);
 		font-weight: 600;
-	}
-
-	.shot {
-		width: 100%;
-		border-radius: var(--radius);
-		border: 1px solid var(--line);
-		display: block;
 	}
 
 	.pill.now {
