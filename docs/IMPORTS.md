@@ -31,6 +31,7 @@ a new source is a new reader and nothing else.
 | `frontend/src/lib/import/anime.ts` | Anime trackers: season and part from a title (`animeTitle`), MyAnimeList XML |
 | `frontend/src/lib/import/netflix.ts` | Netflix viewing history: grouping plays into shows and seasons, then settling them with TMDB's answer |
 | `frontend/src/lib/import/rows.ts` | Turning settled rows into what `apply` takes |
+| `frontend/src/lib/import/review.ts` | Sorting rows for review: the kind of problem, grouping by title, what can be kept in bulk |
 | `backend/src/transfer/matching.rs` | Which TMDB title a row means: ids, then names, by year, spelling and season; episodes by name |
 | `backend/src/transfer/apply.rs` | Conflict modes, `merged_status`, ticking seasons and episodes, film diary entries |
 | `backend/src/transfer/export.rs` | `frog-library` JSON (version 2) and the CSV sheet |
@@ -92,8 +93,10 @@ a new source is a new reader and nothing else.
   merging rules on plain values.
 - `frontend/tests/parsers.test.mjs`: every reader on a small file in its
   source's shape, with gzip and ZIP handling; `frontend/tests/netflix.test.mjs`:
-  the Netflix reader on a real 4,054-line export. Node has no `DOMParser`, so
-  a small stand-in reads MyAnimeList's XML there; the XML itself is only ever
+  the Netflix reader on a real 4,054-line export;
+  `frontend/tests/review.test.mjs`: every message on its kind of problem,
+  grouping, and what bulk keeping may touch. Node has no `DOMParser`, so a
+  small stand-in reads MyAnimeList's XML there; the XML itself is only ever
   parsed by a real browser.
 
 ## Behaviour in detail
@@ -115,6 +118,14 @@ a new source is a new reader and nothing else.
   `npm test` runs it against `tests/fixtures/netflix-viewing-history.csv`,
   real titles with made-up dates; `node --test` reads the TypeScript directly
   through `tests/ts-paths.mjs`.
+- **The review** sorts each row's messages into five kinds by their wording
+  (`review.ts`), so a new warning needs a line there or it lands under "Check
+  the match". A closest match with any other doubt counts as "Check the
+  match": only a plain one can be kept in bulk. Bulk actions reach only the
+  rows on screen under a filter, never All, and a row left out stays on
+  screen, dimmed, until the filter changes. Rows needing a look are still
+  imported as shown unless someone leaves them out.
+  `node scripts/verify-import.mjs [file.csv]` walks it in real Chromium.
 - **Imported shows get no title-level diary entry.** `apply` only writes one
   for films; a show's watches are its episodes, and a title-level watch
   would count the show as a film in Stats.

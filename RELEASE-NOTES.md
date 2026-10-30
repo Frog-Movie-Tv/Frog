@@ -22,6 +22,9 @@ In progress.
   episode by episode, each on the day you watched it, and Last watched shows
   the day you really saw a title. Import the file again with Let the file win
   to date what you brought in before.
+- **A faster import review.** Rows of one show sit together under it, chips
+  sort everything that needs a look by what is the matter, and a list of close
+  matches can be kept or left out in one go, with an undo.
 - **AniList, matched with care.** Specials and OVAs, sequels with names of
   their own and long runs like One Piece land on the right show, season and
   episode by themselves. When Frog is not sure, it says why and waits for a

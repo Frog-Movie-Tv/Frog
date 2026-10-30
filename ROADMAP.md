@@ -194,7 +194,8 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   `verify-shelves`, `verify-because`, `verify-anime`, `verify-leapfrog`
   (AniList is a stand-in server inside it), `verify-profile-stats` (no TMDB:
   it writes a small library straight into the database with `node:sqlite`),
-  `verify-2fa`, `verify-diary`, `verify-polish`, `verify-accounts` (invites,
+  `verify-2fa`, `verify-diary`, `verify-import`, `verify-polish`,
+  `verify-accounts` (invites,
   isolation, devices, switching off), `verify-pull` (pull to refresh with
   real touch input), plus `npm run pwa-check` and
   `npm run audit`. The ones that reach TMDB need a valid key; with a bad one
