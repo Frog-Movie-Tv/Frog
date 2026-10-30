@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::auth::Auth;
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -18,8 +18,9 @@ pub struct Range {
 
 #[derive(Debug, Serialize)]
 pub struct CalendarEntry {
+    /// Frog's id for the title.
+    pub id: i64,
     pub kind: String,
-    pub tmdb_id: i64,
     pub title: String,
     pub poster_path: Option<String>,
     pub accent: Option<String>,
@@ -30,7 +31,7 @@ pub struct CalendarEntry {
     pub watched: bool,
 }
 
-/// (kind, tmdb_id, name, poster, accent, date, season, episode, ep name, watched)
+/// (kind, title id, name, poster, accent, date, season, episode, ep name, watched)
 type CalendarRow = (
     String,
     i64,
@@ -44,7 +45,7 @@ type CalendarRow = (
     i64,
 );
 
-/// (tmdb id, show, AniList entry name, poster, accent, premiere, season, offset)
+/// (title id, show, AniList entry name, poster, accent, premiere, season, offset)
 type PremiereRow = (
     i64,
     String,
@@ -72,7 +73,7 @@ pub async fn calendar(
     let to = normalise(&to, 120);
 
     let episodes: Vec<CalendarRow> = sqlx::query_as(
-        "SELECT t.kind, t.tmdb_id, t.name, t.poster_path, t.accent_json,
+        "SELECT t.kind, t.id, t.name, t.poster_path, t.accent_json,
                 e.air_date, e.season_number, e.episode_number, e.name,
                 (SELECT COUNT(*) FROM watch_event w
                   WHERE w.user_id = ? AND w.episode_id = e.id)
@@ -97,10 +98,10 @@ pub async fn calendar(
     let mut entries: Vec<CalendarEntry> = episodes
         .into_iter()
         .map(
-            |(kind, tmdb_id, title, poster, accent, date, season, episode, ep_name, watched)| {
+            |(kind, id, title, poster, accent, date, season, episode, ep_name, watched)| {
                 CalendarEntry {
+                    id,
                     kind,
-                    tmdb_id,
                     title,
                     poster_path: poster,
                     accent: accent_of(accent.as_deref()),
@@ -115,7 +116,7 @@ pub async fn calendar(
         .collect();
 
     let films: Vec<FilmRow> = sqlx::query_as(
-        "SELECT t.kind, t.tmdb_id, t.name, t.poster_path, t.accent_json, t.release_date
+        "SELECT t.kind, t.id, t.name, t.poster_path, t.accent_json, t.release_date
            FROM title t
            JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?
           WHERE t.kind = 'movie'
@@ -131,10 +132,11 @@ pub async fn calendar(
     .await?;
 
     entries.extend(
-        films.into_iter().map(
-            |(kind, tmdb_id, title, poster, accent, date)| CalendarEntry {
+        films
+            .into_iter()
+            .map(|(kind, id, title, poster, accent, date)| CalendarEntry {
+                id,
                 kind,
-                tmdb_id,
                 title,
                 poster_path: poster,
                 accent: accent_of(accent.as_deref()),
@@ -143,15 +145,14 @@ pub async fn calendar(
                 episode_number: None,
                 episode_name: None,
                 watched: false,
-            },
-        ),
+            }),
     );
 
     // AniList knows premiere dates TMDB has not listed yet: a season that is
     // not on TMDB at all, or not yet with dates. Only whole dates, and only
     // when no episode of the same show is already on that day.
     let premieres: Vec<PremiereRow> = sqlx::query_as(
-        "SELECT t.tmdb_id, t.name, a.name, t.poster_path, t.accent_json, a.start_date,
+        "SELECT t.id, t.name, a.name, t.poster_path, t.accent_json, a.start_date,
                 a.season, a.episode_offset
            FROM anilist_entry a
            JOIN title t ON t.id = a.title_id AND t.kind = 'tv'
@@ -165,16 +166,14 @@ pub async fn calendar(
     .bind(&to)
     .fetch_all(&state.pool)
     .await?;
-    for (tmdb_id, show, season_name, poster, accent, date, season, offset) in premieres {
-        let taken = entries
-            .iter()
-            .any(|e| e.kind == "tv" && e.tmdb_id == tmdb_id && e.date == date);
+    for (id, show, season_name, poster, accent, date, season, offset) in premieres {
+        let taken = entries.iter().any(|e| e.id == id && e.date == date);
         if taken {
             continue;
         }
         entries.push(CalendarEntry {
+            id,
             kind: "tv".into(),
-            tmdb_id,
             title: show,
             poster_path: poster,
             accent: accent_of(accent.as_deref()),
@@ -213,10 +212,10 @@ pub struct DiaryQuery {
     pub offset: Option<i64>,
 }
 
-/// (kind, tmdb_id, name, poster, accent, release date)
+/// (kind, title id, name, poster, accent, release date)
 type FilmRow = (String, i64, String, Option<String>, Option<String>, String);
 
-/// (day, latest timestamp, kind, tmdb_id, name, poster, count, rewatch, imported, film, rating)
+/// (day, latest timestamp, kind, title id, name, poster, count, rewatch, imported, film, rating)
 type DiaryGroupRow = (
     String,
     String,
@@ -252,7 +251,7 @@ pub async fn diary(
     let groups: Vec<DiaryGroupRow> = sqlx::query_as(
         "SELECT substr(w.watched_at, 1, 10) AS day,
                 MAX(w.watched_at) AS latest,
-                t.kind, t.tmdb_id, t.name, t.poster_path,
+                t.kind, t.id, t.name, t.poster_path,
                 COUNT(*),
                 MAX(w.is_rewatch),
                 MAX(w.source = 'import'),
@@ -274,7 +273,7 @@ pub async fn diary(
     .await?;
 
     let mut entries = Vec::with_capacity(groups.len());
-    for (day, latest, kind, tmdb_id, name, poster_path, count, rewatch, imported, film, rating) in
+    for (day, latest, kind, title_id, name, poster_path, count, rewatch, imported, film, rating) in
         groups
     {
         let episodes: Vec<DiaryEpisodeRow> = if film == 1 {
@@ -283,19 +282,17 @@ pub async fn diary(
             sqlx::query_as(
                 "SELECT e.season_number, e.episode_number, e.name, s.rating, w.is_rewatch
                    FROM watch_event w
-                   JOIN title t ON t.id = w.title_id
                    JOIN episode e ON e.id = w.episode_id
                    LEFT JOIN episode_state s ON s.episode_id = e.id AND s.user_id = ?
                   WHERE w.user_id = ?
-                    AND t.kind = ? AND t.tmdb_id = ?
+                    AND w.title_id = ?
                     AND w.undated = 0
                     AND substr(w.watched_at, 1, 10) = ?
                   ORDER BY e.season_number, e.episode_number",
             )
             .bind(auth.user_id())
             .bind(auth.user_id())
-            .bind(&kind)
-            .bind(tmdb_id)
+            .bind(title_id)
             .bind(&day)
             .fetch_all(&state.pool)
             .await?
@@ -304,8 +301,8 @@ pub async fn diary(
         entries.push(json!({
             "day": day,
             "watched_at": latest,
+            "id": title_id,
             "kind": kind,
-            "tmdb_id": tmdb_id,
             "title": name,
             "poster_path": poster_path,
             "film": film == 1,
@@ -349,8 +346,8 @@ pub async fn diary(
 
 #[derive(Debug, Deserialize)]
 pub struct RedateBody {
-    pub kind: String,
-    pub tmdb_id: i64,
+    /// Frog's id for the title.
+    pub title_id: i64,
     /// The diary day the group sits on now, yyyy-mm-dd.
     pub day: String,
     pub when: crate::routes::episodes::When,
@@ -367,9 +364,7 @@ pub async fn redate(
 ) -> AppResult<Json<Value>> {
     use crate::routes::episodes::{evening_of, When};
 
-    let title_id = crate::store::find_title_id(&state.pool, &body.kind, body.tmdb_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("not in your library".into()))?;
+    let title_id = body.title_id;
 
     // Numbered parameters, because each branch binds a different number of
     // them: ?1 title, ?2 day, ?3 the account, ?4 a timestamp where one is used.

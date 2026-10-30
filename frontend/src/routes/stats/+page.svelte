@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { titleHref } from '#lib/titles';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, img } from '#lib/api';
@@ -134,10 +135,10 @@
 		<section class="block">
 			<div class="section-head"><h2>{title}</h2></div>
 			<ol class="tops">
-				{#each list as t, i (t.tmdb_id)}
+				{#each list as t, i (t.id)}
 					{@const src = img(t.poster_path, 'w185')}
 					<li>
-						<a href="/title/{t.kind}/{t.tmdb_id}" class="top">
+						<a href={titleHref(t)} class="top">
 							<span class="cover">
 								{#if src}<img {src} alt="" loading="lazy" />{/if}
 								<span class="badge">{i + 1}</span>

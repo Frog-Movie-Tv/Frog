@@ -5,9 +5,10 @@ use serde_json::{json, Value};
 use sqlx::SqlitePool;
 
 use crate::auth::Auth;
+use crate::catalog::{ExternalId, TitleRow, TITLE_COLUMNS};
 use crate::error::AppResult;
 use crate::state::AppState;
-use crate::store::{self, LibraryItem, NextEpisode, TitleRow};
+use crate::store::{self, LibraryItem, NextEpisode};
 
 #[derive(Debug, Serialize)]
 pub struct UpNext {
@@ -33,11 +34,6 @@ pub struct Airing {
 
 /// (title_id, season, episode, name, air_date)
 type AiringRow = (i64, i64, i64, Option<String>, Option<String>);
-
-const TITLE_COLUMNS: &str = "t.id, t.kind, t.tmdb_id, t.name, t.overview, t.poster_path,
-        t.backdrop_path, t.logo_path, t.release_date, t.last_air_date, t.tmdb_status, t.runtime,
-        t.episode_count, t.season_count, t.genres_json, t.tmdb_vote, t.imdb_id,
-        t.collection_id, t.accent_json";
 
 /// Everything the home screen draws, in one request.
 pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
@@ -179,7 +175,7 @@ async fn airing_this_week(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Airi
 
     let mut out = Vec::with_capacity(grouped.len());
     for (title_id, episodes) in grouped {
-        let row = store::get_title(pool, title_id).await?;
+        let row = crate::catalog::get_title(pool, title_id).await?;
         let item = store::build_item(pool, user_id, row).await?;
         let air_date = episodes.first().and_then(|e| e.air_date.clone());
         out.push(Airing {
@@ -198,18 +194,20 @@ const BECAUSE_ITEMS: usize = 14;
 /// A row with fewer picks than this left after filtering is not worth a rail.
 const BECAUSE_MIN: usize = 4;
 
-/// (kind, tmdb_id, name)
-type SeedRow = (String, i64, String);
+/// (title id, TMDB id as `title_external` holds it, name)
+type SeedRow = (i64, String, String);
 
 /// The titles recommendations grow from: what you rated well (7 and up, or a
-/// heart), best first, with recent watching breaking ties.
+/// heart), best first, with recent watching breaking ties. Only titles TMDB
+/// knows, since TMDB is what recommends.
 pub async fn seeds(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<SeedRow>> {
     Ok(sqlx::query_as(
         // The rating-or-favourite test has to stay bracketed, or the account
         // check would only apply to one side of the OR.
-        "SELECT t.kind, t.tmdb_id, t.name
+        "SELECT t.id, x.external_id, t.name
            FROM library_entry l
            JOIN title t ON t.id = l.title_id
+           JOIN title_external x ON x.title_id = t.id AND x.provider = 'tmdb' AND x.is_primary = 1
           WHERE l.user_id = ?1 AND (l.rating >= 70 OR l.favourite = 1)
           ORDER BY COALESCE(l.rating, 75) DESC,
                    (SELECT MAX(w.watched_at) FROM watch_event w
@@ -253,20 +251,26 @@ pub async fn because(auth: Auth, State(state): State<AppState>) -> AppResult<Jso
     }
     let pool = &state.pool;
     let me = auth.user_id();
-    let tracked: std::collections::HashSet<(String, i64)> = sqlx::query_as::<_, (String, i64)>(
-        "SELECT t.kind, t.tmdb_id FROM library_entry l JOIN title t ON t.id = l.title_id
+    // TMDB ids already in the library, as `title_external` writes them.
+    let tracked: std::collections::HashSet<String> = sqlx::query_as::<_, (String,)>(
+        "SELECT x.external_id FROM library_entry l
+           JOIN title_external x ON x.title_id = l.title_id AND x.provider = 'tmdb'
           WHERE l.user_id = ?",
     )
     .bind(me)
     .fetch_all(pool)
     .await?
     .into_iter()
+    .map(|r| r.0)
     .collect();
 
     let day = chrono::Utc::now().timestamp() / 86_400;
     let mut offered = std::collections::HashSet::new();
     let mut rows = Vec::new();
-    for (kind, tmdb_id, name) in pick_seeds(&seeds(pool, me).await?, day) {
+    for (title_id, key, name) in pick_seeds(&seeds(pool, me).await?, day) {
+        let Some(ExternalId::Tmdb { kind, id: tmdb_id }) = ExternalId::parse("tmdb", &key) else {
+            continue;
+        };
         let detail = match kind.as_str() {
             "movie" => state.tmdb.movie(tmdb_id).await,
             _ => state.tmdb.tv(tmdb_id).await,
@@ -285,13 +289,13 @@ pub async fn because(auth: Auth, State(state): State<AppState>) -> AppResult<Jso
         let picks: Vec<_> = picks
             .into_iter()
             .filter(|p| p.poster_path.is_some())
-            .filter(|p| !tracked.contains(&(p.kind.clone(), p.tmdb_id)))
+            .filter(|p| p.external().is_some_and(|x| !tracked.contains(&x.key())))
             .filter(|p| offered.insert((p.kind.clone(), p.tmdb_id)))
             .take(BECAUSE_ITEMS)
             .collect();
         if picks.len() >= BECAUSE_MIN {
             rows.push(json!({
-                "seed": { "kind": kind, "tmdb_id": tmdb_id, "name": name },
+                "seed": { "id": title_id, "name": name },
                 "items": picks,
             }));
         }

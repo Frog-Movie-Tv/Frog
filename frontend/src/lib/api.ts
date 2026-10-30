@@ -1,4 +1,5 @@
 import { settings } from './settings.svelte';
+import type { TitleRef } from './titles';
 import type { WhenAnswer } from './when.svelte';
 import type {
 	AniListChoice,
@@ -248,16 +249,14 @@ export const api = {
 			`/api/shelves/${id}`
 		),
 	reorderShelves: (ids: number[]) => send<{ ok: true }>('PUT', '/api/shelves/order', { ids }),
-	addToShelf: (id: number, kind: Kind, tmdbId: number) =>
-		send<{ ok: true }>('POST', `/api/shelves/${id}/items`, { kind, tmdb_id: tmdbId }),
-	removeFromShelf: (id: number, kind: Kind, tmdbId: number) =>
-		send<{ ok: true }>('DELETE', `/api/shelves/${id}/items/${kind}/${tmdbId}`),
+	addToShelf: (id: number, titleId: number) =>
+		send<{ ok: true }>('POST', `/api/shelves/${id}/items`, { title_id: titleId }),
+	removeFromShelf: (id: number, titleId: number) =>
+		send<{ ok: true }>('DELETE', `/api/shelves/${id}/items/${titleId}`),
 	reorderShelf: (id: number, titleIds: number[]) =>
 		send<{ ok: true }>('PUT', `/api/shelves/${id}/items/order`, { title_ids: titleIds }),
-	titleShelves: (kind: Kind, tmdbId: number) =>
-		get<{ shelves: { id: number; name: string; on: boolean }[] }>(
-			`/api/titles/${kind}/${tmdbId}/shelves`
-		),
+	titleShelves: (titleId: number) =>
+		get<{ shelves: { id: number; name: string; on: boolean }[] }>(`/api/t/${titleId}/shelves`),
 	pushStatus: () => get<{ public_key: string; devices: number; default_hour: number }>('/api/push'),
 	pushSubscribe: (subscription: PushSubscriptionJSON) =>
 		send<{ ok: true }>('POST', '/api/push/subscribe', subscription),
@@ -267,14 +266,16 @@ export const api = {
 		send<{ sent: number; gone: number; failed: number }>('POST', '/api/push/test', {}),
 	fullStats: (year?: number) => get<FullStats>(`/api/stats${qs({ year })}`),
 
-	title: (kind: Kind, id: number) => get<TitleDetail>(`/api/titles/${kind}/${id}`),
-	season: (kind: Kind, id: number, season: number) =>
-		get<SeasonDetail>(`/api/titles/${kind}/${id}/seasons/${season}`),
+	/** A title as a provider names it (`tv/1399`, `anilist/21`): opens it, and the answer carries Frog's id. */
+	titleAt: (kind: Kind | 'anilist', id: number) => get<TitleDetail>(`/api/titles/${kind}/${id}`),
+	/** A title by Frog's id. Everything below goes by it too. */
+	title: (titleId: number) => get<TitleDetail>(`/api/t/${titleId}`),
+	season: (titleId: number, season: number) =>
+		get<SeasonDetail>(`/api/t/${titleId}/seasons/${season}`),
 	person: (id: number) => get<PersonDetail>(`/api/person/${id}`),
 
 	track: (
-		kind: Kind,
-		id: number,
+		titleId: number,
 		patch: {
 			status?: Status;
 			rating?: number | null;
@@ -282,51 +283,53 @@ export const api = {
 			notes?: string | null;
 			notify?: boolean;
 		}
-	) => send<{ item: LibraryItem }>('PUT', `/api/titles/${kind}/${id}/library`, patch),
+	) => send<{ item: LibraryItem }>('PUT', `/api/t/${titleId}/library`, patch),
 
-	untrack: (kind: Kind, id: number) =>
-		send<{ ok: true }>('DELETE', `/api/titles/${kind}/${id}/library`),
+	untrack: (titleId: number) => send<{ ok: true }>('DELETE', `/api/t/${titleId}/library`),
 
-	setEpisodeWatched: (kind: Kind, id: number, season: number, episode: number, watched: boolean) =>
-		send<{ item: LibraryItem }>(
-			'POST',
-			`/api/titles/${kind}/${id}/episodes/${season}/${episode}/watch`,
-			{ watched }
-		),
+	setEpisodeWatched: (titleId: number, season: number, episode: number, watched: boolean) =>
+		send<{ item: LibraryItem }>('POST', `/api/t/${titleId}/episodes/${season}/${episode}/watch`, {
+			watched
+		}),
 
-	setSeasonWatched: (kind: Kind, id: number, season: number, watched: boolean, when?: WhenAnswer) =>
-		send<{ item: LibraryItem }>('POST', `/api/titles/${kind}/${id}/episodes/${season}/watch`, {
+	setSeasonWatched: (titleId: number, season: number, watched: boolean, when?: WhenAnswer) =>
+		send<{ item: LibraryItem }>('POST', `/api/t/${titleId}/episodes/${season}/watch`, {
 			watched,
 			...when
 		}),
 
-	setShowWatched: (kind: Kind, id: number, watched: boolean, when?: WhenAnswer) =>
-		send<{ item: LibraryItem }>('POST', `/api/titles/${kind}/${id}/episodes/watch`, {
+	setShowWatched: (titleId: number, watched: boolean, when?: WhenAnswer) =>
+		send<{ item: LibraryItem }>('POST', `/api/t/${titleId}/episodes/watch`, {
 			watched,
 			...when,
 			extras: undefined,
 			specials: when?.extras
 		}),
 
-	redateDiary: (kind: Kind, id: number, day: string, when: WhenAnswer) =>
-		send<{ changed: number }>('POST', '/api/diary/redate', { kind, tmdb_id: id, day, ...when }),
+	redateDiary: (titleId: number, day: string, when: WhenAnswer) =>
+		send<{ changed: number }>('POST', '/api/diary/redate', { title_id: titleId, day, ...when }),
 
-	rateSeason: (id: number, season: number, firstEpisode: number, rating: number | null) =>
-		send<{ ok: true }>('PUT', `/api/titles/tv/${id}/seasons/${season}/rating`, {
+	rateSeason: (titleId: number, season: number, firstEpisode: number, rating: number | null) =>
+		send<{ ok: true }>('PUT', `/api/t/${titleId}/seasons/${season}/rating`, {
 			rating,
 			first_episode: firstEpisode
 		}),
 
 	setEpisodeState: (
-		kind: Kind,
-		id: number,
+		titleId: number,
 		season: number,
 		episode: number,
 		state: { rating: number | null; notes: string | null }
-	) =>
-		send<{ ok: true }>(
-			'PUT',
-			`/api/titles/${kind}/${id}/episodes/${season}/${episode}/state`,
-			state
-		)
+	) => send<{ ok: true }>('PUT', `/api/t/${titleId}/episodes/${season}/${episode}/state`, state)
 };
+
+/**
+ * Frog's id for a title, opening it by its provider's address first if Frog
+ * does not have it yet (a search result, a credit).
+ */
+export async function frogId(t: TitleRef): Promise<number> {
+	if (t.id) return t.id;
+	if (t.kind && t.tmdb_id) return (await api.titleAt(t.kind, t.tmdb_id)).item.id;
+	if (t.anilist_id) return (await api.titleAt('anilist', t.anilist_id)).item.id;
+	throw new Error('That title cannot be found.');
+}

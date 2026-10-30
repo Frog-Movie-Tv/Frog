@@ -98,6 +98,10 @@ const call = async (method, path, body) => {
 	return json;
 };
 
+/** Frog's own address for a title TMDB names; opening it adds it to Frog. */
+const titleApi = async (kind, id) =>
+	`/api/t/${(await call('GET', `/api/titles/${kind}/${id}`)).item.id}`;
+
 console.log('== seeding ==');
 const films = [
 	[278, '2025-03-14', 95],
@@ -122,13 +126,13 @@ check('six films import', imported.added === 6, JSON.stringify(imported));
 // Breaking Bad S1E1-7 on consecutive days right after the two films: a
 // nine-day streak from 3 to 11 November.
 for (let e = 1; e <= 7; e++) {
-	await call('POST', `/api/titles/tv/1396/episodes/1/${e}/watch`, {
+	await call('POST', `${await titleApi('tv', 1396)}/episodes/1/${e}/watch`, {
 		watched: true,
 		watched_at: `2025-11-${String(4 + e).padStart(2, '0')}T21:00:00Z`
 	});
 }
 // A film finished in the app rather than imported.
-await call('PUT', '/api/titles/movie/438631/library', { status: 'completed' });
+await call('PUT', `${await titleApi('movie', 438631)}/library`, { status: 'completed' });
 
 const all = await call('GET', '/api/stats');
 check(

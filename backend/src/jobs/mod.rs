@@ -8,8 +8,8 @@
 use chrono::Utc;
 use std::time::Duration;
 
+use crate::catalog;
 use crate::state::AppState;
-use crate::store;
 
 const TICK: Duration = Duration::from_secs(60 * 30);
 
@@ -56,6 +56,20 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
         tracing::debug!(dropped, "pruned stale TMDB cache rows");
     }
 
+    // The picture cache to its budget. A failure leaves it as it was until
+    // the next tick, which is all that is at stake.
+    match crate::images::evict(&state.pool, crate::images::budget_bytes(), Utc::now()).await {
+        Ok(gone) if gone.pictures > 0 => {
+            tracing::info!(
+                pictures = gone.pictures,
+                bytes = gone.bytes,
+                "picture cache trimmed"
+            )
+        }
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, "picture cache could not be trimmed"),
+    }
+
     refresh_airing_shows(state).await;
     if let Err(e) = announce_new_episodes(state, chrono::Local::now().naive_local()).await {
         tracing::warn!(error = %e, "new-episode notifications failed");
@@ -67,7 +81,8 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
 #[derive(Debug, PartialEq)]
 pub struct Announcement {
     pub episode_ids: Vec<i64>,
-    pub tmdb_id: i64,
+    /// Frog's id for the show.
+    pub title_id: i64,
     pub show: String,
     pub poster_path: Option<String>,
     /// (season, episode, name)
@@ -75,7 +90,7 @@ pub struct Announcement {
     pub aired_today: bool,
 }
 
-/// (episode id, tmdb id, show, poster, season, episode, episode name, air date)
+/// (episode id, title id, show, poster, season, episode, episode name, air date)
 type DueRow = (
     i64,
     i64,
@@ -96,7 +111,7 @@ pub async fn due_announcements(
 ) -> anyhow::Result<Vec<Announcement>> {
     let yesterday = today - chrono::Duration::days(1);
     let rows: Vec<DueRow> = sqlx::query_as(
-        "SELECT e.id, t.tmdb_id, t.name, t.poster_path, e.season_number, e.episode_number,
+        "SELECT e.id, t.id, t.name, t.poster_path, e.season_number, e.episode_number,
                 e.name, e.air_date
            FROM episode e
            JOIN title t ON t.id = e.title_id
@@ -121,17 +136,17 @@ pub async fn due_announcements(
     .await?;
 
     let mut out: Vec<Announcement> = Vec::new();
-    for (id, tmdb_id, show, poster_path, season, episode, name, air_date) in rows {
+    for (id, title_id, show, poster_path, season, episode, name, air_date) in rows {
         let aired_today = air_date == today.to_string();
         match out.last_mut() {
-            Some(a) if a.tmdb_id == tmdb_id => {
+            Some(a) if a.title_id == title_id => {
                 a.episode_ids.push(id);
                 a.episodes.push((season, episode, name));
                 a.aired_today |= aired_today;
             }
             _ => out.push(Announcement {
                 episode_ids: vec![id],
-                tmdb_id,
+                title_id,
                 show,
                 poster_path,
                 episodes: vec![(season, episode, name)],
@@ -164,9 +179,9 @@ impl Announcement {
         serde_json::json!({
             "title": self.show,
             "body": body,
-            "url": format!("/title/tv/{}", self.tmdb_id),
+            "url": format!("/t/{}", self.title_id),
             // One notification per show: a later one replaces it, never stacks.
-            "tag": format!("frog-tv-{}", self.tmdb_id),
+            "tag": format!("frog-title-{}", self.title_id),
             "image": self.poster_path.as_ref().map(|p| format!("/img/w342{p}")),
         })
     }
@@ -345,10 +360,13 @@ pub async fn backfill_credits_once(state: &AppState) -> usize {
     if !state.tmdb.is_configured() {
         return 0;
     }
-    let rows: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT t.kind, t.tmdb_id
+    // Only titles TMDB supplies: an AniList title's credits come with its
+    // detail.
+    let rows: Vec<(i64,)> = sqlx::query_as(
+        "SELECT t.id
            FROM title t
-          WHERE t.people_synced_at IS NULL AND t.tmdb_id > 0
+           JOIN title_external x ON x.title_id = t.id AND x.provider = 'tmdb' AND x.is_primary = 1
+          WHERE t.people_synced_at IS NULL
             AND (EXISTS (SELECT 1 FROM library_entry l WHERE l.title_id = t.id)
                  OR EXISTS (SELECT 1 FROM watch_event w WHERE w.title_id = t.id))
           LIMIT ?",
@@ -359,12 +377,12 @@ pub async fn backfill_credits_once(state: &AppState) -> usize {
     .unwrap_or_default();
 
     let mut done = 0;
-    for (kind, tmdb_id) in rows {
-        match store::ensure_title(state, &kind, tmdb_id).await {
+    for (title_id,) in rows {
+        match catalog::load(state, title_id).await {
             Ok(_) => done += 1,
             Err(e) => {
                 // Most likely offline; the rest of the batch would fail too.
-                tracing::debug!(tmdb_id, error = %e, "credits backfill paused");
+                tracing::debug!(title_id, error = %e, "credits backfill paused");
                 break;
             }
         }
@@ -384,8 +402,8 @@ async fn refresh_airing_shows(state: &AppState) {
     }
 
     let cutoff = (Utc::now() - chrono::Duration::hours(6)).to_rfc3339();
-    let rows: Vec<(i64, i64)> = sqlx::query_as(
-        "SELECT t.id, t.tmdb_id
+    let rows: Vec<(i64,)> = sqlx::query_as(
+        "SELECT DISTINCT t.id
            FROM library_entry l
            JOIN title t ON t.id = l.title_id
           WHERE t.kind = 'tv'
@@ -400,11 +418,12 @@ async fn refresh_airing_shows(state: &AppState) {
     .await
     .unwrap_or_default();
 
-    for (title_id, tmdb_id) in rows {
-        match store::ensure_title(state, "tv", tmdb_id).await {
+    for (title_id,) in rows {
+        // From whichever provider the show comes from: TMDB, or AniList.
+        match catalog::load(state, title_id).await {
             Ok((_, detail)) => {
-                if let Err(e) = store::sync_all_seasons(state, title_id, &detail).await {
-                    tracing::warn!(tmdb_id, error = %e, "season refresh failed");
+                if let Err(e) = catalog::sync_all_seasons(state, title_id, &detail).await {
+                    tracing::warn!(title_id, error = %e, "season refresh failed");
                     continue;
                 }
                 // New episodes out, or a season ended: everyone with the show
@@ -418,11 +437,11 @@ async fn refresh_airing_shows(state: &AppState) {
                 for (user_id,) in people {
                     if let Err(e) = crate::release::reconcile(&state.pool, user_id, title_id).await
                     {
-                        tracing::warn!(tmdb_id, error = %e, "status refresh failed");
+                        tracing::warn!(title_id, error = %e, "status refresh failed");
                     }
                 }
             }
-            Err(e) => tracing::warn!(tmdb_id, error = %e, "show refresh failed"),
+            Err(e) => tracing::warn!(title_id, error = %e, "show refresh failed"),
         }
     }
 }

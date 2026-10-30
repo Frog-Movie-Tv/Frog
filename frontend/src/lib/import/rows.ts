@@ -1,5 +1,6 @@
 import type { MatchResult, SearchItem } from '#lib/types';
-import type { Incoming } from './parsers';
+import { titleKey } from '#lib/titles';
+import type { Incoming } from './common';
 
 /** What folding needs from a row: the tracker's entry and the title chosen for it. */
 export interface Foldable {
@@ -13,7 +14,10 @@ export function applyItem(row: Foldable) {
 	const chosen = row.chosen!;
 	return {
 		kind: chosen.kind,
+		// TMDB's id, or for an anime TMDB lacks, AniList's. Never Frog's own:
+		// the server matches by provider ids.
 		tmdb_id: chosen.tmdb_id,
+		anilist_id: chosen.anilist_id ?? null,
 		status: row.incoming.status,
 		rating: row.incoming.rating,
 		watched_at: row.incoming.watched_at,
@@ -30,7 +34,7 @@ export function applyItem(row: Foldable) {
 /** Seasons of one show in order, so the latest season is applied last. */
 export function bySeason(a: Foldable, b: Foldable): number {
 	return (
-		a.chosen!.tmdb_id - b.chosen!.tmdb_id ||
+		titleKey(a.chosen!).localeCompare(titleKey(b.chosen!)) ||
 		(a.incoming.season ?? 0) - (b.incoming.season ?? 0) ||
 		(a.incoming.episode_offset ?? 0) - (b.incoming.episode_offset ?? 0)
 	);
@@ -43,12 +47,13 @@ export function bySeason(a: Foldable, b: Foldable): number {
  * starts. Rows are changed in place.
  */
 export function foldSeasons(rows: Foldable[]): void {
-	const shows = new Map<number, Foldable[]>();
+	const shows = new Map<string, Foldable[]>();
 	for (const row of rows) {
 		if (row.chosen?.kind !== 'tv' || row.incoming.season == null) continue;
-		const list = shows.get(row.chosen.tmdb_id) ?? [];
+		const key = titleKey(row.chosen);
+		const list = shows.get(key) ?? [];
 		list.push(row);
-		shows.set(row.chosen.tmdb_id, list);
+		shows.set(key, list);
 	}
 
 	for (const list of shows.values()) {

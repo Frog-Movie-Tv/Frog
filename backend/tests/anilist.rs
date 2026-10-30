@@ -15,6 +15,8 @@ use tower::ServiceExt;
 use frog::config::{AniListClient, Config};
 use frog::state::AppState;
 
+mod common;
+
 /// What the stand-in AniList holds, and every save Frog sent it.
 /// Tests run side by side and all use account 1, and a sync already running
 /// for an account makes another return at once without trying. One at a time.
@@ -198,6 +200,11 @@ struct Harness {
 }
 
 impl Harness {
+    /// Frog's id for a title as a provider names it (see `common::title_id`).
+    async fn tid(&self, kind: &str, id: i64) -> i64 {
+        common::title_id(&self.state, kind, id).await
+    }
+
     async fn new() -> Self {
         let fake: Shared = Arc::default();
         let app = Router::new()
@@ -238,8 +245,10 @@ impl Harness {
             }),
         };
         let pool = frog::db::connect(&url).await.unwrap();
+        let state = AppState::new(pool, config);
+        common::add_title_seed(&state).await;
         Self {
-            state: AppState::new(pool, config),
+            state,
             fake,
             _dir: dir,
         }
@@ -460,7 +469,7 @@ async fn anilist_syncs_both_ways_and_places_seasons_by_id() {
     let (code, _, _, _) = h
         .call(
             "POST",
-            "/api/titles/tv/95479/episodes/1/30/watch",
+            &format!("/api/t/{}/episodes/1/30/watch", h.tid("tv", 95479).await),
             Some(json!({})),
             Some(&cookie),
         )
@@ -491,7 +500,7 @@ async fn anilist_syncs_both_ways_and_places_seasons_by_id() {
     // seasons, and one season's score is not every season's.
     h.call(
         "PUT",
-        "/api/titles/tv/95479/library",
+        &format!("/api/t/{}/library", h.tid("tv", 95479).await),
         Some(json!({ "rating": 60.0 })),
         Some(&cookie),
     )
@@ -504,7 +513,7 @@ async fn anilist_syncs_both_ways_and_places_seasons_by_id() {
     let (code, body, _, _) = h
         .call(
             "PUT",
-            "/api/titles/tv/95479/seasons/1/rating",
+            &format!("/api/t/{}/seasons/1/rating", h.tid("tv", 95479).await),
             Some(json!({ "first_episode": 25, "rating": 95.0 })),
             Some(&cookie),
         )
@@ -522,7 +531,7 @@ async fn anilist_syncs_both_ways_and_places_seasons_by_id() {
     // Taking the film out of Frog leaves AniList alone, and it is not re-added.
     h.call(
         "DELETE",
-        "/api/titles/movie/500/library",
+        &format!("/api/t/{}/library", h.tid("movie", 500).await),
         None,
         Some(&cookie),
     )
@@ -808,7 +817,12 @@ async fn ids_from_either_list_or_an_exact_name_place_entries() {
         "season 2, found through its prequel, lands in TMDB season 2"
     );
     let (_, season, _, _) = h
-        .call("GET", "/api/titles/tv/700/seasons/2", None, Some(&cookie))
+        .call(
+            "GET",
+            &format!("/api/t/{}/seasons/2", h.tid("tv", 700).await),
+            None,
+            Some(&cookie),
+        )
         .await;
     let watched: Vec<bool> = season["episodes"]
         .as_array()
@@ -948,7 +962,7 @@ impl Harness {
             "SELECT e.season_number, e.episode_number FROM watch_event w
                JOIN episode e ON e.id = w.episode_id
                JOIN title t ON t.id = e.title_id
-              WHERE w.user_id = 1 AND t.tmdb_id = ? AND t.kind = 'tv'
+              WHERE w.user_id = 1 AND (SELECT tmdb_id FROM title_tmdb WHERE title_id = t.id) = ? AND t.kind = 'tv'
               ORDER BY e.season_number, e.episode_number",
         )
         .bind(tmdb_id)
@@ -1263,9 +1277,9 @@ async fn a_long_running_entry_runs_on_through_tmdb_seasons() {
         .unwrap()
         .iter()
         .chain(home["hero"].as_object().map(|_| &home["hero"]).into_iter())
-        .map(|u| u["item"]["tmdb_id"].clone())
+        .map(|u| u["item"]["id"].clone())
         .collect();
-    assert!(waiting.contains(&json!(3001)), "{home}");
+    assert!(waiting.contains(&json!(h.tid("tv", 3001).await)), "{home}");
 }
 
 /// Alya: season 1 finished, season 2 announced with an episode TMDB lists
@@ -1321,6 +1335,7 @@ async fn an_announced_season_makes_no_phantom_episode() {
         "the undated episode is not out"
     );
     assert_eq!(show["next_up"], Value::Null, "nothing to watch next");
+    let frog_id = h.tid("tv", 4001).await;
     let home = h.get("/api/home", &cookie).await;
     for k in ["continue", "waiting"] {
         assert!(
@@ -1328,7 +1343,7 @@ async fn an_announced_season_makes_no_phantom_episode() {
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|u| u["item"]["tmdb_id"] == json!(4001)),
+                .any(|u| u["item"]["id"] == json!(frog_id)),
             "{k}: {home}"
         );
     }
@@ -1388,6 +1403,7 @@ async fn a_completed_season_still_puts_its_sequel_on_the_calendar() {
         "{}",
         show["item"]
     );
+    let frog_id = h.tid("tv", 5001).await;
     let calendar = h
         .get("/api/calendar?from=2099-01-01&to=2099-01-31", &cookie)
         .await;
@@ -1395,7 +1411,7 @@ async fn a_completed_season_still_puts_its_sequel_on_the_calendar() {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|e| e["tmdb_id"] == json!(5001))
+        .filter(|e| e["id"] == json!(frog_id))
         .map(|e| e["date"].clone())
         .collect();
     assert_eq!(days, vec![json!("2099-01-10")], "{calendar}");
@@ -1435,7 +1451,7 @@ async fn a_title_not_out_is_never_watchable() {
     // Even if somebody marks it watching, nothing out means planned.
     h.call(
         "PUT",
-        "/api/titles/tv/6001/library",
+        &format!("/api/t/{}/library", h.tid("tv", 6001).await),
         Some(json!({ "status": "watching" })),
         Some(&cookie),
     )
@@ -1444,6 +1460,7 @@ async fn a_title_not_out_is_never_watchable() {
 
     let show = h.get("/api/titles/tv/6001", &cookie).await;
     assert_eq!(show["item"]["total_episodes"], json!(0));
+    let frog_id = h.tid("tv", 6001).await;
     let home = h.get("/api/home", &cookie).await;
     for k in ["continue", "waiting"] {
         assert!(
@@ -1451,7 +1468,7 @@ async fn a_title_not_out_is_never_watchable() {
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|u| u["item"]["tmdb_id"] == json!(6001)),
+                .any(|u| u["item"]["id"] == json!(frog_id)),
             "{k}: {home}"
         );
     }
@@ -1514,14 +1531,15 @@ async fn seasons_are_rated_separately_and_only_when_out() {
     let cookie = h.connected().await;
     h.call(
         "PUT",
-        "/api/titles/tv/7001/library",
+        &format!("/api/t/{}/library", h.tid("tv", 7001).await),
         Some(json!({ "status": "watching" })),
         Some(&cookie),
     )
     .await;
 
+    let show = h.tid("tv", 7001).await;
     let rate = |season: i64, rating: f64| {
-        let path = format!("/api/titles/tv/7001/seasons/{season}/rating");
+        let path = format!("/api/t/{show}/seasons/{season}/rating");
         let cookie = cookie.clone();
         let h = &h;
         async move {
@@ -1573,15 +1591,16 @@ async fn seasons_are_rated_separately_and_only_when_out() {
 
 // --- resilience: titles TMDB lacks, failures, retries, corrections -----------
 
-/// A row of the library list by its TMDB id.
+/// A row of the library list by its TMDB id (negative: its AniList id).
 async fn in_library(h: &Harness, cookie: &str, tmdb_id: i64) -> Option<Value> {
+    let id = common::existing_id(&h.state, tmdb_id).await?;
     let list = h.get("/api/library?limit=500", cookie).await;
     list["items"]
         .as_array()
         .or_else(|| list.as_array())
         .unwrap()
         .iter()
-        .find(|i| i["tmdb_id"] == json!(tmdb_id))
+        .find(|i| i["id"] == json!(id))
         .cloned()
 }
 
@@ -1633,7 +1652,11 @@ async fn an_entry_tmdb_lacks_is_kept_and_linked_once_tmdb_has_it() {
         "found by name like any title: {found}"
     );
     let entry = h.entry(&cookie, 99423).await;
-    assert_eq!(entry["kept"]["tmdb_id"], json!(-99423), "{entry}");
+    assert_eq!(
+        entry["kept"]["id"],
+        json!(h.tid("tv", -99423).await),
+        "{entry}"
+    );
     assert_eq!(entry["state"], json!("unsure"));
 
     // Synced again with nothing new: not looked up again, nothing doubled.
@@ -1688,12 +1711,19 @@ async fn an_entry_tmdb_lacks_is_kept_and_linked_once_tmdb_has_it() {
         count(&h, "SELECT COUNT(*) FROM title_merge WHERE user_id = 1").await,
         1
     );
+    // The old AniList address opens the TMDB show, which answers to the
+    // AniList id too; the old title by its own id says where it went.
+    let tmdb_show = h.tid("tv", 7400).await;
     let old = h.get("/api/titles/tv/-99423", &cookie).await;
-    assert_eq!(
-        old["moved_to"],
-        json!({ "kind": "tv", "tmdb_id": 7400 }),
-        "{old}"
-    );
+    assert_eq!(old["item"]["id"], json!(tmdb_show), "{old}");
+    assert_eq!(old["external"]["anilist"], json!([99423]), "{old}");
+    let kept_id =
+        frog::catalog::find_exact(&h.state.pool, &frog::catalog::ExternalId::AniList(99423))
+            .await
+            .unwrap()
+            .expect("the AniList title is kept, folded in");
+    let by_id = h.get(&format!("/api/t/{kept_id}"), &cookie).await;
+    assert_eq!(by_id["moved_to"], json!({ "id": tmdb_show }), "{by_id}");
     let rated = h.get("/api/titles/tv/7400", &cookie).await;
     assert!(
         rated["ratings"]
@@ -1717,7 +1747,12 @@ async fn an_entry_tmdb_lacks_is_kept_and_linked_once_tmdb_has_it() {
         1
     );
     assert_eq!(
-        count(&h, "SELECT COUNT(*) FROM title WHERE anilist_id = 99423").await,
+        count(
+            &h,
+            "SELECT COUNT(*) FROM title_external WHERE provider = 'anilist'
+                AND external_id = '99423' AND is_primary = 1"
+        )
+        .await,
         1,
         "the AniList-only title is kept, pointing on, never reused"
     );
@@ -1866,7 +1901,7 @@ async fn a_lower_progress_on_anilist_keeps_watches_logged_in_frog() {
     let (code, _, _, _) = h
         .call(
             "POST",
-            "/api/titles/tv/95479/episodes/1/11/watch",
+            &format!("/api/t/{}/episodes/1/11/watch", h.tid("tv", 95479).await),
             Some(json!({ "watched": true })),
             Some(&cookie),
         )
@@ -1926,9 +1961,9 @@ async fn moving_title_data_keeps_everything_and_everyone_apart() {
     for sql in [
         "INSERT INTO app_user (id, username, password_hash, created_at)
          VALUES (2, 'zoe', 'x', '2026-01-01T00:00:00Z')",
-        "INSERT INTO title (id, kind, tmdb_id, name, genres_json, anilist_id)
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, genres_json, anilist_id)
          VALUES (100, 'movie', -5, 'Pond Film', '[]', 5)",
-        "INSERT INTO title (id, kind, tmdb_id, name, genres_json) VALUES (101, 'movie', 5, 'Pond Film', '[]')",
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, genres_json) VALUES (101, 'movie', 5, 'Pond Film', '[]')",
         "INSERT INTO library_entry (user_id, title_id, status, rating, notes, added_at, updated_at)
          VALUES (1, 100, 'completed', 80, 'from AniList', '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z')",
         "INSERT INTO library_entry (user_id, title_id, status, notes, added_at, updated_at)
@@ -2223,14 +2258,20 @@ async fn an_anilist_only_show_is_a_title_like_any_other() {
         json!("/anilist/link/icon/5-cr.png")
     );
     assert_eq!(page["seasons"][0]["episode_count"], json!(4));
-    assert_eq!(page["collection"]["parts"][0]["tmdb_id"], json!(-99629));
+    assert_eq!(page["collection"]["parts"][0]["anilist_id"], json!(99629));
+    assert_eq!(page["collection"]["parts"][0]["tmdb_id"], Value::Null);
     assert_eq!(
         page["recommendations"][0]["tmdb_id"],
         json!(95479),
         "a recommendation TMDB has opens the TMDB title"
     );
 
-    let season = h.get("/api/titles/tv/-99423/seasons/1", &cookie).await;
+    let season = h
+        .get(
+            &format!("/api/t/{}/seasons/1", h.tid("tv", -99423).await),
+            &cookie,
+        )
+        .await;
     let eps = season["episodes"].as_array().unwrap();
     assert_eq!(eps.len(), 4);
     assert_eq!(eps[0]["name"], json!("Kill me..."));
@@ -2247,8 +2288,8 @@ async fn an_anilist_only_show_is_a_title_like_any_other() {
     // Home's hero is the most live show, and is left out of the row below.
     let home = h.get("/api/home", &cookie).await;
     assert_eq!(
-        home["hero"]["item"]["tmdb_id"],
-        json!(-99423),
+        home["hero"]["item"]["id"],
+        json!(h.tid("tv", -99423).await),
         "continued from Home like any show: {home}"
     );
     assert_eq!(home["hero"]["next"]["episode_number"], json!(3));
@@ -2257,7 +2298,11 @@ async fn an_anilist_only_show_is_a_title_like_any_other() {
     let person = h.get("/api/person/-95000", &cookie).await;
     assert_eq!(person["name"], json!("Haruka Chisuga"));
     assert_eq!(person["known_for_department"], json!("Acting"));
-    assert_eq!(person["credits"][0]["item"]["tmdb_id"], json!(-99423));
+    assert_eq!(person["credits"][0]["item"]["anilist_id"], json!(99423));
+    assert_eq!(
+        person["credits"][0]["item"]["id"],
+        json!(h.tid("tv", -99423).await)
+    );
     assert_eq!(person["credits"][0]["role"], json!("Rachel Gardner"));
     assert_eq!(
         person["credits"][0]["item"]["in_library"],
@@ -2265,17 +2310,23 @@ async fn an_anilist_only_show_is_a_title_like_any_other() {
     );
     let studio = h.get("/api/studios/-7", &cookie).await;
     assert_eq!(studio["name"], json!("J.C.Staff"));
-    assert_eq!(studio["titles"][0]["tmdb_id"], json!(-99423));
+    assert_eq!(studio["titles"][0]["anilist_id"], json!(99423));
 
-    // An AniList address for a show TMDB has goes to the TMDB title, and
-    // no AniList copy of it is made.
+    // An AniList address for a show TMDB has opens the TMDB title, and no
+    // AniList copy of it is made.
+    seed_tmdb(&h).await;
     let elsewhere = h.get("/api/titles/tv/-145064", &cookie).await;
     assert_eq!(
-        elsewhere,
-        json!({ "moved_to": { "kind": "tv", "tmdb_id": 95479 } })
+        elsewhere["item"]["id"],
+        json!(h.tid("tv", 95479).await),
+        "{elsewhere}"
     );
     assert_eq!(
-        count(&h, "SELECT COUNT(*) FROM title WHERE tmdb_id = -145064").await,
+        count(
+            &h,
+            "SELECT COUNT(*) FROM title_external WHERE provider = 'anilist' AND external_id = '145064'"
+        )
+        .await,
         0
     );
 
@@ -2283,7 +2334,7 @@ async fn an_anilist_only_show_is_a_title_like_any_other() {
     let (code, _, _, _) = h
         .call(
             "POST",
-            "/api/titles/tv/-99423/episodes/1/3/watch",
+            &format!("/api/t/{}/episodes/1/3/watch", h.tid("tv", -99423).await),
             Some(json!({ "watched": true, "watched_at": "2026-10-20T20:00:00Z" })),
             Some(&cookie),
         )
@@ -2321,7 +2372,7 @@ async fn an_anilist_only_show_is_a_title_like_any_other() {
     let (source, at): (String, String) = sqlx::query_as(
         "SELECT w.source, w.watched_at FROM watch_event w
            JOIN episode e ON e.id = w.episode_id JOIN title t ON t.id = e.title_id
-          WHERE w.user_id = 1 AND t.tmdb_id = 7400 AND e.episode_number = 3",
+          WHERE w.user_id = 1 AND (SELECT tmdb_id FROM title_tmdb WHERE title_id = t.id) = 7400 AND e.episode_number = 3",
     )
     .fetch_one(&h.state.pool)
     .await

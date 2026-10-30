@@ -18,7 +18,18 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..', '..');
-const shots = join(repo, 'docs', 'screenshots');
+// `--out=<dir>` writes somewhere else, to compare a run with the committed
+// pictures; `--scale=<n>` sets the pixel density. 1.5 is sharp wherever the
+// README shows them (desktop shots at 920 px, phone shots at 230, on screens
+// up to twice as dense) and about half the bytes of 2.
+const option = (name) =>
+	process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
+const shots = option('out') ? resolve(option('out')) : join(repo, 'docs', 'screenshots');
+const SCALE = Number(option('scale') ?? 1.5);
+if (!(SCALE >= 1 && SCALE <= 3)) {
+	console.error('--scale is between 1 and 3.');
+	process.exit(1);
+}
 
 const PORT = 8096;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -126,12 +137,31 @@ async function call(method, path, body) {
 	return res;
 }
 
+/**
+ * Frog's own address for a title TMDB names: opening it puts it in the
+ * catalog. Seeding stops here if it cannot, rather than carrying on with an
+ * empty library that every later shot would show.
+ */
+async function titleApi(kind, tmdbId) {
+	const res = await call('GET', `/api/titles/${kind}/${tmdbId}`);
+	if (!res.ok) throw new Error(`could not open ${kind} ${tmdbId}: ${res.status}`);
+	return `/api/t/${(await res.json()).item.id}`;
+}
+
+/** A seeding call that must work. */
+async function must(method, path, body) {
+	const res = await call(method, path, body);
+	if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${await res.text()}`);
+	return res;
+}
+
 async function seed() {
 	await call('POST', '/api/auth/setup', { username: USER, password: PASS, remember: true });
 
 	for (const entry of SEED) {
 		process.stdout.write(`  seeding ${entry.kind} ${entry.id}\n`);
-		await call('PUT', `/api/titles/${entry.kind}/${entry.id}/library`, {
+		const t = await titleApi(entry.kind, entry.id);
+		await must('PUT', `${t}/library`, {
 			status: entry.status,
 			rating: entry.rating ?? null,
 			favourite: entry.favourite ?? false
@@ -140,12 +170,12 @@ async function seed() {
 		// Part-watch a couple of shows so progress bars and "up next" have
 		// something to say.
 		for (const season of entry.seasons ?? []) {
-			await call('POST', `/api/titles/${entry.kind}/${entry.id}/episodes/${season}/watch`, {
+			await must('POST', `${t}/episodes/${season}/watch`, {
 				watched: true
 			});
 			// Then un-watch the tail, leaving the show mid-season.
 			for (const ep of [7, 8, 9]) {
-				await call('POST', `/api/titles/${entry.kind}/${entry.id}/episodes/${season}/${ep}/watch`, {
+				await must('POST', `${t}/episodes/${season}/${ep}/watch`, {
 					watched: false
 				});
 			}
@@ -157,7 +187,7 @@ async function seed() {
 				[5, 88],
 				[6, 92]
 			]) {
-				await call('PUT', `/api/titles/${entry.kind}/${entry.id}/episodes/${season}/${ep}/state`, {
+				await must('PUT', `${t}/episodes/${season}/${ep}/state`, {
 					rating,
 					notes: null
 				});
@@ -180,7 +210,7 @@ async function shoot(browser, { name, path, viewport, theme, full = false, wait 
 
 	const context = await browser.newContext({
 		viewport,
-		deviceScaleFactor: 2,
+		deviceScaleFactor: SCALE,
 		colorScheme: theme.includes('light') ? 'light' : 'dark'
 	});
 	await context.addCookies([

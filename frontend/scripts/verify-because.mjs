@@ -94,6 +94,10 @@ const call = async (method, path, body) => {
 	return json;
 };
 
+/** Frog's own address for a title TMDB names; opening it adds it to Frog. */
+const titleApi = async (kind, id) =>
+	`/api/t/${(await call('GET', `/api/titles/${kind}/${id}`)).item.id}`;
+
 console.log('== seeding ==');
 // Interstellar rated highest; The Dark Knight and Inception also loved, and
 // both are things TMDB recommends for Interstellar, so they must not appear.
@@ -105,7 +109,7 @@ const library = [
 	['movie', 680, 40]
 ];
 for (const [kind, id, rating] of library) {
-	await call('PUT', `/api/titles/${kind}/${id}/library`, { status: 'completed', rating });
+	await call('PUT', `${await titleApi(kind, id)}/library`, { status: 'completed', rating });
 }
 // A Home layout saved before this row existed.
 await call('PUT', '/api/settings', {
@@ -127,7 +131,8 @@ check(
 	all.filter((k) => tracked.has(k)).join(',')
 );
 check('no pick repeats across rows', new Set(all).size === all.length);
-check('a title rated 4 is never a seed', !api.rows.some((r) => r.seed.tmdb_id === 680));
+const lowRated = (await call('GET', '/api/titles/movie/680')).item.id;
+check('a title rated 4 is never a seed', !api.rows.some((r) => r.seed.id === lowRated));
 
 const chrome = existsSync('C:/Program Files/Google/Chrome/Application/chrome.exe');
 const browser = await chromium.launch({ channel: chrome ? 'chrome' : undefined });

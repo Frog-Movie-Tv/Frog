@@ -73,10 +73,10 @@
 		const before = items;
 		items = items.filter((i) => i.id !== item.id);
 		try {
-			await api.removeFromShelf(id, item.kind, item.tmdb_id);
+			await api.removeFromShelf(id, item.id);
 			if (shelf) shelf.count = items.length;
 			toasts.undoable(`Removed ${item.name}`, async () => {
-				await api.addToShelf(id, item.kind, item.tmdb_id);
+				await api.addToShelf(id, item.id);
 				await api.reorderShelf(
 					id,
 					before.map((i) => i.id)
@@ -266,7 +266,7 @@
 					<Poster
 						morph
 						kind={item.kind}
-						tmdbId={item.tmdb_id}
+						ref={item}
 						name={item.name}
 						posterPath={item.poster_path}
 						year={year(item.release_date)}

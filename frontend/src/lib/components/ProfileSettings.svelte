@@ -4,7 +4,7 @@
 	import Icon from '#lib/components/Icon.svelte';
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
-	import type { Account, Kind, LibraryItem, ProfileEdit } from '#lib/types';
+	import type { Account, LibraryItem, ProfileEdit } from '#lib/types';
 
 	const BIO_MAX = 600;
 	const PINS_MAX = 4;
@@ -124,7 +124,7 @@
 		`/api/profiles/${encodeURIComponent(username)}/images/${kind}?v=${version}`;
 	const pinned = $derived(
 		(account?.pins ?? [])
-			.map((p) => titles.find((t) => t.kind === p.kind && t.tmdb_id === p.tmdb_id))
+			.map((p) => titles.find((t) => t.id === p.title_id))
 			.filter((t): t is LibraryItem => !!t)
 	);
 	const backdrops = $derived(titles.filter((t) => t.backdrop_path).slice(0, 18));
@@ -207,17 +207,15 @@
 		choosingBanner = false;
 	}
 
-	function togglePin(kind: Kind, tmdbId: number) {
+	function togglePin(titleId: number) {
 		const pins = account?.pins ?? [];
-		const on = pins.some((p) => p.kind === kind && p.tmdb_id === tmdbId);
+		const on = pins.some((p) => p.title_id === titleId);
 		if (!on && pins.length >= PINS_MAX) {
 			toasts.push(`Pin up to ${PINS_MAX}; take one off first`, 'error');
 			return;
 		}
 		void save({
-			pins: on
-				? pins.filter((p) => !(p.kind === kind && p.tmdb_id === tmdbId))
-				: [...pins, { kind, tmdb_id: tmdbId }]
+			pins: on ? pins.filter((p) => p.title_id !== titleId) : [...pins, { title_id: titleId }]
 		});
 	}
 </script>
@@ -267,7 +265,7 @@
 			{#if backdrops.length}
 				<p class="faint small">From the titles you rated highest.</p>
 				<div class="backdrops">
-					{#each backdrops as t (t.kind + t.tmdb_id)}
+					{#each backdrops as t (t.id)}
 						<button
 							class="backdrop"
 							aria-label="Use {t.name}"
@@ -350,7 +348,7 @@
 		</div>
 		{#if pinned.length}
 			<div class="pinned">
-				{#each pinned as t (t.kind + t.tmdb_id)}
+				{#each pinned as t (t.id)}
 					<span class="pin">
 						{#if img(t.poster_path, 'w92')}<img src={img(t.poster_path, 'w92')} alt="" />{/if}
 						<span>{t.name}</span>
@@ -360,16 +358,9 @@
 		{/if}
 		{#if choosingPins}
 			<div class="choices">
-				{#each titles.slice(0, 40) as t (t.kind + t.tmdb_id)}
-					{@const on = (account?.pins ?? []).some(
-						(p) => p.kind === t.kind && p.tmdb_id === t.tmdb_id
-					)}
-					<button
-						class="choice"
-						class:on
-						aria-pressed={on}
-						onclick={() => togglePin(t.kind, t.tmdb_id)}
-					>
+				{#each titles.slice(0, 40) as t (t.id)}
+					{@const on = (account?.pins ?? []).some((p) => p.title_id === t.id)}
+					<button class="choice" class:on aria-pressed={on} onclick={() => togglePin(t.id)}>
 						{t.name}
 					</button>
 				{/each}

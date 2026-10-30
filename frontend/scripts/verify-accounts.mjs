@@ -160,32 +160,42 @@ for (const width of [800, 900, 1024, 1280, 1440]) {
 }
 await owner.page.setViewportSize({ width: 900, height: 900 });
 
+/** Frog's own address for a title TMDB names; opening it adds it to Frog. */
+const titleApi = async (page, kind, id) =>
+	`/api/t/${(await api(page, 'GET', `/api/titles/${kind}/${id}`)).body.item.id}`;
+
 console.log('\n== side by side ==');
 for (const [kind, id, status] of [
 	['movie', 157336, 'completed'],
 	['tv', 1396, 'watching']
 ]) {
-	await api(owner.page, 'PUT', `/api/titles/${kind}/${id}/library`, { status });
+	await api(owner.page, 'PUT', `${await titleApi(owner.page, kind, id)}/library`, { status });
 }
-await api(guest.page, 'PUT', '/api/titles/movie/603/library', { status: 'planned' });
+await api(guest.page, 'PUT', `${await titleApi(guest.page, 'movie', 603)}/library`, {
+	status: 'planned'
+});
+// Library links are Frog's own addresses.
+const addressOf = async (p, kind, id) => (await titleApi(p, kind, id)).replace('/api', '');
+const interstellar = await addressOf(owner.page, 'movie', 157336);
+const matrix = await addressOf(guest.page, 'movie', 603);
 await owner.page.goto(`${BASE}/library`);
 await guest.page.goto(`${BASE}/library`);
-await owner.page.locator('a[href="/title/movie/157336"]').first().waitFor();
-await guest.page.locator('a[href="/title/movie/603"]').first().waitFor();
+await owner.page.locator(`a[href="${interstellar}"]`).first().waitFor();
+await guest.page.locator(`a[href="${matrix}"]`).first().waitFor();
 const ownerTitles = await owner.page
-	.locator('a[href^="/title/"]')
+	.locator('a[href^="/t/"]')
 	.evaluateAll((as) => [...new Set(as.map((a) => a.getAttribute('href')))]);
 const guestTitles = await guest.page
-	.locator('a[href^="/title/"]')
+	.locator('a[href^="/t/"]')
 	.evaluateAll((as) => [...new Set(as.map((a) => a.getAttribute('href')))]);
 check(
 	'the owner sees only their two titles',
-	ownerTitles.length === 2 && !ownerTitles.includes('/title/movie/603'),
+	ownerTitles.length === 2 && !ownerTitles.includes(matrix),
 	ownerTitles.join(' ')
 );
 check(
 	'the second person sees only their one',
-	guestTitles.length === 1 && guestTitles[0] === '/title/movie/603',
+	guestTitles.length === 1 && guestTitles[0] === matrix,
 	guestTitles.join(' ')
 );
 await owner.page.screenshot({ path: join(out, '2-owner-library.png') });

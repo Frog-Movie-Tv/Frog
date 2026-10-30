@@ -164,7 +164,12 @@ git commit --allow-empty -m "chore: release 0.5.0" -m "Release-As: 0.5.0"
   inserts rows without it.
 - **A destructive change takes two releases.** First a release that stops
   reading and writing the old column or table; then, once that one is live,
-  a release whose migration removes it.
+  a release whose migration removes it. The one exception so far is the
+  catalog release (`202610301000_catalog_identity` and `db::rebuild_title`),
+  taken in one release before 1.0: its rollback is `update.sh`'s pre-update
+  snapshot, not the previous image. `docs/CATALOG-IDENTITY.md` says why.
+  Any later change like it raises `db::SCHEMA_GENERATION`, which is how
+  `update.sh` knows not to put the previous image on the new schema.
 - A new migration file rebuilds the binary on its own: `backend/build.rs`
   tells Cargo to watch `migrations/`.
 - CI applies every migration to an empty database *and* to one built by the

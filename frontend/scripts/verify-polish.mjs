@@ -88,8 +88,12 @@ async function signedIn(viewport, extra = {}) {
 
 {
 	const { page, context } = await signedIn({ width: 1440, height: 900 });
-	await page.request.put(`${BASE}/api/titles/tv/95396/library`, { data: { status: 'watching' } });
-	await page.request.put(`${BASE}/api/titles/tv/${airing.id}/library`, {
+	const frogId = async (kind, id) =>
+		(await (await page.request.get(`${BASE}/api/titles/${kind}/${id}`)).json()).item.id;
+	await page.request.put(`${BASE}/api/t/${await frogId('tv', 95396)}/library`, {
+		data: { status: 'watching' }
+	});
+	await page.request.put(`${BASE}/api/t/${await frogId('tv', airing.id)}/library`, {
 		data: { status: 'watching' }
 	});
 	await page.request.put(`${BASE}/api/settings`, {

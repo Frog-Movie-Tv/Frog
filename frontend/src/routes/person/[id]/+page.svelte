@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { titleKey } from '#lib/titles';
 	import { page } from '$app/state';
 	import { api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
@@ -120,11 +121,11 @@
 			/>
 		{:else}
 			<Grid>
-				{#each credits as credit (`${credit.item.kind}-${credit.item.tmdb_id}`)}
+				{#each credits as credit (titleKey(credit.item))}
 					<div class="credit" class:seen={credit.item.in_library !== null}>
 						<Poster
 							kind={credit.item.kind}
-							tmdbId={credit.item.tmdb_id}
+							ref={credit.item}
 							name={credit.item.name}
 							posterPath={credit.item.poster_path}
 							fallbackPath={credit.item.backdrop_path}
@@ -142,11 +143,11 @@
 		{#if appearances.length}
 			<div class="appearances">
 				<Rail title="Appearances">
-					{#each appearances as credit (`${credit.item.kind}-${credit.item.tmdb_id}`)}
+					{#each appearances as credit (titleKey(credit.item))}
 						<div class="credit" class:seen={credit.item.in_library !== null}>
 							<Poster
 								kind={credit.item.kind}
-								tmdbId={credit.item.tmdb_id}
+								ref={credit.item}
 								name={credit.item.name}
 								posterPath={credit.item.poster_path}
 								fallbackPath={credit.item.backdrop_path}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { titleHref } from '#lib/titles';
 	import { img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
@@ -8,8 +9,9 @@
 	import { toasts } from '#lib/toast.svelte';
 
 	interface Entry {
+		/** Frog's id for the title. */
+		id: number;
 		kind: 'movie' | 'tv';
-		tmdb_id: number;
 		title: string;
 		poster_path: string | null;
 		accent: string | null;
@@ -65,9 +67,7 @@
 	function collapse(list: Entry[]) {
 		const out: { entry: Entry; count: number }[] = [];
 		for (const entry of list) {
-			const same = out.find(
-				(o) => o.entry.tmdb_id === entry.tmdb_id && o.entry.kind === entry.kind
-			);
+			const same = out.find((o) => o.entry.id === entry.id);
 			if (same) same.count++;
 			else out.push({ entry, count: 1 });
 		}
@@ -176,7 +176,7 @@
 								<!-- Desktop: who is on. Phone: one coloured dot each. -->
 								{#if items.length}
 									<span class="titles">
-										{#each items.slice(0, 2) as { entry, count } (`${entry.kind}-${entry.tmdb_id}`)}
+										{#each items.slice(0, 2) as { entry, count } (entry.id)}
 											<span
 												class="mini"
 												class:film={entry.kind === 'movie'}
@@ -191,7 +191,7 @@
 										{#if items.length > 2}<small class="more">+{items.length - 2} more</small>{/if}
 									</span>
 									<span class="dots">
-										{#each items.slice(0, 4) as { entry } (`${entry.kind}-${entry.tmdb_id}`)}
+										{#each items.slice(0, 4) as { entry } (entry.id)}
 											<i
 												class:film={entry.kind === 'movie'}
 												style:background={entry.kind === 'movie'
@@ -220,7 +220,7 @@
 				<p class="faint when">{relativeDate(selected)}</p>
 				{#if selectedEntries.length}
 					<ul class="agenda">
-						{#each selectedEntries as entry (`${entry.tmdb_id}-${entry.season_number}-${entry.episode_number}`)}
+						{#each selectedEntries as entry (`${entry.id}-${entry.season_number}-${entry.episode_number}`)}
 							{@render row(entry, false)}
 						{/each}
 					</ul>
@@ -231,7 +231,7 @@
 		</div>
 	{:else}
 		<ul class="agenda">
-			{#each upcoming as entry (`${entry.tmdb_id}-${entry.season_number}-${entry.episode_number}-${entry.date}`)}
+			{#each upcoming as entry (`${entry.id}-${entry.season_number}-${entry.episode_number}-${entry.date}`)}
 				{@render row(entry, true)}
 			{/each}
 		</ul>
@@ -240,7 +240,7 @@
 
 {#snippet row(entry: Entry, showWhen: boolean)}
 	<li>
-		<a href="/title/{entry.kind}/{entry.tmdb_id}">
+		<a href={titleHref(entry)}>
 			{#if entry.poster_path}
 				<img src={img(entry.poster_path, 'w92')} alt="" loading="lazy" />
 			{:else}

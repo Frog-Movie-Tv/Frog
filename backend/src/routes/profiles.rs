@@ -38,13 +38,13 @@ pub async fn list(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
     })))
 }
 
-/// (kind, tmdb_id, name, poster_path, rating)
+/// (kind, title id, name, poster_path, rating)
 type CardRow = (String, i64, String, Option<String>, Option<f64>);
 
 fn cards(rows: Vec<CardRow>) -> Vec<Value> {
     rows.into_iter()
-        .map(|(kind, tmdb_id, name, poster_path, rating)| {
-            json!({ "kind": kind, "tmdb_id": tmdb_id, "name": name, "poster_path": poster_path, "rating": rating })
+        .map(|(kind, id, name, poster_path, rating)| {
+            json!({ "id": id, "kind": kind, "name": name, "poster_path": poster_path, "rating": rating })
         })
         .collect()
 }
@@ -98,7 +98,7 @@ pub async fn get(
             .await?;
 
     let watching: Vec<CardRow> = sqlx::query_as(
-        "SELECT t.kind, t.tmdb_id, t.name, t.poster_path, l.rating
+        "SELECT t.kind, t.id, t.name, t.poster_path, l.rating
            FROM library_entry l JOIN title t ON t.id = l.title_id
           WHERE l.user_id = ? AND l.status = 'watching'
           ORDER BY l.updated_at DESC LIMIT 18",
@@ -107,7 +107,7 @@ pub async fn get(
     .fetch_all(pool)
     .await?;
     let favourites: Vec<CardRow> = sqlx::query_as(
-        "SELECT t.kind, t.tmdb_id, t.name, t.poster_path, l.rating
+        "SELECT t.kind, t.id, t.name, t.poster_path, l.rating
            FROM library_entry l JOIN title t ON t.id = l.title_id
           WHERE l.user_id = ? AND l.favourite = 1
           ORDER BY l.rating IS NULL, l.rating DESC, l.updated_at DESC LIMIT 18",
@@ -116,7 +116,7 @@ pub async fn get(
     .fetch_all(pool)
     .await?;
     let recent: Vec<CardRow> = sqlx::query_as(
-        "SELECT t.kind, t.tmdb_id, t.name, t.poster_path, l.rating
+        "SELECT t.kind, t.id, t.name, t.poster_path, l.rating
            FROM watch_event w
            JOIN title t ON t.id = w.title_id
            JOIN library_entry l ON l.title_id = t.id AND l.user_id = w.user_id
@@ -129,21 +129,20 @@ pub async fn get(
     .await?;
 
     // Pinned titles, in the order chosen, skipping any no longer tracked.
-    let pins: Vec<(String, i64)> = serde_json::from_str::<Vec<Value>>(&pins_json)
+    let pins: Vec<i64> = serde_json::from_str::<Vec<Value>>(&pins_json)
         .unwrap_or_default()
         .iter()
-        .filter_map(|p| Some((p["kind"].as_str()?.to_string(), p["tmdb_id"].as_i64()?)))
+        .filter_map(|p| p["title_id"].as_i64())
         .collect();
     let mut pinned = Vec::new();
-    for (kind, tmdb_id) in pins {
+    for title_id in pins {
         let row: Option<CardRow> = sqlx::query_as(
-            "SELECT t.kind, t.tmdb_id, t.name, t.poster_path, l.rating
+            "SELECT t.kind, t.id, t.name, t.poster_path, l.rating
                FROM library_entry l JOIN title t ON t.id = l.title_id
-              WHERE l.user_id = ? AND t.kind = ? AND t.tmdb_id = ?",
+              WHERE l.user_id = ? AND t.id = ?",
         )
         .bind(user_id)
-        .bind(&kind)
-        .bind(tmdb_id)
+        .bind(title_id)
         .fetch_optional(pool)
         .await?;
         pinned.extend(row);

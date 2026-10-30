@@ -81,8 +81,12 @@ const db = new DatabaseSync(dbFile);
 db.exec('PRAGMA busy_timeout = 5000');
 const now = new Date().toISOString();
 const addTitle = db.prepare(
-	`INSERT INTO title (kind, tmdb_id, name, release_date, runtime, genres_json, refreshed_at, people_synced_at)
-	 VALUES ('movie', ?, ?, '2020-01-01', 100, '["Drama"]', ?, ?)`
+	`INSERT INTO title (kind, name, release_date, runtime, genres_json, refreshed_at, people_synced_at)
+	 VALUES ('movie', ?, '2020-01-01', 100, '["Drama"]', ?, ?)`
+);
+const addSource = db.prepare(
+	`INSERT INTO title_external (title_id, provider, external_id, is_primary, added_at)
+	 VALUES (?, 'tmdb', ?, 1, ?)`
 );
 const addPerson = db.prepare(
 	`INSERT INTO title_person (title_id, role, tmdb_id, name, ord) VALUES (?, ?, ?, ?, ?)`
@@ -96,7 +100,8 @@ const addWatch = db.prepare(
 	 VALUES (1, ?, NULL, ?, 0, 'manual')`
 );
 for (let i = 1; i <= 3; i++) {
-	const { lastInsertRowid: id } = addTitle.run(9000 + i, `Pond Film ${i}`, now, now);
+	const { lastInsertRowid: id } = addTitle.run(`Pond Film ${i}`, now, now);
+	addSource.run(id, `movie/${9000 + i}`, now);
 	addPerson.run(id, 'cast', 100 + i, `Actor ${i}`, 0);
 	addPerson.run(id, 'director', 200 + i, `Director ${i}`, 0);
 	addPerson.run(id, 'studio', 300 + i, `Studio ${i}`, 0);

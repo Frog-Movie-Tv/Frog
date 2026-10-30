@@ -10,12 +10,19 @@ use tower::ServiceExt;
 use frog::config::Config;
 use frog::state::AppState;
 
+mod common;
+
 struct Harness {
     state: AppState,
     _dir: tempfile::TempDir,
 }
 
 impl Harness {
+    /// Frog's id for a title as a provider names it (see `common::title_id`).
+    async fn tid(&self, kind: &str, id: i64) -> i64 {
+        common::title_id(&self.state, kind, id).await
+    }
+
     async fn new() -> Self {
         Self::with_tmdb_key("").await
     }
@@ -47,10 +54,9 @@ impl Harness {
         };
 
         let pool = frog::db::connect(&url).await.expect("database");
-        Self {
-            state: AppState::new(pool, config),
-            _dir: dir,
-        }
+        let state = AppState::new(pool, config);
+        common::add_title_seed(&state).await;
+        Self { state, _dir: dir }
     }
 
     fn router(&self) -> axum::Router {
@@ -339,7 +345,7 @@ async fn library_and_stats_survive_real_rows() {
     // A film that was watched, and a show that never was: the second one is
     // what made MAX(watched_at) decode a NULL.
     sqlx::query(
-        "INSERT INTO title (kind, tmdb_id, name, runtime, genres_json)
+        "INSERT INTO title_seed (kind, tmdb_id, name, runtime, genres_json)
          VALUES ('movie', 1, 'Watched Film', 139, '[\"Drama\"]'),
                 ('tv', 2, 'Untouched Show', 42, '[]')",
     )
@@ -383,7 +389,7 @@ async fn the_library_filter_ignores_accents_and_case() {
     let (owner, other) = two_accounts(&h).await;
 
     sqlx::query(
-        "INSERT INTO title (id, kind, tmdb_id, name, original_name) VALUES
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, original_name) VALUES
             (1, 'tv', 60572, 'Pokémon', 'ポケットモンスター'),
             (2, 'tv', 31910, 'Naruto Shippūden', 'NARUTO -ナルト- 疾風伝'),
             (3, 'tv', 1396, 'Breaking Bad', 'Breaking Bad'),
@@ -472,7 +478,7 @@ async fn bulk_season_marking_skips_unaired_episodes() {
         .await;
     let cookie = cookie.unwrap();
 
-    sqlx::query("INSERT INTO title (kind, tmdb_id, name) VALUES ('tv', 42, 'Part Aired')")
+    sqlx::query("INSERT INTO title_seed (kind, tmdb_id, name) VALUES ('tv', 42, 'Part Aired')")
         .execute(&h.state.pool)
         .await
         .unwrap();
@@ -490,7 +496,7 @@ async fn bulk_season_marking_skips_unaired_episodes() {
 
     let (status, body, _) = h
         .post(
-            "/api/titles/tv/42/episodes/1/watch",
+            &format!("/api/t/{}/episodes/1/watch", h.tid("tv", 42).await),
             json!({ "watched": true }),
             Some(&cookie),
         )
@@ -567,7 +573,7 @@ async fn show_with_seasons(h: &Harness) -> String {
         )
         .await;
 
-    sqlx::query("INSERT INTO title (kind, tmdb_id, name) VALUES ('tv', 48866, 'The 100')")
+    sqlx::query("INSERT INTO title_seed (kind, tmdb_id, name) VALUES ('tv', 48866, 'The 100')")
         .execute(&h.state.pool)
         .await
         .unwrap();
@@ -595,7 +601,7 @@ async fn bulk_marking_with_an_unknown_date_stays_out_of_the_diary() {
 
     let (status, body, _) = h
         .post(
-            "/api/titles/tv/48866/episodes/watch",
+            &format!("/api/t/{}/episodes/watch", h.tid("tv", 48866).await),
             json!({ "watched": true, "when": "unknown" }),
             Some(&cookie),
         )
@@ -616,7 +622,7 @@ async fn bulk_marking_on_release_dates_uses_each_air_date() {
     let cookie = show_with_seasons(&h).await;
 
     h.post(
-        "/api/titles/tv/48866/episodes/1/watch",
+        &format!("/api/t/{}/episodes/1/watch", h.tid("tv", 48866).await),
         json!({ "watched": true, "when": "release" }),
         Some(&cookie),
     )
@@ -645,7 +651,7 @@ async fn bulk_marking_on_release_dates_uses_each_air_date() {
     .await
     .unwrap();
     h.post(
-        "/api/titles/tv/48866/episodes/2/watch",
+        &format!("/api/t/{}/episodes/2/watch", h.tid("tv", 48866).await),
         json!({ "watched": true, "when": "release" }),
         Some(&cookie),
     )
@@ -664,7 +670,7 @@ async fn a_future_bulk_date_is_refused() {
 
     let (status, body, _) = h
         .post(
-            "/api/titles/tv/48866/episodes/watch",
+            &format!("/api/t/{}/episodes/watch", h.tid("tv", 48866).await),
             json!({ "watched": true, "when": "date", "date": "2099-05-01" }),
             Some(&cookie),
         )
@@ -681,7 +687,7 @@ async fn the_diary_groups_a_day_of_one_show_and_can_be_redated() {
     let cookie = show_with_seasons(&h).await;
 
     h.post(
-        "/api/titles/tv/48866/episodes/watch",
+        &format!("/api/t/{}/episodes/watch", h.tid("tv", 48866).await),
         json!({ "watched": true, "when": "date", "date": "2026-10-24" }),
         Some(&cookie),
     )
@@ -698,7 +704,7 @@ async fn the_diary_groups_a_day_of_one_show_and_can_be_redated() {
     let (status, body, _) = h
         .post(
             "/api/diary/redate",
-            json!({ "kind": "tv", "tmdb_id": 48866, "day": "2026-10-24", "when": "unknown" }),
+            json!({ "title_id": h.tid("tv", 48866).await, "day": "2026-10-24", "when": "unknown" }),
             Some(&cookie),
         )
         .await;
@@ -1017,7 +1023,7 @@ async fn stats_cover_all_time_and_a_single_year() {
 
     for (id, rating) in [(11, 95.0), (12, 70.0)] {
         let req = axum::http::Request::builder()
-            .uri(format!("/api/titles/movie/{id}/library"))
+            .uri(format!("/api/t/{}/library", h.tid("movie", id).await))
             .method("PUT")
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::COOKIE, &cookie)
@@ -1038,17 +1044,18 @@ async fn stats_cover_all_time_and_a_single_year() {
 
     // Finishing a film records that you watched it -- once, however often
     // the status is set again.
+    let film = h.tid("movie", 11).await;
     let put = |id: i64, body: Value| {
         axum::http::Request::builder()
-            .uri(format!("/api/titles/movie/{id}/library"))
+            .uri(format!("/api/t/{id}/library"))
             .method("PUT")
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::COOKIE, &cookie)
             .body(Body::from(body.to_string()))
             .unwrap()
     };
-    h.call(put(11, json!({ "status": "completed" }))).await;
-    h.call(put(11, json!({ "rating": 95.0 }))).await;
+    h.call(put(film, json!({ "status": "completed" }))).await;
+    h.call(put(film, json!({ "rating": 95.0 }))).await;
     let (watches,): (i64,) =
         sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE episode_id IS NULL AND undated = 0")
             .fetch_one(&h.state.pool)
@@ -1127,7 +1134,7 @@ async fn finished_films_without_a_watch_get_an_undated_one() {
     let h = Harness::new().await;
     an_owner(&h).await;
     sqlx::query(
-        "INSERT INTO title (kind, tmdb_id, name) VALUES
+        "INSERT INTO title_seed (kind, tmdb_id, name) VALUES
             ('movie', 1, 'Finished'), ('movie', 2, 'Planned'), ('movie', 3, 'Watched')",
     )
     .execute(&h.state.pool)
@@ -1182,7 +1189,7 @@ async fn the_worker_backfills_credits_for_older_titles() {
     let h = Harness::with_tmdb_key("test-key").await;
     an_owner(&h).await;
     cache_film(&h, 21, "Old Entry", "2001", &[(5, "Someone")]).await;
-    sqlx::query("INSERT INTO title (kind, tmdb_id, name) VALUES ('movie', 21, 'Old Entry')")
+    sqlx::query("INSERT INTO title_seed (kind, tmdb_id, name) VALUES ('movie', 21, 'Old Entry')")
         .execute(&h.state.pool)
         .await
         .unwrap();
@@ -1330,7 +1337,7 @@ async fn new_episodes_are_announced_once_per_show() {
     let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 26).unwrap();
 
     sqlx::query(
-        "INSERT INTO title (kind, tmdb_id, name, poster_path) VALUES
+        "INSERT INTO title_seed (kind, tmdb_id, name, poster_path) VALUES
             ('tv', 1, 'Followed', '/f.jpg'), ('tv', 2, 'Muted', NULL), ('tv', 3, 'Dropped', NULL)",
     )
     .execute(&h.state.pool)
@@ -1368,7 +1375,11 @@ async fn new_episodes_are_announced_once_per_show() {
         payload["body"],
         json!("2 new episodes, S02E01–S02E02, are out today")
     );
-    assert_eq!(payload["url"], json!("/title/tv/1"));
+    // The show's own address, by Frog's id.
+    assert_eq!(
+        payload["url"],
+        json!(format!("/t/{}", h.tid("tv", 1).await))
+    );
     assert_eq!(payload["image"], json!("/img/w342/f.jpg"));
 
     // Watching one and announcing nothing else leaves a single-episode line.
@@ -1450,7 +1461,7 @@ async fn shelf_library(h: &Harness) -> String {
         )
         .await;
     sqlx::query(
-        "INSERT INTO title (id, kind, tmdb_id, name, release_date, genres_json, poster_path) VALUES
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, release_date, genres_json, poster_path) VALUES
             (1, 'tv', 101, 'Half Watched', '2019-01-01', '[\"Drama\"]', '/a.jpg'),
             (2, 'tv', 102, 'Untouched',    '2021-01-01', '[\"Comedy\"]', '/b.jpg'),
             (3, 'tv', 103, 'Finished',     '2010-01-01', '[\"Drama\"]', '/c.jpg'),
@@ -1518,7 +1529,7 @@ async fn a_manual_shelf_keeps_your_order_and_comes_back_after_delete() {
         let (s, b, _) = h
             .post(
                 &format!("/api/shelves/{id}/items"),
-                json!({ "kind": kind, "tmdb_id": tmdb }),
+                json!({ "title_id": h.tid(kind, tmdb).await }),
                 Some(&cookie),
             )
             .await;
@@ -1527,7 +1538,7 @@ async fn a_manual_shelf_keeps_your_order_and_comes_back_after_delete() {
     // Adding twice changes nothing.
     h.post(
         &format!("/api/shelves/{id}/items"),
-        json!({ "kind": "tv", "tmdb_id": 101 }),
+        json!({ "title_id": h.tid("tv", 101).await }),
         Some(&cookie),
     )
     .await;
@@ -1554,13 +1565,24 @@ async fn a_manual_shelf_keeps_your_order_and_comes_back_after_delete() {
         json!(["/e.jpg", "/c.jpg", "/a.jpg"])
     );
 
-    let (_, membership) = h.get("/api/titles/tv/101/shelves", Some(&cookie)).await;
+    let (_, membership) = h
+        .get(
+            &format!("/api/t/{}/shelves", h.tid("tv", 101).await),
+            Some(&cookie),
+        )
+        .await;
     assert_eq!(membership["shelves"][0]["on"], json!(true));
-    let (_, membership) = h.get("/api/titles/tv/102/shelves", Some(&cookie)).await;
+    let (_, membership) = h
+        .get(
+            &format!("/api/t/{}/shelves", h.tid("tv", 102).await),
+            Some(&cookie),
+        )
+        .await;
     assert_eq!(membership["shelves"][0]["on"], json!(false));
 
+    let gone = h.tid("tv", 103).await;
     let req = Request::builder()
-        .uri(format!("/api/shelves/{id}/items/tv/103"))
+        .uri(format!("/api/shelves/{id}/items/{gone}"))
         .method("DELETE")
         .header(header::COOKIE, &cookie)
         .body(Body::empty())
@@ -1684,7 +1706,7 @@ async fn smart_shelves_follow_their_rules() {
     let (s, _, _) = h
         .post(
             &format!("/api/shelves/{id}/items"),
-            json!({ "kind": "tv", "tmdb_id": 101 }),
+            json!({ "title_id": h.tid("tv", 101).await }),
             Some(&cookie),
         )
         .await;
@@ -1741,7 +1763,7 @@ async fn because_you_watched_skips_your_library_and_never_repeats() {
     // Two seeds rated highly, one rated low (never a seed), and one tracked
     // title that the first seed recommends.
     sqlx::query(
-        "INSERT INTO title (id, kind, tmdb_id, name) VALUES
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES
             (1, 'movie', 10, 'Seed 10'), (2, 'movie', 20, 'Seed 20'),
             (3, 'movie', 30, 'Meh'), (4, 'movie', 101, 'Pick 101')",
     )
@@ -1915,10 +1937,12 @@ async fn watching_a_long_show(h: &Harness) -> String {
         )
         .await;
     let pool = &h.state.pool;
-    sqlx::query("INSERT INTO title (id, kind, tmdb_id, name) VALUES (1, 'tv', 60572, 'Pokémon')")
-        .execute(pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (1, 'tv', 60572, 'Pokémon')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
     for season in 0..=3 {
         for episode in 1..=4 {
             sqlx::query(
@@ -2117,7 +2141,7 @@ async fn two_accounts(h: &Harness) -> (String, String) {
 /// A film, a show with one aired episode, and the owner's own history of both.
 async fn seed_owner_history(h: &Harness) {
     sqlx::query(
-        "INSERT INTO title (id, kind, tmdb_id, name, runtime) VALUES
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, runtime) VALUES
             (1, 'movie', 1, 'Private Film', 100),
             (2, 'tv', 2, 'Private Show', 30)",
     )
@@ -2231,7 +2255,12 @@ async fn a_second_account_sees_none_of_the_first_accounts_data() {
     let (code, _) = h.get("/api/shelves/1", Some(&guest)).await;
     assert_eq!(code, StatusCode::NOT_FOUND);
 
-    let (_, body) = h.get("/api/titles/movie/1/shelves", Some(&guest)).await;
+    let (_, body) = h
+        .get(
+            &format!("/api/t/{}/shelves", h.tid("movie", 1).await),
+            Some(&guest),
+        )
+        .await;
     assert!(body["shelves"].as_array().unwrap().is_empty());
 
     let (_, body) = h.get("/api/export/library.json", Some(&guest)).await;
@@ -2253,7 +2282,12 @@ async fn a_second_account_cannot_change_the_first_accounts_data() {
     seed_owner_history(&h).await;
 
     // Removing "the same" film only ever removes your own row.
-    let (code, _, _) = h.delete("/api/titles/movie/1/library", Some(&guest)).await;
+    let (code, _, _) = h
+        .delete(
+            &format!("/api/t/{}/library", h.tid("movie", 1).await),
+            Some(&guest),
+        )
+        .await;
     assert!(
         code == StatusCode::OK || code == StatusCode::NOT_FOUND,
         "{code}"
@@ -2262,7 +2296,7 @@ async fn a_second_account_cannot_change_the_first_accounts_data() {
     // Ticking the shared episode records the guest's watch, never the owner's.
     let (code, _, _) = h
         .post(
-            "/api/titles/tv/2/episodes/1/1/watch",
+            &format!("/api/t/{}/episodes/1/1/watch", h.tid("tv", 2).await),
             json!({ "watched": true }),
             Some(&guest),
         )
@@ -2271,7 +2305,7 @@ async fn a_second_account_cannot_change_the_first_accounts_data() {
     // ...and un-ticking it does not clear the owner's.
     let (code, _, _) = h
         .post(
-            "/api/titles/tv/2/episodes/1/1/watch",
+            &format!("/api/t/{}/episodes/1/1/watch", h.tid("tv", 2).await),
             json!({ "watched": false }),
             Some(&guest),
         )
@@ -2290,7 +2324,7 @@ async fn a_second_account_cannot_change_the_first_accounts_data() {
     let (code, _, _) = h
         .post(
             "/api/shelves/1/items",
-            json!({ "kind": "tv", "tmdb_id": 2 }),
+            json!({ "title_id": h.tid("tv", 2).await }),
             Some(&guest),
         )
         .await;
@@ -2303,8 +2337,7 @@ async fn a_second_account_cannot_change_the_first_accounts_data() {
         .post(
             "/api/diary/redate",
             json!({
-                "kind": "movie",
-                "tmdb_id": 1,
+                "title_id": h.tid("movie", 1).await,
                 "day": "2026-01-02",
                 "when": "unknown",
             }),
@@ -2315,12 +2348,13 @@ async fn a_second_account_cannot_change_the_first_accounts_data() {
     assert_eq!(body["changed"], json!(0), "the guest redated someone else");
 
     // The owner's rows are exactly as they were.
+    let film_id = h.tid("movie", 1).await;
     let (_, mine) = h.get("/api/library", Some(&owner)).await;
     let items = mine["items"].as_array().unwrap();
     assert_eq!(items.len(), 2, "the owner lost a title: {mine:?}");
     let film = items
         .iter()
-        .find(|i| i["tmdb_id"] == json!(1))
+        .find(|i| i["id"] == json!(film_id))
         .expect("the film is still there");
     assert_eq!(film["entry"]["rating"], json!(90.0));
     assert_eq!(film["entry"]["notes"], json!("mine"));
@@ -2982,7 +3016,7 @@ async fn a_sync_merge_never_undoes_what_you_did_in_frog() {
         let h = &h;
         async move {
             h.put(
-                &format!("/api/titles/movie/{id}/library"),
+                &format!("/api/t/{}/library", h.tid("movie", id).await),
                 body,
                 Some(&owner),
             )
@@ -3067,8 +3101,11 @@ async fn stats_only_count_what_is_in_the_library() {
     let (_, diary) = h.get("/api/diary", Some(&cookie)).await;
     assert_eq!(diary["entries"], json!([]), "but stay out of the diary");
 
-    h.delete("/api/titles/movie/42/library", Some(&cookie))
-        .await;
+    h.delete(
+        &format!("/api/t/{}/library", h.tid("movie", 42).await),
+        Some(&cookie),
+    )
+    .await;
     let (_, stats) = h.get("/api/stats", Some(&cookie)).await;
     assert_eq!(stats["totals"]["films"], json!(1), "{}", stats["totals"]);
     assert_eq!(stats["totals"]["titles"], json!(1));
@@ -3167,7 +3204,7 @@ async fn profiles_carry_a_name_an_about_pins_and_pictures() {
     let (owner, guest) = two_accounts(&h).await;
     cache_film(&h, 51, "Pinned Film", "2003", &[]).await;
     h.put(
-        "/api/titles/movie/51/library",
+        &format!("/api/t/{}/library", h.tid("movie", 51).await),
         json!({ "status": "completed", "rating": 90.0 }),
         Some(&owner),
     )
@@ -3180,7 +3217,7 @@ async fn profiles_carry_a_name_an_about_pins_and_pictures() {
                 "display_name": "  Mihai  ",
                 "bio": "Films first.",
                 "banner_backdrop": "/abc123.jpg",
-                "pins": [{ "kind": "movie", "tmdb_id": 51 }]
+                "pins": [{ "title_id": h.tid("movie", 51).await }]
             }),
             Some(&owner),
         )
@@ -3229,7 +3266,7 @@ async fn profiles_carry_a_name_an_about_pins_and_pictures() {
     let (_, profile) = h.get("/api/profiles/mihai", Some(&owner)).await;
     assert_eq!(profile["display_name"], json!("Mihai"));
     assert_eq!(profile["bio"], json!("Films first."));
-    assert_eq!(profile["pinned"][0]["tmdb_id"], json!(51));
+    assert_eq!(profile["pinned"][0]["id"], json!(h.tid("movie", 51).await));
     assert_eq!(profile["stats"]["films"], json!(1));
     let avatar = profile["avatar"]
         .as_str()
@@ -3472,7 +3509,7 @@ async fn marking_a_show_ticks_only_the_specials_chosen() {
 
     let (status, body, _) = h
         .post(
-            "/api/titles/tv/48866/episodes/watch",
+            &format!("/api/t/{}/episodes/watch", h.tid("tv", 48866).await),
             json!({ "watched": true, "when": "unknown", "specials": [2] }),
             Some(&cookie),
         )
@@ -3513,7 +3550,7 @@ async fn completing_on_the_last_episode_follows_the_setting() {
     assert_eq!(status, StatusCode::OK);
     let (_, body, _) = h
         .post(
-            "/api/titles/tv/48866/episodes/watch",
+            &format!("/api/t/{}/episodes/watch", h.tid("tv", 48866).await),
             mark_all.clone(),
             Some(&cookie),
         )
@@ -3531,7 +3568,7 @@ async fn completing_on_the_last_episode_follows_the_setting() {
     assert_eq!(status, StatusCode::OK);
     let (_, body, _) = h
         .post(
-            "/api/titles/tv/48866/episodes/watch",
+            &format!("/api/t/{}/episodes/watch", h.tid("tv", 48866).await),
             mark_all,
             Some(&cookie),
         )
@@ -3557,7 +3594,7 @@ async fn search_finds_known_titles_by_their_first_letters() {
         .await;
     let cookie = cookie.unwrap();
     sqlx::query(
-        "INSERT INTO title (kind, tmdb_id, name, release_date) VALUES ('movie', 157336, 'Interstellar', '2014-11-05')",
+        "INSERT INTO title_seed (kind, tmdb_id, name, release_date) VALUES ('movie', 157336, 'Interstellar', '2014-11-05')",
     )
     .execute(&h.state.pool)
     .await

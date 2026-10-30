@@ -176,8 +176,12 @@ async function waitForNotification(tag, ms) {
 }
 
 console.log('== seeding ==');
+// Notifications name a show by Frog's id.
+const frogIds = {};
 for (const id of [BREAKING_BAD, THE_OFFICE]) {
-	const res = await api('PUT', `/api/titles/tv/${id}/library`, { status: 'watching' });
+	const opened = await api('GET', `/api/titles/tv/${id}`);
+	frogIds[id] = opened.body.item.id;
+	const res = await api('PUT', `/api/t/${opened.body.item.id}/library`, { status: 'watching' });
 	check(`following show ${id}`, res.status === 200, String(res.status));
 }
 
@@ -294,19 +298,20 @@ const localDay = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart
 		.prepare(
 			`UPDATE episode SET air_date = ?
 			  WHERE season_number = 1 AND episode_number = 1
-			    AND title_id IN (SELECT id FROM title WHERE kind = 'tv' AND tmdb_id IN (?, ?))`
+			    AND title_id IN (SELECT title_id FROM title_external
+			                      WHERE provider = 'tmdb' AND external_id IN (?, ?))`
 		)
-		.run(localDay, BREAKING_BAD, THE_OFFICE);
+		.run(localDay, `tv/${BREAKING_BAD}`, `tv/${THE_OFFICE}`);
 	db.close();
 	check('both pilots now air today', moved.changes === 2, String(moved.changes));
 }
 // The worker's first sweep runs five seconds after start.
 await start();
 await shown();
-const announced = await waitForNotification(`frog-tv-${BREAKING_BAD}`, 120000);
+const announced = await waitForNotification(`frog-title-${frogIds[BREAKING_BAD]}`, 120000);
 check(
 	'the followed show is announced',
-	announced?.title === 'Breaking Bad' && announced?.url === `/title/tv/${BREAKING_BAD}`,
+	announced?.title === 'Breaking Bad' && announced?.url === `/t/${frogIds[BREAKING_BAD]}`,
 	JSON.stringify(announced)
 );
 check(
@@ -314,7 +319,7 @@ check(
 	/^S01E01 · Pilot is out today$/.test(announced?.body ?? ''),
 	announced?.body
 );
-const muted = (await shown()).find((n) => n.tag === `frog-tv-${THE_OFFICE}`);
+const muted = (await shown()).find((n) => n.tag === `frog-title-${frogIds[THE_OFFICE]}`);
 check('the muted show stays silent', !muted, JSON.stringify(muted));
 
 // A second sweep must not repeat it: restart and look at what the server sent.

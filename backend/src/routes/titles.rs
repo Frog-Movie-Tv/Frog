@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::auth::Auth;
+use crate::catalog::{self, ExternalId};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::store;
@@ -12,14 +13,6 @@ use crate::tmdb::models::{self, EpisodeInfo, SearchItem};
 
 /// (season, episode, my rating, my notes, number of watches)
 type EpisodeStateRow = (i64, i64, Option<f64>, Option<String>, i64);
-
-fn check_kind(kind: &str) -> AppResult<()> {
-    if kind == "movie" || kind == "tv" {
-        Ok(())
-    } else {
-        Err(AppError::BadRequest("That isn't a film or a show.".into()))
-    }
-}
 
 #[derive(Serialize)]
 pub struct EpisodeView {
@@ -31,69 +24,101 @@ pub struct EpisodeView {
     pub notes: Option<String>,
 }
 
-/// One request per title page. Everything the page draws above the fold comes
-/// back here; seasons are fetched lazily as they are opened.
+/// A title as a provider's address names it: `movie/550` and `tv/1399` are
+/// TMDB's, `anilist/21` AniList's. `tv/-21` is how an AniList-only title was
+/// addressed before Frog had ids of its own, and still finds it.
+pub fn provider_address(kind: &str, id: i64) -> AppResult<ExternalId> {
+    match kind {
+        "movie" | "tv" if id > 0 => Ok(ExternalId::tmdb(kind, id)),
+        "movie" | "tv" if id < 0 => Ok(ExternalId::AniList(-id)),
+        "anilist" if id > 0 => Ok(ExternalId::AniList(id)),
+        _ => Err(AppError::NotFound("no such title".into())),
+    }
+}
+
+/// The title a provider's address names, put in the catalog if it is new.
+/// An AniList address for something TMDB has (reached from a person, a
+/// studio or a related work) is that TMDB title: no second copy is made. One
+/// a sync already keeps, because its place is not certain, stays what it is.
+pub async fn by_address(state: &AppState, kind: &str, id: i64) -> AppResult<i64> {
+    let address = provider_address(kind, id)?;
+    if let Some(title_id) = catalog::find(&state.pool, &address).await? {
+        return Ok(title_id);
+    }
+    let address = match address {
+        ExternalId::AniList(media_id) => {
+            let mapped: Option<(String, i64)> = sqlx::query_as(
+                "SELECT tmdb_kind, tmdb_id FROM anime_map
+                  WHERE anilist_id = ? AND tmdb_kind IN ('movie', 'tv') AND tmdb_id IS NOT NULL",
+            )
+            .bind(media_id)
+            .fetch_optional(&state.pool)
+            .await?;
+            match mapped {
+                Some((kind, tmdb_id)) => ExternalId::tmdb(&kind, tmdb_id),
+                None => address,
+            }
+        }
+        other => other,
+    };
+    Ok(catalog::ensure(state, &address).await?.0)
+}
+
+/// A title page reached by a provider's address. The answer carries Frog's
+/// id, which the page then uses as its own address.
 pub async fn detail(
     auth: Auth,
     State(state): State<AppState>,
-    Path((kind, tmdb_id)): Path<(String, i64)>,
+    Path((kind, id)): Path<(String, i64)>,
 ) -> AppResult<Json<Value>> {
-    check_kind(&kind)?;
-    // An AniList address for something TMDB has (reached from a person,
-    // a studio or a related work) is that TMDB title: no second copy is
-    // made. One a sync already keeps, because its place is not certain,
-    // stays what it is.
-    if store::is_local(tmdb_id)
-        && store::find_title_id(&state.pool, &kind, tmdb_id)
-            .await?
-            .is_none()
-    {
-        let mapped: Option<(String, i64)> = sqlx::query_as(
-            "SELECT tmdb_kind, tmdb_id FROM anime_map
-              WHERE anilist_id = ? AND tmdb_kind IN ('movie', 'tv') AND tmdb_id IS NOT NULL",
-        )
-        .bind(-tmdb_id)
-        .fetch_optional(&state.pool)
-        .await?;
-        if let Some((kind, tmdb_id)) = mapped {
-            return Ok(Json(
-                json!({ "moved_to": { "kind": kind, "tmdb_id": tmdb_id } }),
-            ));
-        }
-    }
-    let (title_id, raw) = store::ensure_title(&state, &kind, tmdb_id).await?;
-    let row = store::get_title(&state.pool, title_id).await?;
-    let item = store::build_item(&state.pool, auth.user_id(), row).await?;
+    let title_id = by_address(&state, &kind, id).await?;
+    detail_of(&state, auth.user_id(), title_id).await
+}
+
+/// One request per title page. Everything the page draws above the fold comes
+/// back here; seasons are fetched lazily as they are opened.
+pub async fn detail_by_id(
+    auth: Auth,
+    State(state): State<AppState>,
+    Path(title_id): Path<i64>,
+) -> AppResult<Json<Value>> {
+    detail_of(&state, auth.user_id(), title_id).await
+}
+
+async fn detail_of(state: &AppState, user_id: i64, title_id: i64) -> AppResult<Json<Value>> {
+    let (row, raw) = catalog::load(state, title_id).await?;
+    let kind = row.kind.clone();
+    let external = catalog::externals(&state.pool, title_id).await?;
+    let anilist_only = external.primary == Some("anilist");
+    let item = store::build_item(&state.pool, user_id, row).await?;
 
     let collection = match item.title.collection_id {
-        Some(cid) => collection_parts(&state, auth.user_id(), cid).await.ok(),
+        Some(cid) => collection_parts(state, user_id, cid).await.ok(),
         // AniList's related works, the franchise of a title TMDB lacks.
-        None if store::is_local(tmdb_id) => {
+        None if anilist_only => {
             let mut parts = models::related(&raw, "related", 24);
             parts.sort_by_key(|p| p.year.unwrap_or(9999));
-            crate::routes::search::annotate_library(&state, auth.user_id(), &mut parts).await?;
+            crate::routes::search::annotate_library(state, user_id, &mut parts).await?;
             (!parts.is_empty()).then(|| json!({ "id": 0, "name": "Related", "parts": parts }))
         }
         None => None,
     };
 
     // An AniList-only title TMDB has since found: the page goes there.
-    let moved: Option<(String, i64)> = sqlx::query_as(
-        "SELECT t.kind, t.tmdb_id FROM title f JOIN title t ON t.id = f.merged_into
-          WHERE f.id = ?",
-    )
-    .bind(title_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let (moved,): (Option<i64>,) = sqlx::query_as("SELECT merged_into FROM title WHERE id = ?")
+        .bind(title_id)
+        .fetch_one(&state.pool)
+        .await?;
 
     let next_up = if kind == "tv" {
-        store::next_episode(&state.pool, auth.user_id(), title_id).await?
+        store::next_episode(&state.pool, user_id, title_id).await?
     } else {
         None
     };
 
     Ok(Json(json!({
         "item": item,
+        "external": external,
         "tagline": models::str_at(&raw, "tagline"),
         "homepage": models::str_at(&raw, "homepage"),
         "cast": models::cast(&raw, 24),
@@ -108,15 +133,15 @@ pub async fn detail(
         "next_up": next_up,
         "ratings": if kind == "tv" {
             serde_json::to_value(
-                crate::release::rating_units(&state.pool, auth.user_id(), title_id).await?,
+                crate::release::rating_units(&state.pool, user_id, title_id).await?,
             )?
         } else {
             json!([])
         },
-        "heatmap": heatmap(&state, auth.user_id(), title_id).await?,
-        "moved_to": moved.map(|(kind, tmdb_id)| json!({ "kind": kind, "tmdb_id": tmdb_id })),
+        "heatmap": heatmap(state, user_id, title_id).await?,
+        "moved_to": moved.map(|id| json!({ "id": id })),
         // Kept from AniList alone: no TMDB entry, so no cast, seasons or links.
-        "anilist_only": store::is_local(tmdb_id),
+        "anilist_only": anilist_only,
     })))
 }
 
@@ -243,25 +268,21 @@ async fn heatmap(state: &AppState, user_id: i64, title_id: i64) -> AppResult<Val
 pub async fn season(
     auth: Auth,
     State(state): State<AppState>,
-    Path((kind, tmdb_id, season)): Path<(String, i64, i64)>,
+    Path((title_id, season)): Path<(i64, i64)>,
 ) -> AppResult<Json<Value>> {
-    if kind != "tv" {
+    if catalog::get_title(&state.pool, title_id).await?.kind != "tv" {
         return Err(AppError::BadRequest("only shows have seasons".into()));
     }
 
-    let title_id = match store::find_title_id(&state.pool, &kind, tmdb_id).await? {
-        Some(id) => id,
-        None => store::ensure_title(&state, &kind, tmdb_id).await?.0,
-    };
-
-    let (raw, episodes) = if store::is_local(tmdb_id) {
-        // From AniList: its episodes came with its detail and are kept.
-        (json!({}), local_episodes(&state, title_id, season).await?)
-    } else {
-        let raw = state.tmdb.season(tmdb_id, season).await?;
-        let episodes = models::episodes_of_season(&raw);
-        store::upsert_episodes(&state.pool, title_id, &episodes).await?;
-        (raw, episodes)
+    let (raw, episodes) = match catalog::primary(&state.pool, title_id).await? {
+        Some(ExternalId::Tmdb { id: tmdb_id, .. }) => {
+            let raw = state.tmdb.season(tmdb_id, season).await?;
+            let episodes = models::episodes_of_season(&raw);
+            catalog::upsert_episodes(&state.pool, title_id, &episodes).await?;
+            (raw, episodes)
+        }
+        // From AniList, or kept without a provider: its episodes are stored.
+        _ => (json!({}), local_episodes(&state, title_id, season).await?),
     };
 
     let states: Vec<EpisodeStateRow> = sqlx::query_as(
@@ -325,10 +346,7 @@ pub async fn person(
         let mut merged: Vec<(SearchItem, &'static str, Vec<String>)> = Vec::new();
         for c in list {
             let roles = c.role.into_iter();
-            match merged
-                .iter_mut()
-                .find(|m| m.0.kind == c.item.kind && m.0.tmdb_id == c.item.tmdb_id)
-            {
+            match merged.iter_mut().find(|m| m.0.same_as(&c.item)) {
                 Some(m) => {
                     for role in roles {
                         if !m.2.contains(&role) {
@@ -357,7 +375,7 @@ pub async fn person(
     let raw = state.tmdb.person(person_id).await?;
 
     let mut credits_by_title: Vec<(Value, Vec<String>)> = Vec::new();
-    let mut seen: std::collections::HashMap<(String, i64), usize> = Default::default();
+    let mut seen: std::collections::HashMap<(String, Option<i64>), usize> = Default::default();
     for section in ["cast", "crew"] {
         let Some(list) = raw
             .get("combined_credits")
@@ -472,17 +490,14 @@ fn first() -> i64 {
 pub async fn rate_season(
     auth: Auth,
     State(state): State<AppState>,
-    Path((kind, tmdb_id, season)): Path<(String, i64, i64)>,
+    Path((title_id, season)): Path<(i64, i64)>,
     Json(body): Json<SeasonRatingBody>,
 ) -> AppResult<Json<Value>> {
-    if kind != "tv" {
+    if catalog::get_title(&state.pool, title_id).await?.kind != "tv" {
         return Err(AppError::BadRequest(
             "only shows have seasons to rate".into(),
         ));
     }
-    let title_id = store::find_title_id(&state.pool, &kind, tmdb_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("no such title".into()))?;
     let units = crate::release::rating_units(&state.pool, auth.user_id(), title_id).await?;
     let Some(unit) = units
         .iter()

@@ -273,12 +273,13 @@ async fn anime_characters(state: &AppState, term: &str) -> AppResult<Vec<Value>>
         };
         let title = match placed {
             Some((kind, tmdb_id)) => {
-                let poster: Option<(Option<String>,)> =
-                    sqlx::query_as("SELECT poster_path FROM title WHERE kind = ? AND tmdb_id = ?")
-                        .bind(&kind)
-                        .bind(tmdb_id)
-                        .fetch_optional(&state.pool)
-                        .await?;
+                let poster: Option<(Option<String>,)> = sqlx::query_as(
+                    "SELECT t.poster_path FROM title_external x JOIN title t ON t.id = x.title_id
+                      WHERE x.provider = 'tmdb' AND x.external_id = ?",
+                )
+                .bind(crate::catalog::ExternalId::tmdb(&kind, tmdb_id).key())
+                .fetch_optional(&state.pool)
+                .await?;
                 json!({ "kind": kind, "tmdb_id": tmdb_id, "name": show,
                         "poster_path": poster.and_then(|p| p.0) })
             }
@@ -286,7 +287,8 @@ async fn anime_characters(state: &AppState, term: &str) -> AppResult<Vec<Value>>
             None => match media["id"].as_i64() {
                 Some(id) => json!({
                     "kind": if media["format"].as_str() == Some("MOVIE") { "movie" } else { "tv" },
-                    "tmdb_id": -id,
+                    "tmdb_id": null,
+                    "anilist_id": id,
                     "name": show,
                     "poster_path": anilist::media::image_path(media["coverImage"]["extraLarge"].as_str()),
                 }),

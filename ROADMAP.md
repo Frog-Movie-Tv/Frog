@@ -21,22 +21,37 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 ## Next
 
-1. **A development AniList client.** A client has one redirect URL, and the
-   one in use points at production, so AniList sign-in cannot finish on a
-   laptop. Register a second client with
-   `http://127.0.0.1:8080/api/anilist/callback` for the local `.env`.
-2. **AniList: check the overhaul on the live list.** On a copy of the owner's
+1. **Ship the catalog release with a snapshot at hand.** Frog's own title
+   ids (`docs/CATALOG-IDENTITY.md`) are built and tested: fresh databases, a
+   copy of the release before, an older binary writing between the
+   migration and the rebuild, and every `update.sh` path against stand-ins
+   for Docker (`deploy/tests/update-rollback.sh`). It is not an additive
+   release, and it has not met the live database. Before it reaches a
+   server, an owner has to:
+   - copy the new deploy scripts to each server
+     (`sudo cp deploy/*.sh /opt/frog/deploy/` from this release's checkout).
+     The copy there predates the schema generation and would put the
+     previous image back on the rebuilt table and call it healthy;
+   - run a manual backup and see it arrive in `Frog-Movie-Tv/Frog-Backups`
+     (`sudo /opt/frog/deploy/backup.sh production manual`);
+   - know that production is the first live database it meets: there is no
+     staging, merging to `main` changes nothing live, and merging
+     release-please's pull request does. Afterwards read the update log
+     and open a few titles, an AniList-only one among them.
+2. **AniList sign-in on a laptop, once by hand.** The Frog-Dev client
+   (redirect `http://127.0.0.1:8080/api/anilist/callback`) is in the local
+   `.env`, and AniList accepts its id and secret (checked against its token
+   endpoint on 2026-10-30). The production block above it used to win,
+   because the first value in `.env` is the one kept; it is commented out
+   now. What no script can do: run `.\scripts\dev.ps1`, connect AniList in
+   Settings → Connections, and see it come back connected.
+3. **AniList: check the overhaul on the live list.** On a copy of the owner's
    list (221 entries) 213 are matched, 7 wait as not out yet, and one film
-   special ("ONE PIECE FILM: GOLD - episode 0") has nothing on TMDB. Once it
-   is deployed, open Settings → Connections and look through "Needs a check"
-   and the "Matched" methods for anything that reads wrong.
-3. **AniList-only titles, what AniList cannot give.** They have everything
-   else now (see the note below), but no title logo for the hero, no episode
-   synopses, and streaming links with no country (AniList does not say
-   where a service carries a show, so they show for everyone). AniList
-   voice actors and studios are AniList people in Stats, apart from the same
-   person on TMDB. Episode names and thumbnails are left out whenever the
-   streaming site numbers past AniList's episode count.
+   special ("ONE PIECE FILM: GOLD - episode 0") has nothing on TMDB. That
+   was a copy, not the live list, and the automated tests do not stand in
+   for it. Once the catalog release is deployed, an owner opens
+   Settings → Connections and reads "Needs a check" and the "Matched"
+   methods for anything that reads wrong.
 4. **Old episode ratings that disagreed.** Seasons whose episodes were all
    rated the same took that as their season rating
    (`202610291800_anilist_resilience.sql`). The rest, and every episode of an
@@ -64,7 +79,24 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    columns but has never been tried on a real one. Netflix's "Part N"
    seasons are placed by their episode names; parts whose episodes are only
    called "Episode 3" (Money Heist Part 1) still wait for a person.
-11. **Smaller things.** Customisable keyboard shortcuts, renaming and
+11. **Finish the data-ownership pass.** The AniList, import, catalog and
+   emptying-a-library code no longer lives in routes. Every route below was
+   read for the catalog change on 2026-10-30: each now goes by Frog's title
+   id, and the TMDB ids left in them are TMDB's own (its cache, credits,
+   people and recommendations). SQL still in route
+   files, all single-route reads or writes, to move when each is next
+   touched: `routes/account.rs` (account, password, sessions, profile and
+   pictures, deleting the account), `routes/two_factor.rs` (secrets and
+   recovery codes; belongs beside `auth.rs`), `routes/profiles.rs` (profile
+   cards and totals), `routes/shelves.rs` (shelves and smart-shelf rules),
+   `routes/timeline.rs` (calendar, diary, redating), `routes/stats.rs`,
+   `routes/titles.rs` (heatmap, a season's episodes and states),
+   `routes/episodes.rs` (ticks and notes), `routes/home.rs`,
+   `routes/library.rs` (the filtered list), `routes/search.rs`,
+   `routes/browse.rs`, `routes/admin.rs`, `routes/invites.rs`,
+   `routes/auth.rs`, `routes/push.rs`, `routes/settings.rs`. Persistence is
+   not centralised yet.
+12. **Smaller things.** Customisable keyboard shortcuts, renaming and
    recolouring statuses, muted trailer autoplay, per-shelf layout defaults.
 
 ## Known issues
@@ -73,10 +105,14 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 | --- | --- |
 | **Rebase merging doubles the changelog** | "Rebase and merge" rewrites commit hashes, so a change can land twice and release-please lists both. Untick *Allow rebase merging* in the repository settings. |
 | **The backup repository grows without end** | Git keeps every backup it was sent. About 3 MB a copy for 611 titles, one nightly plus one per update. `docs/DEPLOY-ORACLE.md` step 7 has the reset; doing it automatically, say yearly, is not built. |
+| **AniList-only titles, what AniList cannot give** | Accepted, not planned. No title logo for the hero and no episode synopses (AniList has neither). Streaming links show for every country, since AniList does not say where a service carries a show. AniList voice actors and studios are AniList people in Stats, apart from the same person on TMDB. Episode names and thumbnails are left out when the streaming site numbers past AniList's episode count. Everything else (detail, artwork, episodes, sync, ratings, shelves, Stats) works as for any title and is covered by `tests/anilist.rs` and `verify-leapfrog`. |
 | **Characters come from what Frog has seen** | Search finds anime characters through AniList, and everyone else from the casts of titles somebody on this Frog has opened. TMDB has no character search. |
 | **No staging** | 954 MB will not carry a second instance. `install.sh --with-staging` sets one up if it ever moves to a bigger machine. |
 | **Notifications untested on a real phone** | Verified through FCM in Chrome; not on Android, and tapping one is untested. |
 | **Server messages are English only** | Validation errors and notification text. Fine while the interface is English only. |
+| **Imports keep the day, not the time** | Every reader sets a watch to 20:00 UTC on its day, so Trakt's exact time is not kept. Recorded in `docs/IMPORTS.md` and pinned by `tests/parsers.test.mjs`; keeping exact times needs its own requirements and tests. |
+| **The database file does not shrink** | The picture cache is held to `FROG_IMAGE_CACHE_MB`, but SQLite only reuses freed pages. A one-off `VACUUM` (with the instance stopped) gives the space back if it ever matters. |
+| **Screenshots still weigh 13 MB** | Down from 20 MB by shooting at 1.5×. A lossless optimiser in the release step would take more off; none is part of the build. |
 | **One AniList test is flaky** | `a_tmdb_outage_is_retried_not_left_for_the_person` failed once in a full `cargo test` on 2026-10-29 and passed alone and on the rerun. It races the other tests over account 1's sync flag. |
 
 ## Not doing
@@ -92,6 +128,12 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 ## Notes that save time
 
+- **Titles are Frog's** (`backend/src/catalog.rs`,
+  `docs/CATALOG-IDENTITY.md`). `title.id` is the identity; provider ids are
+  rows in `title_external`. `/t/{id}` is a title's page and API; a
+  provider's address opens it and moves there. Seed and verify scripts open
+  titles by TMDB address first (`titleApi` in each), and SQL-written fixtures
+  add their `title_external` row (`backend/tests/common`'s `title_seed`).
 - **Backups leave the server.** Every nightly and pre-update backup is
   age-encrypted and pushed to the private `Frog-Movie-Tv/Frog-Backups` with
   the server's deploy key (`/opt/frog/backup-key`; the organisation allows
@@ -144,72 +186,17 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   `verify-shelves`, `verify-because`, `verify-anime`, `verify-leapfrog`
   (AniList is a stand-in server inside it), `verify-profile-stats` (no TMDB:
   it writes a small library straight into the database with `node:sqlite`),
-  `verify-2fa`, `verify-diary`, `verify-polish`, plus `npm run pwa-check` and
+  `verify-2fa`, `verify-diary`, `verify-polish`, `verify-accounts` (invites,
+  isolation, devices, switching off), `verify-pull` (pull to refresh with
+  real touch input), plus `npm run pwa-check` and
   `npm run audit`. The ones that reach TMDB need a valid key; with a bad one
   every TMDB page answers 502.
 - **Web Push in tests:** headless Chrome throws away displayed notifications,
   and Playwright's `--disable-background-networking` cuts it off from FCM.
   `verify-push.mjs` keeps background networking and records the worker's
   `showNotification` calls instead.
-- **AniList sync** (`backend/src/anilist/`): `place.rs` decides where an
-  entry goes, `mod.rs` syncs. Evidence is gathered in this order and stops at
-  the first confident answer (confidence 70+): Fribb's anime-lists (TMDB
-  season and offset; a spot two entries claim scores 50), Kometa's Anime-IDs
-  (TVDB numbering turned into TMDB's), a film or unreleased entry by name,
-  the prequel chain counted on from the first season, the air date across
-  related shows (specials only ever in season 0), then the series by every
-  title and synonym AniList has. Every answer is checked against TMDB's air
-  dates. Below 70 nothing is applied: the entry is "not confident" with a
-  note and up to six candidates. Each placement records its method, note and
-  the `RESOLVER` version; a sync re-places automatic ones from an older
-  version, takes back only the ticks it gave (never ones another entry
-  covers) and counts them as repaired. Manual choices are never moved. An
-  entry of unknown length runs to the next entry's start or the end of the
-  show, across TMDB seasons. Each entry keeps a snapshot of both sides from
-  the last sync; whichever side differs from its snapshot changed and wins.
-  A Frog title never on AniList is not added there, and removing one in Frog
-  never removes it on AniList — both on purpose.
-- **AniList, kept running** (also `anilist/mod.rs`). The worker looks every
-  30 s and syncs an account `ANILIST_SYNC_MINUTES` (default 3) after its last
-  finished sync, or 45 s after a change in Frog. The list is read in chunks
-  of 500 and a sync fails whole if any chunk fails. Requests retry a dropped
-  connection, a 5xx or an unreadable answer with jittered backoff (4 tries),
-  and wait out a 429 as long as Retry-After says (65 s at most). `synced_at`
-  moves only on success; a failure sets `retry_at` (1 min doubling to 60) and
-  a refused token sets `needs_reconnect`, which only a reconnect clears.
-  An entry TMDB cannot place is kept as an **AniList-only title**: a `title`
-  row with `tmdb_id = -anilist_id` and `anilist_id` set, so every
-  `(kind, tmdb_id)` lookup and address works; `store::is_local` tells them
-  apart and nothing sends one to TMDB. Its progress is
-  `library_entry.progress`, a count. It is looked for again on a schedule
-  (`tries`, `next_try_at`: an hour doubling to three days, twelve hours when
-  not out yet; at once when AniList's episodes, format, state or start date
-  change, or on Sync now). Once placed, `store::move_title_data` moves that
-  account's entry, shelves and film watch to the TMDB title in one
-  transaction, logs it in `title_merge`, and points the old title on with
-  `merged_into` once nobody keeps it. Progress lowered on AniList takes back
-  only `source = 'anilist'` ticks. Entries gone from the list get `gone_at`
-  and nothing else; an entirely empty answer marks nothing.
-- **AniList-only titles look like TMDB ones** (`backend/src/anilist/media.rs`).
-  One AniList query (plus its airing schedule, 50 a page) is rewritten into
-  TMDB's detail shape, so every reader in `tmdb/models.rs` works unchanged:
-  cover, banner, synopsis (HTML and Markdown stripped, spoilers dropped),
-  genres in TMDB's names plus Animation, score, runtime, voice cast,
-  director, creator and writer, main studio, YouTube trailer, streaming
-  links with their own address (`Provider.url`), recommendations and
-  related works (to the TMDB title when the anime lists map it), and season
-  1 episodes in AniList's numbering, dated from the schedule (else only the
-  first and last, from the start and end dates). Cached in `tmdb_cache`:
-  12 h while airing, a week once finished; the worker refreshes airing ones.
-  AniList people and studios are negative ids too, with their own person
-  and studio pages. Pictures are `/anilist/…` and `/crunchyroll/…` paths that
-  the image route fetches from those two hosts only, so Caddy's CSP needs
-  nothing new. An AniList address whose show the anime lists map to TMDB
-  answers `moved_to` instead of making a copy, unless a sync already keeps it.
-  With episodes listed, the sync ticks and syncs them like any show's
-  (`sync_local_episodes`), so Home, the calendar, statuses and season
-  ratings all apply; when TMDB later places the entry, watches logged in Frog
-  move to the episode at the same place in its run.
+- **AniList** — placing, syncing, AniList-only titles, season ratings and
+  the `anilist_check` example: [docs/ANILIST.md](docs/ANILIST.md).
 - **Released and status** (`backend/src/release.rs`): an episode is out when
   its date has passed, or, undated, when a later one has aired — the
   `released!()` SQL fragment, used by progress, Home, bulk marking and the
@@ -217,26 +204,8 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   nothing out planned, unwatched released episodes or caught up on a running
   show watching, and the rest completed. `reconcile` runs after every tick,
   every sync and every show refresh.
-- **Season ratings** live in `season_rating` (user, title, season, first
-  episode). A season split into AniList parts is rated part by part; a unit
-  is rateable once every episode of it is out. The show's own rating is no
-  longer pushed to AniList. Episodes are no longer rated (see Next 6).
-- **`cargo run --example anilist_check -- <user> [scratch.db]`** places a
-  public AniList list without writing anywhere and prints one JSON line per
-  entry: the quickest way to see what the matcher does with a real list.
-- **Netflix import** (`frontend/src/lib/import/netflix.ts`) groups plays into
-  one row per show and season before matching, then `settleNetflix` finishes
-  them with TMDB's answer: titles sent one by one fold back into their show,
-  named seasons ("STONE OCEAN", "Egghead Arc ①") are placed only when a TMDB
-  season has that name, and a show is completed only when every season was
-  seen to the end. Shows are split by season marker first, then by where
-  titles branch across the whole file, never by "the first colon". When a
-  season is in doubt the server looks the episode names up across the
-  show's seasons (`place_episodes` in `transfer.rs`); a name placed there
-  settles the season, the exact episode and its date, and proves the match.
-  `npm test` runs it against `tests/fixtures/netflix-viewing-history.csv`,
-  real titles with made-up dates; `node --test` reads the TypeScript directly
-  through `tests/ts-paths.mjs`.
+- **Imports and exports** — matching, conflict modes, Netflix, the backup
+  formats: [docs/IMPORTS.md](docs/IMPORTS.md).
 - **The library filter matches `title.search_name`**, the name and original
   name with case and accents folded out (`text::fold`), against the typed
   term folded the same way. SQL cannot fold accents, so `upsert_title`
@@ -254,9 +223,6 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   nothing after it is left does it go back to the first gap. On the
   611-title Netflix library this moved 17 of 204 shows in progress, each to
   the episode after the furthest watched, and changed nothing else.
-- **Imported shows get no title-level diary entry.** `apply` only writes one
-  for films; a show's watches are its episodes, and a title-level watch
-  would count the show as a film in Stats.
 - **Stats count only titles in the library.** Watches of removed titles stay
   in the database (the diary keeps them) but leave every total.
 - **Stats credits** live in `title_person`, filled by `store::ensure_title`

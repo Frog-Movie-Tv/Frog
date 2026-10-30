@@ -260,8 +260,8 @@ check('watching, from its latest season', jjk?.entry?.status === 'watching', jjk
 const unknown = (await call('GET', '/api/library?q=Qwzx')).items;
 check(
 	'the unknown entry is kept as AniList has it, matched to nothing on TMDB',
-	unknown.length === 1 && unknown[0].tmdb_id < 0,
-	JSON.stringify(unknown.map((i) => [i.name, i.tmdb_id]))
+	unknown.length === 1 && (await call('GET', `/api/t/${unknown[0].id}`)).anilist_only === true,
+	JSON.stringify(unknown.map((i) => [i.name, i.id]))
 );
 console.log(
 	'    entries:',
@@ -296,7 +296,7 @@ check(
 );
 const s = placed.title.season;
 const n = placed.title.from_episode + 5;
-await call('POST', `/api/titles/tv/${jjk.tmdb_id}/episodes/${s}/${n}/watch`, {});
+await call('POST', `/api/t/${jjk.id}/episodes/${s}/${n}/watch`, {});
 await page.getByRole('button', { name: 'Sync now' }).click();
 for (let i = 0; i < 60 && !fake.saves.length; i++) await new Promise((r) => setTimeout(r, 500));
 check(
@@ -354,7 +354,7 @@ await page.screenshot({ path: join(out, '3-profile.png'), fullPage: true });
 
 console.log('\n== 0.6.1 ==');
 // A banner picture behind the profile picture: the picture must be on top.
-const backdrop = (await call('GET', `/api/titles/tv/${jjk.tmdb_id}`)).item.backdrop_path;
+const backdrop = (await call('GET', `/api/t/${jjk.id}`)).item.backdrop_path;
 await call('PUT', '/api/account/profile', { banner_backdrop: backdrop ?? '' });
 /** Whatever is drawn at the middle of `selector` belongs to it. */
 const onTop = (selector) =>

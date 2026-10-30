@@ -86,7 +86,7 @@ const MINUTES: &str = "COALESCE(e.runtime, t.runtime, 0)";
 /// (films, episodes, shows, titles, rewatches, minutes, active days)
 type TotalsRow = (i64, i64, i64, i64, i64, f64, i64);
 
-/// (kind, tmdb_id, name, poster, watches, minutes, rating)
+/// (kind, title id, name, poster, watches, minutes, rating)
 type TopRow = (String, i64, String, Option<String>, i64, f64, Option<f64>);
 
 /// (tmdb_id, name, profile or logo, titles)
@@ -249,7 +249,7 @@ pub async fn stats(
         .all(
             pool,
             &format!(
-                "SELECT t.kind, t.tmdb_id, t.name, t.poster_path, COUNT(*),
+                "SELECT t.kind, t.id, t.name, t.poster_path, COUNT(*),
                         CAST(COALESCE(SUM({MINUTES}), 0) AS REAL), l.rating
                    FROM scoped s
                    JOIN title t ON t.id = s.title_id
@@ -267,7 +267,7 @@ pub async fn stats(
         .all(
             pool,
             &format!(
-                "SELECT t.kind, t.tmdb_id, t.name, t.poster_path, COUNT(*),
+                "SELECT t.kind, t.id, t.name, t.poster_path, COUNT(*),
                     CAST(COALESCE(MAX(t.runtime), 0) * COUNT(*) AS REAL), l.rating
                FROM scoped s
                JOIN title t ON t.id = s.title_id
@@ -348,10 +348,10 @@ async fn people(scope: &Scope, pool: &SqlitePool, roles: &str) -> AppResult<Vec<
         .collect())
 }
 
-fn top_json((kind, tmdb_id, name, poster_path, watches, minutes, rating): TopRow) -> Value {
+fn top_json((kind, id, name, poster_path, watches, minutes, rating): TopRow) -> Value {
     json!({
+        "id": id,
         "kind": kind,
-        "tmdb_id": tmdb_id,
         "name": name,
         "poster_path": poster_path,
         "watches": watches,
