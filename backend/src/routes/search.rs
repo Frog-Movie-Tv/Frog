@@ -94,7 +94,7 @@ fn first_page() -> u32 {
 
 /// A search's filters, the same ones a smart shelf has where they mean the
 /// same thing.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone)]
 struct Filters {
     kind: Option<String>,
     genres: Vec<String>,
@@ -175,6 +175,25 @@ impl Filters {
                 .genres
                 .iter()
                 .any(|g| genre_ids(g).iter().any(|id| item.genre_ids.contains(id)))
+    }
+
+    /// Whether films (or shows) can match the chosen genres at all. Talk is
+    /// only a show's genre and Horror only a film's; asking for Talk must
+    /// leave films out, not bring them back unfiltered.
+    fn fits_kind(&self, kind: &str) -> bool {
+        self.genres.is_empty()
+            || self.genres.iter().any(|g| {
+                GENRES
+                    .iter()
+                    .find(|x| x.0 == g)
+                    .is_some_and(|x| if kind == "movie" { x.1 } else { x.2 }.is_some())
+            })
+    }
+
+    /// Both "not in my library" and some library status: the library part is
+    /// read from the library, since TMDB's pages hold only a little of it.
+    fn library_and_beyond(&self) -> bool {
+        self.statuses.iter().any(|s| s == "none") && self.statuses.iter().any(|s| s != "none")
     }
 
     /// After `annotate_library`: which results the status filter keeps.
@@ -297,6 +316,22 @@ pub async fn search(
     }
     annotate_library(&state, auth.user_id(), &mut items).await?;
     items.retain(|i| filters.matches_status(i));
+    if page == 1 && filters.library_and_beyond() {
+        let mine = Filters {
+            statuses: filters
+                .statuses
+                .iter()
+                .filter(|s| *s != "none")
+                .cloned()
+                .collect(),
+            sort: filters.sort.clone(),
+            ..filters.clone()
+        };
+        let mut owned = from_library(&state, auth.user_id(), term, &mine).await?;
+        items.retain(|i| i.id.is_none() || !owned.iter().any(|o| o.id == i.id));
+        owned.append(&mut items);
+        items = owned;
+    }
     filters.sorted(&mut items);
 
     let person_first = page == 1 && !term.is_empty() && names_a_person(&state, term).await;
@@ -375,7 +410,7 @@ async fn discovered(
     };
     let mut items = Vec::new();
     let mut more = false;
-    for kind in kinds {
+    for kind in kinds.iter().filter(|k| filters.fits_kind(k)) {
         let params = filters.discover_params(kind, hide_animation);
         let raw = state.tmdb.discover(kind, &params, page).await?;
         more |= raw["total_pages"].as_i64().unwrap_or(1) > i64::from(page);
@@ -787,6 +822,23 @@ mod tests {
         assert!(filters
             .discover_params("tv", true)
             .contains(&("without_genres", "16".to_string())));
+    }
+
+    #[test]
+    fn a_genre_only_one_side_has_leaves_the_other_side_out() {
+        let talk = Filters {
+            genres: vec!["Talk".into()],
+            ..Filters::default()
+        };
+        assert!(talk.fits_kind("tv"));
+        assert!(!talk.fits_kind("movie"));
+        let horror_or_talk = Filters {
+            genres: vec!["Horror".into(), "Talk".into()],
+            ..Filters::default()
+        };
+        assert!(horror_or_talk.fits_kind("movie"));
+        assert!(horror_or_talk.fits_kind("tv"));
+        assert!(Filters::default().fits_kind("movie"));
     }
 
     #[test]
