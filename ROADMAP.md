@@ -32,58 +32,54 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
      (`sudo cp deploy/*.sh /opt/frog/deploy/` from this release's checkout).
      The copy there predates the schema generation and would put the
      previous image back on the rebuilt table and call it healthy;
-   - run a manual backup and see it arrive in `Frog-Backups`
+   - run a manual backup and see it arrive in `Frog-Movie-Tv/Frog-Backups`
      (`sudo /opt/frog/deploy/backup.sh production manual`);
    - know that production is the first live database it meets: there is no
      staging, merging to `main` changes nothing live, and merging
      release-please's pull request does. Afterwards read the update log
      and open a few titles, an AniList-only one among them.
-2. **Restore once, for real, on the server.** Step 10 of
-   `docs/DEPLOY-ORACLE.md` restores the copy in `Frog-Backups` into a
-   throwaway `restoretest` instance beside production. The same commands
-   passed in Docker; not yet run on the server.
-3. **AniList sign-in on a laptop, once by hand.** The Frog-Dev client
+2. **AniList sign-in on a laptop, once by hand.** The Frog-Dev client
    (redirect `http://127.0.0.1:8080/api/anilist/callback`) is in the local
    `.env`, and AniList accepts its id and secret (checked against its token
    endpoint on 2026-10-30). The production block above it used to win,
    because the first value in `.env` is the one kept; it is commented out
    now. What no script can do: run `.\scripts\dev.ps1`, connect AniList in
    Settings → Connections, and see it come back connected.
-4. **AniList: check the overhaul on the live list.** On a copy of the owner's
+3. **AniList: check the overhaul on the live list.** On a copy of the owner's
    list (221 entries) 213 are matched, 7 wait as not out yet, and one film
    special ("ONE PIECE FILM: GOLD - episode 0") has nothing on TMDB. That
    was a copy, not the live list, and the automated tests do not stand in
    for it. Once the catalog release is deployed, an owner opens
    Settings → Connections and reads "Needs a check" and the "Matched"
    methods for anything that reads wrong.
-5. **Old episode ratings that disagreed.** Seasons whose episodes were all
+4. **Old episode ratings that disagreed.** Seasons whose episodes were all
    rated the same took that as their season rating
    (`202610291800_anilist_resilience.sql`). The rest, and every episode of an
    anime show AniList already scores, stay in `episode_state` untouched and
    are not shown anywhere. The API no longer writes episode ratings. Show
    them read-only, or let them go.
-6. **A merge you can undo from the app.** Every move of one account's data
+5. **A merge you can undo from the app.** Every move of one account's data
    from one title to another is in `title_merge` with what both sides held
    before, but undoing one is still by hand in SQL.
-7. **More streaming links.** Services without a known search address (Rakuten
+6. **More streaming links.** Services without a known search address (Rakuten
    TV, Streamz, VRT MAX, GoPlay…) still open TMDB's watch page. Add each one
    to `frontend/src/lib/providers.ts` once its search URL is confirmed.
-8. **The screenshots, the rest.** There is still no shelves shot.
-9. **The Projects board.** Backlog / In progress / Review / Done. Needs
+7. **The screenshots, the rest.** There is still no shelves shot.
+8. **The Projects board.** Backlog / In progress / Review / Done. Needs
    `gh auth refresh -s project` from an owner before it can be created.
-10. **Netflix: real dates on every episode.** Episodes TMDB finds by name
+9. **Netflix: real dates on every episode.** Episodes TMDB finds by name
    are ticked exactly, on the day Netflix gives. Seasons Netflix numbers
    itself are not looked up (that would mean reading every season of every
    show), so their episodes are still the first N, undated, and such a show
    reads "last watched today". Looking those up too, in the background after
    the import, would date everything. Films keep only their latest date;
    earlier watches of the same film are a rewatch flag, not entries.
-11. **Netflix: untested shapes.** The personal-data ZIP
+10. **Netflix: untested shapes.** The personal-data ZIP
    (`CONTENT_INTERACTION/ViewingActivity.csv`) is read from its documented
    columns but has never been tried on a real one. Netflix's "Part N"
    seasons are placed by their episode names; parts whose episodes are only
    called "Episode 3" (Money Heist Part 1) still wait for a person.
-12. **Finish the data-ownership pass.** The AniList, import, catalog and
+11. **Finish the data-ownership pass.** The AniList, import, catalog and
    emptying-a-library code no longer lives in routes. Every route below was
    read for the catalog change on 2026-10-30: each now goes by Frog's title
    id, and the TMDB ids left in them are TMDB's own (its cache, credits,
@@ -100,7 +96,7 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    `routes/browse.rs`, `routes/admin.rs`, `routes/invites.rs`,
    `routes/auth.rs`, `routes/push.rs`, `routes/settings.rs`. Persistence is
    not centralised yet.
-13. **Smaller things.** Customisable keyboard shortcuts, renaming and
+12. **Smaller things.** Customisable keyboard shortcuts, renaming and
    recolouring statuses, muted trailer autoplay, per-shelf layout defaults.
 
 ## Known issues
@@ -138,6 +134,14 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   provider's address opens it and moves there. Seed and verify scripts open
   titles by TMDB address first (`titleApi` in each), and SQL-written fixtures
   add their `title_external` row (`backend/tests/common`'s `title_seed`).
+- **Backups leave the server.** Every nightly and pre-update backup is
+  age-encrypted and pushed to the private `Frog-Movie-Tv/Frog-Backups` with
+  the server's deploy key (`/opt/frog/backup-key`; the organisation allows
+  deploy keys since 2026-10-30). The server holds only the public half of the
+  age key; the owners keep the private half, and without it no backup opens.
+  A real restore of the newest copy from that repository into a throwaway
+  instance was done on 2026-10-30: 2 accounts, 193 library entries and 6,909
+  watches, the same as production. `docs/DEPLOY-ORACLE.md` steps 7 and 10.
 
 - **Server jobs report to Frog through `ops.jsonl`** beside the database.
   `update.sh` and `backup.sh` append one line per outcome through

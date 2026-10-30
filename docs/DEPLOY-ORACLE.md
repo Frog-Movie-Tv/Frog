@@ -365,11 +365,13 @@ private repository, which is the copy that survives losing the machine. The
 server reaches it with a deploy key of its own, `/opt/frog/backup-key`, that
 `install.sh` creates and prints.
 
-1. Create a **private**, empty repository in an owner's own account:
-   `gh repo create zschaeken/frog-backups --private`. Not in Frog-Movie-Tv:
-   the organisation has deploy keys switched off, so its repositories cannot
-   take one. Add the other owner as a collaborator, so both can reach the
-   backups.
+1. Create a **private**, empty repository in the organisation:
+   `gh repo create Frog-Movie-Tv/Frog-Backups --private`.
+   Frog-Movie-Tv has deploy keys switched off by default, and only an
+   organisation owner can allow them: the organisation's **Settings**, the
+   **Deploy keys** policy (searching the settings for "deploy keys" finds it).
+   Until then the repository's Deploy keys page says "Disabled by
+   Frog-Movie-Tv".
 2. In that repository: **Settings → Deploy keys → Add deploy key**. Paste the
    output of `sudo cat /opt/frog/backup-key.pub`, and tick **Allow write
    access**.
@@ -377,7 +379,7 @@ server reaches it with a deploy key of its own, `/opt/frog/backup-key`, that
    push, and records it in `backup.env`:
 
    ```bash
-   sudo /opt/frog/deploy/backup-repo.sh git@github.com:zschaeken/frog-backups.git
+   sudo /opt/frog/deploy/backup-repo.sh git@github.com:Frog-Movie-Tv/Frog-Backups.git
    ```
 
 4. Make a backup and see it arrive in the repository:
@@ -449,10 +451,14 @@ sudo cp /opt/frog/production/compose.yml /opt/frog/production/.env /opt/frog/res
 sudo sed -i 's/^COMPOSE_PROJECT_NAME=.*/COMPOSE_PROJECT_NAME=frog-restoretest/' /opt/frog/restoretest/.env
 cd /opt/frog/restoretest && sudo docker compose up -d
 
-# The newest backup, fetched from the repository rather than this disk.
+# The newest backup, fetched from the repository rather than this disk. A
+# fresh clone gives every file the same time, so pick by name: names start
+# with the date.
+sudo rm -rf /tmp/frog-backups-check
 sudo GIT_SSH_COMMAND="ssh -i /opt/frog/backup-key -o IdentitiesOnly=yes" \
-  git clone -q git@github.com:zschaeken/frog-backups.git /tmp/frog-backups-check
-ARCHIVE="$(ls -1t /tmp/frog-backups-check/production/*.age | head -1)"
+  git clone -q git@github.com:Frog-Movie-Tv/Frog-Backups.git /tmp/frog-backups-check
+ARCHIVE="$(ls -1 /tmp/frog-backups-check/production/*.age | sort | tail -1)"
+echo "$ARCHIVE"
 
 # Asks you to type "restoretest", then to paste the age private key and press Ctrl-D.
 sudo /opt/frog/deploy/restore.sh restoretest "$ARCHIVE"
