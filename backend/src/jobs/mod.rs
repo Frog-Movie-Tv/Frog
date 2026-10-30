@@ -70,6 +70,7 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
         Err(e) => tracing::warn!(error = %e, "picture cache could not be trimmed"),
     }
 
+    crate::ratings::refresh_due(state).await;
     refresh_airing_shows(state).await;
     if let Err(e) = announce_new_episodes(state, chrono::Local::now().naive_local()).await {
         tracing::warn!(error = %e, "new-episode notifications failed");

@@ -289,13 +289,16 @@ pub struct TitleRow {
     pub tmdb_vote: Option<f64>,
     pub collection_id: Option<i64>,
     pub accent_json: Option<String>,
+    #[serde(skip)]
+    pub refreshed_at: Option<String>,
 }
 
 /// The columns of `TitleRow`, for queries that read titles with `t` as the
 /// title's alias.
 pub const TITLE_COLUMNS: &str = "t.id, t.kind, t.name, t.overview, t.poster_path, t.backdrop_path,
         t.logo_path, t.release_date, t.last_air_date, t.tmdb_status, t.runtime, t.episode_count,
-        t.season_count, t.genres_json, t.tmdb_vote, t.collection_id, t.accent_json";
+        t.season_count, t.genres_json, t.tmdb_vote, t.collection_id, t.accent_json,
+        t.refreshed_at";
 
 pub fn parse_accent(raw: Option<&str>) -> Palette {
     raw.and_then(|s| serde_json::from_str(s).ok())
@@ -338,6 +341,23 @@ pub async fn load(state: &AppState, title_id: i64) -> AppResult<(TitleRow, Value
     let Some(source) = primary(&state.pool, title_id).await? else {
         return Ok((row.clone(), kept_detail(&row)));
     };
+    // Opening a page is a read. A title already stored opens from what was
+    // last fetched; a detail past its time is fetched behind the page, which
+    // never waits for TMDB or rewrites a title that has not changed.
+    if let ExternalId::Tmdb { kind, id } = &source {
+        let stored = row.refreshed_at.is_some();
+        if let Some((detail, current)) = state.tmdb.kept(kind, *id).await.filter(|_| stored) {
+            if !current {
+                let (state, source) = (state.clone(), source.clone());
+                tokio::spawn(async move {
+                    if let Err(e) = ensure(&state, &source).await {
+                        tracing::debug!(title_id, error = %e, "title not refreshed");
+                    }
+                });
+            }
+            return Ok((row, detail));
+        }
+    }
     let (id, detail) = ensure(state, &source).await?;
     if id != title_id {
         // The provider id was linked to this title a moment ago; it cannot
@@ -642,6 +662,24 @@ pub async fn store_credits(pool: &SqlitePool, title_id: i64, detail: &Value) -> 
         .bind(&c.name)
         .bind(&c.profile_path)
         .bind(c.ord)
+        .execute(&mut *tx)
+        .await?;
+    }
+    sqlx::query("DELETE FROM title_character WHERE title_id = ?")
+        .bind(title_id)
+        .execute(&mut *tx)
+        .await?;
+    for c in models::characters(detail) {
+        sqlx::query(
+            "INSERT INTO title_character (title_id, ord, name, search_name, actor, actor_id)
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(title_id)
+        .bind(c.ord)
+        .bind(&c.name)
+        .bind(text::words(&c.name).join(" "))
+        .bind(&c.actor)
+        .bind(c.actor_id)
         .execute(&mut *tx)
         .await?;
     }

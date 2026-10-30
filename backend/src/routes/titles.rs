@@ -85,6 +85,17 @@ pub async fn detail_by_id(
     detail_of(&state, auth.user_id(), title_id).await
 }
 
+/// What other sites score a title, and its age rating. Apart from the page
+/// itself, since a first look may ask another site.
+pub async fn scores(
+    _: Auth,
+    State(state): State<AppState>,
+    Path(title_id): Path<i64>,
+) -> AppResult<Json<Value>> {
+    catalog::get_title(&state.pool, title_id).await?;
+    Ok(Json(crate::ratings::for_page(&state, title_id).await?))
+}
+
 async fn detail_of(state: &AppState, user_id: i64, title_id: i64) -> AppResult<Json<Value>> {
     let (row, raw) = catalog::load(state, title_id).await?;
     let kind = row.kind.clone();

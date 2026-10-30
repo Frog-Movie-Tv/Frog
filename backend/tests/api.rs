@@ -51,6 +51,7 @@ impl Harness {
             session_days: 7,
             notify_hour: 18,
             anilist: None,
+            mdblist: None,
         };
 
         let pool = frog::db::connect(&url).await.expect("database");
@@ -846,7 +847,7 @@ async fn cache_show(h: &Harness, id: i64, name: &str, seasons: &[(i64, i64)]) {
         })).collect::<Vec<_>>(),
     });
     let detail_key = format!(
-        "/tv/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids&include_image_language=en,null"
+        "/tv/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,content_ratings&include_image_language=en,null,ja"
     );
     let mut rows = vec![(detail_key, detail)];
     for (s, n) in seasons {
@@ -1086,7 +1087,7 @@ async fn cache_film(h: &Harness, id: i64, name: &str, year: &str, actors: &[(i64
         "production_companies": [{ "id": 50, "name": "Pond Pictures" }]
     });
     let key = format!(
-        "/movie/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null"
+        "/movie/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null,ja"
     );
     sqlx::query(
         "INSERT INTO tmdb_cache (cache_key, body, fetched_at, expires_at)
@@ -1904,7 +1905,7 @@ async fn cache_recommending(h: &Harness, id: i64, recs: &[(i64, Option<&str>)]) 
         })).collect::<Vec<_>>() }
     });
     let key = format!(
-        "/movie/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null"
+        "/movie/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null,ja"
     );
     sqlx::query(
         "INSERT INTO tmdb_cache (cache_key, body, fetched_at, expires_at)
@@ -3631,15 +3632,24 @@ async fn search_finds_people_studios_and_characters() {
         ] }),
     )
     .await;
-    cache(
-        "/movie/11?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null".into(),
-        json!({ "id": 11, "title": "Lily", "popularity": 5.0, "poster_path": "/lily.jpg",
-                "credits": { "cast": [
-                    { "id": 30, "name": "An Actor", "character": "Captain Pond", "profile_path": "/a.jpg" },
-                    { "id": 31, "name": "Someone", "character": "Self" }
-                ] } }),
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, poster_path)
+         VALUES (11, 'movie', 11, 'Lily', '/lily.jpg')",
     )
-    .await;
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    frog::catalog::store_credits(
+        &h.state.pool,
+        11,
+        &json!({ "credits": { "cast": [
+            { "id": 30, "name": "An Actor", "character": "Captain Pond (voice)",
+              "profile_path": "/a.jpg" },
+            { "id": 31, "name": "Someone", "character": "Self" }
+        ] } }),
+    )
+    .await
+    .unwrap();
 
     let (status, found) = h.get("/api/search/more?q=pond", Some(&cookie)).await;
     assert_eq!(status, StatusCode::OK, "{found}");
@@ -3656,6 +3666,11 @@ async fn search_finds_people_studios_and_characters() {
     assert_eq!(characters[0]["name"], json!("Captain Pond"));
     assert_eq!(characters[0]["actor"]["id"], json!(30));
     assert_eq!(characters[0]["title"]["tmdb_id"], json!(11));
+    assert_eq!(
+        characters[0]["image"]["path"],
+        json!("/lily.jpg"),
+        "a character is pictured by their title, not by the actor's face"
+    );
 
     // Signed out: nothing.
     let (status, _) = h.get("/api/search/more?q=pond", None).await;
@@ -3768,6 +3783,10 @@ async fn search_finds_known_titles_by_their_first_letters() {
     .execute(&h.state.pool)
     .await
     .unwrap();
+    sqlx::query("UPDATE title SET search_name = lower(name)")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
     sqlx::query(
         "INSERT INTO tmdb_cache (cache_key, body, fetched_at, expires_at)
          VALUES ('/search/multi?lang=en-US&query=inter&page=1&include_adult=false', ?,

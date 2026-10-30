@@ -243,6 +243,7 @@ impl Harness {
                 anime_ids_url: format!("{base}/anime_ids.json"),
                 anime_lists_url: format!("{base}/anime_lists.json"),
             }),
+            mdblist: None,
         };
         let pool = frog::db::connect(&url).await.unwrap();
         let state = AppState::new(pool, config);
@@ -332,7 +333,7 @@ async fn seed_tmdb(h: &Harness) {
     )
     .await;
     h.cache(
-        "/tv/95479?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids&include_image_language=en,null",
+        "/tv/95479?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,content_ratings&include_image_language=en,null,ja",
         json!({ "id": 95479, "name": "JUJUTSU KAISEN", "first_air_date": "2020-10-03",
                 "seasons": [{ "season_number": 1, "name": "Season 1", "episode_count": 47 }] }),
     )
@@ -351,7 +352,7 @@ async fn seed_tmdb(h: &Harness) {
     )
     .await;
     h.cache(
-        "/movie/500?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null",
+        "/movie/500?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null,ja",
         json!({ "id": 500, "title": "Jujutsu Kaisen 0", "release_date": "2021-12-24", "runtime": 105 }),
     )
     .await;
@@ -703,7 +704,7 @@ async fn ids_from_either_list_or_an_exact_name_place_entries() {
     seed_tmdb(&h).await;
     let detail = "append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids";
     h.cache(
-        &format!("/movie/600?lang=en-US&{detail},release_dates&include_image_language=en,null"),
+        &format!("/movie/600?lang=en-US&{detail},release_dates&include_image_language=en,null,ja"),
         json!({ "id": 600, "title": "Pond Movie", "release_date": "2020-07-01", "runtime": 90 }),
     )
     .await;
@@ -720,7 +721,7 @@ async fn ids_from_either_list_or_an_exact_name_place_entries() {
     )
     .await;
     h.cache(
-        &format!("/tv/700?lang=en-US&{detail}&include_image_language=en,null"),
+        &format!("/tv/700?lang=en-US&{detail},content_ratings&include_image_language=en,null,ja"),
         json!({ "id": 700, "name": "Lily Pad Story!", "first_air_date": "2020-04-01",
                 "seasons": [{ "season_number": 1, "name": "Season 1", "episode_count": 12 },
                             { "season_number": 2, "name": "Season 2", "episode_count": 12 }] }),
@@ -868,7 +869,7 @@ fn linked(id: i64, format: &str, episodes: Option<i64>, relations: &[(&str, i64,
     })
 }
 
-const TV_DETAIL: &str = "append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids&include_image_language=en,null";
+const TV_DETAIL: &str = "append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,content_ratings&include_image_language=en,null,ja";
 
 impl Harness {
     /// A TMDB show in the cache: each season as a list of air dates.

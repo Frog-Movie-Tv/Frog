@@ -9,6 +9,7 @@ pub mod jobs;
 pub mod ops;
 pub mod palette;
 pub mod push;
+pub mod ratings;
 pub mod release;
 pub mod routes;
 pub mod state;

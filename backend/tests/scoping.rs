@@ -46,7 +46,12 @@ const SCOPED_FRAGMENTS: [&str; 6] = [
 ];
 
 /// Statements that are global on purpose, each with its reason.
-const ALLOWED: [(&str, &str); 5] = [
+const ALLOWED: [(&str, &str); 6] = [
+    (
+        "SELECT DISTINCT t.id\n           FROM library_entry l\n           JOIN title t ON t.id = l.title_id\n           LEFT JOIN title_rating_check",
+        "decides which shared titles need their outside scores read; writes only \
+         title_rating and title_rating_check",
+    ),
     (
         "DELETE FROM session WHERE expires_at",
         "housekeeping: expired sessions of every account go at once",

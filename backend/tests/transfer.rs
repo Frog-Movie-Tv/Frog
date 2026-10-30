@@ -47,6 +47,7 @@ impl Harness {
             session_days: 7,
             notify_hour: 18,
             anilist: None,
+            mdblist: None,
         };
         let pool = frog::db::connect(&url).await.expect("database");
         let state = AppState::new(pool, config);
@@ -139,7 +140,7 @@ impl Harness {
 
     async fn cache_film(&self, id: i64, name: &str, year: &str) {
         let key = format!(
-            "/movie/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null"
+            "/movie/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null,ja"
         );
         self.cache(
             &key,
@@ -151,7 +152,7 @@ impl Harness {
     /// A show whose seasons are `(number, name, episodes)`, all aired.
     async fn cache_show(&self, id: i64, name: &str, seasons: &[(i64, &str, i64)]) {
         let key = format!(
-            "/tv/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids&include_image_language=en,null"
+            "/tv/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,content_ratings&include_image_language=en,null,ja"
         );
         let detail = json!({
             "id": id,

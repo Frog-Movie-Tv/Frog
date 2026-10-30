@@ -197,6 +197,27 @@ impl Tmdb {
         Ok(body)
     }
 
+    /// TMDB's filtered browse, for looking without a name to look for.
+    /// `kind` is `movie` or `tv`; `params` are TMDB's own.
+    pub async fn discover(
+        &self,
+        kind: &str,
+        params: &[(&str, String)],
+        page: u32,
+    ) -> AppResult<Value> {
+        let mut all: Vec<(&str, String)> = vec![
+            ("page", page.to_string()),
+            ("include_adult", "false".into()),
+        ];
+        all.extend_from_slice(params);
+        self.get(
+            &format!("/discover/{kind}"),
+            &all,
+            Duration::hours(ttl::TRENDING_HOURS),
+        )
+        .await
+    }
+
     pub async fn search_multi(&self, query: &str, page: u32) -> AppResult<Value> {
         self.get(
             "/search/multi",
@@ -210,16 +231,57 @@ impl Tmdb {
         .await
     }
 
+    /// Logos in the reader's language, those with no language, and Japanese
+    /// for the anime that have nothing else (`models::pick_logo` ranks them).
+    fn logo_languages(&self) -> String {
+        format!("{},null,ja", self.lang2())
+    }
+
+    fn movie_params(&self) -> Vec<(&'static str, String)> {
+        vec![
+            (
+                "append_to_response",
+                "credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates".into(),
+            ),
+            ("include_image_language", self.logo_languages()),
+        ]
+    }
+
+    fn tv_params(&self) -> Vec<(&'static str, String)> {
+        vec![
+            (
+                "append_to_response",
+                "credits,videos,images,watch/providers,recommendations,similar,external_ids,content_ratings"
+                    .into(),
+            ),
+            ("include_image_language", self.logo_languages()),
+        ]
+    }
+
+    /// A film or show's detail as last fetched, and whether it is still
+    /// current, without going to TMDB. A cast that came up empty is left to
+    /// `tv`, which fills it from the whole run.
+    pub async fn kept(&self, kind: &str, id: i64) -> Option<(Value, bool)> {
+        let key = match kind {
+            "movie" => self.cache_key(&format!("/movie/{id}"), &self.movie_params()),
+            _ => self.cache_key(&format!("/tv/{id}"), &self.tv_params()),
+        };
+        let fresh = self.cached(&key).await;
+        let current = fresh.is_some();
+        let detail = match fresh {
+            Some(detail) => detail,
+            None => self.stale(&key).await?,
+        };
+        let has_cast = detail["credits"]["cast"]
+            .as_array()
+            .is_some_and(|cast| !cast.is_empty());
+        (kind == "movie" || has_cast).then_some((detail, current))
+    }
+
     pub async fn movie(&self, id: i64) -> AppResult<Value> {
         self.get(
             &format!("/movie/{id}"),
-            &[
-                (
-                    "append_to_response",
-                    "credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates".into(),
-                ),
-                ("include_image_language", format!("{},null", self.lang2())),
-            ],
+            &self.movie_params(),
             Duration::hours(ttl::MOVIE_HOURS),
         )
         .await
@@ -229,14 +291,7 @@ impl Tmdb {
         let mut detail = self
             .get(
                 &format!("/tv/{id}"),
-                &[
-                    (
-                        "append_to_response",
-                        "credits,videos,images,watch/providers,recommendations,similar,external_ids"
-                            .into(),
-                    ),
-                    ("include_image_language", format!("{},null", self.lang2())),
-                ],
+                &self.tv_params(),
                 Duration::hours(ttl::TV_HOURS),
             )
             .await?;

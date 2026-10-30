@@ -498,16 +498,14 @@ pub async fn as_tmdb(state: &AppState, kind: &str, media: &Value) -> AppResult<V
         crew.push(json!({ "id": -id, "name": person, "job": job, "profile_path": picture }));
     }
 
-    let studios: Vec<Value> = media["studios"]["nodes"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|s| {
-            Some(
-                json!({ "id": -s["id"].as_i64()?, "name": s["name"].as_str()?, "logo_path": null }),
-            )
-        })
-        .collect();
+    let mut studios: Vec<Value> = Vec::new();
+    for s in media["studios"]["nodes"].as_array().into_iter().flatten() {
+        let (Some(id), Some(name)) = (s["id"].as_i64(), s["name"].as_str()) else {
+            continue;
+        };
+        let logo = crate::routes::browse::studio_logo(state, name).await;
+        studios.push(json!({ "id": -id, "name": name, "logo_path": logo }));
+    }
 
     let videos: Vec<Value> = match (
         media["trailer"]["site"].as_str(),

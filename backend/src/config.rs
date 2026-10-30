@@ -18,6 +18,26 @@ pub struct Config {
     pub notify_hour: u32,
     /// AniList API client. All three are needed, or AniList stays hidden.
     pub anilist: Option<AniListClient>,
+    /// MDBList, for IMDb, Rotten Tomatoes and Metacritic scores. Without a
+    /// key those simply do not appear.
+    pub mdblist: Option<MdbListClient>,
+}
+
+/// A free key from mdblist.com/preferences. It stays on the server: only
+/// `ratings` reads it, and no answer or log carries it.
+#[derive(Clone)]
+pub struct MdbListClient {
+    pub key: String,
+    /// Only tests point this elsewhere.
+    pub api_url: String,
+}
+
+impl std::fmt::Debug for MdbListClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MdbListClient")
+            .field("api_url", &self.api_url)
+            .finish_non_exhaustive()
+    }
 }
 
 /// An application registered at anilist.co/settings/developer. Its redirect
@@ -94,6 +114,10 @@ impl Config {
                 }),
                 _ => None,
             },
+            mdblist: env_opt("MDBLIST_API_KEY").map(|key| MdbListClient {
+                key,
+                api_url: env_or("MDBLIST_API_URL", "https://api.mdblist.com"),
+            }),
         })
     }
 
