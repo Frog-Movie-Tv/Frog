@@ -80,7 +80,13 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    columns but has never been tried on a real one. Netflix's "Part N"
    seasons are placed by their episode names; parts whose episodes are only
    called "Episode 3" (Money Heist Part 1) still wait for a person.
-11. **Finish the data-ownership pass.** The AniList, import, catalog and
+11. **What the readers still leave out.** A Frog backup restores which
+   episodes were watched but not when, because the export does not write
+   their dates, and only a film's first watch. A Trakt episode marks its show
+   in progress without ticking that episode, though the file says which one.
+   Letterboxd's ZIP may hold a `deleted/` folder that would be read as
+   library; no real export has been tried.
+12. **Finish the data-ownership pass.** The AniList, import, catalog and
    emptying-a-library code no longer lives in routes. Every route below was
    read for the catalog change on 2026-10-30: each now goes by Frog's title
    id, and the TMDB ids left in them are TMDB's own (its cache, credits,
@@ -97,7 +103,7 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    `routes/browse.rs`, `routes/admin.rs`, `routes/invites.rs`,
    `routes/auth.rs`, `routes/push.rs`, `routes/settings.rs`. Persistence is
    not centralised yet.
-12. **Smaller things.** Customisable keyboard shortcuts, renaming and
+13. **Smaller things.** Customisable keyboard shortcuts, renaming and
    recolouring statuses, muted trailer autoplay, per-shelf layout defaults.
 
 ## Known issues
@@ -237,6 +243,15 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   went from 13 ms to 38 ms, accepted to keep one code path. `build_item` stays
   for the pages about one title. Its totals also cover shelf titles, because a
   title can stay on a hand-picked shelf after leaving the library.
+- **Very long shows were measured and left alone** (2026-10-30). Seasons
+  already draw only when opened: One Piece (1,180 episodes) shows 25. Its extra
+  elements are the episode heatmap, one per episode, 1,262 of 2,387. Drawing
+  that only near the screen halves the elements but moved no time past the
+  noise: at 4× CPU the main thread blocked 1,838 ms before and 1,453 ms after,
+  while Breaking Bad, which it does not touch, went 914 ms to 569 ms. Desktop
+  showed nothing. Removing the heatmap outright reached only 1,250 ms, and
+  deferring just moves the work to the middle of a scroll, so it was not
+  shipped. Compare against an untouched show before trusting any number here.
 - **Stats count only titles in the library.** Watches of removed titles stay
   in the database (the diary keeps them) but leave every total.
 - **Stats credits** live in `title_person`, filled by `store::ensure_title`

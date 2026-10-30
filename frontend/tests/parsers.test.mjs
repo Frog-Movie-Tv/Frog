@@ -2,6 +2,7 @@
 // tracker's own shape. Run with `npm test`.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { gzipSync, strToU8, zipSync } from 'fflate';
 import { animeTitle, dedupe, parseCsv, readFile } from '../src/lib/import/parsers.ts';
 
 /** Read one file as the import page does, and return its rows. */
@@ -263,4 +264,457 @@ test('the same title from several files becomes one row with the best of each', 
 		[merged[0].rating, merged[0].favourite, merged[0].status, merged[0].watched_at],
 		[90, true, 'completed', '2023-01-01T20:00:00Z']
 	);
+});
+
+// ---------------------------------------------------------------- MyAnimeList
+
+/**
+ * Node has no DOMParser, so this stands in for the browser's on the flat shape
+ * of a MyAnimeList export. `npm test` checks what happens to the values;
+ * reading real XML is the browser's job.
+ */
+class MalParser {
+	parseFromString(text) {
+		const tag = /<(\w+)>(?:<!\[CDATA\[(.*?)\]\]>|([^<]*))<\/\1>/g;
+		const element = (body) => ({
+			getElementsByTagName(name) {
+				for (const m of body.matchAll(tag)) {
+					if (m[1] === name) return [{ textContent: m[2] ?? m[3] }];
+				}
+				return [];
+			}
+		});
+		return {
+			querySelector: () => (text.includes('<myanimelist>') ? null : {}),
+			getElementsByTagName: () =>
+				[...text.matchAll(/<anime>(.*?)<\/anime>/gs)].map((m) => element(m[1]))
+		};
+	}
+}
+
+/** An <anime> element as MyAnimeList writes it. */
+const anime = ({
+	title,
+	type = 'TV',
+	episodes = 12,
+	watched = 0,
+	finish = '0000-00-00',
+	score = 0,
+	status = 'Watching',
+	rewatching = 0
+}) => `
+	<anime>
+		<series_animedb_id>1</series_animedb_id>
+		<series_title><![CDATA[${title}]]></series_title>
+		<series_type>${type}</series_type>
+		<series_episodes>${episodes}</series_episodes>
+		<my_watched_episodes>${watched}</my_watched_episodes>
+		<my_finish_date>${finish}</my_finish_date>
+		<my_score>${score}</my_score>
+		<my_status>${status}</my_status>
+		<my_rewatching>${rewatching}</my_rewatching>
+	</anime>`;
+
+const mal = (...entries) => `<?xml version="1.0" encoding="UTF-8" ?>
+<myanimelist>
+	<myinfo><user_export_type>1</user_export_type></myinfo>${entries.map(anime).join('')}
+</myanimelist>`;
+
+async function malRows(...entries) {
+	globalThis.DOMParser = MalParser;
+	try {
+		return await rows('mal', 'animelist.xml', mal(...entries));
+	} finally {
+		delete globalThis.DOMParser;
+	}
+}
+
+test('MyAnimeList: a finished season, in full', async () => {
+	const list = await malRows({
+		title: 'Bungo Stray Dogs 2nd Season',
+		episodes: 12,
+		watched: 12,
+		finish: '2023-04-05',
+		score: 9,
+		status: 'Completed',
+		rewatching: 1
+	});
+	assert.deepEqual(list.map(shape), [
+		{
+			title: 'Bungo Stray Dogs',
+			year: null,
+			imdb_id: null,
+			tmdb_id: null,
+			kind: 'tv',
+			rating: 90,
+			status: 'completed',
+			watched_at: null,
+			favourite: false,
+			rewatch: true,
+			source: 'MyAnimeList',
+			label: 'Bungo Stray Dogs 2nd Season',
+			anime: true,
+			episode_total: 12,
+			alt_titles: [],
+			season: 2,
+			progress: null
+		}
+	]);
+});
+
+test('MyAnimeList: status, score and progress in its own words', async () => {
+	const list = await malRows(
+		{ title: 'Cowboy Bebop', watched: 5, status: 'Watching' },
+		{ title: 'Trigun', watched: 3, status: 'On-Hold', score: 7 },
+		{ title: 'Monster', watched: 1, status: 'Dropped' },
+		{ title: 'Berserk', status: 'Plan to Watch', episodes: 0 }
+	);
+	assert.deepEqual(
+		list.map((r) => [r.title, r.status, r.rating, r.progress, r.episode_total, r.season]),
+		[
+			['Cowboy Bebop', 'watching', null, 5, 12, 1],
+			['Trigun', 'paused', 70, 3, 12, 1],
+			['Monster', 'dropped', null, 1, 12, 1],
+			['Berserk', 'planned', null, null, null, 1]
+		]
+	);
+});
+
+test('MyAnimeList: a film keeps its whole name, and its day when finished', async () => {
+	const list = await malRows(
+		{ title: 'Kara no Kyoukai 5', type: 'Movie', status: 'Completed', finish: '2022-02-03' },
+		{ title: 'Your Name.', type: 'Movie', status: 'Plan to Watch', finish: '2022-02-03' }
+	);
+	assert.deepEqual(
+		list.map((r) => [r.title, r.kind, r.status, r.watched_at, r.season, r.progress]),
+		[
+			['Kara no Kyoukai 5', 'movie', 'completed', '2022-02-03T20:00:00Z', undefined, undefined],
+			['Your Name.', 'movie', 'planned', null, undefined, undefined]
+		]
+	);
+});
+
+test('MyAnimeList: a special ticks nothing, even when finished', async () => {
+	const [special] = await malRows({
+		title: 'Cowboy Bebop',
+		type: 'OVA',
+		episodes: 3,
+		watched: 3,
+		status: 'Completed'
+	});
+	assert.equal(special.season, 0);
+	// Zero, not nothing: with no count a finished row ticks the whole season.
+	assert.equal(special.progress, 0);
+	assert.equal(special.warning, 'Special: matched to the show, episodes not ticked');
+});
+
+test('MyAnimeList: "The Final Season" asks which one it is', async () => {
+	const [row] = await malRows({ title: 'Shingeki no Kyojin: The Final Season', watched: 4 });
+	assert.equal(row.title, 'Shingeki no Kyojin');
+	assert.equal(row.season, null);
+	assert.equal(row.warning, 'Choose which season this is');
+});
+
+test('MyAnimeList: later parts start where the part before ended', async () => {
+	const list = await malRows(
+		{ title: 'Attack on Titan Season 3 Part 2', episodes: 10 },
+		{ title: 'Attack on Titan Season 3 Part 1', episodes: 12 },
+		{ title: 'Attack on Titan Season 2', episodes: 12 },
+		{ title: 'Vinland Saga', episodes: 24 }
+	);
+	assert.deepEqual(
+		list.map((r) => [r.label, r.season, r.episode_offset ?? null, r.warning ?? null, 'part' in r]),
+		[
+			['Attack on Titan Season 3 Part 2', 3, 12, null, false],
+			['Attack on Titan Season 3 Part 1', 3, 0, null, false],
+			['Attack on Titan Season 2', 2, null, null, false],
+			['Vinland Saga', 1, null, null, false]
+		]
+	);
+});
+
+test('MyAnimeList: a part of unknown length leaves the next one in doubt', async () => {
+	const list = await malRows(
+		{ title: 'Long Show Part 1', episodes: 0 },
+		{ title: 'Long Show Part 2', episodes: 12 },
+		{ title: 'Long Show Part 3', episodes: 12 }
+	);
+	assert.deepEqual(
+		list.map((r) => [r.episode_offset, r.warning ?? null]),
+		[
+			[0, null],
+			[0, 'Could not place this part; check the episodes'],
+			[12, 'Could not place this part; check the episodes']
+		]
+	);
+});
+
+test('MyAnimeList: a file that is not one says so', async () => {
+	await assert.rejects(malRows(), /No anime found/);
+	globalThis.DOMParser = MalParser;
+	try {
+		await assert.rejects(rows('mal', 'x.xml', '<other/>'), /not a MyAnimeList export/);
+	} finally {
+		delete globalThis.DOMParser;
+	}
+});
+
+// ---------------------------------------------------------------- archives
+
+test('a gzipped export is unpacked first', async () => {
+	globalThis.DOMParser = MalParser;
+	try {
+		const bytes = gzipSync(strToU8(mal({ title: 'Cowboy Bebop' })));
+		const files = await readFile('mal', new File([bytes], 'animelist.xml.gz'));
+		assert.deepEqual(
+			files.map((f) => [f.name, f.rows.map((r) => r.title)]),
+			[['animelist.xml.gz', ['Cowboy Bebop']]]
+		);
+	} finally {
+		delete globalThis.DOMParser;
+	}
+});
+
+test('a Letterboxd ZIP reads its library and leaves its comments and lists', async () => {
+	const header = 'Date,Name,Year,Letterboxd URI\n';
+	const zip = zipSync({
+		'watched.csv': strToU8(`${header}2024-01-01,Heat,1995,https://boxd.it/1\n`),
+		'ratings.csv': strToU8('Date,Name,Year,Letterboxd URI,Rating\n2024-01-02,Alien,1979,x,3.5\n'),
+		'likes/films.csv': strToU8(`${header}2024-01-03,Heat,1995,https://boxd.it/1\n`),
+		'comments.csv': strToU8(`${header}2024-01-04,Not a film,2000,x\n`),
+		'reviews.csv': strToU8(`${header}2024-01-05,Not a film,2000,x\n`),
+		'lists/best.csv': strToU8(`${header}2024-01-06,Not a film,2000,x\n`),
+		'profile.txt': strToU8('hello')
+	});
+	const files = await readFile('letterboxd', new File([zip], 'letterboxd-export.zip'));
+	assert.deepEqual(
+		files.map((f) => [f.name, f.rows.map((r) => [r.title, r.status, r.rating, r.favourite])]),
+		[
+			['watched.csv', [['Heat', 'completed', null, false]]],
+			['ratings.csv', [['Alien', 'completed', 70, false]]],
+			['likes/films.csv', [['Heat', 'completed', null, true]]]
+		]
+	);
+	const empty = zipSync({ 'readme.txt': strToU8('hello') });
+	await assert.rejects(readFile('letterboxd', new File([empty], 'x.zip')), /No usable CSV files/);
+});
+
+// ---------------------------------------------------------------- corners
+
+test('Letterboxd: half stars, blank rows and a diary with no watched date', async () => {
+	const list = await rows(
+		'letterboxd',
+		'diary.csv',
+		'Date,Name,Year,Letterboxd URI,Rating,Rewatch,Tags,Watched Date\n' +
+			'2024-01-02,Heat,1995,x,0.5,,,\n' +
+			',,,,,,,\n' +
+			'2024-01-03,Alien,,x,,No,,2024-01-01\n'
+	);
+	assert.deepEqual(
+		list.map((r) => [r.title, r.year, r.rating, r.rewatch, r.watched_at]),
+		[
+			['Heat', 1995, 10, false, '2024-01-02T20:00:00Z'],
+			['Alien', null, null, false, '2024-01-01T20:00:00Z']
+		]
+	);
+});
+
+test('IMDb: every word it has for a show, and a row with no title is skipped', async () => {
+	const list = await rows(
+		'imdb',
+		'watchlist.csv',
+		'Const,Your Rating,Date Rated,Title,Original Title,Title Type,Year\n' +
+			'tt1,,,Mini,,TV Mini Series,2019\n' +
+			'tt2,,,Old,,tvSeries,2001\n' +
+			'tt3,,,Short,,Short,2010\n' +
+			'tt4,,,,Originale,Movie,2011\n' +
+			'tt5,,,,,Movie,2012\n'
+	);
+	assert.deepEqual(
+		list.map((r) => [r.title, r.kind, r.imdb_id, r.status]),
+		[
+			['Mini', 'tv', 'tt1', 'planned'],
+			['Old', 'tv', 'tt2', 'planned'],
+			['Short', 'movie', 'tt3', 'planned'],
+			['Originale', 'movie', 'tt4', 'planned']
+		]
+	);
+});
+
+test('Trakt: a list inside "items", and a bare title with no kind', async () => {
+	const list = await rows(
+		'trakt',
+		'list.json',
+		JSON.stringify({
+			items: [{ title: 'Heat', year: 1995 }, { rating: 0, movie: { title: 'Alien' } }, {}]
+		})
+	);
+	assert.deepEqual(
+		list.map((r) => [r.title, r.kind, r.year, r.rating, r.status]),
+		[
+			['Heat', null, 1995, null, 'planned'],
+			['Alien', 'movie', null, null, 'planned']
+		]
+	);
+});
+
+test("Trakt: one episode is not the whole show, and its rating is not the show's", async () => {
+	const list = await rows(
+		'trakt',
+		'history.json',
+		JSON.stringify([
+			{
+				type: 'episode',
+				watched_at: '2024-02-03T21:00:00.000Z',
+				episode: { season: 1, number: 1, title: 'Pilot' },
+				show: { title: 'Dark', year: 2017, ids: { tmdb: 70523 } }
+			},
+			{
+				type: 'episode',
+				rating: 3,
+				rated_at: '2024-02-04T10:00:00.000Z',
+				episode: { season: 1, number: 2 },
+				show: { title: 'Lost', ids: { tmdb: 4607 } }
+			},
+			{
+				type: 'season',
+				rating: 4,
+				rated_at: '2024-02-05T10:00:00.000Z',
+				season: { number: 1 },
+				show: { title: 'Severance', ids: { tmdb: 95396 } }
+			}
+		])
+	);
+	assert.deepEqual(
+		list.map((r) => [r.title, r.rating, r.status, r.watched_at]),
+		[
+			['Dark', null, 'watching', '2024-02-03T20:00:00Z'],
+			['Lost', null, 'watching', '2024-02-04T20:00:00Z'],
+			['Severance', null, 'watching', '2024-02-05T20:00:00Z']
+		]
+	);
+});
+
+test('TV Time: its other column names, the first date, and an empty file', async () => {
+	const list = await rows(
+		'tvtime',
+		'tracking-prod-records.csv',
+		'tv_show_name,first_aired,created_at\nDark,2017-12-01,2020-01-01 10:00:00\nDark,2017-12-01,2021-01-01 10:00:00\n,,\n'
+	);
+	assert.deepEqual(
+		list.map((r) => [r.title, r.kind, r.year, r.watched_at]),
+		[['Dark', 'tv', 2017, '2020-01-01T20:00:00Z']]
+	);
+	assert.deepEqual(await rows('tvtime', 'empty.csv', 'show_name\n'), []);
+});
+
+test('a Frog backup brings back the episodes that were watched', async () => {
+	const backup = {
+		format: 'frog-library',
+		version: 2,
+		titles: [
+			{
+				kind: 'tv',
+				tmdb_id: 1399,
+				name: 'Game of Thrones',
+				status: 'watching',
+				episodes: [
+					{ season: 1, episode: 1, rating: null, notes: null, watched: true },
+					{ season: 1, episode: 2, rating: null, notes: 'a note', watched: false },
+					{ season: 2, episode: 1, rating: null, notes: null, watched: true }
+				]
+			},
+			{ kind: 'tv', tmdb_id: 70523, name: 'Dark', status: 'planned', episodes: [] }
+		]
+	};
+	const [thrones, dark] = await rows('frog', 'frog-library.json', JSON.stringify(backup));
+	assert.deepEqual(thrones.watches, [
+		{ season: 1, episode: 1, watched_at: null },
+		{ season: 2, episode: 1, watched_at: null }
+	]);
+	assert.equal(thrones.progress, 2);
+	assert.equal(dark.watches, undefined);
+	assert.equal(dark.progress, undefined);
+});
+
+test('a date in any other shape keeps its day, at the usual hour', async () => {
+	const [row] = await rows('tvtime', 'seen.csv', 'show_name,created_at\nDark,"January 5, 2024"\n');
+	assert.equal(row.watched_at, '2024-01-05T20:00:00Z');
+});
+
+test('dedupe tells a film from a show with the same TMDB id', () => {
+	const row = (over) => ({
+		key: 'k',
+		title: 'x',
+		year: null,
+		imdb_id: null,
+		tmdb_id: null,
+		kind: 'movie',
+		rating: null,
+		status: 'completed',
+		watched_at: null,
+		favourite: false,
+		rewatch: false,
+		source: 'x',
+		...over
+	});
+	const ids = (list) => list.map((r) => [r.title, r.kind, r.tmdb_id, r.anilist_id ?? null]);
+
+	assert.deepEqual(
+		ids(
+			dedupe([
+				row({ title: 'A Film', kind: 'movie', tmdb_id: 100 }),
+				row({ title: 'A Show', kind: 'tv', tmdb_id: 100 }),
+				row({ title: 'A Film', kind: 'movie', tmdb_id: 100, favourite: true })
+			])
+		),
+		[
+			['A Film', 'movie', 100, null],
+			['A Show', 'tv', 100, null]
+		]
+	);
+
+	// Two anime only AniList has, by the same name.
+	assert.deepEqual(
+		ids(
+			dedupe([
+				row({ title: 'Same Name', kind: 'tv', anilist_id: 1 }),
+				row({ title: 'Same Name', kind: 'tv', anilist_id: 2 })
+			])
+		),
+		[
+			['Same Name', 'tv', null, 1],
+			['Same Name', 'tv', null, 2]
+		]
+	);
+
+	// Seasons of one show, and parts of one season, stay apart.
+	const seasons = dedupe([
+		row({ title: 'Show', kind: 'tv', season: 1 }),
+		row({ title: 'Show', kind: 'tv', season: 2 }),
+		row({ title: 'Show', kind: 'tv', season: 2, episode_offset: 12 }),
+		row({ title: 'SHOW', kind: 'tv', season: 1 })
+	]);
+	assert.deepEqual(
+		seasons.map((r) => [r.season, r.episode_offset ?? 0]),
+		[
+			[1, 0],
+			[2, 0],
+			[2, 12]
+		]
+	);
+});
+
+test('a number that is part of the name is not a season', () => {
+	const cases = [
+		['Kaiju No. 8', { base: 'Kaiju No. 8', season: null, part: null, unnumbered: false }],
+		['Kaiju No. 8 Season 2', { base: 'Kaiju No. 8', season: 2, part: null, unnumbered: false }],
+		['Mob Psycho 100', { base: 'Mob Psycho 100', season: null, part: null, unnumbered: false }],
+		['Steins;Gate 0', { base: 'Steins;Gate 0', season: null, part: null, unnumbered: false }],
+		['Area 88', { base: 'Area 88', season: null, part: null, unnumbered: false }],
+		['Show: Cour 2', { base: 'Show', season: null, part: 2, unnumbered: false }],
+		['Show Saison 3', { base: 'Show', season: 3, part: null, unnumbered: false }],
+		['Show - Season 2 Part 2', { base: 'Show', season: 2, part: 2, unnumbered: false }]
+	];
+	for (const [title, want] of cases) assert.deepEqual(animeTitle(title), want, title);
 });

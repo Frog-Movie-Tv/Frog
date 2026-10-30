@@ -139,7 +139,9 @@ export function toDate(value: string): string | null {
 	if (iso) return `${iso[0]}T20:00:00Z`;
 	const parsed = new Date(value);
 	if (Number.isNaN(parsed.getTime())) return null;
-	return parsed.toISOString();
+	// Local parts: `new Date` read it as local time, and the day is what counts.
+	const pad = (n: number) => String(n).padStart(2, '0');
+	return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T20:00:00Z`;
 }
 
 let counter = 0;

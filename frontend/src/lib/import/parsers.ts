@@ -158,12 +158,16 @@ function readTraktJson(text: string): Incoming[] {
 			if (typeof ids?.tmdb === 'number') row.tmdb_id = ids.tmdb;
 			if (typeof ids?.imdb === 'string') row.imdb_id = ids.imdb;
 
+			// An entry about one episode or season says nothing of the show as a
+			// whole: not its rating, and not that all of it was seen.
+			const part = entry.episode || entry.season;
 			const rating = entry.rating;
-			if (typeof rating === 'number' && rating > 0) row.rating = rating * 10;
+			if (typeof rating === 'number' && rating > 0 && !part) row.rating = rating * 10;
 
 			const watched = entry.watched_at ?? entry.last_watched_at ?? entry.rated_at;
 			if (typeof watched === 'string') row.watched_at = toDate(watched);
-			row.status = row.watched_at || row.rating !== null ? 'completed' : 'planned';
+			if (part) row.status = 'watching';
+			else row.status = row.watched_at || row.rating !== null ? 'completed' : 'planned';
 
 			return row;
 		})
@@ -245,6 +249,14 @@ function readFrogJson(text: string): Incoming[] {
 
 		const watches = t.watches as { watched_at?: string }[] | undefined;
 		row.watched_at = watches?.[0]?.watched_at ?? null;
+
+		// The backup says which episodes, not when: they come back undated.
+		const episodes = (t.episodes ?? []) as { season: number; episode: number; watched?: boolean }[];
+		const seen = episodes.filter((e) => e.watched);
+		if (seen.length) {
+			row.watches = seen.map((e) => ({ season: e.season, episode: e.episode, watched_at: null }));
+			row.progress = seen.length;
+		}
 		return row;
 	});
 }
@@ -272,7 +284,7 @@ export async function readFile(format: string, file: File): Promise<ParsedFile[]
 			const wanted = format === 'mal' ? '.xml' : '.csv';
 			if (!path.toLowerCase().endsWith(wanted)) continue;
 			// Letterboxd also ships comments and lists, which are not a library.
-			if (/comment|review|list\//i.test(path)) continue;
+			if (/comment|review|lists?\//i.test(path)) continue;
 			const rows = readOne(format, path, strFromU8(bytes));
 			if (rows.length) out.push({ name: path, rows });
 		}
@@ -334,11 +346,14 @@ export function dedupe(rows: Incoming[]): Incoming[] {
 	const byTitle = new Map<string, Incoming>();
 
 	for (const row of rows) {
+		// TMDB numbers films and shows separately.
 		const id = row.tmdb_id
-			? `t${row.tmdb_id}`
+			? `t${row.kind}${row.tmdb_id}`
 			: row.imdb_id
 				? `i${row.imdb_id}`
-				: `${row.title.toLowerCase()}|${row.year ?? ''}|${row.season ?? ''}|${row.episode_offset ?? 0}`;
+				: row.anilist_id
+					? `a${row.anilist_id}`
+					: `${row.title.toLowerCase()}|${row.year ?? ''}|${row.season ?? ''}|${row.episode_offset ?? 0}`;
 
 		const existing = byTitle.get(id);
 		if (!existing) {

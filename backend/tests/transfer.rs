@@ -654,6 +654,40 @@ async fn exact_episodes_land_on_their_day_and_old_watches_stay() {
     assert_eq!((ticked, undated), (4, 4), "specials are not part of it");
 }
 
+/// A finished season with no count is all of it; a count of zero is none, which
+/// is how a finished special stays unticked.
+#[tokio::test]
+async fn a_count_of_zero_ticks_nothing_even_when_finished() {
+    let h = Harness::new().await;
+    let owner = h.owner().await;
+    h.cache_show(70523, "Dark", &[(0, "Specials", 3), (1, "Season 1", 3)])
+        .await;
+    h.cache_show(1399, "Thrones", &[(0, "Specials", 2), (1, "Season 1", 3)])
+        .await;
+
+    let (_, body) = h
+        .post(
+            "/api/import/apply",
+            json!({ "on_conflict": "overwrite", "items": [
+                { "kind": "tv", "tmdb_id": 70523, "status": "completed", "season": 0, "progress": 0 },
+                { "kind": "tv", "tmdb_id": 1399, "status": "completed", "season": 0 }
+            ]}),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(body["failed"], json!([]), "{body}");
+
+    let ticked = |id: i64| {
+        format!(
+            "SELECT COUNT(*) FROM watch_event w JOIN episode e ON e.id = w.episode_id
+              WHERE (SELECT tmdb_id FROM title_tmdb WHERE title_id = e.title_id) = {id}"
+        )
+    };
+    let (zero,): (i64,) = h.one(&ticked(70523)).await;
+    let (all,): (i64,) = h.one(&ticked(1399)).await;
+    assert_eq!((zero, all), (0, 2));
+}
+
 /// A dated film is a diary entry, once, with its rewatch flag; a finished
 /// film with no date gets one undated watch. A show never gets a
 /// title-level entry.
