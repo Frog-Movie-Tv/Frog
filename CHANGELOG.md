@@ -1,5 +1,92 @@
 # Changelog
 
+## [0.8.0](https://github.com/Frog-Movie-Tv/Frog/compare/v0.7.0...v0.8.0) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **settings:** remove custom CSS and other technical settings
+* **anilist:** read from AniList and never write to it
+
+### Features
+
+* **admin:** show what the server did and tell administrators when it fails ([a9bfc46](https://github.com/Frog-Movie-Tv/Frog/commit/a9bfc46468796ef26ddab4804966afcd83b4896d))
+* **admin:** show what the server did and tell administrators when it fails ([d7742e9](https://github.com/Frog-Movie-Tv/Frog/commit/d7742e9a32ef6f9b5ceb8f842628ccb5efdbe161))
+* **anilist:** place entries with care, keep what TMDB lacks, sync reliably ([5bc4795](https://github.com/Frog-Movie-Tv/Frog/commit/5bc4795111985ff360b9260072591fa1704c5eaa))
+* **anilist:** place entries with care, keep what TMDB lacks, sync reliably ([83f4adf](https://github.com/Frog-Movie-Tv/Frog/commit/83f4adfe60cc740f561ac2b13fc075b4e7865bcd))
+* **anilist:** read from AniList and never write to it ([dd6bcd9](https://github.com/Frog-Movie-Tv/Frog/commit/dd6bcd97973a37a2c4d889f8837324b8d7c90394))
+* **catalog:** give every title a Frog id of its own ([c110fc9](https://github.com/Frog-Movie-Tv/Frog/commit/c110fc90f3aa3baf54c9d9a8a9031d2693d2d609))
+* **catalog:** give every title a Frog id of its own ([b66aeb5](https://github.com/Frog-Movie-Tv/Frog/commit/b66aeb581759260f2ee6d59d38c483446216f6b8))
+* **deploy:** send backups to a private repository with a deploy key ([6ac8111](https://github.com/Frog-Movie-Tv/Frog/commit/6ac8111fee03f77cbd2e4375dbfaafe031047582))
+* **deploy:** send backups to a private repository with a deploy key ([e3c3443](https://github.com/Frog-Movie-Tv/Frog/commit/e3c34437faa135cd5c70d476e61c919930bff294))
+* **home:** put shelves at the top ([47575d5](https://github.com/Frog-Movie-Tv/Frog/commit/47575d5e0b99bb9af339bf222451cbf8b058b2b0))
+* **import:** bring in Netflix viewing activity ([4852ac7](https://github.com/Frog-Movie-Tv/Frog/commit/4852ac7360f94d903f326c9a968e5c71fc6d8dda))
+* **import:** group review rows by the title itself ([83f3971](https://github.com/Frog-Movie-Tv/Frog/commit/83f3971c200c350da82ebb28db3ac46277f99def))
+* **import:** Netflix viewing activity, and a fast library at any size ([e371909](https://github.com/Frog-Movie-Tv/Frog/commit/e3719099083538117587de975c47637220e34fe7))
+* **import:** place Netflix episodes by name ([3f3d7bb](https://github.com/Frog-Movie-Tv/Frog/commit/3f3d7bb800ace95696cd0a65e4be43fae7f10953))
+* **import:** put every Netflix episode on its real day ([f83d2e8](https://github.com/Frog-Movie-Tv/Frog/commit/f83d2e8994cfd95c17600c09650d8e2ed75638c5))
+* **import:** put every Netflix episode on its real day ([0234625](https://github.com/Frog-Movie-Tv/Frog/commit/0234625c183cf60e1cb3ea36f0b5aabca791f9c4))
+* **import:** review a long import quickly ([e17ca2c](https://github.com/Frog-Movie-Tv/Frog/commit/e17ca2c474285df4e415e2478044b089aa99aa4a))
+* **people:** search members and film and TV people from one bar ([a843cea](https://github.com/Frog-Movie-Tv/Frog/commit/a843cead6bcb80a6678c865d113f574f3ad11dcd))
+* search, ratings, shelves on Home, read-only AniList and the UX pass ([7e8513f](https://github.com/Frog-Movie-Tv/Frog/commit/7e8513f4a1c7663153d35113cebd9df14b89ca8b))
+* **search:** rank by how well a name answers, and filter films and shows ([2baefb0](https://github.com/Frog-Movie-Tv/Frog/commit/2baefb0e054679c29d261c0943eab947961be670))
+* **search:** separate films, shows and people, and add filters ([8abd0ff](https://github.com/Frog-Movie-Tv/Frog/commit/8abd0ffe232ee55b1efc43764439f6bee21290c3))
+* **titles:** show scores from other sites and the age rating ([6066197](https://github.com/Frog-Movie-Tv/Frog/commit/606619709779d1976e65574061081a204bc96ddd))
+
+
+### Fixes
+
+* **admin:** use the same frame as every other page, and keep last sign-in ([dbba94c](https://github.com/Frog-Movie-Tv/Frog/commit/dbba94c2f1d03e27735d2f3bf622183c7890e535))
+* **calendar:** leave out watchlisted shows that are already releasing ([4d3e788](https://github.com/Frog-Movie-Tv/Frog/commit/4d3e7880a6022b76d3044a577d5fb4ffb07e2e6f))
+* carry the UX pass over to the current code ([a378c83](https://github.com/Frog-Movie-Tv/Frog/commit/a378c8348269398b307112912e9ced19e7c3e000))
+* **deploy:** back up to the organisation's repository, and restore the newest backup ([d751a2c](https://github.com/Frog-Movie-Tv/Frog/commit/d751a2cc28277bdba7ad2d7da8c30985d7f48b50))
+* **deploy:** let a rollback start on a newer schema ([#43](https://github.com/Frog-Movie-Tv/Frog/issues/43)) ([4e6b1f5](https://github.com/Frog-Movie-Tv/Frog/commit/4e6b1f5f432ec9de2036850b65ff81deac258b3a))
+* **deploy:** name a manual backup as one, not as the nightly ([bf803cd](https://github.com/Frog-Movie-Tv/Frog/commit/bf803cdda204367c4d16f21d545c064b8b70a895))
+* **deploy:** pick the newest backup by its name, not its file time ([b20e5ec](https://github.com/Frog-Movie-Tv/Frog/commit/b20e5ec6a4ac5e43d9b78d86fdf80e43aceb5d5e))
+* **episodes:** continue from the latest episode, not the first gap ([51494fb](https://github.com/Frog-Movie-Tv/Frog/commit/51494fb480268975130dc8d09df8d6fcb5174eae))
+* **import:** bring back watched episodes from a Frog backup ([cbd4614](https://github.com/Frog-Movie-Tv/Frog/commit/cbd4614c144077b909ecd2a640091c95ddce6918))
+* **import:** count a Trakt episode as an episode, not its show ([98eb8df](https://github.com/Frog-Movie-Tv/Frog/commit/98eb8df6400fafbe02579c92c64a758a9ac5f154))
+* **import:** keep numbers that are part of an anime name ([a5bd31c](https://github.com/Frog-Movie-Tv/Frog/commit/a5bd31c3622a9c24ac11e531bd9b3d36c0af1183))
+* **import:** keep the day of a date in any other format ([3a72b79](https://github.com/Frog-Movie-Tv/Frog/commit/3a72b79f127ba40cffb17bf89d04d020e0ed2811))
+* **import:** keep titles apart that only share a number ([cb41d4c](https://github.com/Frog-Movie-Tv/Frog/commit/cb41d4c1611176a59b483d98c9938fc9f9b29ffc))
+* **import:** leave Letterboxd lists out of a ZIP ([86feb68](https://github.com/Frog-Movie-Tv/Frog/commit/86feb682c245689220fe4b126c930208ff7b5c52))
+* **import:** tick nothing for a finished anime special ([6446bac](https://github.com/Frog-Movie-Tv/Frog/commit/6446bac88d0d144bcb6e7f9f34bad3a72d6c1b6c))
+* **library:** ignore accents and case in the name filter ([#45](https://github.com/Frog-Movie-Tv/Frog/issues/45)) ([13091d3](https://github.com/Frog-Movie-Tv/Frog/commit/13091d3e79e5e6c5ff90f787bf6d962315763ed8))
+* **library:** keep a library of hundreds fast ([2bab058](https://github.com/Frog-Movie-Tv/Frog/commit/2bab0582b10c0e049ce8659c390045d37649104d))
+* **ratings:** keep the MDBList budget with its client ([8f558c6](https://github.com/Frog-Movie-Tv/Frog/commit/8f558c69b0e9cc4ae17807e1c260f28129def559))
+* say plainly when a page or title is not there ([caec3ca](https://github.com/Frog-Movie-Tv/Frog/commit/caec3ca2191530fdbef7d68463f79ffc6ac030d7))
+* **web:** load every font under the live policy, and check pages against it ([6b4e63a](https://github.com/Frog-Movie-Tv/Frog/commit/6b4e63ac5fa6973ffcc25545e650f4d5ba0a0402))
+* **web:** ship fonts as files so the deployed policy loads them ([a67fc3f](https://github.com/Frog-Movie-Tv/Frog/commit/a67fc3fac00193254338d6f9838cbe632ea58409))
+
+
+### Performance
+
+* **shelves:** build shelves and Home from one reading ([cd29e57](https://github.com/Frog-Movie-Tv/Frog/commit/cd29e57f29bc68c9d615b8caf154733a417169ad))
+* **shelves:** build shelves and Home from one reading ([7b4642f](https://github.com/Frog-Movie-Tv/Frog/commit/7b4642f8aaa026f6e554c9c646be3ba906452d9a))
+
+
+### Internal
+
+* **settings:** remove custom CSS and other technical settings ([fae92e7](https://github.com/Frog-Movie-Tv/Frog/commit/fae92e79a782f901ad29178b6f75118dd426ae9b))
+
+
+### Documentation
+
+* **deploy:** keep backups in an owner's account, since the organisation has no deploy keys ([4726ce8](https://github.com/Frog-Movie-Tv/Frog/commit/4726ce80ade449519ac3777c4e74c1eddead6be6))
+* **deploy:** keep backups in the organisation's repository ([c549232](https://github.com/Frog-Movie-Tv/Frog/commit/c549232b389c93382072ce0654869204fffba767))
+* **deploy:** say what a manual backup reports ([44be2de](https://github.com/Frog-Movie-Tv/Frog/commit/44be2ded3bb9e57617d715265116076b86c89feb))
+* **deploy:** use the backup repository's exact name ([e960af3](https://github.com/Frog-Movie-Tv/Frog/commit/e960af3425bf0b2efc02767ed07849b0a88fba57))
+* describe read-only AniList, ratings and the new key ([dff477d](https://github.com/Frog-Movie-Tv/Frog/commit/dff477d969c156554dde6ccc1a8a29b5d987b6bc))
+* **import:** say what the readers do and still leave out ([38b5b34](https://github.com/Frog-Movie-Tv/Frog/commit/38b5b344aba0c89c08c4e199b1dcd2df045409a5))
+* **roadmap:** backups leave the server, and a real restore passed ([ab476af](https://github.com/Frog-Movie-Tv/Frog/commit/ab476af0c8123cecbc10ed1d39a4664311391c01))
+* **roadmap:** note how pages word a failed load ([82e6a7c](https://github.com/Frog-Movie-Tv/Frog/commit/82e6a7c911ff90f1c48058248629e68b8c2df57e))
+* **roadmap:** note how up next is chosen, and a flaky AniList test ([2a7543e](https://github.com/Frog-Movie-Tv/Frog/commit/2a7543ec337e4e0aa91413ba4fd34a9d3e5a35e2))
+
+
+### Chores
+
+* release 0.8.0 ([4b21e79](https://github.com/Frog-Movie-Tv/Frog/commit/4b21e79eef97309eb67c078f8f81cdb01b23e770))
+
 ## [0.7.0](https://github.com/Frog-Movie-Tv/Frog/compare/v0.6.0...v0.7.0) (2026-10-28)
 
 
