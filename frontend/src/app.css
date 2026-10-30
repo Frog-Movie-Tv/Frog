@@ -634,6 +634,10 @@ textarea.input {
    Buttons simply grow; small round controls keep their look and get an
    invisible hit area of that size around them. */
 @media (max-width: 760px) {
+	.chips > .chip {
+		min-height: 44px;
+	}
+
 	.btn {
 		min-height: 44px;
 		min-width: 44px;

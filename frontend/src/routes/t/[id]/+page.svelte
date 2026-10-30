@@ -330,7 +330,7 @@
 					</div>
 
 					{#if item.total_episodes > 0 && item.entry}
-						<a class="progress-line" href="#seasons">
+						<a class="progress-line hit" href="#seasons">
 							<span class="bar">
 								<i style:width="{(item.watched_episodes / item.total_episodes) * 100}%"></i>
 							</span>

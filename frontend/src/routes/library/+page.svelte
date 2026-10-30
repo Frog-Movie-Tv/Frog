@@ -835,10 +835,6 @@
 	}
 
 	@media (max-width: 760px) {
-		.chip {
-			min-height: 44px;
-		}
-
 		.controls {
 			display: none;
 		}
