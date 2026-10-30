@@ -1,6 +1,7 @@
 # AniList
 
-How Frog keeps each account's AniList list and its Frog library in step.
+How Frog reads each account's AniList list into its Frog library. AniList is
+only ever read: Frog has no write to it, and `Api::graphql` refuses one.
 For where it sits in the whole system, see [ARCHITECTURE.md](../ARCHITECTURE.md).
 
 ## The modules
@@ -10,10 +11,10 @@ back up, and only `sync` and `local` talk to AniList on a sync's behalf.
 
 | Module | Owns | Talks to |
 | --- | --- | --- |
-| `client.rs` | Sign-in (authorize URL, code exchange, viewer), the paced and retried GraphQL call, reading a list, saving an entry, `Remote` and `View` | AniList |
+| `client.rs` | Sign-in (authorize URL, code exchange, viewer), the paced and retried GraphQL call, reading a list, `Remote` and `View` | AniList |
 | `idmap.rs` | The two community id lists in `anime_map`, and `anilist_media` | GitHub raw files, SQLite |
 | `place.rs` | Where an entry belongs on TMDB and how sure that is: `Target`, `Placement`, `RESOLVER`, `CONFIDENT` | TMDB (through `state.tmdb`), AniList relations, SQLite caches |
-| `reconcile.rs` | **Who wins.** Change detection between snapshots, the mode (merge or follow), what is sent back, incoming status and rating, a show's one status. Pure: no I/O | nothing |
+| `reconcile.rs` | **Who wins.** Change detection between snapshots, the mode (merge or follow), incoming status and rating, a show's one status. Pure: no I/O | nothing |
 | `library.rs` | Frog's side of an entry: which episodes it covers (`run_ids`), how Frog sees it (`frog_view`), writing AniList's side into a title the caller already has (`apply`), taking back a wrong placement (`unplace`), settling a show | SQLite through `store`, `catalog` and `release` |
 | `local.rs` | Entries TMDB lacks, kept as AniList-only titles, and moving them across once TMDB has them (`adopt_local`) | `library`, `client` |
 | `media.rs` | An AniList-only title's details rewritten into TMDB's shape, people and studios | AniList |
@@ -40,8 +41,7 @@ and `sync_user`.
    - `sync_placed`: move if the place changed (`unplace`), adopt an
      AniList-only title, compare both sides with their snapshots
      (`reconcile::Changes`), apply AniList's side (`library::apply`) when it
-     wins, send Frog's side (`reconcile::outgoing` → `client::push`) when it
-     wins, save both snapshots.
+     wins, leave Frog's as it is when it does not, save both snapshots.
 6. `settle_shows` — one status per show once all of its seasons are in, then
    Frog's snapshot of each of its entries.
 7. `records::sync_succeeded` or `sync_failed` (with backoff).
@@ -138,8 +138,8 @@ failed for it, and it is tried again with backoff.
   move to the episode at the same place in its run.
 - **Season ratings** live in `season_rating` (user, title, season, first
   episode). A season split into AniList parts is rated part by part; a unit
-  is rateable once every episode of it is out. The show's own rating is no
-  longer pushed to AniList. Episodes are no longer rated (see ROADMAP, Next).
+  is rateable once every episode of it is out. Ratings stay in Frog.
+  Episodes are no longer rated (see ROADMAP, Next).
 - **`cargo run --example anilist_check -- <user> [scratch.db]`** places a
   public AniList list without writing anywhere and prints one JSON line per
   entry: the quickest way to see what the matcher does with a real list.

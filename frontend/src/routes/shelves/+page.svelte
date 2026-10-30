@@ -99,7 +99,7 @@
 							</span>
 						</span>
 						{#if arranging}
-							<button class="handle" data-sort-handle aria-label="Move {shelf.name}">
+							<button class="handle hit" data-sort-handle aria-label="Move {shelf.name}">
 								<Icon name="grip" size={18} />
 							</button>
 						{/if}

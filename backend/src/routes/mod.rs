@@ -50,6 +50,7 @@ pub fn router(state: AppState) -> Router {
         )
         // Everything below needs a session.
         .route("/search", get(search::search))
+        .route("/search/genres", get(search::genres))
         .route("/discover/trending", get(search::trending))
         .route("/search/more", get(browse::more))
         .route("/studios/{id}", get(browse::studio))
@@ -125,6 +126,7 @@ pub fn router(state: AppState) -> Router {
         .route("/titles/{kind}/{id}", get(titles::detail))
         // Everything else about a title goes by Frog's own id.
         .route("/t/{id}", get(titles::detail_by_id))
+        .route("/t/{id}/scores", get(titles::scores))
         .route("/t/{id}/seasons/{season}", get(titles::season))
         .route("/t/{id}/seasons/{season}/rating", put(titles::rate_season))
         .route(

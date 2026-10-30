@@ -59,7 +59,7 @@
 
 <div class="rating" class:compact bind:this={root}>
 	<button
-		class="chip"
+		class="chip hit"
 		class:rated={value !== null}
 		{disabled}
 		aria-haspopup="menu"

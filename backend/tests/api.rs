@@ -51,6 +51,7 @@ impl Harness {
             session_days: 7,
             notify_hour: 18,
             anilist: None,
+            mdblist: None,
         };
 
         let pool = frog::db::connect(&url).await.expect("database");
@@ -563,6 +564,115 @@ async fn an_owner(h: &Harness) {
     .unwrap();
 }
 
+/// The calendar, Home's week and notifications agree on what is followed.
+#[tokio::test]
+async fn a_watchlisted_show_waits_until_it_is_started_or_has_not_begun() {
+    let h = Harness::new().await;
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "owner", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+    let day = |offset: i64| {
+        (chrono::Utc::now() + chrono::Duration::days(offset))
+            .format("%Y-%m-%d")
+            .to_string()
+    };
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES
+            (1, 'tv', 1, 'Watching'), (2, 'tv', 2, 'Releasing'), (3, 'tv', 3, 'Not out yet'),
+            (4, 'tv', 4, 'Started'), (5, 'tv', 5, 'Premieres today')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at) VALUES
+            (1, 1, 'watching', 'x', 'x'), (1, 2, 'planned', 'x', 'x'), (1, 3, 'planned', 'x', 'x'),
+            (1, 4, 'planned', 'x', 'x'), (1, 5, 'planned', 'x', 'x')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    for (title, season, episode, date) in [
+        (1, 1, 1, day(-7)),
+        (1, 1, 2, day(2)),
+        (2, 1, 1, day(-7)),
+        (2, 1, 2, day(2)),
+        (3, 1, 1, day(2)),
+        (4, 1, 1, day(-7)),
+        (4, 1, 2, day(2)),
+        (5, 1, 1, day(0)),
+        (5, 1, 2, day(3)),
+    ] {
+        sqlx::query(
+            "INSERT INTO episode (title_id, season_number, episode_number, air_date)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(title)
+        .bind(season)
+        .bind(episode)
+        .bind(date)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    }
+    // A special long ago does not make a show one that is releasing.
+    sqlx::query(
+        "INSERT INTO episode (title_id, season_number, episode_number, air_date)
+         VALUES (3, 0, 1, '2001-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at)
+         SELECT 1, 4, id, 'x' FROM episode WHERE title_id = 4 AND episode_number = 1",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let (_, body) = h.get("/api/calendar", Some(&cookie)).await;
+    let mut shown: Vec<&str> = body["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|e| e["title"].as_str())
+        .collect();
+    shown.sort_unstable();
+    shown.dedup();
+    assert_eq!(
+        shown,
+        ["Not out yet", "Premieres today", "Started", "Watching"],
+        "{body}"
+    );
+
+    let (_, body) = h.get("/api/home", Some(&cookie)).await;
+    let week: Vec<&str> = body["this_week"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|e| e["item"]["name"].as_str())
+        .collect();
+    assert!(!week.contains(&"Releasing"), "{week:?}");
+    assert!(week.contains(&"Watching"), "{week:?}");
+
+    let today = (chrono::Utc::now() + chrono::Duration::days(2)).date_naive();
+    let due = frog::jobs::due_announcements(&h.state.pool, 1, today)
+        .await
+        .unwrap();
+    let names: Vec<String> = due
+        .iter()
+        .filter_map(|a| a.payload()["title"].as_str().map(String::from))
+        .collect();
+    assert!(!names.iter().any(|n| n == "Releasing"), "{names:?}");
+    assert!(names.iter().any(|n| n == "Watching"), "{names:?}");
+}
+
 /// Seed one show with two aired seasons and a future episode, signed in.
 async fn show_with_seasons(h: &Harness) -> String {
     let (_, _, cookie) = h
@@ -737,7 +847,7 @@ async fn cache_show(h: &Harness, id: i64, name: &str, seasons: &[(i64, i64)]) {
         })).collect::<Vec<_>>(),
     });
     let detail_key = format!(
-        "/tv/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids&include_image_language=en,null"
+        "/tv/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,content_ratings&include_image_language=en,null,ja"
     );
     let mut rows = vec![(detail_key, detail)];
     for (s, n) in seasons {
@@ -977,7 +1087,7 @@ async fn cache_film(h: &Harness, id: i64, name: &str, year: &str, actors: &[(i64
         "production_companies": [{ "id": 50, "name": "Pond Pictures" }]
     });
     let key = format!(
-        "/movie/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null"
+        "/movie/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null,ja"
     );
     sqlx::query(
         "INSERT INTO tmdb_cache (cache_key, body, fetched_at, expires_at)
@@ -1795,7 +1905,7 @@ async fn cache_recommending(h: &Harness, id: i64, recs: &[(i64, Option<&str>)]) 
         })).collect::<Vec<_>>() }
     });
     let key = format!(
-        "/movie/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null"
+        "/movie/{id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null,ja"
     );
     sqlx::query(
         "INSERT INTO tmdb_cache (cache_key, body, fetched_at, expires_at)
@@ -3522,15 +3632,24 @@ async fn search_finds_people_studios_and_characters() {
         ] }),
     )
     .await;
-    cache(
-        "/movie/11?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null".into(),
-        json!({ "id": 11, "title": "Lily", "popularity": 5.0, "poster_path": "/lily.jpg",
-                "credits": { "cast": [
-                    { "id": 30, "name": "An Actor", "character": "Captain Pond", "profile_path": "/a.jpg" },
-                    { "id": 31, "name": "Someone", "character": "Self" }
-                ] } }),
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, poster_path)
+         VALUES (11, 'movie', 11, 'Lily', '/lily.jpg')",
     )
-    .await;
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    frog::catalog::store_credits(
+        &h.state.pool,
+        11,
+        &json!({ "credits": { "cast": [
+            { "id": 30, "name": "An Actor", "character": "Captain Pond (voice)",
+              "profile_path": "/a.jpg" },
+            { "id": 31, "name": "Someone", "character": "Self" }
+        ] } }),
+    )
+    .await
+    .unwrap();
 
     let (status, found) = h.get("/api/search/more?q=pond", Some(&cookie)).await;
     assert_eq!(status, StatusCode::OK, "{found}");
@@ -3547,6 +3666,11 @@ async fn search_finds_people_studios_and_characters() {
     assert_eq!(characters[0]["name"], json!("Captain Pond"));
     assert_eq!(characters[0]["actor"]["id"], json!(30));
     assert_eq!(characters[0]["title"]["tmdb_id"], json!(11));
+    assert_eq!(
+        characters[0]["image"]["path"],
+        json!("/lily.jpg"),
+        "a character is pictured by their title, not by the actor's face"
+    );
 
     // Signed out: nothing.
     let (status, _) = h.get("/api/search/more?q=pond", None).await;
@@ -3659,6 +3783,10 @@ async fn search_finds_known_titles_by_their_first_letters() {
     .execute(&h.state.pool)
     .await
     .unwrap();
+    sqlx::query("UPDATE title SET search_name = lower(name)")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
     sqlx::query(
         "INSERT INTO tmdb_cache (cache_key, body, fetched_at, expires_at)
          VALUES ('/search/multi?lang=en-US&query=inter&page=1&include_adult=false', ?,

@@ -106,6 +106,17 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 13. **Smaller things.** Customisable keyboard shortcuts, renaming and
    recolouring statuses, muted trailer autoplay, per-shelf layout defaults.
 
+8. **Left from the UX pass.** Each small, none urgent:
+   - A person's filmography leads with talk-show and documentary appearances;
+     sort acting credits by popularity, or put them first.
+   - About shows the browser's raw error when the offline worker cannot
+     install; say it in a sentence and keep the detail behind a disclosure.
+   - Deleting a shelf leaves its row id in the saved Home layout, and undo
+     restores the shelf under a new id, so it drops off Home.
+   - Administration shows initials, not the uploaded picture.
+   - Undoing an unticked episode restores its latest watch only; earlier
+     rewatches of that episode stay cleared.
+
 ## Known issues
 
 | | |
@@ -117,7 +128,6 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 | **No staging** | 954 MB will not carry a second instance. `install.sh --with-staging` sets one up if it ever moves to a bigger machine. |
 | **Notifications untested on a real phone** | Verified through FCM in Chrome; not on Android, and tapping one is untested. |
 | **Server messages are English only** | Validation errors and notification text. Fine while the interface is English only. |
-| **The import review is not on `main`** | #55 merged into `feat/netflix-dated-episodes`, not `main`, so grouped rows, filter chips and bulk actions sit on that branch only. The work is intact; it needs a pull request of `feat/import-review` into `main`. |
 | **Imports keep the day, not the time** | Every reader sets a watch to 20:00 UTC on its day, so Trakt's exact time is not kept. Recorded in `docs/IMPORTS.md` and pinned by `tests/parsers.test.mjs`; keeping exact times needs its own requirements and tests. |
 | **The database file does not shrink** | The picture cache is held to `FROG_IMAGE_CACHE_MB`, but SQLite only reuses freed pages. A one-off `VACUUM` (with the instance stopped) gives the space back if it ever matters. |
 | **Screenshots still weigh 13 MB** | Down from 20 MB by shooting at 1.5×. A lossless optimiser in the release step would take more off; none is part of the build. |
@@ -135,6 +145,18 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   when A1 capacity runs out.
 
 ## Notes that save time
+
+- **Ratings** (`backend/src/ratings.rs`) sit in `title_rating` on Frog's own
+  title, matched only by provider id. MDBList's free tier is 1,000 requests a
+  day: the worker reads 20 titles per half hour, in batches of 10, and stops
+  at 200 left so opening a title still works. A title is asked about again
+  after 3, 14 or 45 days by age. An AniList-only title borrows TMDB's score and
+  logo through `anime_map` without being linked to TMDB: the sync decides that.
+- **Search filters** match a name here, over three of TMDB's pages, because
+  TMDB can only filter when there is no name (`/discover`). A status filter
+  without "Not in my library" goes through `shelves::evaluate` instead.
+- **What is followed** is one SQL fragment, `release::FOLLOWED`, shared by the
+  calendar, Airing this week and notifications.
 
 - **Titles are Frog's** (`backend/src/catalog.rs`,
   `docs/CATALOG-IDENTITY.md`). `title.id` is the identity; provider ids are
@@ -194,7 +216,8 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   `verify-shelves`, `verify-because`, `verify-anime`, `verify-leapfrog`
   (AniList is a stand-in server inside it), `verify-profile-stats` (no TMDB:
   it writes a small library straight into the database with `node:sqlite`),
-  `verify-2fa`, `verify-diary`, `verify-polish`, `verify-accounts` (invites,
+  `verify-2fa`, `verify-diary`, `verify-import`, `verify-polish`,
+  `verify-accounts` (invites,
   isolation, devices, switching off), `verify-pull` (pull to refresh with
   real touch input), plus `npm run pwa-check` and
   `npm run audit`. The ones that reach TMDB need a valid key; with a bad one

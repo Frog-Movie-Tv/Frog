@@ -112,6 +112,11 @@ impl<'a> Api<'a> {
     /// unreadable answer is tried again with backoff, a few times at most. A
     /// refused token is not retried: it needs the person to connect again.
     pub async fn graphql(&self, token: &str, query: &str, variables: Value) -> AppResult<Value> {
+        // AniList is a source, never a destination. Every call in Frog comes
+        // through here, so this one check holds for all of them.
+        if !is_read(query) {
+            return Err(AppError::AniList("Frog only reads from AniList".into()));
+        }
         let mut last_error = String::from("no answer");
         for attempt in 0..ATTEMPTS {
             {
@@ -234,13 +239,6 @@ const LIST_QUERY: &str = "query ($userId: Int, $chunk: Int, $perChunk: Int) {
 
 pub(super) const MEDIA_QUERY: &str = "query ($ids: [Int]) {
   Page(perPage: 50) { media(id_in: $ids, type: ANIME) { id format episodes title { english romaji } } }
-}";
-
-const SAVE_MUTATION: &str =
-    "mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int, $scoreRaw: Int) {
-  SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress, scoreRaw: $scoreRaw) {
-    status progress score(format: POINT_100)
-  }
 }";
 
 /// One entry as AniList has it.
@@ -401,39 +399,6 @@ async fn fetch_list(api: &Api<'_>, token: &str, query: &str, who: Value) -> AppR
     ))
 }
 
-/// Write one entry on AniList, and read back what AniList kept.
-pub(super) async fn push(
-    api: &Api<'_>,
-    token: &str,
-    media_id: i64,
-    view: &View,
-) -> AppResult<View> {
-    let data = api
-        .graphql(
-            token,
-            SAVE_MUTATION,
-            json!({
-                "mediaId": media_id,
-                "status": view.status,
-                "progress": view.progress,
-                "scoreRaw": view.score,
-            }),
-        )
-        .await?;
-    let saved = &data["SaveMediaListEntry"];
-    Ok(View {
-        status: saved["status"]
-            .as_str()
-            .unwrap_or(&view.status)
-            .replace("REPEATING", "CURRENT"),
-        progress: saved["progress"].as_i64().unwrap_or(view.progress),
-        score: saved["score"]
-            .as_f64()
-            .map(|s| s.round() as i64)
-            .unwrap_or(view.score),
-    })
-}
-
 /// Somebody's AniList list by name, read anonymously. Public lists only.
 pub async fn public_list(state: &AppState, user_name: &str) -> AppResult<Vec<Remote>> {
     let api = Api::new(state)?;
@@ -443,9 +408,33 @@ pub async fn public_list(state: &AppState, user_name: &str) -> AppResult<Vec<Rem
     fetch_list(&api, "", &query, json!({ "userName": user_name })).await
 }
 
+/// Whether a GraphQL document only reads. One with no operation word is a
+/// query by GraphQL's own rules.
+fn is_read(document: &str) -> bool {
+    let first = document
+        .trim_start()
+        .split(|c: char| !c.is_alphanumeric())
+        .next();
+    matches!(first, Some("query") | Some(""))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_reads_reach_anilist() {
+        assert!(is_read("query ($id: Int) { Media(id: $id) { id } }"));
+        assert!(is_read("  query { Viewer { id } }"));
+        assert!(is_read("{ Viewer { id } }"));
+        assert!(!is_read(
+            "mutation { SaveMediaListEntry(mediaId: 1) { id } }"
+        ));
+        assert!(!is_read(
+            "  mutation ($id: Int) { DeleteMediaListEntry(id: $id) { deleted } }"
+        ));
+        assert!(!is_read("subscription { x }"));
+    }
 
     #[test]
     fn a_rewatch_reads_as_watching_and_duplicates_are_dropped() {

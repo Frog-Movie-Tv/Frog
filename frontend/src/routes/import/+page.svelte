@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { api, img } from '#lib/api';
 	import Icon from '#lib/components/Icon.svelte';
+	import ImportRow from '#lib/components/ImportRow.svelte';
 	import Select from '#lib/components/Select.svelte';
 	import { CHOOSE, netflixRows, settleNetflix, type NetflixExport } from '#lib/import/netflix';
 	import {
@@ -12,20 +13,24 @@
 		type Incoming,
 		type ParsedFile
 	} from '#lib/import/parsers';
+	import {
+		canKeepMatch,
+		CLOSEST,
+		groupRows,
+		groupSummary,
+		PROBLEM_KINDS,
+		PROBLEM_LABEL,
+		problemsOf,
+		type ProblemKind,
+		type ReviewRow as Row,
+		type RowGroup
+	} from '#lib/import/review';
 	import { applyItem, bySeason, foldSeasons } from '#lib/import/rows';
-	import { titleKey } from '#lib/titles';
 	import { toasts } from '#lib/toast.svelte';
-	import type { ImportSummary, MatchResult, SearchItem, Status } from '#lib/types';
-	import { STATUS_LABEL, STATUSES } from '#lib/types';
+	import type { ImportSummary, SearchItem, Status } from '#lib/types';
 
 	type Step = 'source' | 'profile' | 'review' | 'done';
-
-	interface Row {
-		incoming: Incoming;
-		match: MatchResult | null;
-		chosen: SearchItem | null;
-		include: boolean;
-	}
+	type Filter = 'all' | 'problems' | ProblemKind;
 
 	let step = $state<Step>('source');
 	let format = $state('mal');
@@ -36,14 +41,39 @@
 	let summary = $state<ImportSummary | null>(null);
 	let filesRead = $state<string[]>([]);
 	let notes = $state<string[]>([]);
-	let onlyProblems = $state(false);
+	let filter = $state<Filter>('all');
+	/** Shows opened or closed by hand; the rest follow `isOpen`. */
+	let toggled = $state<Record<string, boolean>>({});
 	/** A Netflix export with several profiles, waiting for one to be chosen. */
 	let netflix = $state<{ data: NetflixExport; names: string[] } | null>(null);
 
 	const source = $derived(SOURCES.find((s) => s.id === format) ?? SOURCES[0]);
 	const included = $derived(rows.filter((r) => r.include && r.chosen));
-	const problems = $derived(rows.filter((r) => !r.chosen || r.match?.note || r.incoming.warning));
-	const shown = $derived(onlyProblems ? problems : rows);
+	const tagged = $derived(rows.map((row) => ({ row, kinds: problemsOf(row) })));
+	// A row left out is settled, but it stays on screen until the filter
+	// changes, so a tick taken away by mistake is easy to put back.
+	const flagged = $derived(tagged.filter((t) => t.kinds.length));
+	const needLook = $derived(flagged.filter((t) => t.row.include).length);
+	const chips = $derived(
+		PROBLEM_KINDS.map((kind) => {
+			const of = flagged.filter((t) => t.kinds.includes(kind));
+			return { kind, any: of.length, count: of.filter((t) => t.row.include).length };
+		}).filter((c) => c.any)
+	);
+	/** Falls back to everything once the last row of a kind is settled. */
+	const active = $derived.by<Filter>(() => {
+		if (filter === 'problems') return flagged.length ? 'problems' : 'all';
+		return chips.some((c) => c.kind === filter) ? filter : 'all';
+	});
+	const shown = $derived.by(() => {
+		if (active === 'all') return rows;
+		if (active === 'problems') return flagged.map((t) => t.row);
+		return flagged.filter((t) => t.kinds.includes(active)).map((t) => t.row);
+	});
+	const groups = $derived(groupRows(shown));
+	// Only ever what is on screen: nothing changes that a person cannot see.
+	const keepable = $derived(active === 'all' ? [] : shown.filter(canKeepMatch));
+	const leavable = $derived(active === 'all' ? [] : shown.filter((r) => r.include && r.chosen));
 
 	async function onFiles(list: FileList | null) {
 		if (!list?.length) return;
@@ -224,12 +254,50 @@
 		rows = [...rows];
 	}
 
+	function setInclude(row: Row, include: boolean) {
+		row.include = include;
+		rows = [...rows];
+	}
+
+	function setShowIncluded(group: RowGroup<Row>, include: boolean) {
+		for (const row of group.rows) row.include = include;
+		rows = [...rows];
+	}
+
+	/** Everything is open with a question in it, or when looking at one kind of problem. */
+	function isOpen(group: RowGroup<Row>): boolean {
+		if (active !== 'all') return true;
+		return toggled[group.key] ?? group.rows.some((r) => problemsOf(r).length);
+	}
+
+	function keepMatches() {
+		const kept = [...keepable];
+		for (const row of kept) row.match!.note = null;
+		rows = [...rows];
+		toasts.undoable(kept.length === 1 ? 'Match kept' : `${kept.length} matches kept`, () => {
+			for (const row of kept) row.match!.note = CLOSEST;
+			rows = [...rows];
+		});
+	}
+
+	function leaveOut() {
+		const left = [...leavable];
+		for (const row of left) row.include = false;
+		rows = [...rows];
+		toasts.undoable(left.length === 1 ? 'Left out' : `${left.length} left out`, () => {
+			for (const row of left) row.include = true;
+			rows = [...rows];
+		});
+	}
+
 	function restart() {
 		rows = [];
 		summary = null;
 		filesRead = [];
 		notes = [];
 		netflix = null;
+		filter = 'all';
+		toggled = {};
 		step = 'source';
 	}
 
@@ -330,20 +398,13 @@
 			<div class="counts">
 				<strong>{included.length}</strong>
 				<span class="faint">ready</span>
-				{#if problems.length}
-					<strong class="warn">{problems.length}</strong>
-					<span class="faint">need a look</span>
+				{#if needLook}
+					<strong class="warn">{needLook}</strong>
+					<span class="faint">{needLook === 1 ? 'needs' : 'need'} a look</span>
 				{/if}
 			</div>
 
 			<div class="toolbar-right">
-				<button
-					class="btn ghost small"
-					class:on={onlyProblems}
-					onclick={() => (onlyProblems = !onlyProblems)}
-				>
-					{onlyProblems ? 'Show all' : 'Show only problems'}
-				</button>
 				<Select
 					value={onConflict}
 					label="Already in your library"
@@ -356,92 +417,114 @@
 			</div>
 		</div>
 
+		{#if flagged.length}
+			<div class="chips" role="group" aria-label="Show">
+				<button
+					class="chip"
+					class:on={active === 'all'}
+					aria-pressed={active === 'all'}
+					onclick={() => (filter = 'all')}
+				>
+					All <span class="n">{rows.length}</span>
+				</button>
+				<button
+					class="chip"
+					class:on={active === 'problems'}
+					aria-pressed={active === 'problems'}
+					onclick={() => (filter = 'problems')}
+				>
+					Needs a look <span class="n">{needLook}</span>
+				</button>
+				{#each chips as chip (chip.kind)}
+					<button
+						class="chip"
+						class:on={active === chip.kind}
+						aria-pressed={active === chip.kind}
+						onclick={() => (filter = chip.kind)}
+					>
+						{PROBLEM_LABEL[chip.kind]} <span class="n">{chip.count}</span>
+					</button>
+				{/each}
+			</div>
+		{/if}
+
+		{#if keepable.length || leavable.length}
+			<div class="bulk">
+				{#if keepable.length}
+					<button class="btn ghost small" onclick={keepMatches}>
+						<Icon name="check" size={14} />
+						{keepable.length === 1 ? 'Keep this match' : `Keep these ${keepable.length} matches`}
+					</button>
+				{/if}
+				{#if leavable.length}
+					<button class="btn ghost small" onclick={leaveOut}>
+						{leavable.length === 1 ? 'Leave this one out' : `Leave these ${leavable.length} out`}
+					</button>
+				{/if}
+			</div>
+		{/if}
+
 		<ul class="rows">
-			{#each shown as row (row.incoming.key)}
-				<li class="row" class:off={!row.include} class:unmatched={!row.chosen}>
-					<input
-						type="checkbox"
-						checked={row.include}
-						disabled={!row.chosen}
-						aria-label="Include {row.incoming.title}"
-						onchange={(e) => {
-							row.include = e.currentTarget.checked;
-							rows = [...rows];
-						}}
-					/>
-
-					{#if row.chosen?.poster_path}
-						<img src={img(row.chosen.poster_path, 'w92')} alt="" loading="lazy" />
-					{:else}
-						<span class="no-art"><Icon name="film" size={15} /></span>
-					{/if}
-
-					<div class="what">
-						<div class="line">
-							<strong>{row.chosen?.name ?? row.incoming.title}</strong>
-							{#if row.chosen?.year}<span class="faint">{row.chosen.year}</span>{/if}
-							{#if row.chosen}
-								<span class="pill tiny">{row.chosen.kind === 'tv' ? 'Show' : 'Film'}</span>
-							{/if}
-						</div>
-						<div class="sub faint">
-							<span
-								>{row.incoming.label ?? row.incoming.title}{row.incoming.year
-									? ` (${row.incoming.year})`
-									: ''}</span
-							>
-							{#if row.incoming.progress}<span>{row.incoming.progress} watched</span>{/if}
-							{#if row.incoming.rating !== null}<span>rated {Math.round(row.incoming.rating)}</span
-								>{/if}
-							{#if row.match?.already_tracked}
-								<span class="already">already in library</span>
-							{/if}
-						</div>
-
-						{#if row.incoming.warning}
-							<p class="note-line">{row.incoming.warning}</p>
-						{/if}
-						{#if row.incoming.info}
-							<p class="info-line">{row.incoming.info}</p>
-						{/if}
-						{#if row.match?.note}
-							<p class="note-line">{row.match.note}</p>
-						{/if}
-
-						{#if row.match?.candidates?.length}
-							<div class="candidates">
-								{#each row.match.candidates as c (titleKey(c))}
-									<button class="cand" onclick={() => choose(row, c)}>
-										{c.name}{c.year ? ` (${c.year})` : ''}
-									</button>
-								{/each}
-							</div>
-						{/if}
-					</div>
-
-					<div class="row-controls">
-						{#if row.chosen?.kind === 'tv' && (row.incoming.anime || row.incoming.netflix)}
-							<label class="season" title="TMDB season">
-								<span>S</span>
-								<input
-									type="number"
-									min="0"
-									inputmode="numeric"
-									aria-label="Season for {row.incoming.label ?? row.incoming.title}"
-									value={row.incoming.season ?? ''}
-									placeholder="?"
-									onchange={(e) => setSeason(row, e.currentTarget.value)}
-								/>
-							</label>
-						{/if}
-						<Select
-							value={row.incoming.status ?? 'completed'}
-							label="Status"
-							compact
-							options={STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
-							onchange={(v) => setStatus(row, v as Status)}
+			{#each groups as group (group.key)}
+				<li>
+					{#if group.rows.length === 1}
+						<ImportRow
+							row={group.rows[0]}
+							oninclude={setInclude}
+							onchoose={choose}
+							onseason={setSeason}
+							onstatus={setStatus}
 						/>
-					</div>
+					{:else}
+						{@const first = group.rows[0].chosen}
+						{@const on = group.rows.filter((r) => r.include).length}
+						{@const open = isOpen(group)}
+						<div class="show">
+							<div class="show-head">
+								<input
+									type="checkbox"
+									checked={on === group.rows.length}
+									indeterminate={on > 0 && on < group.rows.length}
+									aria-label="Include every row of {first?.name}"
+									onchange={(e) => setShowIncluded(group, e.currentTarget.checked)}
+								/>
+								{#if first?.poster_path}
+									<img src={img(first.poster_path, 'w92')} alt="" loading="lazy" />
+								{:else}
+									<span class="no-art"><Icon name="tv" size={15} /></span>
+								{/if}
+								<div class="show-name">
+									<div class="line">
+										<strong>{first?.name}</strong>
+										{#if first?.year}<span class="faint">{first.year}</span>{/if}
+									</div>
+									<span class="faint summary">{groupSummary(group.rows)}</span>
+								</div>
+								{#if active === 'all'}
+									<button
+										class="show-toggle"
+										aria-expanded={open}
+										aria-label="{open ? 'Hide' : 'Show'} the rows of {first?.name}"
+										onclick={() => (toggled[group.key] = !open)}
+									>
+										<Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} />
+									</button>
+								{/if}
+							</div>
+							{#if open}
+								{#each group.rows as row (row.incoming.key)}
+									<ImportRow
+										{row}
+										grouped
+										oninclude={setInclude}
+										onchoose={choose}
+										onseason={setSeason}
+										onstatus={setStatus}
+									/>
+								{/each}
+							{/if}
+						</div>
+					{/if}
 				</li>
 			{/each}
 		</ul>
@@ -539,40 +622,6 @@
 		transition: border-color var(--fast) var(--ease);
 	}
 
-	.row-controls {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-
-	.season {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		padding: 0 4px 0 9px;
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--line-strong);
-		background: var(--bg-elev-2);
-		font-size: 0.78rem;
-		color: var(--text-faint);
-	}
-
-	.season input {
-		width: 3.2ch;
-		padding: 6px 2px;
-		border: none;
-		background: none;
-		font-size: 0.82rem;
-		font-variant-numeric: tabular-nums;
-		color: var(--text);
-		-moz-appearance: textfield;
-		appearance: textfield;
-	}
-
-	.season input::-webkit-inner-spin-button {
-		display: none;
-	}
-
 	.pick-title {
 		margin-bottom: 14px;
 	}
@@ -665,11 +714,6 @@
 		font-size: 0.8rem;
 	}
 
-	.btn.on {
-		color: var(--accent);
-		border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-	}
-
 	.rows {
 		list-style: none;
 		margin: 0;
@@ -679,26 +723,39 @@
 		gap: 6px;
 	}
 
-	.row {
+	.bulk {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 10px;
+	}
+
+	.chips + .rows,
+	.bulk + .rows {
+		margin-top: 14px;
+	}
+
+	.chip .n {
+		font-variant-numeric: tabular-nums;
+		opacity: 0.7;
+	}
+
+	.show {
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--line);
+		background: var(--bg-elev);
+		overflow: hidden;
+	}
+
+	.show-head {
 		display: grid;
 		grid-template-columns: auto 40px minmax(0, 1fr) auto;
 		align-items: center;
 		gap: 14px;
 		padding: 10px 14px;
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--line);
-		background: var(--bg-elev);
 	}
 
-	.row.off {
-		opacity: 0.45;
-	}
-
-	.row.unmatched {
-		border-color: color-mix(in srgb, var(--warn) 45%, transparent);
-	}
-
-	.row img,
+	.show-head img,
 	.no-art {
 		width: 40px;
 		aspect-ratio: 2 / 3;
@@ -710,13 +767,13 @@
 		object-fit: cover;
 	}
 
-	input[type='checkbox'] {
+	.show-head input[type='checkbox'] {
 		width: 18px;
 		height: 18px;
 		accent-color: var(--accent);
 	}
 
-	.what {
+	.show-name {
 		min-width: 0;
 		display: flex;
 		flex-direction: column;
@@ -737,52 +794,25 @@
 		white-space: nowrap;
 	}
 
-	.sub {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 10px;
+	.summary {
 		font-size: 0.75rem;
 	}
 
-	.already {
-		color: var(--accent);
-	}
-
-	.note-line {
-		font-size: 0.75rem;
-		color: var(--warn);
-	}
-
-	.info-line {
-		font-size: 0.75rem;
+	.show-toggle {
+		display: grid;
+		place-items: center;
+		width: 34px;
+		height: 34px;
+		border: none;
+		border-radius: var(--radius-sm);
+		background: none;
 		color: var(--text-faint);
-	}
-
-	.candidates {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		margin-top: 4px;
-	}
-
-	.cand {
-		padding: 3px 9px;
-		border-radius: var(--radius-pill);
-		border: 1px solid var(--line-strong);
-		background: transparent;
-		color: var(--text-dim);
-		font-size: 0.74rem;
 		cursor: pointer;
 	}
 
-	.cand:hover {
+	.show-toggle:hover {
 		color: var(--text);
-		border-color: var(--accent);
-	}
-
-	.pill.tiny {
-		padding: 1px 7px;
-		font-size: 0.66rem;
+		background: var(--bg-elev-2);
 	}
 
 	.footer {
@@ -839,16 +869,5 @@
 
 	dd.bad {
 		color: var(--bad);
-	}
-
-	@media (max-width: 760px) {
-		.row {
-			grid-template-columns: auto 40px minmax(0, 1fr);
-			row-gap: 8px;
-		}
-
-		.row-controls {
-			grid-column: 2 / -1;
-		}
 	}
 </style>

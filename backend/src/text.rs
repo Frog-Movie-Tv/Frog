@@ -39,9 +39,87 @@ pub fn search_name(name: &str, original_name: Option<&str>) -> String {
     }
 }
 
+/// A name as search compares it: folded, "&" read as "and", punctuation gone.
+/// "Tom & Jerry" and "tom and jerry" are the same words.
+pub fn words(s: &str) -> Vec<String> {
+    fold(&s.replace('&', " and "))
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// How closely a name answers what was typed, best first. Used for every kind
+/// of result, so a title and a person are measured the same way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Closeness {
+    /// The same words.
+    Exact,
+    /// The name starts with what was typed.
+    Starts,
+    /// Every word typed is in the name, the last perhaps still being typed.
+    AllWords,
+    /// It shares something with the query, or a provider has its reasons.
+    Loose,
+}
+
+/// `typed` is `words` of the query.
+pub fn closeness(name: &str, typed: &[String]) -> Closeness {
+    let have = words(name);
+    if typed.is_empty() {
+        return Closeness::Loose;
+    }
+    if have == typed {
+        return Closeness::Exact;
+    }
+    let (last, whole) = typed.split_last().expect("not empty");
+    let leads = have.len() >= typed.len()
+        && have.iter().zip(whole).all(|(a, b)| a == b)
+        && have[typed.len() - 1].starts_with(last.as_str());
+    if leads {
+        return Closeness::Starts;
+    }
+    // "and" joins names rather than being one of them.
+    let wanted = |w: &&String| w.as_str() != "and";
+    let found = whole.iter().filter(wanted).all(|w| have.contains(w))
+        && (last == "and" || have.iter().any(|h| h.starts_with(last.as_str())));
+    if found {
+        Closeness::AllWords
+    } else {
+        Closeness::Loose
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn close(name: &str, typed: &str) -> Closeness {
+        closeness(name, &words(typed))
+    }
+
+    #[test]
+    fn an_ampersand_is_the_word_and() {
+        assert_eq!(close("Tom and Jerry", "Tom & Jerry"), Closeness::Exact);
+        assert_eq!(close("Tom & Jerry", "tom and jerry"), Closeness::Exact);
+        assert_eq!(
+            close("Tom & Jerry Kids Show", "tom & jerry"),
+            Closeness::Starts
+        );
+        assert_eq!(
+            close("The Tom and Jerry Show", "Tom & Jerry"),
+            Closeness::AllWords
+        );
+        assert_eq!(close("Tom Pittman", "Tom & Jerry"), Closeness::Loose);
+    }
+
+    #[test]
+    fn the_last_word_may_still_be_being_typed() {
+        assert_eq!(close("Interstellar", "inters"), Closeness::Starts);
+        assert_eq!(close("Breaking Bad", "bad bre"), Closeness::AllWords);
+        assert_eq!(close("Pokémon", "pokemon"), Closeness::Exact);
+        assert_eq!(close("Anything", ""), Closeness::Loose);
+    }
 
     #[test]
     fn accents_and_case_fall_away() {

@@ -13,6 +13,10 @@ use crate::store;
 
 #[derive(Deserialize)]
 pub struct WatchBody {
+    /// Counted, but kept out of the diary. Lets undo put back a watch that
+    /// had no date exactly as it was.
+    #[serde(default)]
+    pub undated: bool,
     /// false clears every watch of this episode; true adds one.
     #[serde(default = "yes")]
     pub watched: bool,
@@ -68,14 +72,16 @@ pub async fn set_watched(
                 .await?;
 
         sqlx::query(
-            "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch, source)
-             VALUES (?, ?, ?, ?, ?, 'manual')",
+            "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                      source, undated)
+             VALUES (?, ?, ?, ?, ?, 'manual', ?)",
         )
         .bind(auth.user_id())
         .bind(title_id)
         .bind(ep_id)
         .bind(&when)
         .bind(i64::from(seen_before.0 > 0))
+        .bind(i64::from(body.undated))
         .execute(&state.pool)
         .await?;
     } else {
@@ -302,7 +308,6 @@ pub async fn set_state(
 /// After any watch change, move the library entry to match what has been
 /// watched against what has come out; `release::desired_status` has the rules.
 async fn after_change(state: &AppState, user_id: i64, title_id: i64) -> AppResult<Json<Value>> {
-    crate::anilist::touch(&state.pool, user_id).await;
     // Ticking an episode of a show not in the library puts it there.
     if store::get_entry(&state.pool, user_id, title_id)
         .await?

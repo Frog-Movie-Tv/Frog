@@ -66,13 +66,10 @@
 					}))
 			)
 			.catch(() => []);
-		const answer = await whenWatched.ask(
-			item.name,
-			'Every aired episode of every season',
-			true,
-			specials,
-			'Specials you saw too'
-		);
+		const answer = await whenWatched.ask(item.name, 'Every aired episode of every season', {
+			extras: specials,
+			extrasLabel: 'Specials you saw too'
+		});
 		if (!answer) return;
 		saving = true;
 		try {

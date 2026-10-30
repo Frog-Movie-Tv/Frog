@@ -324,4 +324,10 @@
 			gap: 10px;
 		}
 	}
+	@media (max-width: 760px) {
+		.icon-btn {
+			width: 44px;
+			height: 44px;
+		}
+	}
 </style>

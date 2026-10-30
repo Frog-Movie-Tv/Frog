@@ -26,8 +26,9 @@
 	/* --- Pond: the default, built from the logo ------------------------
 	   Lily-pad green on a deep pond green-black, cream text, blush pink for
 	   anything negative and soft teal for anything positive. Contrast was
-	   checked against the background: cream 16:1, dim 8:1, faint 4.4:1,
-	   accent 8.6:1. */
+	   checked against the background: cream 16:1, dim 8:1, faint 6:1,
+	   accent 8.6:1. Every theme keeps faint text at 4.5:1 or better on its
+	   background and its cards. */
 	--bg: #07120e;
 	--bg-elev: #0e1f19;
 	--bg-elev-2: #16302a;
@@ -36,7 +37,7 @@
 
 	--text: #f2efe3;
 	--text-dim: #a9bdb0;
-	--text-faint: #6f8a7c;
+	--text-faint: #7d978a;
 	--line: rgba(242, 239, 227, 0.1);
 	--line-strong: rgba(242, 239, 227, 0.19);
 
@@ -97,18 +98,18 @@
 	--scrim: rgba(241, 238, 225, 0.8);
 
 	--text: #16261e;
-	--text-dim: #4d6257;
-	--text-faint: #7a8c80;
+	--text-dim: #3f5348;
+	--text-faint: #56685d;
 	--line: rgba(22, 38, 30, 0.12);
 	--line-strong: rgba(22, 38, 30, 0.22);
 
-	--accent: #2f7d4f;
+	--accent: #2a7247;
 	--accent-ink: #ffffff;
-	--accent-soft: rgba(47, 125, 79, 0.14);
+	--accent-soft: rgba(42, 114, 71, 0.14);
 
 	--good: #2f8f6d;
-	--warn: #a86a1f;
-	--bad: #c2415f;
+	--warn: #935d17;
+	--bad: #b53a57;
 
 	--shadow-2: 0 10px 30px -14px rgba(16, 40, 28, 0.3);
 	--shadow-3: 0 30px 60px -24px rgba(16, 40, 28, 0.35);
@@ -131,7 +132,7 @@
 
 	--text: #f3f2f7;
 	--text-dim: #a9a7b8;
-	--text-faint: #6f6d80;
+	--text-faint: #85839a;
 	--line: rgba(255, 255, 255, 0.09);
 	--line-strong: rgba(255, 255, 255, 0.16);
 
@@ -155,7 +156,7 @@
 
 	--text: #f3f2f7;
 	--text-dim: #a9a7b8;
-	--text-faint: #6f6d80;
+	--text-faint: #85839a;
 	--line: rgba(255, 255, 255, 0.09);
 	--line-strong: rgba(255, 255, 255, 0.16);
 
@@ -174,8 +175,8 @@
 	--scrim: rgba(246, 245, 248, 0.8);
 
 	--text: #14131a;
-	--text-dim: #5b5968;
-	--text-faint: #8c8a99;
+	--text-dim: #4a4857;
+	--text-faint: #6b6979;
 	--line: rgba(10, 8, 20, 0.1);
 	--line-strong: rgba(10, 8, 20, 0.18);
 
@@ -574,6 +575,30 @@ textarea.input {
 		--page-pad: 14px;
 		/* Three columns on a phone at the default size. */
 		--poster-min: calc(var(--poster-size, 132px) * 0.79);
+	}
+}
+
+/* Fingers need room: on a phone every control is at least 44px to touch.
+   Buttons simply grow; small round controls keep their look and get an
+   invisible hit area of that size around them. */
+@media (max-width: 760px) {
+	.btn {
+		min-height: 44px;
+		min-width: 44px;
+	}
+
+	.hit {
+		position: relative;
+	}
+
+	.hit::before {
+		content: '';
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		width: max(100%, 44px);
+		height: max(100%, 44px);
+		transform: translate(-50%, -50%);
 	}
 }
 

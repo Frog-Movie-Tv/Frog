@@ -15,7 +15,10 @@
 	let error = $state<string | null>(null);
 
 	const setup = $derived(session.needsSetup);
-	const next = $derived(page.url.searchParams.get('next') ?? '/');
+	const next = $derived.by(() => {
+		const asked = page.url.searchParams.get('next') ?? '/';
+		return asked.startsWith('/') && !asked.startsWith('//') ? asked : '/';
+	});
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
@@ -32,8 +35,8 @@
 			// An account that was just created has nothing in it, so send it
 			// straight to the welcome. Waiting for Home to load and decide
 			// shows an empty page first, which is the one thing the welcome
-			// exists to avoid.
-			await goto(setup ? '/welcome' : next, { replaceState: true });
+			// exists to avoid. The route guard may get there first.
+			await goto(setup ? '/welcome' : next, { replaceState: true }).catch(() => {});
 		} catch (e) {
 			if (e instanceof ApiError && e.twoFactor) {
 				// The first ask is a step, not an error.

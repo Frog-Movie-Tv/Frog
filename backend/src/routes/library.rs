@@ -216,7 +216,6 @@ pub async fn upsert(
     let before = store::get_entry(&state.pool, auth.user_id(), title_id).await?;
     let is_new = before.is_none();
     store::apply_patch(&state.pool, auth.user_id(), title_id, &body.patch).await?;
-    crate::anilist::touch(&state.pool, auth.user_id()).await;
 
     // Finishing a film is watching it: without a watch it would never reach
     // the diary or the stats. A film already watched keeps its history.

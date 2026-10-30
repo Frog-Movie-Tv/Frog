@@ -129,7 +129,12 @@
 
 	async function changeDate(entry: Entry) {
 		const what = entry.film ? 'Film' : plural(entry.count, 'episode');
-		const answer = await whenWatched.ask(entry.title, `${what} on ${prettyDate(entry.day)}`, false);
+		const answer = await whenWatched.ask(entry.title, `${what} on ${prettyDate(entry.day)}`, {
+			allowToday: false,
+			film: entry.film,
+			day: entry.day,
+			confirm: 'Change date'
+		});
 		if (!answer) return;
 		try {
 			const { changed } = await api.redateDiary(entry.id, entry.day, answer);
@@ -227,7 +232,7 @@
 									{/if}
 
 									<button
-										class="icon-btn"
+										class="icon-btn hit"
 										aria-label="Change date for {entry.title} on {entry.day}"
 										title="Change date"
 										onclick={() => changeDate(entry)}

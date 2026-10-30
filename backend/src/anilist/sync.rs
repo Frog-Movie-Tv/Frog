@@ -1,8 +1,8 @@
 //! One sync of one account, start to finish, and when the worker runs one.
 //!
 //! Read the whole list; place each entry (or keep the place it has); then,
-//! entry by entry, carry across whichever side changed (`reconcile`). Shows
-//! are settled once at the end, when all of their seasons are in. A failure
+//! entry by entry, bring in what changed on AniList (`reconcile`). Shows are
+//! settled once at the end, when all of their seasons are in. A failure
 //! that is about one entry is counted and the rest go on; an outage (TMDB or
 //! AniList out of reach) stops the sync, which is tried again later.
 
@@ -12,12 +12,12 @@ use chrono::Utc;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use super::client::{self, push, Api, Remote};
+use super::client::{self, Api, Remote};
 use super::idmap::{ensure_map, remember_media};
 use super::library::{apply, frog_view, settle_show, unplace};
 use super::local::{adopt_local, next_try, sync_local};
 use super::place::{self, Outcome, Placement, Target, CONFIDENT, RESOLVER};
-use super::reconcile::{self, Changes, Mode};
+use super::reconcile::{Changes, Mode};
 use super::records::{self, save_entry, save_snapshots, Known, Verdict};
 use super::Account;
 use crate::catalog::{self, ExternalId};
@@ -81,7 +81,6 @@ impl Drop for RunningGuard {
 #[derive(Debug, Default, Serialize)]
 pub struct Summary {
     pub to_frog: i64,
-    pub to_anilist: i64,
     pub unsure: i64,
     pub entries: i64,
     /// Not out yet, and not on TMDB yet: placed once they are.
@@ -412,10 +411,9 @@ impl Run<'_> {
     /// outage kept to that entry.
     async fn keep_local(&mut self, remote: &Remote, prior: Option<&Known>) -> AppResult<()> {
         match sync_local(&self.acct, remote, prior).await {
-            Ok((to_frog, to_anilist)) => {
+            Ok(to_frog) => {
                 self.summary.local += 1;
                 self.summary.to_frog += i64::from(to_frog);
-                self.summary.to_anilist += i64::from(to_anilist);
                 Ok(())
             }
             Err(e) if is_outage(&e) => Err(e),
@@ -575,24 +573,7 @@ impl Run<'_> {
             self.summary.to_frog += 1;
         }
 
-        // Frog has something AniList does not: send it.
-        let mut final_al = a.clone();
-        if let Some(now) = f_now.as_ref() {
-            let fresh = c.first || replaced;
-            if let Some(send) = reconcile::outgoing(fresh, &c, snap_frog.as_ref(), now, a) {
-                final_al = push(self.acct.api, self.acct.token, remote.media_id, &send).await?;
-                self.summary.to_anilist += 1;
-            }
-        }
-        save_snapshots(
-            pool,
-            user_id,
-            remote.media_id,
-            &final_al,
-            f_now.as_ref(),
-            false,
-        )
-        .await
+        save_snapshots(pool, user_id, remote.media_id, a, f_now.as_ref(), false).await
     }
 
     /// One status per show, once all of its seasons are in. Shows AniList

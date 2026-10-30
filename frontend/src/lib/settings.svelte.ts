@@ -16,7 +16,7 @@ export const THEMES: { id: ThemeName; label: string; hint: string; swatches: str
 		id: 'pond-light',
 		label: 'Pond Light',
 		hint: 'Cream and green',
-		swatches: ['#f1eee1', '#fbf9f1', '#2f7d4f']
+		swatches: ['#f1eee1', '#fbf9f1', '#2a7247']
 	},
 	{ id: 'dark', label: 'Dark', hint: 'Deep charcoal', swatches: ['#08080c', '#191922', '#7a5cff'] },
 	{
@@ -71,7 +71,6 @@ export interface Settings {
 
 	cardStyle: CardStyle;
 	posterSize: number;
-	gridGap: number;
 	showBadge: boolean;
 	showRating: boolean;
 	showProgress: boolean;
@@ -82,15 +81,12 @@ export interface Settings {
 
 	font: FontName;
 	textScale: number;
-	radiusScale: number;
-	blur: number;
 	animations: AnimationLevel;
 
 	spoilerProtection: boolean;
 	hideAnimation: boolean;
 
 	defaultStatus: Status;
-	autoDates: boolean;
 	autoComplete: boolean;
 
 	landingPage: string;
@@ -105,7 +101,6 @@ export interface Settings {
 	dateStyle: 'friendly' | 'iso' | 'long';
 	clock24: boolean;
 
-	customCss: string;
 	/** Smaller artwork everywhere, for mobile data. */
 	dataSaver: boolean;
 	/** Every page, in the order the navigation shows them. */
@@ -129,7 +124,6 @@ export const DEFAULTS: Settings = {
 
 	cardStyle: 'poster',
 	posterSize: 132,
-	gridGap: 16,
 	showBadge: true,
 	showRating: true,
 	showProgress: true,
@@ -140,15 +134,12 @@ export const DEFAULTS: Settings = {
 
 	font: 'system',
 	textScale: 1,
-	radiusScale: 1,
-	blur: 0,
 	animations: 'full',
 
 	spoilerProtection: false,
 	hideAnimation: false,
 
 	defaultStatus: 'planned',
-	autoDates: true,
 	autoComplete: true,
 
 	landingPage: '/',
@@ -157,7 +148,6 @@ export const DEFAULTS: Settings = {
 	dateStyle: 'friendly',
 	clock24: true,
 
-	customCss: '',
 	dataSaver: false,
 	navOrder: ['/', '/library', '/shelves', '/search', '/calendar', '/diary', '/stats', '/settings'],
 	navHidden: [],
@@ -180,8 +170,9 @@ export const NAV_PAGES: { href: string; label: string; icon: string; fixed?: boo
 export const MAX_TABS = 4;
 
 export const HOME_ROWS: { id: string; label: string; hint: string }[] = [
+	{ id: 'shelves', label: 'Your shelves', hint: 'Every shelf, one tap away' },
 	{ id: 'continue', label: 'Continue watching', hint: 'Shows you are part-way through' },
-	{ id: 'upnext', label: 'Up next', hint: 'The exact next episode' },
+	{ id: 'upnext', label: 'Caught up', hint: 'Shows waiting on their next episode' },
 	{ id: 'thisweek', label: 'Airing this week', hint: 'Episodes due in the next seven days' },
 	{ id: 'because', label: 'Because you watched', hint: 'More like what you rated highly' },
 	{ id: 'recent', label: 'Recently added', hint: 'The newest things in your library' },
@@ -205,8 +196,9 @@ function introduceRows(s: Settings): Settings {
 	const rows = [...s.homeRows];
 	for (const id of fresh) {
 		if (rows.includes(id)) continue;
-		const after = rows.indexOf('thisweek');
-		rows.splice(after >= 0 ? after + 1 : rows.length, 0, id);
+		// Shelves lead: they are how you get to what you put together.
+		const after = id === 'shelves' ? -1 : rows.indexOf('thisweek');
+		rows.splice(after >= 0 ? after + 1 : id === 'shelves' ? 0 : rows.length, 0, id);
 	}
 	return { ...s, homeRows: rows, homeRowsSeen: all };
 }
@@ -260,9 +252,10 @@ class SettingsStore {
 			const res = await fetch('/api/settings', { credentials: 'same-origin' });
 			if (res.ok) {
 				const remote = (await res.json()) as Partial<Settings>;
-				if (remote && typeof remote === 'object' && Object.keys(remote).length) {
-					this.current = introduceRows({ ...DEFAULTS, ...remote });
-				}
+				// An account that has never saved anything starts from the
+				// defaults, not from whatever this device last showed.
+				const saved = remote && typeof remote === 'object' ? remote : {};
+				this.current = introduceRows({ ...DEFAULTS, ...saved });
 			}
 		} catch {
 			// Offline: the local copy is already applied.
@@ -272,6 +265,26 @@ class SettingsStore {
 			this.apply();
 			this.installFlush();
 		}
+	}
+
+	/** Save anything still waiting, while the session that owns it lasts. */
+	async flush() {
+		if (this.timer) clearTimeout(this.timer);
+		this.timer = null;
+		if (this.dirty) await this.save();
+		this.dirty = false;
+	}
+
+	/**
+	 * Forget this account's preferences once it has signed out, so the next
+	 * account on this device loads its own rather than inheriting these and
+	 * saving them over its own. Only after the session is gone: while it
+	 * lasts, an unloaded store is fetched again.
+	 */
+	forget() {
+		this.loaded = false;
+		this.current = introduceRows({ ...DEFAULTS });
+		this.apply();
 	}
 
 	private afterChange() {
@@ -350,20 +363,14 @@ class SettingsStore {
 
 		root.dataset.theme = s.theme;
 		root.dataset.animations = s.animations;
-		root.dataset.blur = s.blur === 0 ? '0' : '';
 		root.dataset.card = s.cardStyle;
 
 		const style = root.style;
 		// Not --poster-min itself: an inline value would beat the phone size.
 		style.setProperty('--poster-size', `${s.posterSize}px`);
-		style.setProperty('--gap', `${s.gridGap}px`);
-		style.setProperty('--blur', `${s.blur}px`);
 		const face = FONTS.find((f) => f.id === s.font) ?? FONTS[0];
 		style.setProperty('--font', face.stack);
 		style.setProperty('--font-display', face.display ?? face.stack);
-		style.setProperty('--radius', `${Math.round(16 * s.radiusScale)}px`);
-		style.setProperty('--radius-sm', `${Math.round(10 * s.radiusScale)}px`);
-		style.setProperty('--radius-lg', `${Math.round(24 * s.radiusScale)}px`);
 		style.fontSize = `${Math.round(16 * s.textScale)}px`;
 
 		// A custom theme is just token overrides on top of the chosen base.
@@ -373,24 +380,8 @@ class SettingsStore {
 			else style.removeProperty(`--${token}`);
 		}
 
-		applyCustomCss(s.customCss);
 		applyFavicon(s.mascot);
 	}
-}
-
-function applyCustomCss(css: string) {
-	const id = 'frog-custom-css';
-	let tag = document.getElementById(id) as HTMLStyleElement | null;
-	if (!css.trim()) {
-		tag?.remove();
-		return;
-	}
-	if (!tag) {
-		tag = document.createElement('style');
-		tag.id = id;
-		document.head.appendChild(tag);
-	}
-	tag.textContent = css;
 }
 
 function applyFavicon(mascot: MascotName) {

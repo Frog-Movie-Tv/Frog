@@ -70,6 +70,7 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
         Err(e) => tracing::warn!(error = %e, "picture cache could not be trimmed"),
     }
 
+    crate::ratings::refresh_due(state).await;
     refresh_airing_shows(state).await;
     if let Err(e) = announce_new_episodes(state, chrono::Local::now().naive_local()).await {
         tracing::warn!(error = %e, "new-episode notifications failed");
@@ -110,14 +111,15 @@ pub async fn due_announcements(
     today: chrono::NaiveDate,
 ) -> anyhow::Result<Vec<Announcement>> {
     let yesterday = today - chrono::Duration::days(1);
-    let rows: Vec<DueRow> = sqlx::query_as(
+    let rows: Vec<DueRow> = sqlx::query_as(&format!(
         "SELECT e.id, t.id, t.name, t.poster_path, e.season_number, e.episode_number,
                 e.name, e.air_date
            FROM episode e
            JOIN title t ON t.id = e.title_id
            JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?1
           WHERE t.kind = 'tv'
-            AND l.status IN ('watching', 'planned', 'paused')
+            AND {followed}
+            AND l.status != 'completed'
             AND l.notify = 1
             AND e.season_number > 0
             AND e.air_date IN (?2, ?3)
@@ -128,7 +130,8 @@ pub async fn due_announcements(
                   SELECT 1 FROM watch_event w
                    WHERE w.user_id = ?1 AND w.episode_id = e.id)
           ORDER BY t.name, e.season_number, e.episode_number",
-    )
+        followed = crate::release::FOLLOWED
+    ))
     .bind(user_id)
     .bind(today.to_string())
     .bind(yesterday.to_string())

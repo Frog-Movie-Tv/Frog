@@ -243,6 +243,7 @@ impl Harness {
                 anime_ids_url: format!("{base}/anime_ids.json"),
                 anime_lists_url: format!("{base}/anime_lists.json"),
             }),
+            mdblist: None,
         };
         let pool = frog::db::connect(&url).await.unwrap();
         let state = AppState::new(pool, config);
@@ -332,7 +333,7 @@ async fn seed_tmdb(h: &Harness) {
     )
     .await;
     h.cache(
-        "/tv/95479?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids&include_image_language=en,null",
+        "/tv/95479?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,content_ratings&include_image_language=en,null,ja",
         json!({ "id": 95479, "name": "JUJUTSU KAISEN", "first_air_date": "2020-10-03",
                 "seasons": [{ "season_number": 1, "name": "Season 1", "episode_count": 47 }] }),
     )
@@ -351,7 +352,7 @@ async fn seed_tmdb(h: &Harness) {
     )
     .await;
     h.cache(
-        "/movie/500?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null",
+        "/movie/500?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,release_dates&include_image_language=en,null,ja",
         json!({ "id": 500, "title": "Jujutsu Kaisen 0", "release_date": "2021-12-24", "runtime": 105 }),
     )
     .await;
@@ -363,7 +364,7 @@ async fn seed_tmdb(h: &Harness) {
 }
 
 #[tokio::test]
-async fn anilist_syncs_both_ways_and_places_seasons_by_id() {
+async fn anilist_comes_in_read_only_and_places_seasons_by_id() {
     let h = Harness::new().await;
     seed_tmdb(&h).await;
     h.fake.lock().unwrap().entries = vec![
@@ -461,11 +462,11 @@ async fn anilist_syncs_both_ways_and_places_seasons_by_id() {
     assert_eq!(film["item"]["entry"]["status"], json!("completed"));
     assert!(
         h.saves().is_empty(),
-        "nothing in Frog to send yet: {:?}",
+        "AniList is only ever read: {:?}",
         h.saves()
     );
 
-    // A tick in Frog goes to AniList, on the season it belongs to.
+    // A tick in Frog stays in Frog.
     let (code, _, _, _) = h
         .call(
             "POST",
@@ -476,12 +477,7 @@ async fn anilist_syncs_both_ways_and_places_seasons_by_id() {
         .await;
     assert_eq!(code, StatusCode::OK);
     h.sync(user).await;
-    let saves = h.saves();
-    assert_eq!(saves.len(), 1, "{saves:?}");
-    assert_eq!(saves[0]["mediaId"], json!(145064));
-    assert_eq!(saves[0]["progress"], json!(6));
-    assert_eq!(saves[0]["status"], json!("CURRENT"));
-    assert_eq!(saves[0]["scoreRaw"], json!(0), "a tick sends no score");
+    assert!(h.saves().is_empty(), "{:?}", h.saves());
 
     // Progress made on AniList comes to Frog.
     {
@@ -494,10 +490,9 @@ async fn anilist_syncs_both_ways_and_places_seasons_by_id() {
         .call("GET", "/api/titles/tv/95479", None, Some(&cookie))
         .await;
     assert_eq!(show["item"]["watched_episodes"], json!(34));
-    assert_eq!(h.saves().len(), 1, "nothing echoed back");
+    assert!(h.saves().is_empty(), "{:?}", h.saves());
 
-    // Rating the whole show is Frog's own and goes nowhere: AniList scores
-    // seasons, and one season's score is not every season's.
+    // Rating the whole show stays in Frog.
     h.call(
         "PUT",
         &format!("/api/t/{}/library", h.tid("tv", 95479).await),
@@ -506,10 +501,10 @@ async fn anilist_syncs_both_ways_and_places_seasons_by_id() {
     )
     .await;
     h.sync(user).await;
-    assert_eq!(h.saves().len(), 1, "a show rating is not a season's");
+    assert!(h.saves().is_empty(), "{:?}", h.saves());
 
-    // Rating one season (here the part of TMDB's season 1 that AniList calls
-    // season 2) reaches that AniList entry and no other.
+    // So does rating one season (here the part of TMDB's season 1 that
+    // AniList calls season 2).
     let (code, body, _, _) = h
         .call(
             "PUT",
@@ -520,13 +515,7 @@ async fn anilist_syncs_both_ways_and_places_seasons_by_id() {
         .await;
     assert_eq!(code, StatusCode::OK, "{body}");
     h.sync(user).await;
-    let scored: Vec<(Value, Value)> = h
-        .saves()
-        .iter()
-        .skip(1)
-        .map(|s| (s["mediaId"].clone(), s["scoreRaw"].clone()))
-        .collect();
-    assert_eq!(scored, vec![(json!(145064), json!(95))]);
+    assert!(h.saves().is_empty(), "{:?}", h.saves());
 
     // Taking the film out of Frog leaves AniList alone, and it is not re-added.
     h.call(
@@ -536,10 +525,9 @@ async fn anilist_syncs_both_ways_and_places_seasons_by_id() {
         Some(&cookie),
     )
     .await;
-    let before = h.saves().len();
     h.sync(user).await;
     h.sync(user).await;
-    assert_eq!(h.saves().len(), before);
+    assert!(h.saves().is_empty(), "{:?}", h.saves());
     let (code, film, _, _) = h
         .call("GET", "/api/titles/movie/500", None, Some(&cookie))
         .await;
@@ -716,7 +704,7 @@ async fn ids_from_either_list_or_an_exact_name_place_entries() {
     seed_tmdb(&h).await;
     let detail = "append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids";
     h.cache(
-        &format!("/movie/600?lang=en-US&{detail},release_dates&include_image_language=en,null"),
+        &format!("/movie/600?lang=en-US&{detail},release_dates&include_image_language=en,null,ja"),
         json!({ "id": 600, "title": "Pond Movie", "release_date": "2020-07-01", "runtime": 90 }),
     )
     .await;
@@ -733,7 +721,7 @@ async fn ids_from_either_list_or_an_exact_name_place_entries() {
     )
     .await;
     h.cache(
-        &format!("/tv/700?lang=en-US&{detail}&include_image_language=en,null"),
+        &format!("/tv/700?lang=en-US&{detail},content_ratings&include_image_language=en,null,ja"),
         json!({ "id": 700, "name": "Lily Pad Story!", "first_air_date": "2020-04-01",
                 "seasons": [{ "season_number": 1, "name": "Season 1", "episode_count": 12 },
                             { "season_number": 2, "name": "Season 2", "episode_count": 12 }] }),
@@ -881,7 +869,7 @@ fn linked(id: i64, format: &str, episodes: Option<i64>, relations: &[(&str, i64,
     })
 }
 
-const TV_DETAIL: &str = "append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids&include_image_language=en,null";
+const TV_DETAIL: &str = "append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,content_ratings&include_image_language=en,null,ja";
 
 impl Harness {
     /// A TMDB show in the cache: each season as a list of air dates.
@@ -1155,11 +1143,7 @@ async fn a_sequel_with_another_title_lands_on_its_season() {
     );
     for _ in 0..3 {
         let again = h.sync(1).await;
-        assert_eq!(
-            (again.to_frog, again.to_anilist, again.repaired),
-            (0, 0, 0),
-            "{again:?}"
-        );
+        assert_eq!((again.to_frog, again.repaired), (0, 0), "{again:?}");
     }
     let after = (
         count("watch_event").await,
@@ -1897,7 +1881,7 @@ async fn a_lower_progress_on_anilist_keeps_watches_logged_in_frog() {
     h.sync(1).await;
     assert_eq!(h.watched(95479).await.len(), 10);
 
-    // Episode 11 watched and logged in Frog: AniList hears of it.
+    // Episode 11 watched and logged in Frog: AniList is left as it was.
     let (code, _, _, _) = h
         .call(
             "POST",
@@ -1908,7 +1892,7 @@ async fn a_lower_progress_on_anilist_keeps_watches_logged_in_frog() {
         .await;
     assert!(code.is_success(), "{code}");
     h.sync(1).await;
-    assert_eq!(h.fake.lock().unwrap().entries[0]["progress"], json!(11));
+    assert!(h.saves().is_empty(), "{:?}", h.saves());
 
     // Corrected down to 8 on AniList.
     h.fake.lock().unwrap().entries[0]["progress"] = json!(8);
@@ -1941,7 +1925,7 @@ async fn overlapping_and_repeated_syncs_change_nothing() {
     assert_eq!(count(&h, watches).await, 13);
     for _ in 0..3 {
         let summary = h.sync(1).await;
-        assert_eq!((summary.to_frog, summary.to_anilist), (0, 0), "{summary:?}");
+        assert_eq!(summary.to_frog, 0, "{summary:?}");
     }
     assert_eq!(count(&h, watches).await, 13);
     assert_eq!(
@@ -2330,7 +2314,7 @@ async fn an_anilist_only_show_is_a_title_like_any_other() {
         0
     );
 
-    // Episode 3 watched and logged in Frog: AniList hears of it.
+    // Episode 3 watched and logged in Frog: AniList is left as it was.
     let (code, _, _, _) = h
         .call(
             "POST",
@@ -2341,7 +2325,7 @@ async fn an_anilist_only_show_is_a_title_like_any_other() {
         .await;
     assert!(code.is_success(), "{code}");
     h.sync(1).await;
-    assert_eq!(h.fake.lock().unwrap().entries[0]["progress"], json!(3));
+    assert!(h.saves().is_empty(), "{:?}", h.saves());
     h.sync(1).await;
     assert_eq!(
         count(&h, "SELECT COUNT(*) FROM watch_event WHERE user_id = 1").await,

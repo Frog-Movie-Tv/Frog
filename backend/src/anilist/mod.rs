@@ -1,11 +1,11 @@
-//! AniList, both ways.
+//! AniList, read only.
 //!
 //! Each account connects its own AniList through AniList's sign-in; the token
 //! stays on the server. A sync reads the whole AniList list, places every
-//! entry in Frog by id (never by name), and then, entry by entry, carries
-//! across whichever side changed since the last sync. Episodes ticked, a
-//! status changed or a score given in Frog go to AniList; the same done on
-//! AniList comes to Frog.
+//! entry in Frog by id (never by name), and then, entry by entry, brings in
+//! what changed there since the last sync. Nothing ever goes the other way:
+//! Frog has no write to AniList and `client::Api::graphql` refuses one, so
+//! what someone does in Frog stays in Frog.
 //!
 //! Placing is the hard part. AniList has one entry per season or cour; TMDB
 //! often has one long season instead (Jujutsu Kaisen's second season is TMDB
@@ -59,8 +59,8 @@ pub(crate) struct Account<'a> {
     pub user_id: i64,
 }
 
-/// Something changed in Frog: the next worker pass pushes it. Best effort,
-/// since the worker also syncs every account on a timer.
+/// Have the next worker pass read this account's list, rather than waiting
+/// for the timer. Best effort, since the timer comes round anyway.
 pub async fn touch(pool: &SqlitePool, user_id: i64) {
     if let Err(e) = sqlx::query("UPDATE anilist_link SET dirty = 1 WHERE user_id = ?")
         .bind(user_id)

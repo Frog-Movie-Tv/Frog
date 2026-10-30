@@ -273,3 +273,12 @@ left is in [ROADMAP.md](ROADMAP.md).
   key is the only credential; AniList's sign-in is free too.
 - **No paid host.** It runs on a free Oracle instance, and on your own
   machine just as well. See [docs/DEPLOY-ORACLE.md](docs/DEPLOY-ORACLE.md).
+
+## Ratings
+
+`backend/src/ratings.rs` keeps what other sites score a title in
+`title_rating`, on Frog's own title and matched only by provider id: TMDB's,
+AniList's through `title_external` or `anime_map`, and MyAnimeList's through
+AniList. MDBList carries IMDb, Rotten Tomatoes, Metacritic and the rest; its
+key stays on the server. The worker refreshes what somebody tracks, a few
+titles at a time, and `/api/t/{id}/scores` gives a title page its first look.

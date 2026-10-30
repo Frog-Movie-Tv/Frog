@@ -130,11 +130,35 @@
 			busy = null;
 		}
 
-		// Unticking is the one that stings, so it is the one that offers undo.
+		// Unticking is the one that stings, so it is the one that offers undo,
+		// and the undo puts the watch back on the day it was, not today.
 		if (!next) {
 			toasts.undoable(`Unmarked ${episodeCode(ep.season_number, ep.episode_number)}`, () =>
-				toggle({ ...ep, watched: false })
+				restore(ep.season_number, [ep])
 			);
+		}
+	}
+
+	/** Put back watches that were cleared, each with its own date. */
+	async function restore(season: number, episodes: EpisodeView[]) {
+		busy = `season-${season}`;
+		try {
+			let item: LibraryItem | undefined;
+			for (const ep of episodes) {
+				({ item } = await api.setEpisodeWatched(
+					titleId,
+					ep.season_number,
+					ep.episode_number,
+					true,
+					{ watched_at: ep.watched_at, undated: ep.undated }
+				));
+			}
+			if (item) onprogress?.(item);
+			await fetchSeason(season);
+		} catch (e) {
+			toasts.error(e);
+		} finally {
+			busy = null;
 		}
 	}
 
@@ -149,11 +173,16 @@
 			when = answer;
 		}
 
+		const cleared = watched ? [] : (loaded[season]?.episodes.filter((e) => e.watched) ?? []);
 		busy = `season-${season}`;
 		try {
 			const { item } = await api.setSeasonWatched(titleId, season, watched, when);
 			onprogress?.(item);
 			await fetchSeason(season);
+			if (cleared.length) {
+				const name = seasons.find((s) => s.season_number === season)?.name ?? `Season ${season}`;
+				toasts.undoable(`Unmarked ${name}`, () => restore(season, cleared));
+			}
 		} catch (e) {
 			toasts.error(e);
 		} finally {
@@ -279,7 +308,7 @@
 							{@const key = `${ep.season_number}-${ep.episode_number}`}
 							<li class="episode" class:watched={ep.watched} class:future={unaired(ep)}>
 								<button
-									class="check"
+									class="check hit"
 									class:on={ep.watched}
 									disabled={busy === key || unaired(ep)}
 									aria-pressed={ep.watched}
@@ -338,7 +367,7 @@
 								<div class="controls">
 									{#if !unaired(ep)}
 										<button
-											class="note-btn"
+											class="note-btn hit"
 											aria-label="Episode note"
 											title="Episode note"
 											onclick={() => (noteFor = noteFor === key ? null : key)}

@@ -59,7 +59,7 @@
 {/snippet}
 
 <div class="page">
-	<a class="back faint" href="/people">People</a>
+	<a class="back faint" href="/people"><Icon name="chevron-left" size={16} /> People</a>
 
 	{#if loading}
 		<Spinner label="Loading profile" />
@@ -179,6 +179,9 @@
 
 <style>
 	.back {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
 		font-size: 0.86rem;
 		text-decoration: none;
 	}

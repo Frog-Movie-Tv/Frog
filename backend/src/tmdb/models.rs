@@ -219,12 +219,121 @@ fn pick_logo(v: &Value) -> Option<String> {
         let votes = f64_at(l, "vote_average").unwrap_or(0.0);
         let png_bonus = if path.ends_with(".png") { 2.0 } else { 0.0 };
         let wide_bonus = if ratio > 1.6 { 1.0 } else { 0.0 };
-        let score = votes + png_bonus + wide_bonus;
+        // Many anime only have a Japanese logo. Better than none, but never
+        // ahead of one in the reader's own language.
+        let foreign = if str_at(l, "iso_639_1").as_deref() == Some("ja") {
+            -20.0
+        } else {
+            0.0
+        };
+        let score = votes + png_bonus + wide_bonus + foreign;
         if best.as_ref().map(|(b, _)| score > *b).unwrap_or(true) {
             best = Some((score, path));
         }
     }
     best.map(|(_, p)| p)
+}
+
+/// A title's age rating for a region: what TMDB lists for that country, or
+/// for the US when it has none there. Films give a certificate per release;
+/// the theatrical one is the one people know.
+pub fn age_rating(v: &Value, region: &str) -> Option<String> {
+    let for_country = |code: &str| -> Option<String> {
+        if let Some(list) = v
+            .pointer("/content_ratings/results")
+            .and_then(Value::as_array)
+        {
+            let entry = list
+                .iter()
+                .find(|c| c["iso_3166_1"].as_str() == Some(code))?;
+            return str_at(entry, "rating");
+        }
+        let list = v.pointer("/release_dates/results")?.as_array()?;
+        let entry = list
+            .iter()
+            .find(|c| c["iso_3166_1"].as_str() == Some(code))?;
+        let mut dates: Vec<&Value> = entry["release_dates"].as_array()?.iter().collect();
+        // 3 is a theatrical release, 2 a limited one; the rest come after.
+        dates.sort_by_key(|d| match d["type"].as_i64() {
+            Some(3) => 0,
+            Some(2) => 1,
+            _ => 2,
+        });
+        dates.iter().find_map(|d| str_at(d, "certification"))
+    };
+    for_country(region).or_else(|| for_country("US"))
+}
+
+/// A cast member as a character someone might look for.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CharacterCredit {
+    pub name: String,
+    pub actor: Option<String>,
+    pub actor_id: Option<i64>,
+    pub ord: i64,
+}
+
+/// How many characters of one title search keeps.
+const SEARCH_CAST: usize = 30;
+
+/// The character a credit names, without what casting adds to it, or none
+/// when the credit is a role rather than a character: "Self", "Host", "Guest".
+pub fn character_name(credit: &str) -> Option<String> {
+    let mut name = credit.trim();
+    while let Some(start) = name.rfind('(').filter(|_| name.ends_with(')')) {
+        name = name[..start].trim_end();
+    }
+    let name = name.trim_matches(|c: char| c == '-' || c == '/' || c.is_whitespace());
+    let lower = name.to_lowercase();
+    const NOT_CHARACTERS: [&str; 16] = [
+        "self",
+        "himself",
+        "herself",
+        "themselves",
+        "themself",
+        "host",
+        "co-host",
+        "narrator",
+        "presenter",
+        "guest",
+        "various",
+        "extra",
+        "additional voices",
+        "archive footage",
+        "contestant",
+        "interviewee",
+    ];
+    let role = NOT_CHARACTERS.iter().any(|r| {
+        lower == *r || lower.starts_with(&format!("{r} ")) || lower.starts_with(&format!("{r}-"))
+    });
+    (!name.is_empty() && !role).then(|| name.to_string())
+}
+
+/// The characters of a title's cast, top billing first.
+pub fn characters(v: &Value) -> Vec<CharacterCredit> {
+    let mut cast: Vec<&Value> = v
+        .pointer("/credits/cast")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().collect())
+        .unwrap_or_default();
+    cast.sort_by_key(|c| i64_at(c, "order").unwrap_or(999));
+    cast.into_iter()
+        .filter_map(|c| {
+            Some((
+                character_name(c["character"].as_str()?)?,
+                str_at(c, "name"),
+                i64_at(c, "id"),
+            ))
+        })
+        .take(SEARCH_CAST)
+        .enumerate()
+        .map(|(i, (name, actor, actor_id))| CharacterCredit {
+            name,
+            actor,
+            actor_id,
+            ord: i as i64,
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -587,6 +696,53 @@ mod tests {
 
         let person = json!({ "media_type": "person", "id": 3, "name": "Mann" });
         assert!(SearchItem::from_value(&person, None).is_none());
+    }
+
+    #[test]
+    fn a_japanese_logo_is_only_a_last_resort() {
+        let v = json!({ "images": { "logos": [
+            { "file_path": "/ja.png", "aspect_ratio": 3.0, "vote_average": 9.0, "iso_639_1": "ja" },
+            { "file_path": "/en.png", "aspect_ratio": 3.0, "vote_average": 1.0, "iso_639_1": "en" }
+        ] } });
+        assert_eq!(pick_logo(&v).as_deref(), Some("/en.png"));
+        let v = json!({ "images": { "logos": [
+            { "file_path": "/ja.png", "aspect_ratio": 3.0, "iso_639_1": "ja" }
+        ] } });
+        assert_eq!(pick_logo(&v).as_deref(), Some("/ja.png"));
+    }
+
+    #[test]
+    fn the_age_rating_is_the_regions_then_the_us() {
+        let tv = json!({ "content_ratings": { "results": [
+            { "iso_3166_1": "US", "rating": "TV-MA" },
+            { "iso_3166_1": "FR", "rating": "16" }
+        ] } });
+        assert_eq!(age_rating(&tv, "FR").as_deref(), Some("16"));
+        assert_eq!(age_rating(&tv, "BE").as_deref(), Some("TV-MA"));
+        let film = json!({ "release_dates": { "results": [
+            { "iso_3166_1": "US", "release_dates": [
+                { "certification": "", "type": 5 },
+                { "certification": "PG", "type": 4 },
+                { "certification": "R", "type": 3 }
+            ] }
+        ] } });
+        assert_eq!(age_rating(&film, "BE").as_deref(), Some("R"));
+        assert_eq!(age_rating(&json!({}), "BE"), None);
+    }
+
+    #[test]
+    fn roles_are_not_characters() {
+        assert_eq!(character_name("Tom (voice)").as_deref(), Some("Tom"));
+        assert_eq!(
+            character_name("Jerry Mouse (uncredited) (voice)").as_deref(),
+            Some("Jerry Mouse")
+        );
+        assert_eq!(character_name("Self"), None);
+        assert_eq!(character_name("Self - Host"), None);
+        assert_eq!(character_name("Himself (archive footage)"), None);
+        assert_eq!(character_name("Narrator (voice)"), None);
+        assert_eq!(character_name(""), None);
+        assert_eq!(character_name("Selfridge").as_deref(), Some("Selfridge"));
     }
 
     #[test]

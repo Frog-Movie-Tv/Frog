@@ -12,7 +12,6 @@
 	import WatchingSettings from '#lib/components/settings/WatchingSettings.svelte';
 	import DataSettings from '#lib/components/settings/DataSettings.svelte';
 	import ClearLibrary from '#lib/components/settings/ClearLibrary.svelte';
-	import AdvancedSettings from '#lib/components/settings/AdvancedSettings.svelte';
 	import InstanceInfo from '#lib/components/settings/InstanceInfo.svelte';
 	import { toasts } from '#lib/toast.svelte';
 
@@ -39,8 +38,12 @@
 
 	// On a phone the groups scroll sideways; keep the open one in sight.
 	let tabBar = $state<HTMLElement | null>(null);
+	let opened = false;
 	$effect(() => {
 		void tab;
+		// A group opens at its top, not wherever the last one was scrolled to.
+		if (opened && window.scrollY > 0) window.scrollTo({ top: 0, behavior: 'instant' });
+		opened = true;
 		tabBar
 			?.querySelector('a.on')
 			?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
@@ -116,7 +119,6 @@
 			{:else if tab === 'data'}
 				<DataSettings />
 				<ClearLibrary />
-				<AdvancedSettings />
 				<InstanceInfo />
 			{/if}
 		</div>

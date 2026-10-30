@@ -1,9 +1,23 @@
 <script lang="ts">
 	import Icon from '#lib/components/Icon.svelte';
-	import { settings } from '#lib/settings.svelte';
+	import { DEFAULTS, settings } from '#lib/settings.svelte';
+	import { toasts } from '#lib/toast.svelte';
 
 	/** Your data: bringing a library in, taking copies of it out. */
 	const s = $derived(settings.current);
+
+	function resetSettings() {
+		const before = s;
+		// Which release you have seen and whether you were welcomed are history,
+		// not preferences; resetting them would bring both back.
+		settings.replace({
+			...DEFAULTS,
+			lastSeenVersion: before.lastSeenVersion,
+			onboarded: before.onboarded,
+			homeRowsSeen: before.homeRowsSeen
+		});
+		toasts.undoable('Settings reset', () => settings.replace(before));
+	}
 </script>
 
 <section class="block">
@@ -44,9 +58,16 @@
 			/>
 		</label>
 	</div>
+	<div class="reset">
+		<button class="btn ghost" onclick={resetSettings}>Reset all settings</button>
+	</div>
 </section>
 
 <style>
+	.reset {
+		margin-top: 14px;
+	}
+
 	.block {
 		margin-bottom: 44px;
 	}

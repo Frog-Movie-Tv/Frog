@@ -141,6 +141,9 @@ export interface EpisodeView {
 	tmdb_vote: number | null;
 	watched: boolean;
 	watch_count: number;
+	/** The latest watch, so an untick can be taken back exactly. */
+	watched_at: string | null;
+	undated: boolean;
 	rating: number | null;
 	notes: string | null;
 }
@@ -181,6 +184,7 @@ export interface Collection {
 }
 
 export interface TitleDetail {
+	age_rating?: string | null;
 	item: LibraryItem;
 	tagline: string | null;
 	homepage: string | null;
@@ -383,6 +387,7 @@ export interface HomeData {
 	this_week: AiringEntry[];
 	recent: LibraryItem[];
 	favourites: LibraryItem[];
+	shelves: Shelf[];
 }
 
 export interface MatchResult {
@@ -516,7 +521,6 @@ export interface AniListStatus {
 	error?: string | null;
 	summary?: {
 		to_frog: number;
-		to_anilist: number;
 		unsure: number;
 		entries: number;
 		upcoming?: number;
@@ -651,11 +655,46 @@ export interface StudioResult {
 }
 
 /** A character: from a cast list (TMDB), or from AniList for anime. */
+/** Filters on a search; the ones a smart shelf has, where they mean the same. */
+export interface SearchFilters {
+	kind?: Kind;
+	genres?: string[];
+	from_year?: number | null;
+	to_year?: number | null;
+	/** 0-100 */
+	min_score?: number | null;
+	/** Library statuses; `none` is not in the library. */
+	statuses?: (Status | 'none')[];
+	sort?: 'popular' | 'rating' | 'newest' | 'oldest' | null;
+}
+
+export interface SearchAnswer {
+	page: number;
+	next_page: number | null;
+	/** A person's whole name was typed, and no title's. */
+	person_first?: boolean;
+	results: SearchItem[];
+}
+
+/** What other sites score a title. */
+export interface TitleScore {
+	source: string;
+	/** 0-100, whatever the site itself uses. */
+	score: number;
+	votes: number | null;
+}
+
+export interface TitleScores {
+	ratings: TitleScore[];
+	age_rating: string | null;
+}
+
 export interface CharacterResult {
 	name: string;
 	image: { source: 'tmdb' | 'anilist'; path: string } | null;
 	actor: { id: number; name: string } | null;
 	title: {
+		id?: number | null;
 		kind: Kind | null;
 		tmdb_id: number | null;
 		anilist_id?: number | null;

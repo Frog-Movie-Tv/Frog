@@ -234,19 +234,25 @@ fn summary(row: &ShelfRow, titles: &[TitleRow]) -> Value {
 }
 
 pub async fn list(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
+    let shelves = summaries(&state.pool, auth.user_id()).await?;
+    Ok(Json(json!({ "shelves": shelves })))
+}
+
+/// One account's shelves, in their order, with a count and a cover each.
+pub async fn summaries(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Value>> {
     let rows: Vec<ShelfRow> = sqlx::query_as(
         "SELECT id, name, kind, rules_json, position
            FROM shelf WHERE user_id = ? ORDER BY position, id",
     )
-    .bind(auth.user_id())
-    .fetch_all(&state.pool)
+    .bind(user_id)
+    .fetch_all(pool)
     .await?;
     let mut shelves = Vec::with_capacity(rows.len());
     for row in &rows {
-        let titles = titles_of(&state.pool, auth.user_id(), row).await?;
+        let titles = titles_of(pool, user_id, row).await?;
         shelves.push(summary(row, &titles));
     }
-    Ok(Json(json!({ "shelves": shelves })))
+    Ok(shelves)
 }
 
 pub async fn get(

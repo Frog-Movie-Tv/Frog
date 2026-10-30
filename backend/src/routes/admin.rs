@@ -20,7 +20,7 @@ pub async fn users(
     let rows: Vec<UserRow> = sqlx::query_as(
         "SELECT u.id, u.username, u.role, u.disabled, u.created_at,
                 (SELECT COUNT(*) FROM library_entry l WHERE l.user_id = u.id),
-                (SELECT MAX(s.created_at) FROM session s WHERE s.user_id = u.id)
+                u.last_sign_in_at
            FROM app_user u
           ORDER BY CASE u.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
                    u.username COLLATE NOCASE",

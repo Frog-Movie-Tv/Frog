@@ -347,6 +347,149 @@ test('score format changes how a rating reads without touching the value', async
 	await expect(page.getByRole('button', { name: 'Rated 7.5' })).toBeVisible();
 });
 
+test('a saved colour scheme can be copied again and again', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/settings#appearance');
+	await page.getByText('Colour editor').click();
+	await page.getByLabel('Accent').fill('#e06c9f');
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+	// Two copies of one theme used to share a name, and the page fell over.
+	const duplicate = page.getByRole('button', { name: 'Duplicate' }).first();
+	await duplicate.click();
+	await duplicate.click();
+	await expect(page.getByText('My theme copy 2')).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Theme', exact: true })).toBeVisible();
+
+	await page.reload();
+	await expect(page.getByRole('heading', { name: 'Theme', exact: true })).toBeVisible();
+
+	// Leave the account as it was for the tests after this one.
+	const res = await page.request.get('/api/settings');
+	const saved = await res.json();
+	await page.request.put('/api/settings', {
+		data: { ...saved, savedThemes: [], customTheme: null }
+	});
+});
+
+test('search keeps filters in the address and tells kinds of result apart', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/search?score=70&sort=rating');
+	await expect(page.getByRole('tab', { name: 'Films' })).toBeVisible();
+	await expect(page.getByRole('tab', { name: 'Characters' })).toBeVisible();
+	await expect(page.getByRole('button', { name: /Filters/ })).toHaveAttribute(
+		'aria-expanded',
+		'true'
+	);
+	await page.getByRole('button', { name: 'Clear filters' }).click();
+	await expect(page).not.toHaveURL(/score=/);
+});
+
+test('people has one search bar and no database talk', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/people');
+	await expect(page.getByRole('textbox', { name: 'Search people' })).toBeVisible();
+});
+
+test('settings no longer offers custom CSS', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/settings#data');
+	await expect(page.getByRole('button', { name: 'Reset all settings' })).toBeVisible();
+	await expect(page.getByText('Custom CSS')).toHaveCount(0);
+	await page.goto('/settings#appearance');
+	await expect(page.getByText('Corner radius')).toHaveCount(0);
+});
+
+test('an address that leads nowhere offers a way home', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/no-such-page');
+	await expect(page.getByRole('heading', { name: 'Nothing here' })).toBeVisible();
+	await page.getByRole('link', { name: 'Go home' }).click();
+	await expect(page).toHaveURL('/');
+});
+
+test('a search survives a trip to another page and back', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/search');
+	await page.getByLabel('Search', { exact: true }).fill('heat');
+	await expect(page).toHaveURL(/\/search\?q=heat$/);
+
+	await page.goto('/stats');
+	await page.goBack();
+	await expect(page.getByLabel('Search', { exact: true })).toHaveValue('heat');
+});
+
+test('renaming a shelf starts in the name field', async ({ page }) => {
+	await signIn(page);
+	const created = await page.request.post('/api/shelves', {
+		data: { name: 'Rename me', kind: 'manual' }
+	});
+	const { shelf } = await created.json();
+	await page.goto(`/shelves/${shelf.id}`);
+
+	await page.getByRole('button', { name: 'Rename' }).click();
+	await page.keyboard.type('Sunday films');
+	await page.keyboard.press('Enter');
+	await expect(page.getByRole('heading', { name: 'Sunday films' })).toBeVisible();
+
+	// Escape leaves the name as it was.
+	await page.getByRole('button', { name: 'Rename' }).click();
+	await page.keyboard.type('Never mind');
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('heading', { name: 'Sunday films' })).toBeVisible();
+
+	await page.request.delete(`/api/shelves/${shelf.id}`);
+});
+
+test('the next account on this device starts from its own preferences', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/settings#appearance');
+	await page.getByRole('button', { name: /^Light$/ }).click();
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+
+	const made = await page.request.post('/api/invites', { data: { role: 'user' } });
+	const invite = await made.json();
+
+	await page.getByRole('button', { name: /^Account:/ }).click();
+	await page.getByRole('menuitem', { name: 'Switch account' }).click();
+	await expect(page).toHaveURL(/\/login/);
+
+	// Joining is the other way a second account arrives on a device.
+	const name = `guest${Date.now() % 100000}`;
+	await page.goto(invite.path);
+	await page.getByLabel('Username').fill(name);
+	await page.getByLabel('Password').fill('another-long-pass');
+	await page.getByRole('button', { name: 'Create my account' }).click();
+	await expect(page.getByRole('heading', { name: `Welcome, ${name}` })).toBeVisible();
+
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'pond');
+	const theirs = await (await page.request.get('/api/settings')).json();
+	expect(theirs.theme ?? 'pond').toBe('pond');
+
+	// Back to the first account, as it was.
+	await page.request.post('/api/auth/logout', { data: {} });
+	await signIn(page);
+	const mine = await (await page.request.get('/api/settings')).json();
+	expect(mine.theme).toBe('light');
+	await page.request.put('/api/settings', { data: { ...mine, theme: 'pond' } });
+});
+
+test('controls are big enough to touch on a phone', async ({ page, isMobile }) => {
+	test.skip(!isMobile, 'touch targets only apply to the phone layout');
+	await signIn(page);
+	for (const path of ['/library', '/settings#home', '/shelves', '/stats']) {
+		await page.goto(path);
+		await page.waitForLoadState('networkidle');
+		const small = await page.evaluate(() =>
+			[...document.querySelectorAll('main .btn, main .icon-btn, main .chip, main .trigger')]
+				.map((el) => ({ el, r: el.getBoundingClientRect() }))
+				.filter(({ r }) => r.width > 0 && (r.height < 44 || r.width < 44))
+				.map(({ el, r }) => `${el.textContent?.trim() || el.className} ${r.width}x${r.height}`)
+		);
+		expect(small, `${path} has controls under 44px`).toEqual([]);
+	}
+});
+
 test('signing out closes the door behind you', async ({ page }) => {
 	await signIn(page);
 	await page.goto('/settings#data');
@@ -408,6 +551,8 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/anilist/entries',
 		'/api/invites',
 		'/api/search/more?q=frog',
+		'/api/search/genres',
+		'/api/t/1/scores',
 		'/api/studios/1',
 		'/img/w342/nope.jpg'
 	]) {
