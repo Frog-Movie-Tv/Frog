@@ -163,6 +163,11 @@ needs HTTPS.
 New-episode notifications go out from 18:00 on the day an episode airs. Set
 `FROG_NOTIFY_HOUR` in `.env` (0–23, the server's local time) to change that.
 
+Posters and stills are kept in the database so pages load without asking
+TMDB again. The cache stays under `FROG_IMAGE_CACHE_MB` (512 by default):
+pictures nobody has looked at for longest are dropped first, and fetched
+again when a page needs them.
+
 ### Make the address say "frog"
 
 The address comes from the machine's name in Tailscale, so rename the machine

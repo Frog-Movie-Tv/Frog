@@ -35,7 +35,7 @@
 	}) {
 		saving = true;
 		try {
-			const { item: updated } = await api.track(kind, item.tmdb_id, patch);
+			const { item: updated } = await api.track(item.id, patch);
 			onchange(updated);
 		} catch (e) {
 			toasts.error(e);
@@ -55,7 +55,7 @@
 		if (status !== 'completed' || kind !== 'tv' || open <= 0) return;
 		// Completed means the seasons; specials are a choice, so offer them.
 		const specials = await api
-			.season(kind, item.tmdb_id, 0)
+			.season(item.id, 0)
 			.then((s) =>
 				s.episodes
 					.filter((e) => !e.watched && (!e.air_date || e.air_date <= today()))
@@ -76,7 +76,7 @@
 		if (!answer) return;
 		saving = true;
 		try {
-			const { item: updated } = await api.setShowWatched(kind, item.tmdb_id, true, answer);
+			const { item: updated } = await api.setShowWatched(item.id, true, answer);
 			(onepisodes ?? onchange)(updated);
 			toasts.push(`Marked ${updated.watched_episodes} episodes watched`);
 		} catch (e) {
@@ -92,13 +92,13 @@
 		const previous = item.entry;
 		saving = true;
 		try {
-			await api.untrack(kind, item.tmdb_id);
+			await api.untrack(item.id);
 			onchange({ ...item, entry: null });
 
 			toasts.undoable(`Removed ${item.name}`, async () => {
 				if (!previous) return;
 				try {
-					const { item: restored } = await api.track(kind, item.tmdb_id, {
+					const { item: restored } = await api.track(item.id, {
 						status: previous.status,
 						rating: previous.rating,
 						favourite: previous.favourite,

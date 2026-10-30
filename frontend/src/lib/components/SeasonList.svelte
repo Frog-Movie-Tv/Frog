@@ -7,7 +7,6 @@
 	import { whenWatched, type WhenAnswer } from '#lib/when.svelte';
 	import type {
 		EpisodeView,
-		Kind,
 		LibraryItem,
 		RatingUnit,
 		SeasonDetail,
@@ -16,8 +15,8 @@
 	import Rating from './Rating.svelte';
 
 	interface Props {
-		kind: Kind;
-		tmdbId: number;
+		/** Frog's id for the show. */
+		titleId: number;
 		seasons: SeasonSummary[];
 		/** Which season to open on first paint, usually the one you are on. */
 		initialSeason?: number | null;
@@ -31,8 +30,7 @@
 	}
 
 	let {
-		kind,
-		tmdbId,
+		titleId,
 		seasons,
 		initialSeason = null,
 		showName = 'This show',
@@ -62,7 +60,7 @@
 		const before = ratingOf(u);
 		rated = { ...rated, [unitKey(u)]: rating };
 		try {
-			await api.rateSeason(tmdbId, u.season, u.first_episode, rating);
+			await api.rateSeason(titleId, u.season, u.first_episode, rating);
 		} catch (e) {
 			rated = { ...rated, [unitKey(u)]: before };
 			toasts.error(e);
@@ -76,7 +74,7 @@
 	async function fetchSeason(season: number) {
 		loading = season;
 		try {
-			const detail = await api.season(kind, tmdbId, season);
+			const detail = await api.season(titleId, season);
 			loaded = { ...loaded, [season]: detail };
 		} catch (e) {
 			toasts.error(e);
@@ -116,8 +114,7 @@
 		});
 		try {
 			const { item } = await api.setEpisodeWatched(
-				kind,
-				tmdbId,
+				titleId,
 				ep.season_number,
 				ep.episode_number,
 				next
@@ -154,7 +151,7 @@
 
 		busy = `season-${season}`;
 		try {
-			const { item } = await api.setSeasonWatched(kind, tmdbId, season, watched, when);
+			const { item } = await api.setSeasonWatched(titleId, season, watched, when);
 			onprogress?.(item);
 			await fetchSeason(season);
 		} catch (e) {
@@ -169,7 +166,7 @@
 		patch(ep.season_number, ep.episode_number, { notes: trimmed });
 		noteFor = null;
 		try {
-			await api.setEpisodeState(kind, tmdbId, ep.season_number, ep.episode_number, {
+			await api.setEpisodeState(titleId, ep.season_number, ep.episode_number, {
 				rating: ep.rating,
 				notes: trimmed
 			});

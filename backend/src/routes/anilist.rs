@@ -8,67 +8,30 @@ use rand::RngCore;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::anilist::{self, Api};
+use crate::anilist::{self, records, Api};
 use crate::auth::Auth;
+use crate::catalog::{self, ExternalId};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
-use crate::store;
-
-/// (anilist name, expires, synced, error, summary, attempted, retry at,
-///  needs reconnect, failures)
-type LinkRow = (
-    String,
-    String,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    bool,
-    i64,
-);
 
 pub async fn status(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
     if state.config.anilist.is_none() {
         return Ok(Json(json!({ "available": false })));
     }
-    let link: Option<LinkRow> = sqlx::query_as(
-        "SELECT anilist_name, expires_at, synced_at, last_error, last_summary, attempted_at,
-                retry_at, needs_reconnect, failures
-           FROM anilist_link WHERE user_id = ?",
-    )
-    .bind(auth.user_id())
-    .fetch_optional(&state.pool)
-    .await?;
-    let Some((
-        name,
-        expires_at,
-        synced_at,
-        error,
-        summary,
-        attempted_at,
-        retry_at,
-        needs_reconnect,
-        failures,
-    )) = link
-    else {
+    let Some(link) = records::link_status(&state.pool, auth.user_id()).await? else {
         return Ok(Json(json!({ "available": true, "connected": false })));
     };
-    let (unsure,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM anilist_entry WHERE user_id = ? AND state = 'unsure'")
-            .bind(auth.user_id())
-            .fetch_one(&state.pool)
-            .await?;
     // When the worker will look next: after the wait for a failure, or one
     // interval after the last sync that finished.
-    let next_sync_at = if needs_reconnect {
+    let next_sync_at = if link.needs_reconnect {
         None
     } else {
-        let after_last = synced_at
+        let after_last = link
+            .synced_at
             .as_deref()
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
             .map(|t| (t + chrono::Duration::minutes(anilist::sync_minutes())).to_rfc3339());
-        match (retry_at.clone(), after_last) {
+        match (link.retry_at.clone(), after_last) {
             (Some(r), Some(a)) => Some(r.max(a)),
             (r, a) => r.or(a),
         }
@@ -76,17 +39,17 @@ pub async fn status(auth: Auth, State(state): State<AppState>) -> AppResult<Json
     Ok(Json(json!({
         "available": true,
         "connected": true,
-        "name": name,
-        "expires_at": expires_at,
-        "synced_at": synced_at,
+        "name": link.name,
+        "expires_at": link.expires_at,
+        "synced_at": link.synced_at,
         "syncing": anilist::is_syncing(auth.user_id()),
-        "error": error,
-        "summary": summary.and_then(|s| serde_json::from_str::<Value>(&s).ok()),
-        "unsure": unsure,
-        "attempted_at": attempted_at,
+        "error": link.last_error,
+        "summary": link.last_summary.and_then(|s| serde_json::from_str::<Value>(&s).ok()),
+        "unsure": link.unsure,
+        "attempted_at": link.attempted_at,
         "next_sync_at": next_sync_at,
-        "needs_reconnect": needs_reconnect,
-        "failures": failures,
+        "needs_reconnect": link.needs_reconnect,
+        "failures": link.failures,
         "interval_minutes": anilist::sync_minutes(),
     })))
 }
@@ -97,17 +60,7 @@ pub async fn connect(auth: Auth, State(state): State<AppState>) -> AppResult<Jso
     let mut bytes = [0u8; 24];
     rand::thread_rng().fill_bytes(&mut bytes);
     let token = hex::encode(bytes);
-    sqlx::query("DELETE FROM anilist_oauth WHERE user_id = ? OR created_at < ?")
-        .bind(auth.user_id())
-        .bind((Utc::now() - chrono::Duration::minutes(15)).to_rfc3339())
-        .execute(&state.pool)
-        .await?;
-    sqlx::query("INSERT INTO anilist_oauth (state, user_id, created_at) VALUES (?, ?, ?)")
-        .bind(&token)
-        .bind(auth.user_id())
-        .bind(Utc::now().to_rfc3339())
-        .execute(&state.pool)
-        .await?;
+    records::start_sign_in(&state.pool, auth.user_id(), &token).await?;
     Ok(Json(json!({ "url": api.authorize_url(&token) })))
 }
 
@@ -130,11 +83,7 @@ pub async fn callback(
     };
     match finish(&auth, &state, q).await {
         Ok(()) => {
-            let worker = state.clone();
-            let user_id = auth.user_id();
-            tokio::spawn(async move {
-                let _ = anilist::sync_user(&worker, user_id).await;
-            });
+            sync_soon(&state, auth.user_id());
             back("connected")
         }
         Err(e) => {
@@ -148,15 +97,7 @@ async fn finish(auth: &Auth, state: &AppState, q: CallbackQuery) -> AppResult<()
     let (Some(code), Some(nonce)) = (q.code, q.state) else {
         return Err(AppError::BadRequest("AniList sent nothing back".into()));
     };
-    let claimed =
-        sqlx::query("DELETE FROM anilist_oauth WHERE state = ? AND user_id = ? AND created_at > ?")
-            .bind(&nonce)
-            .bind(auth.user_id())
-            .bind((Utc::now() - chrono::Duration::minutes(15)).to_rfc3339())
-            .execute(&state.pool)
-            .await?
-            .rows_affected();
-    if claimed == 0 {
+    if !records::claim_sign_in(&state.pool, auth.user_id(), &nonce).await? {
         return Err(AppError::BadRequest(
             "that sign-in was not started here".into(),
         ));
@@ -165,128 +106,47 @@ async fn finish(auth: &Auth, state: &AppState, q: CallbackQuery) -> AppResult<()
     let api = Api::new(state)?;
     let (token, seconds) = api.exchange(&code).await?;
     let (anilist_id, name) = api.viewer(&token).await?;
-    let now = Utc::now();
-    // A different AniList account means none of the old entries apply.
-    let previous: Option<(i64,)> =
-        sqlx::query_as("SELECT anilist_user_id FROM anilist_link WHERE user_id = ?")
-            .bind(auth.user_id())
-            .fetch_optional(&state.pool)
-            .await?;
-    if previous.is_some_and(|(id,)| id != anilist_id) {
-        sqlx::query("DELETE FROM anilist_entry WHERE user_id = ?")
-            .bind(auth.user_id())
-            .execute(&state.pool)
-            .await?;
-    }
-    sqlx::query(
-        "INSERT INTO anilist_link (user_id, anilist_user_id, anilist_name, token, expires_at,
-                                   connected_at, dirty)
-         VALUES (?, ?, ?, ?, ?, ?, 1)
-         ON CONFLICT (user_id) DO UPDATE SET
-            anilist_user_id = excluded.anilist_user_id, anilist_name = excluded.anilist_name,
-            token = excluded.token, expires_at = excluded.expires_at,
-            connected_at = excluded.connected_at, dirty = 1, last_error = NULL,
-            needs_reconnect = 0, failures = 0, retry_at = NULL",
+    let expires_at = (Utc::now() + chrono::Duration::seconds(seconds)).to_rfc3339();
+    records::save_link(
+        &state.pool,
+        auth.user_id(),
+        anilist_id,
+        &name,
+        &token,
+        &expires_at,
     )
-    .bind(auth.user_id())
-    .bind(anilist_id)
-    .bind(&name)
-    .bind(&token)
-    .bind((now + chrono::Duration::seconds(seconds)).to_rfc3339())
-    .bind(now.to_rfc3339())
-    .execute(&state.pool)
-    .await?;
-    Ok(())
+    .await
+}
+
+/// Sync in the background; the outcome is recorded on the link, where
+/// Settings reads it.
+fn sync_soon(state: &AppState, user_id: i64) {
+    let worker = state.clone();
+    tokio::spawn(async move {
+        let _ = anilist::sync_user(&worker, user_id).await;
+    });
 }
 
 pub async fn sync_now(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
     Api::new(&state)?;
-    let connected: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM anilist_link WHERE user_id = ?")
-        .bind(auth.user_id())
-        .fetch_optional(&state.pool)
-        .await?;
-    if connected.is_none() {
+    if !records::is_connected(&state.pool, auth.user_id()).await? {
         return Err(AppError::BadRequest("Connect AniList first.".into()));
     }
-    // Asked for by hand: entries waiting for their next look get it now.
-    sqlx::query(
-        "UPDATE anilist_entry SET next_try_at = NULL WHERE user_id = ? AND state = 'unsure'",
-    )
-    .bind(auth.user_id())
-    .execute(&state.pool)
-    .await?;
-    let worker = state.clone();
-    let user_id = auth.user_id();
-    tokio::spawn(async move {
-        let _ = anilist::sync_user(&worker, user_id).await;
-    });
+    records::look_again_now(&state.pool, auth.user_id()).await?;
+    sync_soon(&state, auth.user_id());
     Ok(Json(json!({ "syncing": true })))
 }
 
 /// Forget the connection and every placement. Nothing on AniList or in the
 /// Frog library changes.
 pub async fn disconnect(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
-    sqlx::query("DELETE FROM anilist_entry WHERE user_id = ?")
-        .bind(auth.user_id())
-        .execute(&state.pool)
-        .await?;
-    sqlx::query("DELETE FROM anilist_link WHERE user_id = ?")
-        .bind(auth.user_id())
-        .execute(&state.pool)
-        .await?;
+    records::disconnect(&state.pool, auth.user_id()).await?;
     Ok(Json(json!({ "ok": true })))
-}
-
-/// One AniList entry and where it went, as the entries list reads it.
-#[derive(sqlx::FromRow)]
-struct EntryRow {
-    media_id: i64,
-    name: String,
-    format: Option<String>,
-    episodes: Option<i64>,
-    state: String,
-    candidates_json: String,
-    title_name: Option<String>,
-    poster_path: Option<String>,
-    kind: Option<String>,
-    tmdb_id: Option<i64>,
-    season: Option<i64>,
-    episode_offset: i64,
-    al_status: Option<String>,
-    al_progress: Option<i64>,
-    outcome: Option<String>,
-    method: Option<String>,
-    confidence: Option<i64>,
-    note: Option<String>,
-    manual: bool,
-    media_status: Option<String>,
-    start_date: Option<String>,
-    gone_at: Option<String>,
-    next_try_at: Option<String>,
-    local_kind: Option<String>,
-    local_tmdb_id: Option<i64>,
 }
 
 /// Every AniList entry and where it went, the unsure ones first.
 pub async fn entries(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
-    let rows: Vec<EntryRow> = sqlx::query_as(
-        "SELECT a.media_id, a.name, a.format, a.episodes, a.state, a.candidates_json,
-                t.name AS title_name, t.poster_path, t.kind, t.tmdb_id, a.season,
-                a.episode_offset, a.al_status, a.al_progress, a.outcome, a.method,
-                a.confidence, a.note,
-                a.manual, a.media_status, a.start_date, a.gone_at, a.next_try_at,
-                k.kind AS local_kind, k.tmdb_id AS local_tmdb_id
-           FROM anilist_entry a LEFT JOIN title t ON t.id = a.title_id
-           LEFT JOIN title k ON k.anilist_id = a.media_id AND k.tmdb_id < 0
-                AND EXISTS (SELECT 1 FROM library_entry l
-                             WHERE l.user_id = a.user_id AND l.title_id = k.id)
-          WHERE a.user_id = ?
-          ORDER BY CASE a.state WHEN 'unsure' THEN 0 WHEN 'placed' THEN 1 ELSE 2 END,
-                   a.name COLLATE NOCASE",
-    )
-    .bind(auth.user_id())
-    .fetch_all(&state.pool)
-    .await?;
+    let rows = records::listing(&state.pool, auth.user_id()).await?;
     let entries: Vec<Value> = rows
         .into_iter()
         .map(|r| {
@@ -302,10 +162,13 @@ pub async fn entries(auth: Auth, State(state): State<AppState>) -> AppResult<Jso
                 "state": r.state,
                 "candidates": serde_json::from_str::<Value>(&r.candidates_json).unwrap_or(json!([])),
                 "title": r.title_name.map(|name| json!({
+                    "id": r.title_id,
+                    "tmdb_id": r.title_tmdb.as_deref()
+                        .and_then(|k| ExternalId::parse("tmdb", k))
+                        .and_then(|x| x.tmdb_id()),
                     "name": name,
                     "poster_path": r.poster_path,
                     "kind": r.kind,
-                    "tmdb_id": r.tmdb_id,
                     "season": r.season,
                     "from_episode": r.episode_offset + 1,
                 })),
@@ -324,9 +187,9 @@ pub async fn entries(auth: Auth, State(state): State<AppState>) -> AppResult<Jso
                 // When Frog looks for its place again.
                 "next_try_at": r.next_try_at,
                 // In the library as it is on AniList, until it is placed.
-                "kept": r.local_kind.zip(r.local_tmdb_id).map(|(kind, tmdb_id)| json!({
+                "kept": r.kept_id.zip(r.kept_kind).map(|(id, kind)| json!({
+                    "id": id,
                     "kind": kind,
-                    "tmdb_id": tmdb_id,
                 })),
             })
         })
@@ -353,26 +216,12 @@ pub async fn choose(
     Path(media_id): Path<i64>,
     Json(choice): Json<Choice>,
 ) -> AppResult<Json<Value>> {
-    let exists: Option<(i64,)> =
-        sqlx::query_as("SELECT 1 FROM anilist_entry WHERE user_id = ? AND media_id = ?")
-            .bind(auth.user_id())
-            .bind(media_id)
-            .fetch_optional(&state.pool)
-            .await?;
-    if exists.is_none() {
+    if !records::entry_exists(&state.pool, auth.user_id(), media_id).await? {
         return Err(AppError::NotFound("no such AniList entry".into()));
     }
 
     if choice.ignore {
-        sqlx::query(
-            "UPDATE anilist_entry SET state = 'ignored', manual = 1, updated_at = ?
-              WHERE user_id = ? AND media_id = ?",
-        )
-        .bind(Utc::now().to_rfc3339())
-        .bind(auth.user_id())
-        .bind(media_id)
-        .execute(&state.pool)
-        .await?;
+        records::ignore(&state.pool, auth.user_id(), media_id).await?;
         return Ok(Json(json!({ "ok": true })));
     }
 
@@ -387,24 +236,17 @@ pub async fn choose(
         _ => None,
     };
     let offset = (choice.from_episode.unwrap_or(1) - 1).max(0);
-    let (title_id, _) = store::ensure_title(&state, kind, tmdb_id).await?;
+    let (title_id, _) = catalog::ensure(&state, &ExternalId::tmdb(kind, tmdb_id)).await?;
     // Moving an entry: what its old place got from AniList goes with it.
     anilist::forget_place(&state, auth.user_id(), media_id).await?;
-    sqlx::query(
-        "UPDATE anilist_entry
-            SET state = 'placed', title_id = ?, season = ?, episode_offset = ?, detached = 0,
-                al_status = NULL, al_progress = NULL, al_score = NULL,
-                frog_status = NULL, frog_progress = NULL, frog_score = NULL, updated_at = ?,
-                manual = 1, outcome = 'matched', method = NULL, confidence = 100, note = NULL
-          WHERE user_id = ? AND media_id = ?",
+    records::place_by_hand(
+        &state.pool,
+        auth.user_id(),
+        media_id,
+        title_id,
+        season,
+        offset,
     )
-    .bind(title_id)
-    .bind(season)
-    .bind(offset)
-    .bind(Utc::now().to_rfc3339())
-    .bind(auth.user_id())
-    .bind(media_id)
-    .execute(&state.pool)
     .await?;
     anilist::touch(&state.pool, auth.user_id()).await;
     Ok(Json(json!({ "ok": true })))

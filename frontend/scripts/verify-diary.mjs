@@ -102,7 +102,8 @@ await page.getByRole('button', { name: 'Sign in' }).click();
 await page.waitForURL(`${BASE}/`);
 
 // Track the show so every season is local.
-await page.request.put(`${BASE}/api/titles/tv/${SHOW}/library`, { data: { status: 'watching' } });
+const showId = (await (await page.request.get(`${BASE}/api/titles/tv/${SHOW}`)).json()).item.id;
+await page.request.put(`${BASE}/api/t/${showId}/library`, { data: { status: 'watching' } });
 
 await page.goto(`${BASE}/title/tv/${SHOW}`);
 await page.getByRole('heading', { name: 'Seasons' }).scrollIntoViewIfNeeded();
@@ -199,7 +200,7 @@ await dialog.getByRole('button', { name: 'Mark watched' }).click();
 await page.waitForTimeout(1200);
 check('the diary is empty again', (await page.getByText('Nothing watched yet').count()) === 1);
 
-const progress = await (await page.request.get(`${BASE}/api/titles/tv/${SHOW}`)).json();
+const progress = await (await page.request.get(`${BASE}/api/t/${showId}`)).json();
 check(
 	'every episode still counts as watched',
 	(progress.item.watched_episodes > 0 &&

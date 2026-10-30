@@ -1,9 +1,10 @@
 <script lang="ts">
+	import { sameTitle, titleHref, titleKey } from '#lib/titles';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import Icon from '#lib/components/Icon.svelte';
-	import { api, img } from '#lib/api';
+	import { api, frogId, img } from '#lib/api';
 	import Avatar from '#lib/components/Avatar.svelte';
 	import Empty from '#lib/components/Empty.svelte';
 	import Grid from '#lib/components/Grid.svelte';
@@ -137,14 +138,13 @@
 	}
 
 	async function add(item: SearchItem, status: Status = settings.current.defaultStatus) {
-		const key = `${item.kind}-${item.tmdb_id}`;
+		const key = titleKey(item);
 		adding = key;
 		try {
-			await api.track(item.kind, item.tmdb_id, { status });
+			const id = await frogId(item);
+			await api.track(id, { status });
 			const mark = (list: SearchItem[]) =>
-				list.map((r) =>
-					r.kind === item.kind && r.tmdb_id === item.tmdb_id ? { ...r, in_library: status } : r
-				);
+				list.map((r) => (sameTitle(r, item) ? { ...r, id, in_library: status } : r));
 			results = mark(results);
 			trending = mark(trending);
 			toasts.push(`${item.name} → ${STATUS_LABEL[status]}`);
@@ -184,8 +184,7 @@
 
 	function characterHref(c: CharacterResult): string {
 		const t = c.title;
-		if (t.kind && t.tmdb_id) return `/title/${t.kind}/${t.tmdb_id}`;
-		return `/search?q=${encodeURIComponent(t.name ?? c.name)}`;
+		return titleHref(t) ?? `/search?q=${encodeURIComponent(t.name ?? c.name)}`;
 	}
 
 	function characterImage(c: CharacterResult): string | null {
@@ -201,12 +200,12 @@
 </svelte:head>
 
 {#snippet titleCard(item: SearchItem)}
-	{@const key = `${item.kind}-${item.tmdb_id}`}
+	{@const key = titleKey(item)}
 	<div class="result">
 		<Poster
 			kindBadge
 			kind={item.kind}
-			tmdbId={item.tmdb_id}
+			ref={item}
 			name={item.name}
 			posterPath={item.poster_path}
 			fallbackPath={item.backdrop_path}
@@ -356,7 +355,7 @@
 		{#if trending.length}
 			<div class="section-head"><h2>Trending this week</h2></div>
 			<Grid>
-				{#each trending as item (`${item.kind}-${item.tmdb_id}`)}{@render titleCard(item)}{/each}
+				{#each trending as item (titleKey(item))}{@render titleCard(item)}{/each}
 			</Grid>
 		{:else}
 			<Empty art="search" title="Find something to watch" hint="Start typing." />
@@ -378,7 +377,7 @@
 			</div>
 			<div class="block">
 				<Grid>
-					{#each results.slice(0, 12) as item (`${item.kind}-${item.tmdb_id}`)}
+					{#each results.slice(0, 12) as item (titleKey(item))}
 						{@render titleCard(item)}
 					{/each}
 				</Grid>
@@ -392,7 +391,7 @@
 		<Empty art="search" title="Nothing here" hint="Try All, or another name." />
 	{:else if tab === 'titles'}
 		<Grid>
-			{#each results as item (`${item.kind}-${item.tmdb_id}`)}{@render titleCard(item)}{/each}
+			{#each results as item (titleKey(item))}{@render titleCard(item)}{/each}
 		</Grid>
 	{:else}
 		<div class="cards">

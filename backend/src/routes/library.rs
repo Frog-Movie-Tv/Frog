@@ -4,9 +4,10 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::auth::Auth;
+use crate::catalog::{self, TitleRow, TITLE_COLUMNS};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
-use crate::store::{self, LibraryPatch, TitleRow};
+use crate::store::{self, LibraryPatch};
 use crate::text;
 
 #[derive(Debug, Deserialize)]
@@ -55,14 +56,11 @@ pub async fn list(
     State(state): State<AppState>,
     Query(q): Query<ListQuery>,
 ) -> AppResult<Json<Value>> {
-    let mut sql = String::from(
-        "SELECT t.id, t.kind, t.tmdb_id, t.name, t.overview, t.poster_path, t.backdrop_path,
-                t.logo_path, t.release_date, t.last_air_date, t.tmdb_status, t.runtime,
-                t.episode_count, t.season_count, t.genres_json, t.tmdb_vote, t.imdb_id,
-                t.collection_id, t.accent_json
+    let mut sql = format!(
+        "SELECT {TITLE_COLUMNS}
            FROM library_entry l
            JOIN title t ON t.id = l.title_id
-          WHERE l.user_id = ?",
+          WHERE l.user_id = ?"
     );
 
     if let Some(status) = &q.status {
@@ -211,14 +209,10 @@ fn yes() -> bool {
 pub async fn upsert(
     auth: Auth,
     State(state): State<AppState>,
-    Path((kind, tmdb_id)): Path<(String, i64)>,
+    Path(title_id): Path<i64>,
     Json(body): Json<UpsertBody>,
 ) -> AppResult<Json<Value>> {
-    if kind != "movie" && kind != "tv" {
-        return Err(AppError::BadRequest("That isn't a film or a show.".into()));
-    }
-
-    let (title_id, detail) = store::ensure_title(&state, &kind, tmdb_id).await?;
+    let kind = catalog::get_title(&state.pool, title_id).await?.kind;
     let before = store::get_entry(&state.pool, auth.user_id(), title_id).await?;
     let is_new = before.is_none();
     store::apply_patch(&state.pool, auth.user_id(), title_id, &body.patch).await?;
@@ -245,12 +239,12 @@ pub async fn upsert(
     }
 
     if kind == "tv" && is_new && body.sync_seasons {
-        if let Err(e) = store::sync_all_seasons(&state, title_id, &detail).await {
+        if let Err(e) = catalog::ensure_episodes(&state, title_id, None).await {
             tracing::warn!(error = %e, "could not sync every season");
         }
     }
 
-    let row = store::get_title(&state.pool, title_id).await?;
+    let row = catalog::get_title(&state.pool, title_id).await?;
     let item = store::build_item(&state.pool, auth.user_id(), row).await?;
     Ok(Json(json!({ "item": item })))
 }
@@ -258,11 +252,14 @@ pub async fn upsert(
 pub async fn remove(
     auth: Auth,
     State(state): State<AppState>,
-    Path((kind, tmdb_id)): Path<(String, i64)>,
+    Path(title_id): Path<i64>,
 ) -> AppResult<Json<Value>> {
-    let Some(title_id) = store::find_title_id(&state.pool, &kind, tmdb_id).await? else {
+    if store::get_entry(&state.pool, auth.user_id(), title_id)
+        .await?
+        .is_none()
+    {
         return Err(AppError::NotFound("not in your library".into()));
-    };
+    }
     store::remove_entry(&state.pool, auth.user_id(), title_id).await?;
     Ok(Json(json!({ "ok": true })))
 }

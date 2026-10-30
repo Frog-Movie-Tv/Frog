@@ -3,15 +3,15 @@
 	import NewShelf from './NewShelf.svelte';
 	import { api } from '#lib/api';
 	import { toasts } from '#lib/toast.svelte';
-	import type { Kind, Shelf } from '#lib/types';
+	import type { Shelf } from '#lib/types';
 
 	interface Props {
-		kind: Kind;
-		tmdbId: number;
+		/** Frog's id for the title. */
+		titleId: number;
 		name: string;
 	}
 
-	let { kind, tmdbId, name }: Props = $props();
+	let { titleId, name }: Props = $props();
 
 	let open = $state(false);
 	let creating = $state(false);
@@ -22,7 +22,7 @@
 		open = !open;
 		if (open) {
 			try {
-				shelves = (await api.titleShelves(kind, tmdbId)).shelves;
+				shelves = (await api.titleShelves(titleId)).shelves;
 			} catch (e) {
 				toasts.error(e);
 				open = false;
@@ -34,8 +34,8 @@
 		const on = !shelf.on;
 		shelf.on = on;
 		try {
-			if (on) await api.addToShelf(shelf.id, kind, tmdbId);
-			else await api.removeFromShelf(shelf.id, kind, tmdbId);
+			if (on) await api.addToShelf(shelf.id, titleId);
+			else await api.removeFromShelf(shelf.id, titleId);
 			toasts.push(on ? `Added to ${shelf.name}` : `Removed from ${shelf.name}`);
 		} catch (e) {
 			shelf.on = !on;
@@ -96,7 +96,7 @@
 </div>
 
 {#if creating}
-	<NewShelf title={{ kind, tmdbId }} oncreated={created} onclose={() => (creating = false)} />
+	<NewShelf {titleId} oncreated={created} onclose={() => (creating = false)} />
 {/if}
 
 <style>

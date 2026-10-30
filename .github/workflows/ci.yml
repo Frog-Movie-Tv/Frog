@@ -118,6 +118,11 @@ jobs:
       - name: Apply on a fresh database and on the previous version's
         run: bash backend/scripts/check-migrations.sh
 
+      # What deploy/update.sh does to the database when an update fails,
+      # with Docker stood in for.
+      - name: Update rollback
+        run: bash deploy/tests/update-rollback.sh
+
   e2e:
     name: End to end
     runs-on: ubuntu-latest

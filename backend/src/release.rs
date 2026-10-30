@@ -347,17 +347,21 @@ pub async fn reconcile(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppRes
     let Some(entry) = store::get_entry(pool, user_id, title_id).await? else {
         return Ok(());
     };
-    let (kind, tmdb_id): (String, i64) =
-        sqlx::query_as("SELECT kind, tmdb_id FROM title WHERE id = ?")
-            .bind(title_id)
-            .fetch_one(pool)
-            .await?;
+    let (kind, from_anilist): (String, bool) = sqlx::query_as(
+        "SELECT kind, EXISTS (SELECT 1 FROM title_external x
+                               WHERE x.title_id = title.id AND x.provider = 'anilist'
+                                 AND x.is_primary = 1)
+           FROM title WHERE id = ?",
+    )
+    .bind(title_id)
+    .fetch_one(pool)
+    .await?;
     if kind != "tv" {
         return Ok(());
     }
     // A title from AniList with no episodes listed has nothing to measure
-    // against; its status is AniList's word (see `anilist::sync_local`).
-    if store::is_local(tmdb_id) {
+    // against; its status is AniList's word (see `anilist::local::sync_local`).
+    if from_anilist {
         let (episodes,): (i64,) =
             sqlx::query_as("SELECT COUNT(*) FROM episode WHERE title_id = ? AND season_number > 0")
                 .bind(title_id)

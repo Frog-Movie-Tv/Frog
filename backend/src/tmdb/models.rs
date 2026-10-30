@@ -27,10 +27,19 @@ fn year_of(date: Option<&str>) -> Option<i32> {
     date.and_then(|d| d.get(0..4)).and_then(|y| y.parse().ok())
 }
 
+/// A film or show as a provider lists it: a search result, a credit, a
+/// recommendation. Not necessarily in Frog's catalog yet.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchItem {
     pub kind: String,
-    pub tmdb_id: i64,
+    /// TMDB's id; none for an anime only AniList has.
+    pub tmdb_id: Option<i64>,
+    /// AniList's id, for an anime TMDB lacks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anilist_id: Option<i64>,
+    /// Frog's id, when the title is in this account's library.
+    #[serde(default)]
+    pub id: Option<i64>,
     pub name: String,
     pub poster_path: Option<String>,
     pub backdrop_path: Option<String>,
@@ -57,10 +66,19 @@ impl SearchItem {
         }
         let name = str_at(v, "title").or_else(|| str_at(v, "name"))?;
         let date = str_at(v, "release_date").or_else(|| str_at(v, "first_air_date"));
+        // AniList's answers come in TMDB's shape, marked as AniList's.
+        let raw_id = i64_at(v, "id")?;
+        let (tmdb_id, anilist_id) = if str_at(v, "source").as_deref() == Some("anilist") {
+            (None, Some(raw_id))
+        } else {
+            (Some(raw_id), None)
+        };
 
         Some(Self {
             kind,
-            tmdb_id: i64_at(v, "id")?,
+            tmdb_id,
+            anilist_id,
+            id: None,
             name,
             poster_path: str_at(v, "poster_path"),
             backdrop_path: str_at(v, "backdrop_path"),
@@ -77,13 +95,32 @@ impl SearchItem {
             in_library: None,
         })
     }
+
+    /// The provider id this item stands for.
+    pub fn external(&self) -> Option<crate::catalog::ExternalId> {
+        match (self.tmdb_id, self.anilist_id) {
+            (Some(id), _) => Some(crate::catalog::ExternalId::tmdb(&self.kind, id)),
+            (None, Some(id)) => Some(crate::catalog::ExternalId::AniList(id)),
+            (None, None) => None,
+        }
+    }
+
+    /// Whether two items are the same title as their providers name it.
+    pub fn same_as(&self, other: &SearchItem) -> bool {
+        self.kind == other.kind
+            && match (self.tmdb_id, other.tmdb_id) {
+                (Some(a), Some(b)) => a == b,
+                (None, None) => self.anilist_id.is_some() && self.anilist_id == other.anilist_id,
+                _ => false,
+            }
+    }
 }
 
-/// The subset we denormalise into the `title` table.
+/// The subset we denormalise into the `title` table. Which provider it came
+/// from is the caller's to say (`catalog::ensure`).
 #[derive(Debug, Clone)]
 pub struct TitleCore {
     pub kind: String,
-    pub tmdb_id: i64,
     pub name: String,
     pub original_name: Option<String>,
     pub overview: Option<String>,
@@ -102,6 +139,32 @@ pub struct TitleCore {
     pub collection_id: Option<i64>,
 }
 
+/// Empty, but with genres as the empty list SQL's `json_each` can read: an
+/// empty string there fails every query that ranks by genre.
+impl Default for TitleCore {
+    fn default() -> Self {
+        Self {
+            kind: String::new(),
+            name: String::new(),
+            original_name: None,
+            overview: None,
+            poster_path: None,
+            backdrop_path: None,
+            logo_path: None,
+            release_date: None,
+            last_air_date: None,
+            tmdb_status: None,
+            runtime: None,
+            episode_count: None,
+            season_count: None,
+            genres_json: "[]".to_string(),
+            tmdb_vote: None,
+            imdb_id: None,
+            collection_id: None,
+        }
+    }
+}
+
 impl TitleCore {
     pub fn from_detail(kind: &str, v: &Value) -> Option<Self> {
         let is_tv = kind == "tv";
@@ -116,7 +179,6 @@ impl TitleCore {
 
         Some(Self {
             kind: kind.to_string(),
-            tmdb_id: i64_at(v, "id")?,
             name: str_at(v, "title").or_else(|| str_at(v, "name"))?,
             original_name: str_at(v, "original_title").or_else(|| str_at(v, "original_name")),
             overview: str_at(v, "overview"),

@@ -45,10 +45,10 @@
 {#snippet rail(title: string, cards: ProfileCard[])}
 	{#if cards.length}
 		<Rail {title}>
-			{#each cards as card (card.kind + card.tmdb_id)}
+			{#each cards as card (card.id)}
 				<Poster
 					kind={card.kind}
-					tmdbId={card.tmdb_id}
+					ref={card}
 					name={card.name}
 					posterPath={card.poster_path}
 					rating={card.rating}
@@ -117,10 +117,10 @@
 			<section class="pinned">
 				<h2>Pinned</h2>
 				<div class="pins">
-					{#each profile.pinned as card (card.kind + card.tmdb_id)}
+					{#each profile.pinned as card (card.id)}
 						<Poster
 							kind={card.kind}
-							tmdbId={card.tmdb_id}
+							ref={card}
 							name={card.name}
 							posterPath={card.poster_path}
 							rating={card.rating}

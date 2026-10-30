@@ -13,6 +13,8 @@ node_modules/
 /frontend/test-results
 /frontend/playwright-report
 /frontend/.vite
+# written from RELEASE-NOTES.md by every build and dev start
+/frontend/static/changelog.json
 
 # data
 /data

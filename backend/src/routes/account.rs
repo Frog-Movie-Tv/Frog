@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 use crate::auth::{self, Auth, Role};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
+use crate::store;
 
 /// Prefix of a session's token hash, enough to tell sessions apart in a list.
 /// It cannot be turned back into a token, so showing it gives nothing away.
@@ -218,8 +219,8 @@ pub struct ProfileBody {
 
 #[derive(Deserialize, serde::Serialize)]
 pub struct Pin {
-    pub kind: String,
-    pub tmdb_id: i64,
+    /// Frog's id for a title in this account's library.
+    pub title_id: i64,
 }
 
 const NAME_MAX: usize = 40;
@@ -313,8 +314,12 @@ pub async fn set_profile(
                 "Pin at most {PINS_MAX} titles."
             )));
         }
-        if pins.iter().any(|p| p.kind != "movie" && p.kind != "tv") {
-            return Err(AppError::BadRequest("That isn't a film or a show.".into()));
+        for pin in pins {
+            if store::get_entry(pool, me, pin.title_id).await?.is_none() {
+                return Err(AppError::BadRequest(
+                    "Only titles in your library can be pinned.".into(),
+                ));
+            }
         }
         sqlx::query("UPDATE app_user SET pins_json = ? WHERE id = ?")
             .bind(serde_json::to_string(pins)?)
@@ -448,41 +453,18 @@ pub async fn clear_library(
     }
     check_password(&state, auth.user_id(), &body.password).await?;
 
-    let me = auth.user_id();
-    let mut tx = state.pool.begin().await?;
-
-    // Counted before the deletes, so the answer says what actually went.
-    let (titles,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM library_entry WHERE user_id = ?")
-        .bind(me)
-        .fetch_one(&mut *tx)
-        .await?;
-    let (watches,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE user_id = ?")
-        .bind(me)
-        .fetch_one(&mut *tx)
-        .await?;
-    let (shelves,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM shelf WHERE user_id = ?")
-        .bind(me)
-        .fetch_one(&mut *tx)
-        .await?;
-
-    // One transaction: a half-emptied library is worse than either end of it.
-    // shelf_item goes with its shelf, on the foreign key.
-    for statement in [
-        "DELETE FROM watch_event WHERE user_id = ?",
-        "DELETE FROM episode_state WHERE user_id = ?",
-        "DELETE FROM season_rating WHERE user_id = ?",
-        "DELETE FROM shelf WHERE user_id = ?",
-        "DELETE FROM library_entry WHERE user_id = ?",
-    ] {
-        sqlx::query(statement).bind(me).execute(&mut *tx).await?;
-    }
-    tx.commit().await?;
-
-    tracing::info!(user_id = me, titles, watches, shelves, "library emptied");
+    let gone = store::empty_library(&state.pool, auth.user_id()).await?;
+    tracing::info!(
+        user_id = auth.user_id(),
+        titles = gone.titles,
+        watches = gone.watches,
+        shelves = gone.shelves,
+        "library emptied"
+    );
     Ok(Json(json!({
-        "titles": titles,
-        "watches": watches,
-        "shelves": shelves,
+        "titles": gone.titles,
+        "watches": gone.watches,
+        "shelves": gone.shelves,
     })))
 }
 

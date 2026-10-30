@@ -495,6 +495,15 @@ Nothing is open to the internet except 80 and 443, and SSH by key. The machine
   keeps the database it replaced as `frog.db.failed-update-*`, and starts the
   previous image again. The snapshot sits beside the encrypted backups only
   while an update is in flight.
+- A release that changes the schema past what the previous image reads
+  raises the schema generation (SQLite's `user_version`; the catalog release
+  is generation 1). When a failed update raised it, `update.sh` skips the
+  previous image on the new schema, which would pass `/healthz` and break on
+  every page, and goes straight to the snapshot.
+  `deploy/tests/update-rollback.sh` checks each path in CI.
+- The server runs its own copy of these scripts in `/opt/frog/deploy`, made
+  by `install.sh`. A change to `update.sh` reaches it only when copied:
+  `sudo cp deploy/*.sh /opt/frog/deploy/` from a checkout of the release.
 - Every outcome (backup, update, rollback, restore) is also written to
   `ops.jsonl` in the data volume. Administration shows the latest of each
   under Server, and administrators get a notification the first time one
