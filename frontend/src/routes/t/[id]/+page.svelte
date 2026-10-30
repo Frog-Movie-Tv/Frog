@@ -8,6 +8,7 @@
 	import Heatmap from '#lib/components/Heatmap.svelte';
 	import Poster from '#lib/components/Poster.svelte';
 	import Rail from '#lib/components/Rail.svelte';
+	import Scores from '#lib/components/Scores.svelte';
 	import SeasonList from '#lib/components/SeasonList.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import TrackControls from '#lib/components/TrackControls.svelte';
@@ -18,12 +19,13 @@
 	import { toasts } from '#lib/toast.svelte';
 	import { titleKey } from '#lib/titles';
 	import { whenWatched } from '#lib/when.svelte';
-	import type { LibraryItem, TitleDetail } from '#lib/types';
+	import type { LibraryItem, TitleDetail, TitleScore, TitleScores } from '#lib/types';
 
 	let detail = $state<TitleDetail | null>(null);
 	let loading = $state(true);
 	let error = $state<Failure | null>(null);
 	let trailerOpen = $state<string | null>(null);
+	let outside = $state<TitleScores | null>(null);
 
 	/** Frog's id for the title: the page's own address. */
 	const titleId = $derived(idParam(page.params.id));
@@ -58,6 +60,17 @@
 				return;
 			}
 			detail = res;
+			outside = null;
+			noteDraft = null;
+			// Scores may ask another site; the page never waits for them.
+			void api
+				.scores(id)
+				.then((r) => {
+					if (mine === token) outside = r;
+				})
+				.catch(() => {
+					// The title's own score is already on the page.
+				});
 		} catch (e) {
 			if (mine !== token) return;
 			error = failure(e, NOT_ON_TMDB);
@@ -97,11 +110,52 @@
 		return l > 0.36 ? '#0b1410' : '#ffffff';
 	}
 
+	/** What is being typed; null shows the saved note. */
+	let noteDraft = $state<string | null>(null);
+	let savingNote = $state(false);
+	const savedNote = $derived(item?.entry?.notes ?? '');
+	const noteText = $derived(noteDraft ?? savedNote);
+
+	async function saveNote() {
+		if (!item) return;
+		const id = item.id;
+		const before = savedNote;
+		const text = noteText.trim();
+		savingNote = true;
+		try {
+			const { item: updated } = await api.track(id, { notes: text || null });
+			updateItem(updated);
+			noteDraft = null;
+			if (!text && before) {
+				toasts.undoable('Note removed', async () => {
+					const { item: back } = await api.track(id, { notes: before });
+					updateItem(back);
+				});
+			} else {
+				toasts.push('Note saved');
+			}
+		} catch (e) {
+			toasts.error(e);
+		} finally {
+			savingNote = false;
+		}
+	}
+
+	/** Its own provider's score straight away, the rest as they arrive. */
+	const scores = $derived.by<TitleScore[]>(() => {
+		if (outside?.ratings.length) return outside.ratings;
+		if (!item?.tmdb_vote) return [];
+		const source = detail?.anilist_only ? 'anilist' : 'tmdb';
+		return [{ source, score: item.tmdb_vote * 10, votes: null }];
+	});
+
 	const metaLine = $derived.by(() => {
 		if (!item) return [];
 		const bits: string[] = [];
 		const y = year(item.release_date);
 		if (y) bits.push(y);
+		const age = detail?.age_rating ?? outside?.age_rating;
+		if (age) bits.push(age);
 		if (item.kind === 'movie' && item.runtime) bits.push(runtime(item.runtime));
 		if (item.kind === 'tv' && item.season_count) {
 			bits.push(`${item.season_count} season${item.season_count === 1 ? '' : 's'}`);
@@ -240,15 +294,9 @@
 							{#if i > 0}<span class="dot" aria-hidden="true">•</span>{/if}
 							<span>{bit}</span>
 						{/each}
-						{#if item.tmdb_vote}
-							<span class="dot" aria-hidden="true">•</span>
-							<span class="tmdb"
-								>{detail.anilist_only
-									? `AniList ${Math.round(item.tmdb_vote * 10)}%`
-									: `TMDB ${item.tmdb_vote.toFixed(1)}`}</span
-							>
-						{/if}
 					</div>
+
+					<Scores {scores} />
 
 					{#if item.genres.length}
 						<div class="genres">
@@ -315,6 +363,28 @@
 			{#if item.overview}
 				<section class="block">
 					<p class="overview">{item.overview}</p>
+				</section>
+			{/if}
+
+			{#if item.entry}
+				<section class="block notes">
+					<div class="section-head"><h2>Your notes</h2></div>
+					<textarea
+						class="input"
+						rows="3"
+						maxlength="2000"
+						aria-label="Your notes on {item.name}"
+						placeholder="What stayed with you, who you watched it with, where you left off."
+						value={noteText}
+						oninput={(e) => (noteDraft = e.currentTarget.value)}></textarea>
+					{#if noteText.trim() !== savedNote}
+						<div class="note-actions">
+							<button class="btn ghost" onclick={() => (noteDraft = null)}>Cancel</button>
+							<button class="btn primary" disabled={savingNote} onclick={saveNote}>
+								{noteText.trim() ? 'Save note' : 'Remove note'}
+							</button>
+						</div>
+					{/if}
 				</section>
 			{/if}
 
@@ -505,6 +575,40 @@
 {/if}
 
 <style>
+	.notes textarea {
+		display: block;
+		max-width: 76ch;
+		resize: vertical;
+		line-height: 1.55;
+	}
+
+	.note-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 10px;
+		max-width: 76ch;
+		margin-top: 10px;
+	}
+
+	.next .faint {
+		white-space: nowrap;
+	}
+
+	/* Too narrow for one line: the label on top, the episode and its date
+	   under it, rather than each wrapping on its own. */
+	@media (max-width: 560px) {
+		.next {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto;
+			gap: 2px 12px;
+			width: 100%;
+		}
+
+		.next .eyebrow {
+			grid-column: 1 / -1;
+		}
+	}
+
 	.title-page.tinted {
 		--accent: var(--poster-accent);
 		--accent-ink: var(--poster-ink);
@@ -618,11 +722,6 @@
 
 	.dot {
 		opacity: 0.5;
-	}
-
-	.tmdb {
-		font-weight: 600;
-		color: var(--text);
 	}
 
 	.genres {

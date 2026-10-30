@@ -11,8 +11,17 @@ use crate::state::AppState;
 use crate::store;
 use crate::tmdb::models::{self, EpisodeInfo, SearchItem};
 
-/// (season, episode, my rating, my notes, number of watches)
-type EpisodeStateRow = (i64, i64, Option<f64>, Option<String>, i64);
+/// (season, episode, my rating, my notes, number of watches,
+///  latest watch time, whether that watch is undated)
+type EpisodeStateRow = (
+    i64,
+    i64,
+    Option<f64>,
+    Option<String>,
+    i64,
+    Option<String>,
+    Option<bool>,
+);
 
 #[derive(Serialize)]
 pub struct EpisodeView {
@@ -22,6 +31,9 @@ pub struct EpisodeView {
     pub watch_count: i64,
     pub rating: Option<f64>,
     pub notes: Option<String>,
+    /// When the latest watch was, so taking back an untick restores it.
+    pub watched_at: Option<String>,
+    pub undated: bool,
 }
 
 /// A title as a provider's address names it: `movie/550` and `tv/1399` are
@@ -131,6 +143,7 @@ async fn detail_of(state: &AppState, user_id: i64, title_id: i64) -> AppResult<J
         "item": item,
         "external": external,
         "tagline": models::str_at(&raw, "tagline"),
+        "age_rating": models::age_rating(&raw, state.tmdb.region()),
         "homepage": models::str_at(&raw, "homepage"),
         "cast": models::cast(&raw, 24),
         "crew": models::key_crew(&raw),
@@ -302,7 +315,13 @@ pub async fn season(
                 s.rating,
                 s.notes,
                 (SELECT COUNT(*) FROM watch_event w
-                  WHERE w.user_id = ?1 AND w.episode_id = e.id)
+                  WHERE w.user_id = ?1 AND w.episode_id = e.id),
+                (SELECT w.watched_at FROM watch_event w
+                  WHERE w.user_id = ?1 AND w.episode_id = e.id
+                  ORDER BY w.watched_at DESC LIMIT 1),
+                (SELECT w.undated FROM watch_event w
+                  WHERE w.user_id = ?1 AND w.episode_id = e.id
+                  ORDER BY w.watched_at DESC LIMIT 1)
            FROM episode e
            LEFT JOIN episode_state s ON s.episode_id = e.id AND s.user_id = ?1
           WHERE e.title_id = ?2 AND e.season_number = ?3",
@@ -318,15 +337,17 @@ pub async fn season(
         .map(|info| {
             let found = states
                 .iter()
-                .find(|(s, e, _, _, _)| *s == info.season_number && *e == info.episode_number);
-            let (rating, notes, count) = match found {
-                Some((_, _, r, n, c)) => (*r, n.clone(), *c),
-                None => (None, None, 0),
+                .find(|row| row.0 == info.season_number && row.1 == info.episode_number);
+            let (rating, notes, count, at, undated) = match found {
+                Some((_, _, r, n, c, at, u)) => (*r, n.clone(), *c, at.clone(), u.unwrap_or(false)),
+                None => (None, None, 0, None, false),
             };
             EpisodeView {
                 info,
                 watched: count > 0,
                 watch_count: count,
+                watched_at: at,
+                undated,
                 rating,
                 notes,
             }
