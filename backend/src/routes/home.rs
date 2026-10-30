@@ -39,6 +39,8 @@ type AiringRow = (i64, i64, i64, Option<String>, Option<String>);
 pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
     let pool = &state.pool;
     let me = auth.user_id();
+    // Read once: every row below is built from it.
+    let facts = store::ItemFacts::load(pool, me).await?;
 
     let watching = rows(
         pool,
@@ -59,7 +61,7 @@ pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
     let mut in_flight = Vec::with_capacity(watching.len());
     for row in watching {
         let id = row.id;
-        let item = store::build_item(pool, me, row).await?;
+        let item = facts.item(row);
         let next = store::next_episode(pool, me, id).await?;
         in_flight.push(UpNext { item, next });
     }
@@ -83,6 +85,7 @@ pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
               ORDER BY l.added_at DESC LIMIT 20"
         ),
         me,
+        &facts,
     )
     .await?;
 
@@ -95,6 +98,7 @@ pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
               ORDER BY l.updated_at DESC LIMIT 20"
         ),
         me,
+        &facts,
     )
     .await?;
 
@@ -118,7 +122,7 @@ pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
                 .map(|i| json!({ "item": i, "next": Value::Null }))
         });
 
-    let this_week = airing_this_week(pool, me).await?;
+    let this_week = airing_this_week(pool, me, &facts).await?;
 
     Ok(Json(json!({
         "hero": hero,
@@ -143,7 +147,11 @@ pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
 ///
 /// Two episodes of one show in the same week are a double bill, not two
 /// separate things to keep track of, so they fold into a single row.
-async fn airing_this_week(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Airing>> {
+async fn airing_this_week(
+    pool: &SqlitePool,
+    user_id: i64,
+    facts: &store::ItemFacts,
+) -> AppResult<Vec<Airing>> {
     let found: Vec<AiringRow> = sqlx::query_as(
         "SELECT e.title_id, e.season_number, e.episode_number, e.name, e.air_date
            FROM episode e
@@ -175,8 +183,7 @@ async fn airing_this_week(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Airi
 
     let mut out = Vec::with_capacity(grouped.len());
     for (title_id, episodes) in grouped {
-        let row = crate::catalog::get_title(pool, title_id).await?;
-        let item = store::build_item(pool, user_id, row).await?;
+        let item = facts.item(crate::catalog::get_title(pool, title_id).await?);
         let air_date = episodes.first().and_then(|e| e.air_date.clone());
         out.push(Airing {
             item,
@@ -312,13 +319,14 @@ async fn rows(pool: &SqlitePool, sql: &str, user_id: i64) -> AppResult<Vec<Title
         .await?)
 }
 
-async fn items(pool: &SqlitePool, sql: &str, user_id: i64) -> AppResult<Vec<LibraryItem>> {
+async fn items(
+    pool: &SqlitePool,
+    sql: &str,
+    user_id: i64,
+    facts: &store::ItemFacts,
+) -> AppResult<Vec<LibraryItem>> {
     let found = rows(pool, sql, user_id).await?;
-    let mut out = Vec::with_capacity(found.len());
-    for row in found {
-        out.push(store::build_item(pool, user_id, row).await?);
-    }
-    Ok(out)
+    Ok(found.into_iter().map(|row| facts.item(row)).collect())
 }
 
 #[cfg(test)]

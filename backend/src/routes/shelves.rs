@@ -13,7 +13,7 @@ use crate::catalog::{self, TitleRow, TITLE_COLUMNS};
 use crate::error::{AppError, AppResult};
 use crate::routes::library::order_clause;
 use crate::state::AppState;
-use crate::store::{self, LibraryItem, STATUSES};
+use crate::store::{self, STATUSES};
 
 /// What a smart shelf matches. Every field is optional; an empty rule set
 /// matches the whole library.
@@ -257,10 +257,7 @@ pub async fn get(
     let row = shelf(&state.pool, auth.user_id(), id).await?;
     let titles = titles_of(&state.pool, auth.user_id(), &row).await?;
     let shelf = summary(&row, &titles);
-    let mut items: Vec<LibraryItem> = Vec::with_capacity(titles.len());
-    for t in titles {
-        items.push(store::build_item(&state.pool, auth.user_id(), t).await?);
-    }
+    let items = store::build_items(&state.pool, auth.user_id(), titles).await?;
     Ok(Json(json!({ "shelf": shelf, "items": items })))
 }
 

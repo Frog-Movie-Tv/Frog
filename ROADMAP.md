@@ -111,6 +111,7 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 | **No staging** | 954 MB will not carry a second instance. `install.sh --with-staging` sets one up if it ever moves to a bigger machine. |
 | **Notifications untested on a real phone** | Verified through FCM in Chrome; not on Android, and tapping one is untested. |
 | **Server messages are English only** | Validation errors and notification text. Fine while the interface is English only. |
+| **The import review is not on `main`** | #55 merged into `feat/netflix-dated-episodes`, not `main`, so grouped rows, filter chips and bulk actions sit on that branch only. The work is intact; it needs a pull request of `feat/import-review` into `main`. |
 | **Imports keep the day, not the time** | Every reader sets a watch to 20:00 UTC on its day, so Trakt's exact time is not kept. Recorded in `docs/IMPORTS.md` and pinned by `tests/parsers.test.mjs`; keeping exact times needs its own requirements and tests. |
 | **The database file does not shrink** | The picture cache is held to `FROG_IMAGE_CACHE_MB`, but SQLite only reuses freed pages. A one-off `VACUUM` (with the instance stopped) gives the space back if it ever matters. |
 | **Screenshots still weigh 13 MB** | Down from 20 MB by shooting at 1.5×. A lossless optimiser in the release step would take more off; none is part of the build. |
@@ -228,6 +229,14 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   it was recorded, so counting it made a show read "today" after an import.
   A title with only undated watches has no last-watched day; Home's Continue
   watching then falls back on `updated_at`.
+- **Lists of titles are built from one reading** (`store::ItemFacts`): five
+  queries for the whole account, then `item` per title. Library and shelves go
+  through `build_items`; Home loads it once and shares it across its rows. On
+  the 611-title library a 399-title shelf went from about 640 ms to 96 ms and
+  Home from 145 ms to 86 ms, field for field the same JSON. A six-title shelf
+  went from 13 ms to 38 ms, accepted to keep one code path. `build_item` stays
+  for the pages about one title. Its totals also cover shelf titles, because a
+  title can stay on a hand-picked shelf after leaving the library.
 - **Stats count only titles in the library.** Watches of removed titles stay
   in the database (the diary keeps them) but leave every total.
 - **Stats credits** live in `title_person`, filled by `store::ensure_title`

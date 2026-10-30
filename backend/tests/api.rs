@@ -1508,6 +1508,66 @@ fn names(body: &Value) -> Vec<String> {
         .collect()
 }
 
+/// A title can sit on a hand-picked shelf without being in the library. Its
+/// episodes still count, and what the shelf shows is what its own page would.
+#[tokio::test]
+async fn a_shelf_counts_the_episodes_of_a_title_outside_the_library() {
+    let h = Harness::new().await;
+    let cookie = shelf_library(&h).await;
+    sqlx::query("UPDATE episode SET air_date = '2020-01-01' WHERE title_id = 1")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+
+    let (_, body, _) = h
+        .post(
+            "/api/shelves",
+            json!({ "name": "Kept", "kind": "manual", "title_ids": [1, 3] }),
+            Some(&cookie),
+        )
+        .await;
+    let id = body["shelf"]["id"].as_i64().unwrap();
+    sqlx::query("DELETE FROM library_entry WHERE user_id = 1 AND title_id = 1")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+
+    let (status, body) = h.get(&format!("/api/shelves/{id}"), Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let outside = &body["items"][0];
+    assert_eq!(outside["name"], json!("Half Watched"));
+    assert_eq!(outside["entry"], Value::Null);
+    assert_eq!(outside["total_episodes"], json!(2));
+    assert_eq!(outside["watched_episodes"], json!(1));
+}
+
+/// Home is built from one reading of the account's numbers: each row still
+/// shows its own.
+#[tokio::test]
+async fn home_rows_each_show_their_own_numbers() {
+    let h = Harness::new().await;
+    let cookie = shelf_library(&h).await;
+    sqlx::query("UPDATE episode SET air_date = '2020-01-01'")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+
+    let (status, body) = h.get("/api/home", Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let hero = &body["hero"]["item"];
+    assert_eq!(hero["name"], json!("Half Watched"));
+    assert_eq!(hero["watched_episodes"], json!(1));
+    assert_eq!(hero["total_episodes"], json!(2));
+    assert_eq!(hero["entry"]["status"], json!("watching"));
+
+    let recent = body["recent"].as_array().unwrap();
+    let finished = recent.iter().find(|i| i["name"] == "Finished").unwrap();
+    // The special does not count.
+    assert_eq!(finished["watched_episodes"], json!(1));
+    assert_eq!(finished["total_episodes"], json!(1));
+    assert_eq!(finished["entry"]["rating"], json!(80.0));
+}
+
 #[tokio::test]
 async fn a_manual_shelf_keeps_your_order_and_comes_back_after_delete() {
     let h = Harness::new().await;

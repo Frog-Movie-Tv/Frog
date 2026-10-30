@@ -671,90 +671,121 @@ struct EntryOfTitle {
     entry: LibraryEntry,
 }
 
-/// `build_item` for a whole list, in four queries instead of three per title.
+/// `build_item` for a whole list, in five queries instead of three per title.
 ///
 /// A library of six hundred titles was eighteen hundred queries and over a
-/// second before the page could draw. The numbers are the same as
-/// `build_item`'s: specials do not count, and the episode list is shared
-/// while the watches are this account's.
+/// second before the page could draw.
 pub async fn build_items(
     pool: &SqlitePool,
     user_id: i64,
     titles: Vec<TitleRow>,
 ) -> AppResult<Vec<LibraryItem>> {
-    use std::collections::HashMap;
+    let facts = ItemFacts::load(pool, user_id).await?;
+    Ok(titles.into_iter().map(|t| facts.item(t)).collect())
+}
 
-    let entries: HashMap<i64, LibraryEntry> = sqlx::query_as::<_, EntryOfTitle>(
-        "SELECT title_id, status, rating, favourite, notes, started_at, finished_at,
-                rewatch_count, added_at, updated_at, notify
-           FROM library_entry WHERE user_id = ?",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?
-    .into_iter()
-    .map(|r| (r.title_id, r.entry))
-    .collect();
+/// What one account's items are built from, read once for the whole library.
+/// Load it once and call `item` for each title when a page draws several
+/// lists, as Home does. The numbers are the same as `build_item`'s: specials
+/// do not count, and the episode list is shared while the watches are this
+/// account's.
+pub struct ItemFacts {
+    entries: std::collections::HashMap<i64, LibraryEntry>,
+    watched: std::collections::HashMap<i64, i64>,
+    totals: std::collections::HashMap<i64, i64>,
+    last: std::collections::HashMap<i64, Option<String>>,
+    counted: std::collections::HashMap<i64, i64>,
+}
 
-    let watched: HashMap<i64, i64> = sqlx::query_as::<_, (i64, i64)>(
-        "SELECT e.title_id, COUNT(DISTINCT e.id)
-           FROM episode e
-           JOIN watch_event w ON w.episode_id = e.id AND w.user_id = ?
-          WHERE e.season_number > 0
-          GROUP BY e.title_id",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?
-    .into_iter()
-    .collect();
+impl ItemFacts {
+    pub async fn load(pool: &SqlitePool, user_id: i64) -> AppResult<Self> {
+        use std::collections::HashMap;
 
-    let totals: HashMap<i64, i64> = sqlx::query_as::<_, (i64, i64)>(concat!(
-        "SELECT e.title_id, COUNT(*)
-           FROM episode e
-          WHERE e.season_number > 0
-            AND e.title_id IN (SELECT title_id FROM library_entry WHERE user_id = ?)
-            AND ",
-        crate::released!(),
-        " GROUP BY e.title_id"
-    ))
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?
-    .into_iter()
-    .collect();
-
-    let last: HashMap<i64, Option<String>> = sqlx::query_as::<_, (i64, Option<String>)>(
-        "SELECT title_id, MAX(watched_at) FROM watch_event
-          WHERE user_id = ? AND undated = 0 GROUP BY title_id",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?
-    .into_iter()
-    .collect();
-    let counted = local_progress(pool, user_id).await?;
-
-    Ok(titles
+        let entries: HashMap<i64, LibraryEntry> = sqlx::query_as::<_, EntryOfTitle>(
+            "SELECT title_id, status, rating, favourite, notes, started_at, finished_at,
+                    rewatch_count, added_at, updated_at, notify
+               FROM library_entry WHERE user_id = ?",
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?
         .into_iter()
-        .map(|title| {
-            let total = totals.get(&title.id).copied().unwrap_or(0);
-            let seen = counted.get(&title.id).or_else(|| watched.get(&title.id));
-            LibraryItem {
-                genres: parse_genres(&title.genres_json),
-                accent: parse_accent(title.accent_json.as_deref()),
-                entry: entries.get(&title.id).cloned(),
-                watched_episodes: seen.copied().unwrap_or(0),
-                total_episodes: if total > 0 {
-                    total
-                } else {
-                    title.episode_count.unwrap_or(0)
-                },
-                last_watched_at: last.get(&title.id).cloned().flatten(),
-                title,
-            }
+        .map(|r| (r.title_id, r.entry))
+        .collect();
+
+        let watched: HashMap<i64, i64> = sqlx::query_as::<_, (i64, i64)>(
+            "SELECT e.title_id, COUNT(DISTINCT e.id)
+               FROM episode e
+               JOIN watch_event w ON w.episode_id = e.id AND w.user_id = ?
+              WHERE e.season_number > 0
+              GROUP BY e.title_id",
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .collect();
+
+        // A title stays on a hand-picked shelf after it leaves the library.
+        let totals: HashMap<i64, i64> = sqlx::query_as::<_, (i64, i64)>(concat!(
+            "SELECT e.title_id, COUNT(*)
+               FROM episode e
+              WHERE e.season_number > 0
+                AND e.title_id IN (SELECT title_id FROM library_entry WHERE user_id = ?1
+                                   UNION
+                                   SELECT i.title_id FROM shelf_item i
+                                     JOIN shelf s ON s.id = i.shelf_id
+                                    WHERE s.user_id = ?1)
+                AND ",
+            crate::released!(),
+            " GROUP BY e.title_id"
+        ))
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .collect();
+
+        let last: HashMap<i64, Option<String>> = sqlx::query_as::<_, (i64, Option<String>)>(
+            "SELECT title_id, MAX(watched_at) FROM watch_event
+              WHERE user_id = ? AND undated = 0 GROUP BY title_id",
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .collect();
+        let counted = local_progress(pool, user_id).await?;
+
+        Ok(ItemFacts {
+            entries,
+            watched,
+            totals,
+            last,
+            counted,
         })
-        .collect())
+    }
+
+    pub fn item(&self, title: TitleRow) -> LibraryItem {
+        let total = self.totals.get(&title.id).copied().unwrap_or(0);
+        let seen = self
+            .counted
+            .get(&title.id)
+            .or_else(|| self.watched.get(&title.id));
+        LibraryItem {
+            genres: parse_genres(&title.genres_json),
+            accent: parse_accent(title.accent_json.as_deref()),
+            entry: self.entries.get(&title.id).cloned(),
+            watched_episodes: seen.copied().unwrap_or(0),
+            total_episodes: if total > 0 {
+                total
+            } else {
+                title.episode_count.unwrap_or(0)
+            },
+            last_watched_at: self.last.get(&title.id).cloned().flatten(),
+            title,
+        }
+    }
 }
 
 /// What emptying a library took away.
