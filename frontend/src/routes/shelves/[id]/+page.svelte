@@ -13,7 +13,6 @@
 	import { session } from '#lib/session.svelte';
 	import { moved, sortable } from '#lib/sortable';
 	import { toasts } from '#lib/toast.svelte';
-	import { settings } from '#lib/settings.svelte';
 	import type { LibraryItem, Shelf, ShelfRules as Rules } from '#lib/types';
 
 	const id = $derived(Number(page.params.id));
@@ -47,16 +46,6 @@
 		if (!session.authenticated || !id) return;
 		void load();
 	});
-
-	const homeRow = $derived(`shelf:${id}`);
-	const onHome = $derived(settings.current.homeRows.includes(homeRow));
-
-	function toggleHome() {
-		const adding = !onHome;
-		const rows = settings.current.homeRows;
-		settings.set('homeRows', adding ? [...rows, homeRow] : rows.filter((r) => r !== homeRow));
-		toasts.push(adding ? 'Shown on Home' : 'Taken off Home');
-	}
 
 	async function saveOrder() {
 		try {
@@ -159,23 +148,9 @@
 		const name = shelf.name;
 		try {
 			const gone = await api.deleteShelf(id);
-			// Home names its rows by shelf id, and an undone shelf gets a new one.
-			const row = `shelf:${id}`;
-			const at = settings.current.homeRows.indexOf(row);
-			if (at >= 0) {
-				settings.set(
-					'homeRows',
-					settings.current.homeRows.filter((r) => r !== row)
-				);
-			}
 			await goto('/shelves');
 			toasts.undoable(`Deleted ${name}`, async () => {
 				const { shelf: back } = await api.createShelf(gone);
-				if (at >= 0) {
-					const rows = [...settings.current.homeRows];
-					rows.splice(at, 0, `shelf:${back.id}`);
-					settings.set('homeRows', rows);
-				}
 				await goto(`/shelves/${back.id}`);
 			});
 		} catch (e) {
@@ -257,16 +232,6 @@
 						</button>
 					{/if}
 				{/if}
-				<button
-					class="btn ghost icon"
-					class:on-home={onHome}
-					aria-pressed={onHome}
-					aria-label="Show on Home"
-					title={onHome ? 'On Home' : 'Show on Home'}
-					onclick={toggleHome}
-				>
-					<Icon name="home" size={16} />
-				</button>
 				<button class="btn ghost icon" aria-label="Rename" title="Rename" onclick={startRename}>
 					<Icon name="pencil" size={16} />
 				</button>
@@ -433,11 +398,6 @@
 
 	.icon {
 		padding: 10px;
-	}
-
-	.on-home {
-		color: var(--accent);
-		border-color: var(--accent);
 	}
 
 	.hint {

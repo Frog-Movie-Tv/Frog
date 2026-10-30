@@ -47,7 +47,7 @@ really watched.
 ### Fixes
 
 - Back from a title returns to your search.
-- A shelf on Home returns to its place when you undo deleting it.
+- Your shelves show once on Home, in their row at the top.
 
 ## [1.0.0] — Bullfrog — 2026-10-30
 

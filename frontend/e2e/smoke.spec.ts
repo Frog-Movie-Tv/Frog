@@ -608,7 +608,7 @@ test('the next account on this device starts from its own preferences', async ({
 test('controls are big enough to touch on a phone', async ({ page, isMobile }) => {
 	test.skip(!isMobile, 'touch targets only apply to the phone layout');
 	await signIn(page);
-	for (const path of ['/library', '/settings#home', '/shelves', '/stats', '/calendar']) {
+	for (const path of ['/library', '/settings#home', '/shelves', '/stats', '/calendar', '/search']) {
 		await page.goto(path);
 		await page.waitForLoadState('networkidle');
 		const small = await page.evaluate(() =>
@@ -625,31 +625,35 @@ test('controls are big enough to touch on a phone', async ({ page, isMobile }) =
 	}
 });
 
-test('a shelf on Home goes with its delete and comes back with its undo', async ({ page }) => {
+test('a shelf shows once on Home, in the row at the top', async ({ page }, testInfo) => {
 	await signIn(page);
+	seedLibrary(testInfo.project.name);
 	const made = await page.request.post('/api/shelves', {
-		data: { name: 'Keep', kind: 'manual', title_ids: [] }
+		data: { name: 'Keepers', kind: 'manual', title_ids: [9102] }
 	});
 	const { shelf } = await made.json();
-	const homeRows = async () => {
-		const stored = await (await page.request.get('/api/settings')).json();
-		return (stored.settings ?? stored).homeRows.filter((r: string) => r.startsWith('shelf:'));
-	};
+
+	// A layout saved with a row for this one shelf, as older ones have.
+	const saved = await (await page.request.get('/api/settings')).json();
+	await page.request.put('/api/settings', {
+		data: { ...saved, homeRows: ['shelves', 'continue', `shelf:${shelf.id}`] }
+	});
+
+	// Twice: the first visit stores the layout in this browser, as a person's has.
+	await page.goto('/');
+	await page.waitForLoadState('networkidle');
+	await page.goto('/');
+	await expect(page.getByRole('heading', { name: 'Your shelves' })).toBeVisible();
+	// Rows for one shelf arrive after the rest, so this has to wait for them.
+	await page.waitForLoadState('networkidle');
+	await expect(page.getByText('Keepers')).toHaveCount(1);
 
 	await page.goto(`/shelves/${shelf.id}`);
-	await page.getByRole('button', { name: 'Show on Home' }).click();
-	await expect.poll(homeRows).toEqual([`shelf:${shelf.id}`]);
+	await expect(page.getByRole('heading', { name: 'Keepers' })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Show on Home' })).toHaveCount(0);
 
-	await page.getByRole('button', { name: /^Delete/ }).click();
-	await expect(page).toHaveURL('/shelves');
-	await expect.poll(homeRows).toEqual([]);
-
-	await page.getByRole('button', { name: 'Undo' }).click();
-	await expect(page).toHaveURL(/\/shelves\/\d+/);
-	const back = Number(page.url().split('/').pop());
-	expect(back).not.toBe(shelf.id);
-	await expect.poll(homeRows).toEqual([`shelf:${back}`]);
-	await page.request.delete(`/api/shelves/${back}`);
+	await page.request.delete(`/api/shelves/${shelf.id}`);
+	clearLibrary(testInfo.project.name);
 });
 
 test('signing out closes the door behind you', async ({ page }) => {

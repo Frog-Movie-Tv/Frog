@@ -260,37 +260,15 @@ let comfort;
 	);
 
 	console.log('\n== on Home ==');
-	await page.getByRole('button', { name: 'Show on Home' }).click();
-	await page.getByText('Shown on Home').waitFor();
 	await page.goto(`${BASE}/`);
-	const rail = page.locator('section', {
-		has: page.getByRole('heading', { name: 'Comfort films' })
-	});
-	await rail.waitFor({ timeout: 15000 });
-	const onHome = await rail.locator('a[href^="/t/"]').count();
-	check('the shelf is a row on Home', onHome === 3, `${onHome} posters`);
+	await page.getByRole('heading', { name: 'Your shelves' }).waitFor();
+	await page.waitForLoadState('networkidle');
 	check(
-		'with a way to the whole shelf',
-		(await rail.getByRole('link', { name: 'See all' }).getAttribute('href')) ===
-			`/shelves/${comfort}`
+		'the shelf is on Home once, in the row at the top',
+		(await page.getByText('Comfort films').count()) === 1
 	);
-	// Home rows live under Settings, Home and menus.
-	await page.goto(`${BASE}/settings#home`);
-	const builder = page.locator('.builder');
-	await builder.getByText('Comfort films').waitFor();
 	check(
-		'Settings lists it with the other rows',
-		(await builder.getByText('Shelf', { exact: true }).count()) === 1
-	);
-	await builder
-		.locator('li', { hasText: 'Comfort films' })
-		.getByRole('button', { name: 'Remove row' })
-		.click();
-	await page.waitForTimeout(600);
-	await page.goto(`${BASE}/`);
-	await page.waitForTimeout(1500);
-	check(
-		'removed there, it leaves Home',
+		'with no row of its own',
 		(await page.getByRole('heading', { name: 'Comfort films' }).count()) === 0
 	);
 	await page.screenshot({ path: join(out, '2b-home-after.png') });

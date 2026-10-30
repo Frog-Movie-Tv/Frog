@@ -251,6 +251,9 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   answers items, status counts and genres from one request; a status counts every
   filter but itself, so its number is what choosing it shows. The page keeps its
   last answer in the module, so Back draws at once and the scroll lands.
+- **Shelves have one place on Home**, the Your shelves row. A shelf used to be
+  able to add a row of its own, which showed it twice; saved layouts lose those
+  rows as they load (`introduceRows`).
 - **Administration shows initials on purpose.** A picture is served only to those
   who can see the profile (`visible` in `routes/profiles.rs`), so drawing one
   there would show it for an account that has its profile off.

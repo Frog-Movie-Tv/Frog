@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { api } from '#lib/api';
 	import Icon, { type IconName } from '#lib/components/Icon.svelte';
 	import Select from '#lib/components/Select.svelte';
 	import { HOME_ROWS, MAX_TABS, NAV_PAGES, settings } from '#lib/settings.svelte';
@@ -25,22 +24,8 @@
 
 	const hiddenRows = $derived(HOME_ROWS.filter((r) => !s.homeRows.includes(r.id)));
 
-	/** Names for shelf rows ("shelf:12"), which are not in HOME_ROWS. */
-	let shelfNames = $state<Record<string, string>>({});
-	$effect(() => {
-		void api
-			.shelves()
-			.then(
-				(r) => (shelfNames = Object.fromEntries(r.shelves.map((x) => [`shelf:${x.id}`, x.name])))
-			)
-			.catch(() => undefined);
-	});
-
 	function rowInfo(id: string): { label: string; hint: string } | undefined {
-		const fixed = HOME_ROWS.find((r) => r.id === id);
-		if (fixed) return fixed;
-		if (id.startsWith('shelf:') && shelfNames[id]) return { label: shelfNames[id], hint: 'Shelf' };
-		return undefined;
+		return HOME_ROWS.find((r) => r.id === id);
 	}
 
 	const navPages = $derived.by(() => {
