@@ -452,6 +452,134 @@ async fn the_library_filter_ignores_accents_and_case() {
     assert_eq!(found(body), ["Pokémon: The First Movie"], "only your own");
 }
 
+/// Every filter narrows together, and the number on a status is what choosing
+/// it would show given the rest of the filter. Choosing a status leaves the
+/// others' numbers where they were, and nobody else's library counts.
+#[tokio::test]
+async fn library_filters_combine_and_each_status_says_what_it_would_show() {
+    let h = Harness::new().await;
+    let (owner, other) = two_accounts(&h).await;
+
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, genres_json) VALUES
+            (1, 'movie', 1, 'Alien', '[\"Horror\",\"Science Fiction\"]'),
+            (2, 'movie', 2, 'Heat', '[\"Crime\",\"Drama\"]'),
+            (3, 'tv', 3, 'Dark', '[\"Drama\",\"Mystery\"]'),
+            (4, 'tv', 4, 'Arcane', '[\"Action & Adventure\",\"Animation\"]'),
+            (5, 'tv', 5, 'Severance', '[\"Drama\"]')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    frog::db::fill_search_names(&h.state.pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, favourite, added_at, updated_at)
+         SELECT u.id, t.id,
+                CASE t.id WHEN 1 THEN 'completed' WHEN 2 THEN 'completed' WHEN 3 THEN 'completed'
+                          WHEN 4 THEN 'watching' ELSE 'planned' END,
+                t.id IN (2, 3), '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'
+           FROM app_user u, title t
+          WHERE u.username = 'mihai' OR (u.username = 'zjef' AND t.id = 4)",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let ask = |query: &'static str| {
+        let (h, owner) = (&h, &owner);
+        async move {
+            let (status, body) = h.get(&format!("/api/library?{query}"), Some(owner)).await;
+            assert_eq!(status, StatusCode::OK, "{query}: {body}");
+            let mut names: Vec<String> = body["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|i| i["name"].as_str().unwrap().to_string())
+                .collect();
+            names.sort();
+            (names, body["counts"].clone(), body["genres"].clone())
+        }
+    };
+
+    let (all, counts, genres) = ask("").await;
+    assert_eq!(all.len(), 5);
+    assert_eq!(
+        counts,
+        json!({ "completed": 3, "watching": 1, "planned": 1 })
+    );
+    assert_eq!(
+        genres,
+        json!([
+            "Action & Adventure",
+            "Animation",
+            "Crime",
+            "Drama",
+            "Horror",
+            "Mystery",
+            "Science Fiction"
+        ])
+    );
+
+    for (query, expected, status_counts) in [
+        // A status narrows the list, not the other numbers.
+        (
+            "status=completed",
+            vec!["Alien", "Dark", "Heat"],
+            json!({ "completed": 3, "watching": 1, "planned": 1 }),
+        ),
+        // Any other filter is in the numbers: Completed says 1 when it shows 1.
+        (
+            "kind=tv",
+            vec!["Arcane", "Dark", "Severance"],
+            json!({ "completed": 1, "watching": 1, "planned": 1 }),
+        ),
+        (
+            "kind=tv&status=completed",
+            vec!["Dark"],
+            json!({ "completed": 1, "watching": 1, "planned": 1 }),
+        ),
+        (
+            "genre=Drama",
+            vec!["Dark", "Heat", "Severance"],
+            json!({ "completed": 2, "planned": 1 }),
+        ),
+        (
+            "genre=Action%20%26%20Adventure",
+            vec!["Arcane"],
+            json!({ "watching": 1 }),
+        ),
+        (
+            "favourite=true",
+            vec!["Dark", "Heat"],
+            json!({ "completed": 2 }),
+        ),
+        (
+            "favourite=true&kind=movie&genre=Drama&status=completed&q=HEA",
+            vec!["Heat"],
+            json!({ "completed": 1 }),
+        ),
+        ("q=nothing%20like%20this", vec![], json!({})),
+        (
+            "status=dropped",
+            vec![],
+            json!({ "completed": 3, "watching": 1, "planned": 1 }),
+        ),
+    ] {
+        let (names, counts, genres) = ask(query).await;
+        assert_eq!(names, expected, "{query}");
+        assert_eq!(counts, status_counts, "{query}");
+        assert_eq!(genres.as_array().unwrap().len(), 7, "{query}: genres stay");
+    }
+
+    let (_, body) = h.get("/api/library", Some(&other)).await;
+    assert_eq!(body["counts"], json!({ "watching": 1 }), "only your own");
+    assert_eq!(
+        body["genres"],
+        json!(["Action & Adventure", "Animation"]),
+        "only your own"
+    );
+}
+
 /// An internal fault must never put a database error on the screen.
 #[tokio::test]
 async fn internal_errors_are_not_shown_verbatim() {

@@ -1,4 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { enforceDeployedCsp } from '../scripts/caddy-csp.mjs';
 
 /**
@@ -417,6 +419,135 @@ test('a search survives a trip to another page and back', async ({ page }) => {
 	await page.goto('/stats');
 	await page.goBack();
 	await expect(page.getByLabel('Search', { exact: true })).toHaveValue('heat');
+});
+
+test('Back from a title opened by a click lands on the same search', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/search');
+	await page.getByLabel('Search', { exact: true }).fill('heat');
+	await expect(page).toHaveURL(/\/search\?q=heat$/);
+
+	// A link, not page.goto: a full reload never met this.
+	await page.locator('a.brand').first().click();
+	await expect(page).toHaveURL('/');
+	await page.goBack();
+	await expect(page).toHaveURL(/\/search\?q=heat$/);
+	await expect(page.getByLabel('Search', { exact: true })).toHaveValue('heat');
+});
+
+/** A small library written straight into this run's database: there is no TMDB key here. */
+function seedLibrary(project: string) {
+	const db = new DatabaseSync(join('.e2e-data', project, 'e2e.db'));
+	db.exec('PRAGMA busy_timeout = 5000');
+	const now = '2026-01-01T00:00:00Z';
+	const { id: user } = db.prepare('SELECT id FROM app_user WHERE username = ?').get(USER) as {
+		id: number;
+	};
+	const titles: [number, string, string, string, string, number][] = [
+		[9101, 'movie', 'Alien', '["Horror"]', 'completed', 0],
+		[9102, 'movie', 'Heat', '["Crime","Drama"]', 'completed', 1],
+		[9103, 'tv', 'Dark', '["Drama"]', 'completed', 1],
+		[9104, 'tv', 'Arcane', '["Action & Adventure"]', 'watching', 0],
+		[9105, 'tv', 'Severance', '["Drama"]', 'planned', 0]
+	];
+	for (const [id, kind, name, genres, status, favourite] of titles) {
+		db.prepare(
+			`INSERT OR IGNORE INTO title (id, kind, name, genres_json, refreshed_at) VALUES (?, ?, ?, ?, ?)`
+		).run(id, kind, name, genres, now);
+		db.prepare(
+			`INSERT OR IGNORE INTO title_external (title_id, provider, external_id, is_primary, added_at)
+			 VALUES (?, 'tmdb', ?, 1, ?)`
+		).run(id, `${kind}/${id}`, now);
+		db.prepare(
+			`INSERT OR REPLACE INTO library_entry (user_id, title_id, status, favourite, added_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?)`
+		).run(user, id, status, favourite, now, now);
+	}
+	db.close();
+}
+
+function clearLibrary(project: string) {
+	const db = new DatabaseSync(join('.e2e-data', project, 'e2e.db'));
+	db.exec('PRAGMA busy_timeout = 5000');
+	db.exec('DELETE FROM library_entry WHERE title_id BETWEEN 9101 AND 9105');
+	db.close();
+}
+
+/** On a phone the filters are in a sheet; everywhere else they are on the page. */
+async function filters(
+	page: Page,
+	isMobile: boolean | undefined,
+	act: (at: Page) => Promise<void>
+) {
+	if (isMobile) await page.getByRole('button', { name: 'Filters', exact: false }).click();
+	await act(page);
+	if (isMobile) await page.getByRole('button', { name: /^Show \d+ title/ }).click();
+}
+
+const statusChip = (page: Page, name: RegExp) =>
+	page.getByRole('group', { name: 'Status filter' }).getByRole('button', { name });
+const titles = (page: Page) => page.locator('.grid a.poster');
+
+test('library filters combine, and each status says what it would show', async ({
+	page,
+	isMobile
+}, testInfo) => {
+	await signIn(page);
+	seedLibrary(testInfo.project.name);
+	await page.goto('/library');
+	await expect(titles(page)).toHaveCount(5);
+
+	await filters(page, isMobile, async (at) => {
+		await at.getByRole('button', { name: 'Type', exact: true }).click();
+		await at.getByRole('option', { name: 'Shows', exact: true }).click();
+		// With Shows on, Completed is worth 1 even though the library holds 3.
+		await expect(statusChip(at, /Completed/)).toContainText('1');
+		await statusChip(at, /Completed/).click();
+	});
+	await expect(page).toHaveURL(/status=completed/);
+	await expect(page).toHaveURL(/kind=tv/);
+	await expect(titles(page)).toHaveCount(1);
+	await expect(titles(page).first()).toHaveAttribute('title', 'Dark');
+
+	await filters(page, isMobile, async (at) => {
+		await at.getByRole('button', { name: isMobile ? 'Clear all' : 'Clear', exact: true }).click();
+	});
+	await expect(page).toHaveURL('/library');
+	await expect(titles(page)).toHaveCount(5);
+
+	await filters(page, isMobile, async (at) => {
+		await at.getByRole('button', { name: 'Genre', exact: true }).click();
+		await at.getByRole('option', { name: 'Action & Adventure', exact: true }).click();
+	});
+	await expect(page).toHaveURL(/genre=Action/);
+	await expect(titles(page)).toHaveCount(1);
+	clearLibrary(testInfo.project.name);
+});
+
+test('a name sorts from A, and Back from a title keeps the filters', async ({
+	page,
+	isMobile
+}, testInfo) => {
+	await signIn(page);
+	seedLibrary(testInfo.project.name);
+	await page.goto('/library');
+	await expect(titles(page)).toHaveCount(5);
+
+	await filters(page, isMobile, async (at) => {
+		await at.getByRole('button', { name: /^Sort/ }).click();
+		await at.getByRole('option', { name: 'Name', exact: true }).click();
+		await statusChip(at, /Completed/).click();
+	});
+	await expect(titles(page)).toHaveCount(3);
+	await expect(titles(page).first()).toHaveAttribute('title', 'Alien');
+
+	await titles(page).first().click();
+	await expect(page).toHaveURL(/\/t\/9101/);
+	await page.goBack();
+	await expect(page).toHaveURL(/status=completed/);
+	await expect(titles(page)).toHaveCount(3);
+	await expect(titles(page).first()).toHaveAttribute('title', 'Alien');
+	clearLibrary(testInfo.project.name);
 });
 
 test('renaming a shelf starts in the name field', async ({ page }) => {

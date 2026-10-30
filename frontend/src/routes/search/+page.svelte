@@ -2,7 +2,7 @@
 	import { sameTitle, titleHref, titleKey } from '#lib/titles';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
+	import { address } from '#lib/address';
 	import Icon from '#lib/components/Icon.svelte';
 	import { api, frogId, img } from '#lib/api';
 	import Avatar from '#lib/components/Avatar.svelte';
@@ -61,7 +61,7 @@
 
 	// The query, the tab and the filters live in the address, so Back from a
 	// title lands on the same results and a search can be shared as a link.
-	const start = page.url.searchParams;
+	const start = address().searchParams;
 	const year = (v: string | null) => (v && /^\d{4}$/.test(v) ? Number(v) : null);
 	const parts = (v: string | null) => (v ? v.split(',').filter(Boolean) : []);
 	let term = $state(start.get('q') ?? '');
@@ -158,7 +158,7 @@
 	});
 
 	function remember() {
-		const url = untrack(() => new URL(page.url.href));
+		const url = untrack(() => new URL(address().href));
 		const set = (key: string, value: string | number | null | undefined) => {
 			if (value) url.searchParams.set(key, String(value));
 			else url.searchParams.delete(key);
@@ -173,7 +173,7 @@
 			set('status', statuses.join(','));
 			set('sort', sort === 'best' ? null : sort);
 		});
-		if (url.search !== untrack(() => page.url.search)) {
+		if (url.search !== untrack(() => address().search)) {
 			void goto(url, { shallow: true, replace: true });
 		}
 	}

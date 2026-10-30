@@ -4,11 +4,10 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::auth::Auth;
-use crate::catalog::{self, TitleRow, TITLE_COLUMNS};
+use crate::catalog;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
-use crate::store::{self, LibraryPatch};
-use crate::text;
+use crate::store::{self, LibraryFilter, LibraryPatch, Page};
 
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
@@ -25,105 +24,43 @@ pub struct ListQuery {
     pub offset: Option<i64>,
 }
 
-/// Map a sort key to SQL. An allowlist, never interpolation of user input.
-///
-/// `user_id` is written into the sort subquery rather than bound, because a
-/// placeholder inside ORDER BY would have to be bound between the filters and
-/// the paging ones and silently shift if either changed. It comes from the
-/// session as an `i64`, so there is nothing in it to escape.
-pub fn order_clause(sort: Option<&str>, order: Option<&str>, user_id: i64) -> String {
-    let dir = match order {
-        Some("asc") => "ASC",
-        _ => "DESC",
-    };
-    let column: String = match sort.unwrap_or("added") {
-        "name" => "t.name COLLATE NOCASE".into(),
-        "rating" => "l.rating".into(),
-        "release" => "COALESCE(t.release_date, '')".into(),
-        "updated" => "l.updated_at".into(),
-        "last_watched" => format!(
-            "(SELECT MAX(w.watched_at) FROM watch_event w
-                WHERE w.title_id = t.id AND w.user_id = {user_id} AND w.undated = 0)"
-        ),
-        _ => "l.added_at".into(),
-    };
-    // NULLs last in either direction: an unrated title should never head the list.
-    format!("ORDER BY ({column}) IS NULL, {column} {dir}, t.name COLLATE NOCASE ASC")
-}
-
 pub async fn list(
     auth: Auth,
     State(state): State<AppState>,
     Query(q): Query<ListQuery>,
 ) -> AppResult<Json<Value>> {
-    let mut sql = format!(
-        "SELECT {TITLE_COLUMNS}
-           FROM library_entry l
-           JOIN title t ON t.id = l.title_id
-          WHERE l.user_id = ?"
-    );
-
     if let Some(status) = &q.status {
         if !store::STATUSES.contains(&status.as_str()) {
             return Err(AppError::BadRequest(format!("unknown status {status}")));
         }
-        sql.push_str(" AND l.status = ?");
     }
-    if q.kind.is_some() {
-        sql.push_str(" AND t.kind = ?");
-    }
-    if q.genre.is_some() {
-        sql.push_str(" AND t.genres_json LIKE ?");
-    }
-    if q.q.is_some() {
-        // Folded on both sides, so neither case nor accents decide a match.
-        // A row written by an older binary has no search_name until the next
-        // start fills it; until then its plain name still matches.
-        sql.push_str(
-            " AND COALESCE(t.search_name, lower(t.name || char(10) || COALESCE(t.original_name, '')))
-                  LIKE ? ESCAPE '\\'",
-        );
-    }
-    if q.favourite == Some(true) {
-        sql.push_str(" AND l.favourite = 1");
-    }
+    let filter = LibraryFilter {
+        status: q.status,
+        kind: q.kind,
+        genre: q.genre,
+        term: q.q,
+        favourite: q.favourite == Some(true),
+    };
 
-    sql.push(' ');
-    sql.push_str(&order_clause(
-        q.sort.as_deref(),
-        q.order.as_deref(),
-        auth.user_id(),
-    ));
-    sql.push_str(" LIMIT ? OFFSET ?");
-
-    let mut query = sqlx::query_as::<_, TitleRow>(&sql).bind(auth.user_id());
-    if let Some(status) = &q.status {
-        query = query.bind(status.clone());
-    }
-    if let Some(kind) = &q.kind {
-        query = query.bind(kind.clone());
-    }
-    if let Some(genre) = &q.genre {
-        query = query.bind(format!("%\"{genre}\"%"));
-    }
-    if let Some(term) = &q.q {
-        // Typed literally: a % or _ in a title is a character, not a wildcard.
-        let folded = text::fold(term.trim())
-            .replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_");
-        query = query.bind(format!("%{folded}%"));
-    }
     // The whole library unless asked for less: a Netflix import alone brings
     // six hundred titles, and the page has no "load more".
-    query = query
-        .bind(q.limit.unwrap_or(10_000).clamp(1, 10_000))
-        .bind(q.offset.unwrap_or(0).max(0));
+    let page = Page {
+        sort: q.sort.as_deref(),
+        order: q.order.as_deref(),
+        limit: q.limit.unwrap_or(10_000).clamp(1, 10_000),
+        offset: q.offset.unwrap_or(0).max(0),
+    };
 
-    let rows = query.fetch_all(&state.pool).await?;
+    let rows = store::library_titles(&state.pool, auth.user_id(), &filter, &page).await?;
     let items = store::build_items(&state.pool, auth.user_id(), rows).await?;
+    let counts = store::library_counts(&state.pool, auth.user_id(), &filter).await?;
+    let genres = store::library_genres(&state.pool, auth.user_id()).await?;
 
-    Ok(Json(json!({ "items": items })))
+    Ok(Json(json!({
+        "items": items,
+        "counts": to_map(counts),
+        "genres": genres,
+    })))
 }
 
 fn to_map(rows: Vec<(String, i64)>) -> Value {
@@ -261,25 +198,4 @@ pub async fn remove(
     }
     store::remove_entry(&state.pool, auth.user_id(), title_id).await?;
     Ok(Json(json!({ "ok": true })))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::order_clause;
-
-    #[test]
-    fn sort_keys_are_allowlisted() {
-        assert!(order_clause(Some("name"), Some("asc"), 1).contains("t.name"));
-        assert!(order_clause(Some("rating"), None, 1).contains("l.rating"));
-        // Anything unknown falls back to added_at rather than reaching SQL.
-        let injected = order_clause(Some("name; DROP TABLE title"), None, 1);
-        assert!(injected.contains("l.added_at"));
-        assert!(!injected.contains("DROP"));
-    }
-
-    #[test]
-    fn sorting_by_last_watched_only_counts_my_watches() {
-        let clause = order_clause(Some("last_watched"), None, 7);
-        assert!(clause.contains("w.user_id = 7"));
-    }
 }

@@ -118,6 +118,15 @@ export function img(path: string | null | undefined, size = 'w342'): string | nu
 	return `/img/${chosen}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
+/** One reading of the library: the titles, and what its filters have to offer. */
+export interface LibraryAnswer {
+	items: LibraryItem[];
+	/** What each status would show with the other filters as they are. */
+	counts: Partial<Record<Status, number>>;
+	/** Every genre in the library, whatever is filtered. */
+	genres: string[];
+}
+
 export interface LibraryQuery {
 	status?: Status;
 	kind?: Kind;
@@ -246,7 +255,7 @@ export const api = {
 		send<ImportSummary>('POST', '/api/import/apply', { items, on_conflict: onConflict }),
 
 	library: (query: LibraryQuery = {}) =>
-		get<{ items: LibraryItem[] }>(`/api/library${qs(query as Record<string, unknown>)}`),
+		get<LibraryAnswer>(`/api/library${qs(query as Record<string, unknown>)}`),
 	stats: () => get<Stats>('/api/library/stats'),
 	shelves: () => get<{ shelves: Shelf[] }>('/api/shelves'),
 	shelf: (id: number) => get<{ shelf: Shelf; items: LibraryItem[] }>(`/api/shelves/${id}`),
