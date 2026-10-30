@@ -228,6 +228,10 @@ check(
 	(await page.getByRole('heading', { name: 'Profile', level: 2 }).count()) === 0
 );
 await page.goto(`${BASE}/settings#this-instance`);
+await page
+	.locator('#this-instance')
+	.waitFor({ state: 'attached', timeout: 5000 })
+	.catch(() => {});
 check(
 	'an old link still lands in the right group',
 	(await page.locator('#this-instance').count()) === 1
@@ -298,10 +302,10 @@ const s = placed.title.season;
 const n = placed.title.from_episode + 5;
 await call('POST', `/api/t/${jjk.id}/episodes/${s}/${n}/watch`, {});
 await page.getByRole('button', { name: 'Sync now' }).click();
-for (let i = 0; i < 60 && !fake.saves.length; i++) await new Promise((r) => setTimeout(r, 500));
+await new Promise((r) => setTimeout(r, 6000));
 check(
-	'a tick in Frog reached AniList on the right entry',
-	fake.saves.some((v) => v.mediaId === 145064 && v.progress === 6 && v.scoreRaw === 0),
+	'a tick in Frog stays in Frog: AniList is read only',
+	!fake.saves.length,
 	JSON.stringify(fake.saves)
 );
 

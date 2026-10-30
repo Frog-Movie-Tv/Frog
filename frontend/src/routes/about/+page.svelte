@@ -112,7 +112,12 @@
 				<Icon name="info" size={16} />
 				<span>
 					{offline.state.reason}
-					{#if offline.state.detail}<br /><span class="faint">{offline.state.detail}</span>{/if}
+					{#if offline.state.detail}
+						<details class="faint">
+							<summary>Details</summary>
+							{offline.state.detail}
+						</details>
+					{/if}
 				</span>
 			</p>
 		{/if}

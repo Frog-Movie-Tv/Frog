@@ -119,6 +119,7 @@ const owner = await person();
 await signIn(owner.page, OWNER);
 await owner.page.goto(`${BASE}/admin`);
 await owner.page.getByRole('heading', { name: 'Administration' }).waitFor();
+await owner.page.locator('.users li').first().waitFor();
 check(
 	'the owner sees themselves under People',
 	(await owner.page.locator('.users li').count()) === 1
@@ -130,7 +131,7 @@ await owner.page.screenshot({ path: join(out, '1-admin-invite.png'), fullPage: t
 
 const guest = await person();
 await guest.page.goto(link);
-await guest.page.getByLabel('Name', { exact: true }).fill(GUEST[0]);
+await guest.page.getByLabel('Username').fill(GUEST[0]);
 await guest.page.getByLabel('Password').fill(GUEST[1]);
 await guest.page.getByRole('button', { name: 'Create my account' }).click();
 await guest.page.waitForURL(`${BASE}/`, { timeout: 15000 }).catch(() => undefined);
@@ -138,7 +139,7 @@ check('the second person joins and lands on Home', new URL(guest.page.url()).pat
 
 const stranger = await person();
 await stranger.page.goto(link);
-await stranger.page.getByLabel('Name', { exact: true }).fill('someone');
+await stranger.page.getByLabel('Username').fill('someone');
 await stranger.page.getByLabel('Password').fill('someone-password');
 await stranger.page.getByRole('button', { name: 'Create my account' }).click();
 await stranger.page.waitForTimeout(1500);

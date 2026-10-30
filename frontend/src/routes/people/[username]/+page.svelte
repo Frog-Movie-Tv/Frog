@@ -59,7 +59,7 @@
 {/snippet}
 
 <div class="page">
-	<a class="back faint" href="/people"><Icon name="chevron-left" size={16} /> People</a>
+	<a class="back faint hit" href="/people"><Icon name="chevron-left" size={16} /> People</a>
 
 	{#if loading}
 		<Spinner label="Loading profile" />

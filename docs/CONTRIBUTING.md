@@ -88,9 +88,9 @@ people editing a changelog is a merge conflict every time.
   `RELEASE-NOTES.md` has no `## [x.y.z]` section for the version in
   `version.txt`. Before merging release-please's pull request, push a commit to
   it that turns the Upcoming section into that version's section.
-- **Staging follows `main`**, **production follows the latest release tag.**
-  So merging a pull request puts it on staging, and merging the release pull
-  request puts it in front of people.
+- **Production follows the latest release tag, and there is no staging.**
+  Merging a pull request builds the `:main` image, which nothing live runs;
+  merging the release pull request puts it in front of people.
 
 ### Cutting a big release
 
@@ -117,7 +117,12 @@ git commit --allow-empty -m "chore: release 0.5.0" -m "Release-As: 0.5.0"
 
 **What a big release needs beyond the version**, none of which is automatic:
 
-1. **Write the notes yourself.** The bot drafts a section from commit
+1. **Write the notes yourself.** Every section has one layout, and
+   `tests/release-notes.test.mjs` holds it there: a sentence under the heading,
+   then Highlights, Improvements and Fixes in that order, each only if it has
+   something in it, with every highlight opening on a bold lead. A screenshot
+   in a section is for the GitHub release page; What's new does not draw it. The
+   bot drafts a section from commit
    subjects so a release is never blocked, but a drafted section reads like a
    list of commits, because it is one. Replace it in `RELEASE-NOTES.md` with
    what a person can now do. The draft is marked with an HTML comment saying

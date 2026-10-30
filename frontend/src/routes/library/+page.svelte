@@ -1,4 +1,18 @@
+<script module lang="ts">
+	import type { LibraryAnswer } from '#lib/api';
+
+	/**
+	 * The last answer, so Back from a title draws the same grid at once and the
+	 * browser has something to put the scroll position on. A fresh reading
+	 * replaces it straight after.
+	 */
+	let last: { key: string; answer: LibraryAnswer } | null = null;
+</script>
+
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import { afterNavigate, goto } from '$app/navigation';
+	import { address } from '#lib/address';
 	import { titleHref } from '#lib/titles';
 	import Icon from '#lib/components/Icon.svelte';
 	import { api, img, type LibraryQuery } from '#lib/api';
@@ -14,33 +28,55 @@
 	import type { Kind, LibraryItem, Status } from '#lib/types';
 	import { STATUS_LABEL, STATUSES } from '#lib/types';
 
-	let items = $state<LibraryItem[]>([]);
-	/** The whole library, unfiltered: what the counts and genres describe. */
-	let everything = $state<LibraryItem[]>([]);
+	type Sort = NonNullable<LibraryQuery['sort']>;
+	type Order = 'asc' | 'desc';
+	type Query = Pick<URLSearchParams, 'get'>;
+
+	const SORTS: Sort[] = ['added', 'updated', 'last_watched', 'name', 'rating', 'release'];
+	/** Names read from A; everything else from the newest or the highest. */
+	const naturalOrder = (s: Sort): Order => (s === 'name' ? 'asc' : 'desc');
+
+	// The filters live in the address, as Search's do, so Back from a title
+	// lands on the same list and a filtered library can be shared as a link.
+	const start = address().searchParams;
+	const startSort = SORTS.find((s) => s === start.get('sort')) ?? 'added';
+
+	let answer = $state<LibraryAnswer | null>(null);
 	let loading = $state(true);
 	let failed = $state(false);
 	let sheetOpen = $state(false);
 	let menuOpen = $state(false);
 
-	let status = $state<Status | 'all'>('all');
-	let kind = $state<Kind | 'all'>('all');
-	let genre = $state('');
-	let term = $state('');
-	let favourite = $state(false);
-	let sort = $state<NonNullable<LibraryQuery['sort']>>('added');
-	let order = $state<'asc' | 'desc'>('desc');
+	let status = $state<Status | 'all'>(STATUSES.find((s) => s === start.get('status')) ?? 'all');
+	let kind = $state<Kind | 'all'>(kindFrom(start));
+	let genre = $state(start.get('genre') ?? '');
+	let term = $state(start.get('q') ?? '');
+	let favourite = $state(start.has('favourite'));
+	let sort = $state<Sort>(startSort);
+	let order = $state<Order>(orderFrom(start, startSort));
+
+	function kindFrom(params: Query): Kind | 'all' {
+		const k = params.get('kind');
+		return k === 'tv' || k === 'movie' ? k : 'all';
+	}
+
+	function orderFrom(params: Query, s: Sort): Order {
+		const o = params.get('order');
+		return o === 'asc' || o === 'desc' ? o : naturalOrder(s);
+	}
+
+	const name = $derived(term.trim());
+	const items = $derived(answer?.items ?? []);
+	const counts = $derived(answer?.counts ?? {});
+	const everyStatus = $derived(Object.values(counts).reduce((n, c) => n + (c ?? 0), 0));
 
 	const filtered = $derived(
-		status !== 'all' || kind !== 'all' || genre !== '' || term !== '' || favourite
+		status !== 'all' || kind !== 'all' || genre !== '' || name !== '' || favourite
 	);
 
 	/** How many filters are on, for the mobile button's badge. */
 	const activeCount = $derived(
-		[status !== 'all', kind !== 'all', genre !== '', term !== '', favourite].filter(Boolean).length
-	);
-
-	const genres = $derived(
-		[...new Set(everything.flatMap((i) => i.genres))].sort((a, b) => a.localeCompare(b))
+		[status !== 'all', kind !== 'all', genre !== '', name !== '', favourite].filter(Boolean).length
 	);
 
 	const kindOptions = [
@@ -51,7 +87,11 @@
 
 	const genreOptions = $derived([
 		{ value: '', label: 'Any genre' },
-		...genres.map((g) => ({ value: g, label: g }))
+		// A link can name a genre this library no longer has; it still reads true.
+		...[...new Set([...(answer?.genres ?? []), ...(genre ? [genre] : [])])].map((g) => ({
+			value: g,
+			label: g
+		}))
 	]);
 
 	const sortOptions = [
@@ -63,11 +103,31 @@
 		{ value: 'release', label: 'Release date' }
 	];
 
-	const counts = $derived.by(() => {
-		const out: Partial<Record<Status, number>> = {};
-		for (const i of everything) if (i.entry) out[i.entry.status] = (out[i.entry.status] ?? 0) + 1;
-		return out;
-	});
+	/** The address these filters have, leaving out whatever is at its default. */
+	function search(): string {
+		const pairs: [string, string][] = [];
+		if (status !== 'all') pairs.push(['status', status]);
+		if (kind !== 'all') pairs.push(['kind', kind]);
+		if (genre) pairs.push(['genre', genre]);
+		if (name) pairs.push(['q', name]);
+		if (favourite) pairs.push(['favourite', '1']);
+		if (sort !== 'added') pairs.push(['sort', sort]);
+		if (order !== naturalOrder(sort)) pairs.push(['order', order]);
+		const text = new URLSearchParams(pairs).toString();
+		return text ? `?${text}` : '';
+	}
+
+	/** Who is asking as well as what: a shared device has more than one library. */
+	const keyOf = (text: string) => `${session.status?.username ?? ''}${text}`;
+
+	const firstKey = keyOf(search());
+	if (last?.key === firstKey) {
+		answer = last.answer;
+		loading = false;
+	}
+
+	/** A typed name waits for a pause; the rest of the filters apply at once. */
+	let sent = untrack(() => name);
 
 	$effect(() => {
 		if (!session.authenticated) return;
@@ -75,29 +135,49 @@
 			status: status === 'all' ? undefined : status,
 			kind: kind === 'all' ? undefined : kind,
 			genre: genre || undefined,
-			q: term || undefined,
+			q: name || undefined,
 			favourite: favourite || undefined,
 			sort,
 			order
 		};
-		void load(query);
+		const wanted = search();
+		const timer = setTimeout(
+			() => {
+				sent = name;
+				if (wanted !== untrack(() => address().search)) {
+					void goto(`/library${wanted}`, { shallow: true, replace: true });
+				}
+				void load(query, keyOf(wanted));
+			},
+			name === sent ? 0 : 220
+		);
+		return () => clearTimeout(timer);
+	});
+
+	// Choosing Library in the menu while filtered is a new address, not ours.
+	afterNavigate((navigation) => {
+		if (navigation.shallow || navigation.type === 'enter') return;
+		const params = address().searchParams;
+		if (params.toString() === search().slice(1)) return;
+		status = STATUSES.find((s) => s === params.get('status')) ?? 'all';
+		kind = kindFrom(params);
+		genre = params.get('genre') ?? '';
+		term = params.get('q') ?? '';
+		favourite = params.has('favourite');
+		sort = SORTS.find((s) => s === params.get('sort')) ?? 'added';
+		order = orderFrom(params, sort);
 	});
 
 	let token = 0;
 
-	async function load(query: LibraryQuery) {
+	async function load(query: LibraryQuery, key: string) {
 		const mine = ++token;
 		loading = true;
 		try {
-			const all = await api.library(query);
+			const read = await api.library(query);
 			if (mine !== token) return;
-			items = all.items;
-			// Unfiltered, this is the whole library; keep it for the counts.
-			const unfiltered =
-				!query.status && !query.kind && !query.genre && !query.q && !query.favourite;
-			if (unfiltered || !everything.length) {
-				everything = unfiltered ? all.items : (await api.library({ limit: 2000 })).items;
-			}
+			answer = read;
+			last = { key, answer: read };
 			failed = false;
 		} catch (e) {
 			if (mine !== token) return;
@@ -114,6 +194,11 @@
 		genre = '';
 		term = '';
 		favourite = false;
+	}
+
+	function chooseSort(value: string) {
+		sort = value as Sort;
+		order = naturalOrder(sort);
 	}
 
 	const style = $derived(settings.current.cardStyle);
@@ -140,7 +225,7 @@
 	<div class="page-head">
 		<h1>Library</h1>
 		<div class="head-tools actions">
-			<span class="faint">{plural(items.length, 'title')}</span>
+			{#if answer}<span class="faint">{plural(items.length, 'title')}</span>{/if}
 			<div class="menu-wrap">
 				<button
 					class="btn ghost icon-only"
@@ -171,7 +256,10 @@
 	<!-- Desktop: everything laid out. Mobile: one button into a sheet. -->
 	<div class="controls" class:open={sheetOpen}>
 		<div class="chips" role="group" aria-label="Status filter">
-			<button class="chip" class:on={status === 'all'} onclick={() => (status = 'all')}>All</button>
+			<button class="chip" class:on={status === 'all'} onclick={() => (status = 'all')}>
+				All
+				{#if everyStatus}<span class="n">{everyStatus}</span>{/if}
+			</button>
 			{#each STATUSES as s (s)}
 				<button class="chip" data-status={s} class:on={status === s} onclick={() => (status = s)}>
 					<i class="sdot" aria-hidden="true"></i>
@@ -193,12 +281,7 @@
 
 			<Select label="Genre" value={genre} options={genreOptions} onchange={(v) => (genre = v)} />
 
-			<Select
-				label="Sort by"
-				value={sort}
-				options={sortOptions}
-				onchange={(v) => (sort = v as NonNullable<LibraryQuery['sort']>)}
-			/>
+			<Select label="Sort by" value={sort} options={sortOptions} onchange={chooseSort} />
 
 			<button
 				class="btn ghost icon-only"
@@ -219,6 +302,10 @@
 			>
 				<Icon name="heart" filled={favourite} />
 			</button>
+
+			{#if filtered}
+				<button class="btn ghost" onclick={reset}>Clear</button>
+			{/if}
 		</div>
 	</div>
 
@@ -242,6 +329,7 @@
 				<div class="chips" role="group" aria-label="Status filter">
 					<button class="chip" class:on={status === 'all'} onclick={() => (status = 'all')}>
 						All
+						{#if everyStatus}<span class="n">{everyStatus}</span>{/if}
 					</button>
 					{#each STATUSES as s (s)}
 						<button
@@ -286,13 +374,7 @@
 
 				<div class="field">
 					<span>Sort</span>
-					<Select
-						full
-						label="Sort"
-						value={sort}
-						options={sortOptions}
-						onchange={(v) => (sort = v as NonNullable<LibraryQuery['sort']>)}
-					/>
+					<Select full label="Sort" value={sort} options={sortOptions} onchange={chooseSort} />
 				</div>
 
 				<div class="sheet-row">
@@ -586,6 +668,11 @@
 		margin: 10px auto 4px;
 	}
 
+	.sheet .chips {
+		flex-wrap: wrap;
+		overflow: visible;
+	}
+
 	.sheet-body {
 		display: flex;
 		flex-direction: column;
@@ -748,10 +835,6 @@
 	}
 
 	@media (max-width: 760px) {
-		.chip {
-			min-height: 44px;
-		}
-
 		.controls {
 			display: none;
 		}

@@ -288,6 +288,12 @@
 		color: var(--accent-ink);
 	}
 
+	@media (max-width: 760px) {
+		.switch button {
+			min-height: 44px;
+		}
+	}
+
 	/* Grid and the chosen day side by side, so the details are never below
 	   the fold on a desktop. */
 	.layout {

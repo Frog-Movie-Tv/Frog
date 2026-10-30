@@ -112,14 +112,14 @@ await action.waitFor();
 await page.waitForTimeout(500);
 
 console.log('\n== season header at 375px ==');
-const card = page.locator('.season.open').first();
+const card = page.locator('.season').first();
 const [cardBox, actionBox] = await Promise.all([card.boundingBox(), action.boundingBox()]);
 check(
 	'the season action stays inside its card',
 	actionBox.x >= cardBox.x && actionBox.x + actionBox.width <= cardBox.x + cardBox.width + 0.5,
 	`card ${Math.round(cardBox.x)}–${Math.round(cardBox.x + cardBox.width)}, button ${Math.round(actionBox.x)}–${Math.round(actionBox.x + actionBox.width)}`
 );
-const meta = card.locator('.meta');
+const meta = card.locator('.season-title .faint');
 const metaBox = await meta.boundingBox();
 const lineHeight = await meta.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight) || 18);
 check(
@@ -169,9 +169,9 @@ await page.waitForTimeout(1200);
 
 await page.goto(`${BASE}/diary`);
 await page.waitForTimeout(800);
-const groups = page.locator('.entry');
+const groups = page.locator('.body').filter({ has: page.locator('.what') });
 const groupCount = await groups.count();
-const subtitle = await groups.first().locator('.sub').textContent();
+const subtitle = await groups.first().locator('.detail').textContent();
 // Season 1 is undated; only the other seasons land on the chosen date.
 check('the day shows one entry for the show', groupCount === 1, `${groupCount} entries`);
 check(
@@ -196,7 +196,7 @@ check(
 	(await dialog.getByRole('radio', { name: /^Today/ }).count()) === 0
 );
 await dialog.getByRole('radio', { name: /I don't know/ }).click();
-await dialog.getByRole('button', { name: 'Mark watched' }).click();
+await dialog.locator('.btn.primary').click();
 await page.waitForTimeout(1200);
 check('the diary is empty again', (await page.getByText('Nothing watched yet').count()) === 1);
 

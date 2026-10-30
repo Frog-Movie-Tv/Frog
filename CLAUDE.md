@@ -63,7 +63,7 @@ frontend/           SvelteKit 3 + Svelte 5 runes, adapter-static SPA, Vite 8
   src/lib/components/   Icon, Select, Rating, Poster, Rail, Empty, …
   src/lib/components/settings/   one component per Settings group
   src/lib/import/       client-side readers: common, parsers, anime, netflix
-  tests/            node --test unit tests (parsers, Netflix)
+  tests/            node --test unit tests (parsers, Netflix, review, release notes)
   scripts/          icons, changelog → JSON, screenshots, audit, e2e server
   e2e/smoke.spec.ts Playwright, desktop + Pixel 7
 scripts/dev.ps1, dev.sh   one command: build, seed two demo accounts, run
@@ -126,7 +126,7 @@ In Git Bash, put cargo on PATH first: `export PATH="$HOME/.cargo/bin:$PATH"`.
 | Run it without Docker, no seed | `.\scripts\run-local.ps1` (development only) |
 | Backend checks | `cd backend && cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo test` |
 | Frontend types | `cd frontend && npm run check` |
-| Frontend unit tests | `cd frontend && npm test` — parsers and Netflix, no network |
+| Frontend unit tests | `cd frontend && npm test` — parsers, Netflix, the import review, the release notes' layout; no network |
 | Frontend build | `cd frontend && npm run build` (also writes `static/changelog.json`, which is not tracked) |
 | End-to-end | `cd frontend && npx playwright test` — needs `npm run build` and a built backend first |
 | Page audit | `cd frontend && npm run audit` — every page, both viewports, console errors, service worker |
@@ -144,6 +144,10 @@ each with its own throwaway database.
   `$app/environment` is `$app/env`. `$service-worker` is gone — use
   `$app/manifest` and `$app/env`. There is no `svelte.config.js`; config goes in
   `sveltekit({…})` in `vite.config.ts`.
+- **A shallow navigation does not move `page.url`.** The address goes to
+  `page.shallow.url`, there and on Back, so a page that keeps its state in the
+  address reads it through `lib/address.ts`. Test Back from a clicked link:
+  a `page.goto` reloads the app and never meets this.
 - **TypeScript is pinned to ^6** because svelte-check rejects 7.
 - **axum 0.8 path params are `{name}`**, not `:name`.
 - **Clippy runs with `-D warnings` in CI.** `type_complexity` fires on big

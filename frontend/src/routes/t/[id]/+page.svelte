@@ -155,7 +155,7 @@
 		const y = year(item.release_date);
 		if (y) bits.push(y);
 		const age = detail?.age_rating ?? outside?.age_rating;
-		if (age) bits.push(age);
+		if (age) bits.push(`Rated ${age}`);
 		if (item.kind === 'movie' && item.runtime) bits.push(runtime(item.runtime));
 		if (item.kind === 'tv' && item.season_count) {
 			bits.push(`${item.season_count} season${item.season_count === 1 ? '' : 's'}`);
@@ -330,7 +330,7 @@
 					</div>
 
 					{#if item.total_episodes > 0 && item.entry}
-						<a class="progress-line" href="#seasons">
+						<a class="progress-line hit" href="#seasons">
 							<span class="bar">
 								<i style:width="{(item.watched_episodes / item.total_episodes) * 100}%"></i>
 							</span>

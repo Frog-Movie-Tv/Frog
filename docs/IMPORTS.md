@@ -31,7 +31,7 @@ a new source is a new reader and nothing else.
 | `frontend/src/lib/import/anime.ts` | Anime trackers: season and part from a title (`animeTitle`), MyAnimeList XML |
 | `frontend/src/lib/import/netflix.ts` | Netflix viewing history: grouping plays into shows and seasons, then settling them with TMDB's answer |
 | `frontend/src/lib/import/rows.ts` | Turning settled rows into what `apply` takes |
-| `frontend/src/lib/import/review.ts` | Sorting rows for review: the kind of problem, grouping by title, what can be kept in bulk |
+| `frontend/src/lib/import/review.ts` | Sorting rows for review: the kind of problem, grouping by title, what can be kept in bulk, what was barely watched |
 | `backend/src/transfer/matching.rs` | Which TMDB title a row means: ids, then names, by year, spelling and season; episodes by name |
 | `backend/src/transfer/apply.rs` | Conflict modes, `merged_status`, ticking seasons and episodes, film diary entries |
 | `backend/src/transfer/export.rs` | `frog-library` JSON (version 2) and the CSV sheet |
@@ -95,7 +95,7 @@ a new source is a new reader and nothing else.
   source's shape, with gzip and ZIP handling; `frontend/tests/netflix.test.mjs`:
   the Netflix reader on a real 4,054-line export;
   `frontend/tests/review.test.mjs`: every message on its kind of problem,
-  grouping, and what bulk keeping may touch. Node has no `DOMParser`, so a
+  grouping, what bulk keeping may touch, and the threshold. Node has no `DOMParser`, so a
   small stand-in reads MyAnimeList's XML there; the XML itself is only ever
   parsed by a real browser.
 
@@ -126,6 +126,31 @@ a new source is a new reader and nothing else.
   screen, dimmed, until the filter changes. Rows needing a look are still
   imported as shown unless someone leaves them out.
   `node scripts/verify-import.mjs [file.csv]` walks it in real Chromium.
+- **Barely watched** (`holdBack` in `review.ts`). Netflix lists every play,
+  including a show opened once. After settling, a show with fewer than
+  `SHOW_THRESHOLD` (3) episodes across all its rows is left out and listed under
+  the Barely watched chip, in the same review, with "Add these back" and an undo.
+  Nothing is dropped: the rows stay, and the finished import counts them as Left
+  out. The review's own menu moves the threshold, from none to 10; there is no
+  setting elsewhere, and each import starts at 3.
+  - The count is distinct episodes, so five plays of one episode are one.
+  - A show already in the library is never left out: its watches are worth
+    having.
+  - Moving the threshold only undoes what it did. A row ticked or unticked by
+    hand stays as the person left it.
+  - Rows with no match are not counted. They were never going to be imported,
+    and stay under No match.
+  - **What cannot be detected.** The viewing history has titles and dates and no
+    watch time, so a film stopped after five minutes looks exactly like one
+    watched to the end, and an episode abandoned early counts as watched. Films
+    always come in from that file, and the review says so. A title with no
+    episode name reads as a film whatever TMDB matched it to, so it stays too.
+    The data-request ZIP has durations: a film under 15 minutes in all is left
+    out on that evidence (`NetflixMeta.seconds`). That file has never been tried
+    on a real export.
+  - On the 4,054-line export, 768 rows (611 titles, 3,550 episodes) become 627
+    rows (470 titles, 3,390 episodes). 141 shows wait under the chip: 117 with
+    one episode and 24 with two. Every film stays.
 - **Imported shows get no title-level diary entry.** `apply` only writes one
   for films; a show's watches are its episodes, and a title-level watch
   would count the show as a film in Stats.

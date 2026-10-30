@@ -54,7 +54,7 @@ their own. It costs nothing at all.
 </td>
 <td>
 <img src="docs/screenshots/import-desktop-pond.png" alt="The import page offering Letterboxd, IMDb, Trakt, TV Time, MyAnimeList and Frog backups">
-<p align="center"><b>Bring your history</b><br><sub>Letterboxd, Trakt, IMDb, TV Time and MyAnimeList, with AniList kept in step</sub></p>
+<p align="center"><b>Bring your history</b><br><sub>Letterboxd, Trakt, IMDb, TV Time, MyAnimeList and Netflix, with AniList kept in step</sub></p>
 </td>
 </tr>
 <tr>
@@ -97,7 +97,7 @@ their own. It costs nothing at all.
 
 ## A quick tour
 
-**Bring your history with you.** Import from Letterboxd, Trakt, IMDb, TV Time
+**Bring your history with you.** Import from Netflix, Letterboxd, Trakt, IMDb, TV Time
 or MyAnimeList. Frog reads the export, matches each title, shows you what it
 found and lets you correct anything it got wrong before a single row is
 written. Anime seasons land on the right season, parts and all.
@@ -186,7 +186,7 @@ Frog assumes everyone on it wants to be left alone, including from each other.
   that works once and expires; without one there is no way in.
 - **Nothing is public.** Every page needs an account. Frog asks search engines
   not to index it and serves a `robots.txt` that refuses everything.
-- **Sharing is something you switch on.** A profile lets others *on your Frog*
+- **Sharing is something you switch on.** A profile lets others _on your Frog_
   see what you are watching. It starts off, and it is never visible outside.
 - Everything sits behind a password, with two-factor sign-in if you want it.
 - Nothing leaves the machine except requests for details, artwork and
@@ -224,7 +224,7 @@ through a free one, where Frog keeps itself up to date on its own.
 
 <br>
 
-Import it. Frog reads exports from Letterboxd, Trakt, IMDb, TV Time and
+Import it. Frog reads exports from Netflix, Letterboxd, Trakt, IMDb, TV Time and
 MyAnimeList, and restores its own backups. You see every match before anything
 is written. AniList is not imported but connected: Frog keeps reading it from then
 on.

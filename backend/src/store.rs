@@ -4,11 +4,12 @@
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, QueryBuilder, Sqlite, SqlitePool};
 
-use crate::catalog::{parse_accent, parse_genres, TitleRow};
+use crate::catalog::{parse_accent, parse_genres, TitleRow, TITLE_COLUMNS};
 use crate::error::{AppError, AppResult};
 use crate::palette::Palette;
+use crate::text;
 
 pub const STATUSES: [&str; 5] = ["watching", "completed", "planned", "paused", "dropped"];
 
@@ -675,6 +676,143 @@ struct EntryOfTitle {
 ///
 /// A library of six hundred titles was eighteen hundred queries and over a
 /// second before the page could draw.
+/// What the library page narrows by.
+#[derive(Debug, Default)]
+pub struct LibraryFilter {
+    pub status: Option<String>,
+    pub kind: Option<String>,
+    pub genre: Option<String>,
+    /// A name, typed by a person.
+    pub term: Option<String>,
+    pub favourite: bool,
+}
+
+impl LibraryFilter {
+    /// Everything but the status, which `library_counts` must not narrow by.
+    fn push_without_status(&self, q: &mut QueryBuilder<Sqlite>) {
+        if let Some(kind) = &self.kind {
+            q.push(" AND t.kind = ").push_bind(kind.clone());
+        }
+        if let Some(genre) = &self.genre {
+            q.push(" AND t.genres_json LIKE ")
+                .push_bind(format!("%\"{genre}\"%"));
+        }
+        if let Some(term) = &self.term {
+            // Folded on both sides, so neither case nor accents decide a match,
+            // and typed literally: a % or _ in a title is a character, not a
+            // wildcard. A row written by an older binary has no search_name
+            // until the next start fills it; until then its plain name matches.
+            let folded = text::fold(term.trim())
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            q.push(
+                " AND COALESCE(t.search_name, lower(t.name || char(10) || COALESCE(t.original_name, '')))
+                      LIKE ",
+            )
+            .push_bind(format!("%{folded}%"))
+            .push(" ESCAPE '\\'");
+        }
+        if self.favourite {
+            q.push(" AND l.favourite = 1");
+        }
+    }
+}
+
+/// Which slice of a list, in which order.
+pub struct Page<'a> {
+    pub sort: Option<&'a str>,
+    pub order: Option<&'a str>,
+    pub limit: i64,
+    pub offset: i64,
+}
+
+/// Map a sort key to SQL. An allowlist, never interpolation of user input.
+///
+/// `user_id` is written into the sort subquery rather than bound, because a
+/// placeholder inside ORDER BY would have to be bound between the filters and
+/// the paging ones and silently shift if either changed. It comes from the
+/// session as an `i64`, so there is nothing in it to escape.
+pub fn order_clause(sort: Option<&str>, order: Option<&str>, user_id: i64) -> String {
+    let dir = match order {
+        Some("asc") => "ASC",
+        _ => "DESC",
+    };
+    let column: String = match sort.unwrap_or("added") {
+        "name" => "t.name COLLATE NOCASE".into(),
+        "rating" => "l.rating".into(),
+        "release" => "COALESCE(t.release_date, '')".into(),
+        "updated" => "l.updated_at".into(),
+        "last_watched" => format!(
+            "(SELECT MAX(w.watched_at) FROM watch_event w
+                WHERE w.title_id = t.id AND w.user_id = {user_id} AND w.undated = 0)"
+        ),
+        _ => "l.added_at".into(),
+    };
+    // NULLs last in either direction: an unrated title should never head the list.
+    format!("ORDER BY ({column}) IS NULL, {column} {dir}, t.name COLLATE NOCASE ASC")
+}
+
+/// The titles of one account's library that pass a filter.
+pub async fn library_titles(
+    pool: &SqlitePool,
+    user_id: i64,
+    filter: &LibraryFilter,
+    page: &Page<'_>,
+) -> AppResult<Vec<TitleRow>> {
+    let mut q: QueryBuilder<Sqlite> = QueryBuilder::new(format!(
+        "SELECT {TITLE_COLUMNS}
+           FROM library_entry l
+           JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = "
+    ));
+    q.push_bind(user_id);
+    if let Some(status) = &filter.status {
+        q.push(" AND l.status = ").push_bind(status.clone());
+    }
+    filter.push_without_status(&mut q);
+    q.push(" ");
+    q.push(order_clause(page.sort, page.order, user_id));
+    q.push(" LIMIT ").push_bind(page.limit);
+    q.push(" OFFSET ").push_bind(page.offset);
+    Ok(q.build_query_as().fetch_all(pool).await?)
+}
+
+/// How many titles each status would show with the rest of the filter as it
+/// is, so the number on a status is what choosing it gives. The status itself
+/// does not narrow them: choosing one leaves the others there to choose.
+pub async fn library_counts(
+    pool: &SqlitePool,
+    user_id: i64,
+    filter: &LibraryFilter,
+) -> AppResult<Vec<(String, i64)>> {
+    let mut q: QueryBuilder<Sqlite> = QueryBuilder::new(
+        "SELECT l.status, COUNT(*)
+           FROM library_entry l
+           JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = ",
+    );
+    q.push_bind(user_id);
+    filter.push_without_status(&mut q);
+    q.push(" GROUP BY l.status");
+    Ok(q.build_query_as().fetch_all(pool).await?)
+}
+
+/// Every genre in one account's library, so a filter never hides its own options.
+pub async fn library_genres(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<String>> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT DISTINCT g.value
+           FROM library_entry l
+           JOIN title t ON t.id = l.title_id, json_each(t.genres_json) g
+          WHERE l.user_id = ?
+          ORDER BY g.value COLLATE NOCASE",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(g,)| g).collect())
+}
+
 pub async fn build_items(
     pool: &SqlitePool,
     user_id: i64,
@@ -835,4 +973,25 @@ pub async fn empty_library(pool: &SqlitePool, user_id: i64) -> AppResult<Emptied
         watches,
         shelves,
     })
+}
+
+#[cfg(test)]
+mod order_tests {
+    use super::order_clause;
+
+    #[test]
+    fn sort_keys_are_allowlisted() {
+        assert!(order_clause(Some("name"), Some("asc"), 1).contains("t.name"));
+        assert!(order_clause(Some("rating"), None, 1).contains("l.rating"));
+        // Anything unknown falls back to added_at rather than reaching SQL.
+        let injected = order_clause(Some("name; DROP TABLE title"), None, 1);
+        assert!(injected.contains("l.added_at"));
+        assert!(!injected.contains("DROP"));
+    }
+
+    #[test]
+    fn sorting_by_last_watched_only_counts_my_watches() {
+        let clause = order_clause(Some("last_watched"), None, 7);
+        assert!(clause.contains("w.user_id = 7"));
+    }
 }

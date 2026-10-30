@@ -7,7 +7,7 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 1.0.0 "Bullfrog" (once its release pull request is merged) |
+| **Release** | 1.0.0 "Bullfrog" |
 | **Next codenames** | Spring Peeper, Glass Frog, Horned Frog |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
@@ -92,14 +92,13 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    id, and the TMDB ids left in them are TMDB's own (its cache, credits,
    people and recommendations). SQL still in route
    files, all single-route reads or writes, to move when each is next
-   touched: `routes/account.rs` (account, password, sessions, profile and
+   touched (`routes/library.rs`'s filtered list is done): `routes/account.rs` (account, password, sessions, profile and
    pictures, deleting the account), `routes/two_factor.rs` (secrets and
    recovery codes; belongs beside `auth.rs`), `routes/profiles.rs` (profile
    cards and totals), `routes/shelves.rs` (shelves and smart-shelf rules),
    `routes/timeline.rs` (calendar, diary, redating), `routes/stats.rs`,
    `routes/titles.rs` (heatmap, a season's episodes and states),
-   `routes/episodes.rs` (ticks and notes), `routes/home.rs`,
-   `routes/library.rs` (the filtered list), `routes/search.rs`,
+   `routes/episodes.rs` (ticks and notes), `routes/home.rs`, `routes/search.rs`,
    `routes/browse.rs`, `routes/admin.rs`, `routes/invites.rs`,
    `routes/auth.rs`, `routes/push.rs`, `routes/settings.rs`. Persistence is
    not centralised yet.
@@ -118,16 +117,14 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    are films not out yet) show their name; they are asked again after a
    month.
 
-8. **Left from the UX pass.** Each small, none urgent:
+17. **Left from the UX pass.** Each small, none urgent:
    - A person's filmography leads with talk-show and documentary appearances;
      sort acting credits by popularity, or put them first.
-   - About shows the browser's raw error when the offline worker cannot
-     install; say it in a sentence and keep the detail behind a disclosure.
-   - Deleting a shelf leaves its row id in the saved Home layout, and undo
-     restores the shelf under a new id, so it drops off Home.
-   - Administration shows initials, not the uploaded picture.
    - Undoing an unticked episode restores its latest watch only; earlier
      rewatches of that episode stay cleared.
+18. **Netflix: try the threshold on more than one file.** 3 was judged on one
+   export. The menu in the review moves it for one import; if another person's
+   file says 2 or 4, change `SHOW_THRESHOLD`.
 
 ## Known issues
 
@@ -249,6 +246,20 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   every sync and every show refresh.
 - **Imports and exports** — matching, conflict modes, Netflix, the backup
   formats: [docs/IMPORTS.md](docs/IMPORTS.md).
+- **Library filters** live in the address, read through `lib/address.ts`,
+  because a shallow navigation leaves `page.url` where it was. The server
+  answers items, status counts and genres from one request; a status counts every
+  filter but itself, so its number is what choosing it shows. The page keeps its
+  last answer in the module, so Back draws at once and the scroll lands.
+- **Shelves have one place on Home**, the Your shelves row. A shelf used to be
+  able to add a row of its own, which showed it twice; saved layouts lose those
+  rows as they load (`introduceRows`).
+- **Administration shows initials on purpose.** A picture is served only to those
+  who can see the profile (`visible` in `routes/profiles.rs`), so drawing one
+  there would show it for an account that has its profile off.
+- **The Dark themes' accent stays at 4.37:1 on its buttons.** White and that
+  theme's background are about 20:1 apart, so no single accent reaches 4.5
+  against both, and it is also a text colour. Bold button text keeps it.
 - **The library filter matches `title.search_name`**, the name and original
   name with case and accents folded out (`text::fold`), against the typed
   term folded the same way. SQL cannot fold accents, so `upsert_title`
@@ -295,6 +306,11 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   `lib/settings.svelte.ts`. Add the id to `HOME_ROWS` and to the default list.
 
 ## Shipped
+
+**1.0.1 Bullfrog, waiting for its release** — Library filters kept in the
+address, status counts that say what a status shows, Back to a search, a Netflix
+import of what was really watched, one layout for every release on What's new,
+and the fixes from a walk through every page.
 
 **1.0.0 Bullfrog** — The bar on top with a search field. Home with one idea
 per row: continue watching (caught-up shows at its end), shelves as covers,

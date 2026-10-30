@@ -11,7 +11,6 @@ use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 use crate::auth::Auth;
 use crate::catalog::{self, TitleRow, TITLE_COLUMNS};
 use crate::error::{AppError, AppResult};
-use crate::routes::library::order_clause;
 use crate::state::AppState;
 use crate::store::{self, STATUSES};
 
@@ -168,7 +167,7 @@ pub async fn evaluate(pool: &SqlitePool, user_id: i64, rules: &Rules) -> AppResu
         _ => &mut q,
     };
     q.push(" ");
-    q.push(order_clause(
+    q.push(store::order_clause(
         rules.sort.as_deref(),
         rules.order.as_deref(),
         user_id,

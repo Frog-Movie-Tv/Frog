@@ -114,7 +114,16 @@ async function signedIn(viewport, extra = {}) {
 		text
 	);
 	const color = await label.evaluate((el) => getComputedStyle(el).color);
-	check('the label uses the accent colour, not faint grey', color === 'rgb(47, 125, 79)', color);
+	// Read from the page, so a change of shade does not read as a failure.
+	const accent = await page.evaluate(() => {
+		const probe = document.createElement('i');
+		probe.style.color = 'var(--accent)';
+		document.body.append(probe);
+		const value = getComputedStyle(probe).color;
+		probe.remove();
+		return value;
+	});
+	check('the label uses the accent colour, not faint grey', color === accent, color);
 	await page.screenshot({ path: join(out, '1-hero-pond-light.png') });
 
 	console.log('\n== calendar on desktop ==');

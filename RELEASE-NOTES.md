@@ -13,6 +13,42 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+## [1.0.1] — Bullfrog — 2026-10-30
+
+Library filters that stay where you left them, and a Netflix import of what you
+really watched.
+
+### Highlights
+
+- **Only what you watched.** A Netflix import leaves out shows you barely
+  started. They wait under Barely watched, one tap from coming back, and you
+  choose how many episodes count.
+- **Filters that stay.** Your library's filters live in the address, so Back
+  from a title returns to the same list at the same spot, and a filtered library
+  can be shared as a link.
+
+### Improvements
+
+- The number on each status is what choosing it shows, with your other filters
+  applied.
+- Sorting the library by name starts at A.
+- Clear every library filter at once on a computer, as on a phone.
+- All five statuses are in view in the filters on a phone.
+- Every release on What's new reads the same way.
+- Title pages say "Rated 12" rather than a number on its own.
+- About carries this release's name, and keeps its technical detail one tap away.
+- Settings lists Netflix among its imports, and its rows stay on one line on a
+  phone.
+- Small controls on a phone are easier to tap, in Search, People and the top bar,
+  and the calendar's Month and Agenda.
+- Green text is easier to read in the light themes, and Empty my library in
+  every theme.
+
+### Fixes
+
+- Back from a title returns to your search.
+- Your shelves show once on Home, in their row at the top.
+
 ## [1.0.0] — Bullfrog — 2026-10-30
 
 Frog 1.0. A calmer home, a search you can steer, and title pages that put the
@@ -417,13 +453,13 @@ everything you have watched.
   importer reads the export, finds each title on TMDB and shows you the
   matches before anything is written. Anything uncertain is flagged so you can
   choose the right one, and you decide whether the file or your library wins.
-- **Export your library** as a full JSON backup or a CSV, from the Import page
-  or the command palette.
+- **Export your library.** A full JSON backup or a CSV, from the Import page or
+  the command palette.
 - **Calendar.** A month view and an agenda of every episode and release you
   follow, with the days you have already watched marked off.
 - **Diary.** Everything you have watched, newest first, grouped by month, with
   rewatches and episode ratings in line.
-- **About page** with version, credits and licences.
+- **About page.** Version, credits and licences in one place.
 
 ### Improvements
 
@@ -467,14 +503,15 @@ A face, a home screen and a great deal to adjust.
 - **Frog has a mascot.** A round green face with big eyes and pink cheeks,
   readable down to 16 pixels, used as the app icon and the favicon. Four
   variants to choose from: Classic, Sleepy, Popcorn and 3D glasses.
-- **The Pond theme**, built from the mascot's colours, alongside Pond Light,
+- **The Pond theme.** Built from the mascot's colours, alongside Pond Light,
   Dark and AMOLED.
-- **A home screen** separate from the library, opening on whatever you are in
-  the middle of, with what to continue, what airs this week and what you added
-  recently.
-- **A command palette** on <kbd>Ctrl</kbd>+<kbd>K</kbd>.
-- **A theme editor** with live preview, and themes you can save, duplicate,
-  export and import.
+- **A home screen.** Separate from the library and opening on whatever you are
+  in the middle of, with what to continue, what airs this week and what you
+  added recently.
+- **A command palette.** Everything within reach on
+  <kbd>Ctrl</kbd>+<kbd>K</kbd>.
+- **A theme editor.** Live preview, and themes you can save, duplicate, export
+  and import.
 
 ### Improvements
 
@@ -505,13 +542,13 @@ The first release.
 
 ### Highlights
 
-- **Track films and shows** from TMDB, with five statuses, ratings, favourites
-  and notes.
-- **Episode tracking**, one at a time or a season at once, with per-episode
+- **Track films and shows.** Everything on TMDB, with five statuses, ratings,
+  favourites and notes.
+- **Episode tracking.** One at a time or a season at once, with per-episode
   ratings and notes.
-- **Title pages** coloured from their own artwork, with cast, crew, seasons,
+- **Title pages.** Coloured from their own artwork, with cast, crew, seasons,
   trailers, franchise order and where to stream.
-- **Install it on a phone** and keep what you have opened available offline.
+- **Install it on a phone.** What you have opened stays available offline.
 
 ### Improvements
 
@@ -520,6 +557,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.0.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.0.1
 [1.0.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.0.0
 [0.8.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.8.1
 [0.8.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.8.0

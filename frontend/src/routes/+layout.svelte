@@ -69,7 +69,9 @@
 			try {
 				const transition = document.startViewTransition(async () => {
 					resolve();
-					await navigation.complete;
+					// Interrupted navigations reject here too, and nothing else
+					// would catch it.
+					await navigation.complete.catch(() => {});
 				});
 				// Interrupting one navigation with another rejects these; that is
 				// normal and must not surface as an uncaught error.
@@ -143,7 +145,7 @@
 {:else}
 	{#if showChrome}
 		<header class="bar">
-			<a class="brand" href="/" aria-label="Frog, home">
+			<a class="brand hit" href="/" aria-label="Frog, home">
 				<Logo size={28} word />
 			</a>
 
