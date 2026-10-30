@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.1](https://github.com/Frog-Movie-Tv/Frog/compare/v1.0.0...v1.0.1) (2026-10-30)
+
+
+### Fixes
+
+* **home:** show shelves once, in the row at the top ([9682802](https://github.com/Frog-Movie-Tv/Frog/commit/9682802197bd402f0b20fbb882c8ff18a584d3fa))
+* **import:** leave out Netflix shows that were barely watched ([67a122f](https://github.com/Frog-Movie-Tv/Frog/commit/67a122f59574daefe2c9c2a93c0475adfe906512))
+* library filters that stay, a Netflix import of what you watched, and shelves once on Home ([e817bbb](https://github.com/Frog-Movie-Tv/Frog/commit/e817bbb62897ad2d3fd39e336df4bd1927b108d7))
+* **library:** keep filters in the address and count from one reading ([5e7280e](https://github.com/Frog-Movie-Tv/Frog/commit/5e7280eaa4d3d87b826ceac6c16f78911c63a7e8))
+* **ui:** give the new phone controls room to tap ([0a31c54](https://github.com/Frog-Movie-Tv/Frog/commit/0a31c54c49f2b0e14fad630fdc513c2713577578))
+* **ui:** what a walk through every page found ([c6b4c61](https://github.com/Frog-Movie-Tv/Frog/commit/c6b4c6195b09998609979019a93c6ac947ddf5b6))
+* **whats-new:** give every release the same layout ([136e33c](https://github.com/Frog-Movie-Tv/Frog/commit/136e33c79cb4a5aa3937cad9decf793d0dfa6179))
+
+
+### Documentation
+
+* **roadmap:** 1.0.0 is released ([4225188](https://github.com/Frog-Movie-Tv/Frog/commit/422518801ced5c1904625d471b0b0f35fd9154b3))
+* say what is true after the filter and import work ([26d4a56](https://github.com/Frog-Movie-Tv/Frog/commit/26d4a56c94ece9437425d102a712bb431d0611ab))
+
 ## [1.0.0](https://github.com/Frog-Movie-Tv/Frog/compare/v0.8.0...v1.0.0) (2026-10-30)
 
 
