@@ -102,10 +102,9 @@ or MyAnimeList. Frog reads the export, matches each title, shows you what it
 found and lets you correct anything it got wrong before a single row is
 written. Anime seasons land on the right season, parts and all.
 
-**Keep AniList in step.** Connect your AniList account in Settings and the two
-stay the same: episodes, statuses and scores, whichever side you change them
-on. Frog places every season where TMDB numbers it by itself, and changes on
-AniList arrive within minutes.
+**Bring in AniList.** Connect your AniList account in Settings and your list
+arrives in Frog, placed by id, with changes reaching Frog within minutes. Frog
+only reads: it never changes anything on your AniList.
 
 **Find anything.** One search for films, shows, people, characters, studios
 and the other members of your Frog, each with a tab of its own. Results lead
@@ -219,7 +218,7 @@ through a free one, where Frog keeps itself up to date on its own.
 
 Import it. Frog reads exports from Letterboxd, Trakt, IMDb, TV Time and
 MyAnimeList, and restores its own backups. You see every match before anything
-is written. AniList is not imported but connected: it stays in step from then
+is written. AniList is not imported but connected: Frog keeps reading it from then
 on.
 
 </details>
