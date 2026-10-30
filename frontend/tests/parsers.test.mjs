@@ -530,6 +530,43 @@ test('Trakt: a list inside "items", and a bare title with no kind', async () => 
 	);
 });
 
+test("Trakt: one episode is not the whole show, and its rating is not the show's", async () => {
+	const list = await rows(
+		'trakt',
+		'history.json',
+		JSON.stringify([
+			{
+				type: 'episode',
+				watched_at: '2024-02-03T21:00:00.000Z',
+				episode: { season: 1, number: 1, title: 'Pilot' },
+				show: { title: 'Dark', year: 2017, ids: { tmdb: 70523 } }
+			},
+			{
+				type: 'episode',
+				rating: 3,
+				rated_at: '2024-02-04T10:00:00.000Z',
+				episode: { season: 1, number: 2 },
+				show: { title: 'Lost', ids: { tmdb: 4607 } }
+			},
+			{
+				type: 'season',
+				rating: 4,
+				rated_at: '2024-02-05T10:00:00.000Z',
+				season: { number: 1 },
+				show: { title: 'Severance', ids: { tmdb: 95396 } }
+			}
+		])
+	);
+	assert.deepEqual(
+		list.map((r) => [r.title, r.rating, r.status, r.watched_at]),
+		[
+			['Dark', null, 'watching', '2024-02-03T20:00:00Z'],
+			['Lost', null, 'watching', '2024-02-04T20:00:00Z'],
+			['Severance', null, 'watching', '2024-02-05T20:00:00Z']
+		]
+	);
+});
+
 test('TV Time: its other column names, the first date, and an empty file', async () => {
 	const list = await rows(
 		'tvtime',

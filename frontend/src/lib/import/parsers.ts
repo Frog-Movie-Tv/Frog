@@ -158,12 +158,16 @@ function readTraktJson(text: string): Incoming[] {
 			if (typeof ids?.tmdb === 'number') row.tmdb_id = ids.tmdb;
 			if (typeof ids?.imdb === 'string') row.imdb_id = ids.imdb;
 
+			// An entry about one episode or season says nothing of the show as a
+			// whole: not its rating, and not that all of it was seen.
+			const part = entry.episode || entry.season;
 			const rating = entry.rating;
-			if (typeof rating === 'number' && rating > 0) row.rating = rating * 10;
+			if (typeof rating === 'number' && rating > 0 && !part) row.rating = rating * 10;
 
 			const watched = entry.watched_at ?? entry.last_watched_at ?? entry.rated_at;
 			if (typeof watched === 'string') row.watched_at = toDate(watched);
-			row.status = row.watched_at || row.rating !== null ? 'completed' : 'planned';
+			if (part) row.status = 'watching';
+			else row.status = row.watched_at || row.rating !== null ? 'completed' : 'planned';
 
 			return row;
 		})
