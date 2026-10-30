@@ -13,6 +13,42 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+## [1.0.1] — Bullfrog — 2026-10-30
+
+Library filters that stay where you left them, and a Netflix import of what you
+really watched.
+
+### Highlights
+
+- **Only what you watched.** A Netflix import leaves out shows you barely
+  started. They wait under Barely watched, one tap from coming back, and you
+  choose how many episodes count.
+- **Filters that stay.** Your library's filters live in the address, so Back
+  from a title returns to the same list at the same spot, and a filtered library
+  can be shared as a link.
+
+### Improvements
+
+- The number on each status is what choosing it shows, with your other filters
+  applied.
+- Sorting the library by name starts at A.
+- Clear every library filter at once on a computer, as on a phone.
+- All five statuses are in view in the filters on a phone.
+- Every release on What's new reads the same way.
+- Title pages say "Rated 12" rather than a number on its own.
+- About carries this release's name, and keeps its technical detail one tap away.
+- Settings lists Netflix among its imports, and its rows stay on one line on a
+  phone.
+- Small controls on a phone are easier to tap, in Search, People and the top bar,
+  and the calendar's Month and Agenda.
+- Green text is easier to read in the light themes, and Empty my library in
+  every theme.
+
+### Fixes
+
+- Back from a title returns to your search.
+- A shelf on Home returns to its place when you undo deleting it.
+
 ## [1.0.0] — Bullfrog — 2026-10-30
 
 Frog 1.0. A calmer home, a search you can steer, and title pages that put the
@@ -521,6 +557,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.0.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.0.1
 [1.0.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.0.0
 [0.8.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.8.1
 [0.8.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.8.0
