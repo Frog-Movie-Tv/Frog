@@ -163,9 +163,9 @@
 {/snippet}
 
 <div class="page">
-	<div class="head">
+	<div class="head page-head">
 		<h1>Stats</h1>
-		<div class="controls">
+		<div class="controls actions">
 			{#if stats && stats.years.length}
 				<Select
 					label="Period"

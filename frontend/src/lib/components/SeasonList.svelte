@@ -41,10 +41,14 @@
 
 	// `undefined` means "nothing clicked yet", so the default can keep tracking
 	// the props without freezing their first value.
-	let chosen = $state<number | null | undefined>(undefined);
-	const open = $derived(
-		chosen === undefined ? (initialSeason ?? seasons[0]?.season_number ?? null) : chosen
-	);
+	let chosen = $state<number | undefined>(undefined);
+	/** Seasons in order, specials last: they are rarely where you start. */
+	const ordered = $derived([
+		...seasons.filter((s) => s.season_number !== 0),
+		...seasons.filter((s) => s.season_number === 0)
+	]);
+	const open = $derived(chosen ?? initialSeason ?? ordered[0]?.season_number ?? null);
+	const current = $derived(ordered.find((s) => s.season_number === open) ?? null);
 	let loaded = $state<Record<number, SeasonDetail>>({});
 	let loading = $state<number | null>(null);
 	let busy = $state<string | null>(null);
@@ -219,30 +223,40 @@
 </script>
 
 <div class="seasons">
-	{#each seasons as season (season.season_number)}
-		{@const isOpen = open === season.season_number}
+	{#if ordered.length > 1}
+		<div class="season-tabs" role="tablist" aria-label="Seasons">
+			{#each ordered as season (season.season_number)}
+				<button
+					role="tab"
+					class="season-tab"
+					class:on={open === season.season_number}
+					aria-selected={open === season.season_number}
+					onclick={() => (chosen = season.season_number)}
+				>
+					{season.name}
+				</button>
+			{/each}
+		</div>
+	{/if}
+
+	{#if current}
+		{@const season = current}
 		{@const detail = loaded[season.season_number]}
 		{@const units = unitsOf(season.season_number)}
 		{@const whole = units.length === 1 && units[0].first_episode === 1 ? units[0] : null}
 		{@const started = !!season.air_date && season.air_date <= today}
-		<section class="season" class:open={isOpen}>
-			<header>
-				<button
-					class="head"
-					aria-expanded={isOpen}
-					onclick={() => (chosen = isOpen ? null : season.season_number)}
-				>
-					<span class="chev" class:turned={isOpen}><Icon name="chevron-right" size={17} /></span>
-					<span class="title">{season.name}</span>
-					<span class="meta faint">
+		<section class="season" aria-label={season.name}>
+			<header class="season-head">
+				<div class="season-title">
+					<h3>{season.name}</h3>
+					<span class="faint">
 						{season.episode_count}
-						{season.episode_count === 1 ? 'episode' : 'episodes'}{#if season.air_date}&nbsp;·
-							{season.air_date.slice(0, 4)}{/if}
+						{season.episode_count === 1 ? 'episode' : 'episodes'}{#if season.air_date}
+							· {season.air_date.slice(0, 4)}{/if}
 					</span>
-				</button>
-
-				{#if whole && (whole.rateable || started)}
-					<div class="season-rating" class:unrated={ratingOf(whole) === null}>
+				</div>
+				<div class="season-actions">
+					{#if whole && (whole.rateable || started)}
 						{#if whole.rateable}
 							<Rating compact value={ratingOf(whole)} onchange={(v) => rateUnit(whole, v)} />
 						{:else}
@@ -250,21 +264,22 @@
 								Rate when it ends
 							</span>
 						{/if}
-					</div>
-				{/if}
-				{#if isOpen && detail}
-					<button
-						class="btn ghost small season-action"
-						disabled={busy === `season-${season.season_number}`}
-						onclick={() => toggleSeason(season.season_number, !seasonWatched(season.season_number))}
-					>
-						<Icon name={seasonWatched(season.season_number) ? 'x' : 'check'} size={14} />
-						{seasonWatched(season.season_number) ? 'Unmark' : 'Mark watched'}
-					</button>
-				{/if}
+					{/if}
+					{#if detail}
+						<button
+							class="btn small"
+							disabled={busy === `season-${season.season_number}`}
+							onclick={() =>
+								toggleSeason(season.season_number, !seasonWatched(season.season_number))}
+						>
+							<Icon name={seasonWatched(season.season_number) ? 'x' : 'check'} size={14} />
+							{seasonWatched(season.season_number) ? 'Unmark' : 'Mark watched'}
+						</button>
+					{/if}
+				</div>
 			</header>
 
-			{#if isOpen && units.length > 1}
+			{#if units.length > 1}
 				<ul class="parts" aria-label="Parts of {season.name}">
 					{#each units as u (unitKey(u))}
 						<li>
@@ -288,136 +303,170 @@
 				</ul>
 			{/if}
 
-			{#if isOpen}
-				{#if !detail}
-					<ul class="episodes" aria-busy="true" aria-label="Loading episodes">
-						{#each Array(Math.min(season.episode_count || 6, 8)) as _, i (i)}
-							<li class="episode skeleton-row">
-								<span class="check skeleton"></span>
-								<span class="still skeleton"></span>
-								<span class="body">
-									<span class="line-skel skeleton"></span>
-									<span class="line-skel short skeleton"></span>
-								</span>
-							</li>
-						{/each}
-					</ul>
-				{:else}
-					<ul class="episodes">
-						{#each detail.episodes as ep (ep.episode_number)}
-							{@const key = `${ep.season_number}-${ep.episode_number}`}
-							<li class="episode" class:watched={ep.watched} class:future={unaired(ep)}>
+			{#if !detail}
+				<ul class="episodes" aria-busy="true" aria-label="Loading episodes">
+					{#each Array(Math.min(season.episode_count || 6, 8)) as _, i (i)}
+						<li class="episode">
+							<span class="still skeleton"></span>
+							<span class="line-skel skeleton"></span>
+							<span class="line-skel short skeleton"></span>
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<ul class="episodes">
+					{#each detail.episodes as ep (ep.episode_number)}
+						{@const key = `${ep.season_number}-${ep.episode_number}`}
+						{@const code = episodeCode(ep.season_number, ep.episode_number)}
+						<li class="episode" class:watched={ep.watched} class:future={unaired(ep)}>
+							<div class="still" class:blurred={blurStill(ep)}>
+								{#if ep.still_path}
+									<img src={img(ep.still_path, 'w300')} alt="" loading="lazy" />
+								{:else if fallbackStill}
+									<img class="stand-in" src={img(fallbackStill, 'w300')} alt="" loading="lazy" />
+								{:else}
+									<span class="no-still" aria-hidden="true">{code}</span>
+								{/if}
 								<button
 									class="check hit"
 									class:on={ep.watched}
 									disabled={busy === key || unaired(ep)}
 									aria-pressed={ep.watched}
-									aria-label={unaired(ep)
-										? `${episodeCode(ep.season_number, ep.episode_number)} has not aired yet`
-										: `Mark ${episodeCode(ep.season_number, ep.episode_number)} watched`}
+									aria-label={unaired(ep) ? `${code} has not aired yet` : `Mark ${code} watched`}
 									title={unaired(ep) ? 'Not out yet' : 'Mark watched'}
 									onclick={() => toggle(ep)}
 								>
-									<Icon name="check" size={15} strokeWidth={2.6} />
+									<Icon name="check" size={16} strokeWidth={2.6} />
 								</button>
+								{#if ep.watch_count > 1}<span class="times">×{ep.watch_count}</span>{/if}
+							</div>
 
-								<div class="still" class:blurred={blurStill(ep)}>
-									{#if ep.still_path}
-										<img src={img(ep.still_path, 'w300')} alt="" loading="lazy" />
-									{:else if fallbackStill}
-										<img class="stand-in" src={img(fallbackStill, 'w300')} alt="" loading="lazy" />
+							<div class="body">
+								<div class="line">
+									<span class="code">{code}</span>
+									<span class="name">{ep.name ?? 'Untitled'}</span>
+								</div>
+								<div class="sub">
+									{#if unaired(ep)}
+										<span class="soon">Airs {relativeDate(ep.air_date)}</span>
 									{:else}
-										<span class="no-still" aria-hidden="true">
-											{episodeCode(ep.season_number, ep.episode_number)}
-										</span>
+										{#if ep.air_date}<span>{prettyDate(ep.air_date)}</span>{/if}
+										{#if ep.runtime}<span>{runtime(ep.runtime)}</span>{/if}
 									{/if}
-								</div>
-
-								<div class="body">
-									<div class="line">
-										<span class="code faint">
-											{episodeCode(ep.season_number, ep.episode_number)}
-										</span>
-										<span class="name">{ep.name ?? 'Untitled'}</span>
-										{#if ep.watch_count > 1}
-											<span class="pill tiny">×{ep.watch_count}</span>
-										{/if}
-									</div>
-									<div class="sub faint">
-										{#if unaired(ep)}
-											<span class="soon">
-												Airs {relativeDate(ep.air_date)} · {prettyDate(ep.air_date)}
-											</span>
-										{:else}
-											{#if ep.air_date}<span>{prettyDate(ep.air_date)}</span>{/if}
-											{#if ep.runtime}<span>{runtime(ep.runtime)}</span>{/if}
-											{#if ep.notes}<span class="has-note">note</span>{/if}
-										{/if}
-									</div>
-									{#if noteFor === key}
-										<textarea
-											class="input note"
-											rows="3"
-											placeholder="What did you think?"
-											value={ep.notes ?? ''}
-											onblur={(e) => saveNote(ep, e.currentTarget.value)}></textarea>
-									{/if}
-								</div>
-
-								<div class="controls">
 									{#if !unaired(ep)}
 										<button
 											class="note-btn hit"
+											class:has={!!ep.notes}
 											aria-label="Episode note"
-											title="Episode note"
+											title={ep.notes ? 'Your note' : 'Add a note'}
 											onclick={() => (noteFor = noteFor === key ? null : key)}
 										>
-											<Icon name="pencil" size={15} />
+											<Icon name="pencil" size={13} />
 										</button>
 									{/if}
 								</div>
-							</li>
-						{/each}
-					</ul>
-				{/if}
+								{#if noteFor === key}
+									<textarea
+										class="input note"
+										rows="3"
+										placeholder="What did you think?"
+										value={ep.notes ?? ''}
+										onblur={(e) => saveNote(ep, e.currentTarget.value)}></textarea>
+								{/if}
+							</div>
+						</li>
+					{/each}
+				</ul>
 			{/if}
 		</section>
-	{/each}
+	{/if}
 </div>
 
 <style>
-	.seasons {
+	.season-tabs {
 		display: flex;
-		flex-direction: column;
-		gap: 10px;
+		gap: 6px;
+		margin-bottom: 18px;
+		overflow-x: auto;
+		scrollbar-width: none;
 	}
 
-	/* Not clipped: a season's rating opens a popover past its own edge. */
-	.season {
-		border: 1px solid var(--line);
-		border-radius: var(--radius);
-		background: var(--bg-elev);
+	.season-tabs::-webkit-scrollbar {
+		display: none;
 	}
 
-	.season-rating {
+	.season-tab {
 		flex: none;
+		height: 36px;
+		padding: 0 16px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-pill);
+		background: none;
+		color: var(--text-dim);
+		font-size: 0.86rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition:
+			color var(--fast) var(--ease),
+			border-color var(--fast) var(--ease);
+	}
+
+	.season-tab:hover {
+		color: var(--text);
+		border-color: var(--line-strong);
+	}
+
+	.season-tab.on {
+		border-color: transparent;
+		background: var(--text);
+		color: var(--bg);
+	}
+
+	.season-head {
 		display: flex;
 		align-items: center;
+		justify-content: space-between;
+		flex-wrap: wrap;
+		gap: 10px 16px;
+		margin-bottom: 16px;
+	}
+
+	.season-title {
+		display: flex;
+		align-items: baseline;
+		gap: 12px;
+	}
+
+	.season-title h3 {
+		font-size: 1.1rem;
+	}
+
+	.season-title .faint {
+		font-size: 0.84rem;
+	}
+
+	.season-actions {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.btn.small {
+		min-height: 34px;
+		padding: 0 14px;
+		font-size: 0.82rem;
 	}
 
 	.wait {
-		font-size: 0.74rem;
-		white-space: nowrap;
+		font-size: 0.78rem;
 	}
 
 	.parts {
 		list-style: none;
-		margin: 0 10px 8px;
-		padding: 4px 12px;
-		border-radius: var(--radius-sm);
-		background: var(--bg-elev-2);
-		display: flex;
-		flex-direction: column;
+		margin: 0 0 18px;
+		padding: 0;
+		display: grid;
+		gap: 2px;
 	}
 
 	.parts li {
@@ -426,178 +475,44 @@
 		justify-content: space-between;
 		gap: 12px;
 		padding: 8px 0;
-	}
-
-	.parts li + li {
-		border-top: 1px solid var(--line);
+		border-bottom: 1px solid var(--line);
 	}
 
 	.part-name {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
+		display: grid;
+		gap: 1px;
 		min-width: 0;
-		font-size: 0.85rem;
-	}
-
-	.part-name strong {
-		font-weight: 600;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		font-size: 0.88rem;
 	}
 
 	.part-name .faint {
-		font-size: 0.74rem;
+		font-size: 0.76rem;
 	}
 
-	.season.open {
-		border-color: var(--line-strong);
-	}
-
-	header {
-		display: flex;
-		align-items: center;
-		flex-wrap: wrap;
-		gap: 0 10px;
-		padding-right: 12px;
-	}
-
-	.season-action {
-		flex: none;
-	}
-
-	.skeleton-row .check {
-		border: none;
-	}
-
-	.line-skel {
-		display: block;
-		height: 11px;
-		width: 62%;
-		border-radius: 4px;
-	}
-
-	.line-skel.short {
-		width: 34%;
-	}
-
-	.head {
-		flex: 1 1 220px;
-		min-width: 0;
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 14px 16px;
-		background: none;
-		border: none;
-		cursor: pointer;
-		text-align: left;
-	}
-
-	.chev {
-		display: inline-flex;
-		font-size: 1.1rem;
-		color: var(--text-faint);
-		transition: transform var(--fast) var(--ease);
-	}
-
-	.chev.turned {
-		transform: rotate(90deg);
-	}
-
-	.title {
-		font-weight: 600;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		min-width: 0;
-	}
-
-	/* One unbreakable unit, pushed to the right: "25 episodes · 2014" never
-	   splits across two lines. */
-	.meta {
-		margin-left: auto;
-		font-size: 0.78rem;
-		white-space: nowrap;
-		flex: none;
-	}
-
-	.btn.small {
-		padding: 6px 12px;
-		font-size: 0.78rem;
-	}
-
+	/* Episodes as cards: the still says which one, the tick on it says
+	   whether you have seen it. */
 	.episodes {
 		list-style: none;
 		margin: 0;
-		padding: 0 10px 10px;
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
+		padding: 0;
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+		gap: 22px 16px;
 	}
 
 	.episode {
-		display: grid;
-		grid-template-columns: 26px 96px minmax(0, 1fr) auto;
-		align-items: center;
-		gap: 12px;
-		padding: 8px 10px;
-		border-radius: var(--radius-sm);
-		transition: background var(--fast) var(--ease);
+		display: flex;
+		flex-direction: column;
+		gap: 9px;
+		min-width: 0;
 	}
 
-	.episode:hover {
-		background: var(--bg-elev-2);
-	}
-
-	.episode.watched .name {
-		color: var(--text-dim);
-	}
-
-	.check {
-		width: 26px;
-		height: 26px;
-		flex: none;
-		display: grid;
-		place-items: center;
-		border-radius: 50%;
-		border: 1.5px solid var(--line-strong);
-		background: transparent;
-		color: transparent;
-		cursor: pointer;
-		transition:
-			background var(--fast) var(--ease),
-			border-color var(--fast) var(--ease),
-			transform var(--fast) var(--ease);
-	}
-
-	.check:hover {
-		border-color: var(--accent);
-		color: var(--text-faint);
-	}
-
-	.check.on {
-		background: var(--accent);
-		border-color: var(--accent);
-		color: var(--accent-ink);
-	}
-
-	.check:active {
-		transform: scale(0.88);
-	}
-
-	/* Always present, even without artwork: a collapsing column was letting
-	   the rating control stretch across the whole row. */
 	.still {
-		width: 96px;
-		flex: none;
+		position: relative;
 		aspect-ratio: 16 / 9;
-		border-radius: 6px;
+		border-radius: var(--radius-sm);
 		overflow: hidden;
 		background: var(--bg-elev-2);
-		display: grid;
-		place-items: center;
 	}
 
 	.still img {
@@ -607,44 +522,83 @@
 		display: block;
 	}
 
-	/* The show's backdrop where the episode has no still: faded, so a page of
-	   identical pictures reads as a placeholder rather than as content. */
 	.still .stand-in {
-		opacity: 0.4;
-		filter: saturate(0.4);
+		opacity: 0.45;
 	}
 
+	/* Spoiler guard, from Settings: unseen stills are blurred. */
 	.still.blurred img {
-		filter: blur(10px);
+		filter: blur(14px);
 		transform: scale(1.1);
 	}
 
 	.no-still {
-		font-size: 0.66rem;
-		font-weight: 650;
-		letter-spacing: 0.04em;
+		position: absolute;
+		inset: 0;
+		display: grid;
+		place-items: center;
 		color: var(--text-faint);
+		font-size: 0.8rem;
 		font-variant-numeric: tabular-nums;
 	}
 
-	.episode.future {
-		opacity: 0.68;
+	.episode.watched .still img {
+		opacity: 0.55;
 	}
 
-	.episode.future .check {
-		cursor: not-allowed;
-		border-style: dashed;
+	.episode.future .still {
+		opacity: 0.6;
 	}
 
-	.soon {
-		color: var(--warn);
+	.check {
+		position: absolute;
+		right: 8px;
+		bottom: 8px;
+		display: grid;
+		place-items: center;
+		width: 32px;
+		height: 32px;
+		border: 1.5px solid rgb(255 255 255 / 0.85);
+		border-radius: 50%;
+		background: rgb(0 0 0 / 0.45);
+		color: transparent;
+		cursor: pointer;
+		transition:
+			background var(--fast) var(--ease),
+			color var(--fast) var(--ease);
+	}
+
+	.check:hover:not(:disabled) {
+		color: rgb(255 255 255 / 0.85);
+	}
+
+	.check.on {
+		border-color: transparent;
+		background: var(--accent);
+		color: var(--accent-ink);
+	}
+
+	.check:disabled {
+		cursor: default;
+		opacity: 0.5;
+	}
+
+	.times {
+		position: absolute;
+		left: 8px;
+		top: 8px;
+		padding: 1px 7px;
+		border-radius: var(--radius-pill);
+		background: rgb(0 0 0 / 0.6);
+		color: #fff;
+		font-size: 0.7rem;
+		font-weight: 650;
 	}
 
 	.body {
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
+		display: grid;
 		gap: 3px;
+		min-width: 0;
 	}
 
 	.line {
@@ -655,14 +609,16 @@
 	}
 
 	.code {
-		font-variant-numeric: tabular-nums;
-		font-size: 0.74rem;
 		flex: none;
+		color: var(--text-faint);
+		font-size: 0.74rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.name {
 		font-size: 0.9rem;
-		font-weight: 550;
+		font-weight: 600;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -670,71 +626,75 @@
 
 	.sub {
 		display: flex;
-		gap: 10px;
-		font-size: 0.73rem;
-	}
-
-	.has-note {
-		color: var(--accent);
-	}
-
-	.pill.tiny {
-		padding: 1px 7px;
-		font-size: 0.67rem;
-	}
-
-	.note {
-		margin-top: 8px;
-		resize: vertical;
-	}
-
-	.controls {
-		display: flex;
 		align-items: center;
-		gap: 8px;
+		gap: 10px;
+		min-height: 22px;
+		font-size: 0.76rem;
+		color: var(--text-faint);
+	}
+
+	.soon {
+		color: var(--accent);
+		font-weight: 600;
 	}
 
 	.note-btn {
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 22px;
+		margin-left: auto;
+		border: 0;
+		border-radius: 6px;
 		background: none;
-		border: none;
 		color: var(--text-faint);
 		cursor: pointer;
-		font-size: 0.95rem;
-		padding: 4px;
 	}
 
 	.note-btn:hover {
 		color: var(--text);
+		background: var(--bg-elev-2);
 	}
 
-	@media (max-width: 720px) {
-		.still {
-			display: none;
-		}
+	.note-btn.has {
+		color: var(--accent);
+	}
 
-		/* The name keeps the whole first line; the rating and the action drop
-		   under it rather than squeezing it or pushing past the edge. */
-		.head {
-			flex-basis: 100%;
-		}
+	.note {
+		margin-top: 6px;
+		font-size: 0.86rem;
+	}
 
-		.season-rating,
-		.season-action {
-			margin: -4px 0 12px 43px;
-		}
+	.line-skel {
+		display: block;
+		height: 11px;
+		width: 80%;
+	}
 
-		.season-rating + .season-action {
-			margin-left: 0;
-		}
+	.line-skel.short {
+		width: 45%;
+	}
 
-		/* A closed season only shows a rating it already has: a row of empty
-		   chips down a long show is noise. */
-		.season:not(.open) .season-rating.unrated {
-			display: none;
+	/* A phone: rows, the still small on the left, so a season is quick to
+	   tick through with a thumb. */
+	@media (max-width: 600px) {
+		.episodes {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 12px;
 		}
 
 		.episode {
-			grid-template-columns: 26px minmax(0, 1fr) auto;
+			display: grid;
+			grid-template-columns: 128px minmax(0, 1fr);
+			align-items: center;
+			gap: 12px;
+		}
+
+		.check {
+			right: 6px;
+			bottom: 6px;
+			width: 30px;
+			height: 30px;
 		}
 	}
 </style>

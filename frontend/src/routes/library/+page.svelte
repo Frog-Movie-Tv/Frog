@@ -137,9 +137,9 @@
 />
 
 <div class="page">
-	<div class="section-head">
+	<div class="page-head">
 		<h1>Library</h1>
-		<div class="head-tools">
+		<div class="head-tools actions">
 			<span class="faint">{plural(items.length, 'title')}</span>
 			<div class="menu-wrap">
 				<button

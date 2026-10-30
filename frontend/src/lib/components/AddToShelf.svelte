@@ -60,8 +60,15 @@
 />
 
 <div class="add" bind:this={root}>
-	<button class="btn" aria-haspopup="menu" aria-expanded={open} onclick={toggleMenu}>
-		<Icon name="layers" size={17} /> Add to shelf
+	<button
+		class="btn"
+		aria-haspopup="menu"
+		aria-expanded={open}
+		aria-label="Add to shelf"
+		title="Add to shelf"
+		onclick={toggleMenu}
+	>
+		<Icon name="layers" size={17} /> <span class="label">Add to shelf</span>
 	</button>
 
 	{#if open && shelves}

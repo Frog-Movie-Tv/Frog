@@ -145,7 +145,15 @@
 			<Icon name="heart" filled={item.entry?.favourite} size={17} />
 		</button>
 
-		<button class="btn ghost" disabled={saving} onclick={remove}>Remove</button>
+		<button
+			class="btn icon"
+			disabled={saving}
+			title="Remove from library"
+			aria-label="Remove from library"
+			onclick={remove}
+		>
+			<Icon name="trash" size={16} />
+		</button>
 	{/if}
 </div>
 
@@ -159,7 +167,7 @@
 
 	.btn.icon {
 		width: 42px;
-		padding: 10px 0;
+		padding: 0;
 	}
 
 	.btn.icon.on {

@@ -144,12 +144,16 @@
 	{#if showChrome}
 		<header class="bar">
 			<a class="brand" href="/" aria-label="Frog, home">
-				<Logo size={24} word />
+				<Logo size={28} word />
 			</a>
 
-			<nav class="links">
+			<nav class="links" aria-label="Sections">
 				{#each nav as link (link.href)}
-					<a href={link.href} class:active={isActive(link.href)}>
+					<a
+						href={link.href}
+						class:active={isActive(link.href)}
+						aria-current={isActive(link.href) ? 'page' : undefined}
+					>
 						{link.label}
 						{#if link.href === '/settings' && updated}<i class="dot" aria-label="Updated"></i>{/if}
 					</a>
@@ -160,9 +164,10 @@
 				{#if session.status && !session.status.tmdb_configured}
 					<a class="pill warn" href="/about">Metadata not connected</a>
 				{/if}
-				<button class="cmdk" onclick={() => palette?.show()} aria-label="Search and commands">
-					<Icon name="search" size={16} />
-					<kbd>Ctrl</kbd><kbd>K</kbd>
+				<button class="find" onclick={() => palette?.show()} aria-label="Search and commands">
+					<Icon name="search" size={17} />
+					<span>Search</span>
+					<kbd>Ctrl K</kbd>
 				</button>
 				<AccountMenu />
 			</div>
@@ -177,7 +182,7 @@
 		<nav class="tabs" aria-label="Sections">
 			{#each tabs as link (link.href)}
 				<a href={link.href} class:active={isActive(link.href)}>
-					<Icon name={link.icon as IconName} size={20} />
+					<Icon name={link.icon as IconName} size={21} />
 					<small>{link.label}</small>
 					{#if link.href === '/settings' && updated}<i class="dot" aria-hidden="true"></i>{/if}
 				</a>
@@ -189,7 +194,7 @@
 				aria-haspopup="menu"
 				onclick={() => (moreOpen = !moreOpen)}
 			>
-				<Icon name="more" size={20} />
+				<Icon name="more" size={21} />
 				<small>More</small>
 				{#if updated && !tabs.some((t) => t.href === '/settings')}
 					<i class="dot" aria-hidden="true"></i>
@@ -250,9 +255,9 @@
 		z-index: 40;
 		display: flex;
 		align-items: center;
-		gap: 22px;
+		gap: 28px;
 		padding: 0 var(--page-pad);
-		background: var(--bg-elev);
+		background: var(--bg-bar);
 		border-bottom: 1px solid var(--line);
 		/* On its own compositor layer, so it does not repaint with the content
 		   scrolling underneath it. */
@@ -264,13 +269,15 @@
 
 	.brand {
 		flex: none;
+		display: flex;
 	}
 
 	/* Eight pages and the account button do not fit every laptop. The links
 	   give way (scrolling sideways at worst); search and the account never do. */
 	.links {
 		display: flex;
-		gap: 4px;
+		align-self: stretch;
+		gap: 2px;
 		min-width: 0;
 		overflow-x: auto;
 		scrollbar-width: none;
@@ -283,26 +290,39 @@
 	.links a {
 		position: relative;
 		flex: none;
-		padding: 7px 14px;
-		border-radius: var(--radius-pill);
-		font-size: 0.88rem;
+		display: flex;
+		align-items: center;
+		padding: 0 12px;
+		font-size: 0.9rem;
 		font-weight: 550;
 		color: var(--text-dim);
-		transition:
-			background var(--fast) var(--ease),
-			color var(--fast) var(--ease);
+		transition: color var(--fast) var(--ease);
 	}
 
-	.links a:hover,
+	.links a:hover {
+		color: var(--text);
+	}
+
 	.links a.active {
 		color: var(--text);
-		background: var(--bg-elev-2);
+	}
+
+	/* Where you are: a short accent line on the bar's edge, nothing louder. */
+	.links a.active::after {
+		content: '';
+		position: absolute;
+		left: 12px;
+		right: 12px;
+		bottom: -1px;
+		height: 2px;
+		border-radius: 2px;
+		background: var(--accent);
 	}
 
 	.dot {
 		position: absolute;
-		top: 5px;
-		right: 7px;
+		top: 16px;
+		right: 4px;
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
@@ -314,34 +334,45 @@
 		flex: none;
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: 12px;
 	}
 
-	.cmdk {
-		display: inline-flex;
+	/* Search looks like a field, because that is what it is. */
+	.find {
+		display: flex;
 		align-items: center;
-		gap: 7px;
-		padding: 6px 11px;
+		gap: 9px;
+		width: 240px;
+		height: 38px;
+		padding: 0 8px 0 13px;
+		border: 1px solid var(--line);
 		border-radius: var(--radius-pill);
-		border: 1px solid var(--line-strong);
-		background: var(--bg-elev-2);
-		color: var(--text-dim);
-		font-size: 0.85rem;
+		background: var(--bg-elev);
+		color: var(--text-faint);
+		font-size: 0.88rem;
 		cursor: pointer;
-		transition: color var(--fast) var(--ease);
+		transition:
+			border-color var(--fast) var(--ease),
+			color var(--fast) var(--ease);
 	}
 
-	.cmdk:hover {
-		color: var(--text);
+	.find:hover {
+		border-color: var(--line-strong);
+		color: var(--text-dim);
+	}
+
+	.find span {
+		flex: 1;
+		text-align: left;
 	}
 
 	kbd {
-		padding: 1px 5px;
-		border-radius: 4px;
-		border: 1px solid var(--line-strong);
-		background: var(--bg-elev);
+		padding: 2px 7px;
+		border-radius: var(--radius-pill);
+		border: 1px solid var(--line);
+		background: var(--bg-elev-2);
 		font-family: var(--font-mono);
-		font-size: 0.72rem;
+		font-size: 0.68rem;
 	}
 
 	.pill.warn {
@@ -368,31 +399,57 @@
 		text-decoration: underline;
 	}
 
-	@media (max-width: 1180px) {
+	@media (max-width: 1280px) {
 		.bar {
-			gap: 14px;
+			gap: 18px;
 		}
 
 		.links a {
-			padding: 7px 10px;
+			padding: 0 9px;
 		}
 
-		.right .cmdk kbd {
+		.links a.active::after {
+			left: 9px;
+			right: 9px;
+		}
+
+		.find {
+			width: auto;
+		}
+
+		.find kbd {
 			display: none;
 		}
 	}
 
-	@media (max-width: 760px) {
-		.links,
-		.right .cmdk kbd {
+	@media (max-width: 960px) {
+		.find span {
 			display: none;
 		}
 
-		.cmdk {
+		.find {
+			width: 40px;
+			height: 40px;
+			padding: 0;
+			justify-content: center;
+		}
+	}
+
+	@media (max-width: 760px) {
+		.links {
+			display: none;
+		}
+
+		.bar {
+			padding-right: 10px;
+		}
+
+		.find {
 			width: 44px;
 			height: 44px;
-			justify-content: center;
-			padding: 0;
+			border: 0;
+			background: none;
+			color: var(--text-dim);
 		}
 
 		main.with-chrome {
@@ -406,7 +463,7 @@
 			display: grid;
 			grid-auto-flow: column;
 			grid-auto-columns: 1fr;
-			background: var(--bg-elev);
+			background: var(--bg-bar);
 			border-top: 1px solid var(--line);
 			padding-bottom: env(safe-area-inset-bottom);
 			backface-visibility: hidden;
@@ -414,40 +471,44 @@
 			contain: layout style;
 		}
 
-		.tabs a {
-			position: relative;
-			display: flex;
-			flex-direction: column;
-			align-items: center;
-			gap: 2px;
-			padding: 9px 0 7px;
-			color: var(--text-faint);
-			font-size: 1.05rem;
-		}
-
-		.tabs a.active,
-		.tabs .more-tab.active {
-			color: var(--accent);
-		}
-
+		.tabs a,
 		.more-tab {
 			position: relative;
 			display: flex;
 			flex-direction: column;
 			align-items: center;
-			gap: 2px;
-			padding: 9px 0 7px;
-			border: none;
+			gap: 3px;
+			padding: 9px 0 8px;
+			border: 0;
 			background: none;
 			color: var(--text-faint);
 			cursor: pointer;
+		}
+
+		.tabs a.active,
+		.tabs .more-tab.active {
+			color: var(--text);
+		}
+
+		.tabs a.active :global(svg) {
+			color: var(--accent);
+		}
+
+		.tabs small {
+			font-size: 0.66rem;
+			font-weight: 600;
+		}
+
+		.tabs .dot {
+			top: 6px;
+			right: calc(50% - 18px);
 		}
 
 		.more-scrim {
 			position: fixed;
 			inset: 0;
 			z-index: 38;
-			background: rgba(0, 0, 0, 0.45);
+			background: rgba(0, 0, 0, 0.5);
 		}
 
 		.more-sheet {
@@ -455,7 +516,7 @@
 			z-index: 39;
 			left: 10px;
 			right: 10px;
-			bottom: calc(66px + env(safe-area-inset-bottom));
+			bottom: calc(68px + env(safe-area-inset-bottom));
 			display: grid;
 			grid-template-columns: 1fr 1fr;
 			gap: 6px;
@@ -480,22 +541,16 @@
 		}
 
 		.more-sheet a.active {
+			color: var(--text);
+		}
+
+		.more-sheet a.active :global(svg) {
 			color: var(--accent);
 		}
 
 		.dot.inline {
 			position: static;
 			margin-left: auto;
-		}
-
-		.tabs small {
-			font-size: 0.64rem;
-			font-weight: 600;
-		}
-
-		.tabs .dot {
-			top: 6px;
-			right: calc(50% - 18px);
 		}
 
 		.attribution {

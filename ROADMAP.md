@@ -105,6 +105,20 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    not centralised yet.
 13. **Smaller things.** Customisable keyboard shortcuts, renaming and
    recolouring statuses, muted trailer autoplay, per-shelf layout defaults.
+14. **Finish the interface overhaul** (`feat/ui-overhaul`). Done: the top
+   bar with a search field, Home (shelf covers and a New shelf tile first,
+   "Airing this week" as cards, two "Because you watched" rows at most),
+   Shelves, Search (categories as tabs, filters beside the results), the
+   title page (one meta line, AniList / IMDb / Rotten Tomatoes / Metacritic
+   as percentages with their marks, TMDB standing in while MDBList has
+   nothing, one family of controls, crew and where to watch beside the
+   episodes), Administration's layout, one page header on Library,
+   Calendar, Diary, Stats and Import. Still to do the same way: Settings,
+   People and profiles, a person's page, Calendar and Diary bodies, Stats,
+   What's new and About; one pass over dialogs, menus and toasts so they
+   share a surface; and new screenshots, since every page has changed.
+   An earlier try put the sections in a left sidebar; the owner preferred
+   the bar on top.
 
 8. **Left from the UX pass.** Each small, none urgent:
    - A person's filmography leads with talk-show and documentary appearances;

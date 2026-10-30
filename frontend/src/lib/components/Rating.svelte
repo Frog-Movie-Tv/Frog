@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { formatScore, fromDisplay, scale, toDisplay } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
+	import Icon from './Icon.svelte';
 
 	interface Props {
 		/** 0..100, or null for unrated. */
@@ -79,6 +80,7 @@
 			</span>
 			<span class="sr">{label}</span>
 		{:else}
+			{#if !compact}<Icon name="star" size={15} filled={value !== null} />{/if}
 			<span class="value">{label}</span>
 		{/if}
 	</button>

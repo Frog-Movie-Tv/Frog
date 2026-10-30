@@ -9,7 +9,8 @@
 	import Poster from '#lib/components/Poster.svelte';
 	import Rail from '#lib/components/Rail.svelte';
 	import RailSkeleton from '#lib/components/RailSkeleton.svelte';
-	import { episodeCode, plural, prettyDate, relativeDate, runtime, year } from '#lib/format';
+	import ShelfCard from '#lib/components/ShelfCard.svelte';
+	import { episodeCode, prettyDate, relativeDate, runtime, year } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
@@ -87,12 +88,17 @@
 		}
 	});
 
+	/** What you are following, the hero's own title left out: in progress
+	 *  first, then the shows waiting on their next episode. */
+	const following = $derived(
+		data ? [...data.continue, ...data.waiting].filter((e) => e.item.id !== heroItem?.id) : []
+	);
+
 	const rows = $derived.by(() => {
 		if (!data) return [];
 		const available: Record<string, boolean> = {
 			shelves: data.shelves.length > 0,
-			continue: data.continue.length > 0,
-			upnext: data.waiting.length > 0,
+			continue: following.length > 0,
 			thisweek: data.this_week.length > 0,
 			recent: data.recent.length > 0,
 			favourites: data.favourites.length > 0,
@@ -196,7 +202,6 @@
 								{heroFresh ? 'Start watching' : heroNext ? 'Next episode' : 'Open'}
 							</a>
 						{/if}
-						<a class="btn ghost" href="/library">Library</a>
 					</div>
 				</div>
 			</header>
@@ -206,46 +211,38 @@
 			{#each rows as row (row)}
 				{#if row === 'shelves'}
 					{#snippet allShelves()}<a class="see-all" href="/shelves">All shelves</a>{/snippet}
-					<Rail title="Your shelves" action={allShelves} wide>
+					<Rail title="Your shelves" action={allShelves} width="216px">
 						{#each data.shelves as shelf (shelf.id)}
-							<a class="shelf-tile" href="/shelves/{shelf.id}">
-								<span class="stack" aria-hidden="true">
-									{#each shelf.posters.slice(0, 3) as poster (poster)}
-										<img src={img(poster, 'w92')} alt="" loading="lazy" />
-									{:else}
-										<span class="blank"><Icon name="layers" size={18} /></span>
-									{/each}
-								</span>
-								<span class="shelf-text">
-									<strong>{shelf.name}</strong>
-									<span class="faint">{plural(shelf.count, 'title')}</span>
-								</span>
-							</a>
+							<ShelfCard {shelf} />
 						{/each}
+						<a class="new-shelf" href="/shelves?new=1">
+							<span class="plus"><Icon name="plus" size={22} /></span>
+							<strong>New shelf</strong>
+						</a>
 					</Rail>
 				{:else if row === 'continue'}
 					<Rail title="Continue watching" wide>
-						{#each data.continue as entry (entry.item.id)}
-							<ContinueCard {entry} />
-						{/each}
-					</Rail>
-				{:else if row === 'upnext'}
-					<Rail title="Caught up" wide>
-						{#each data.waiting as entry (entry.item.id)}
+						{#each following as entry (entry.item.id)}
 							<ContinueCard {entry} />
 						{/each}
 					</Rail>
 				{:else if row === 'thisweek'}
 					<section class="week">
-						<div class="section-head"><h2>Airing this week</h2></div>
+						<div class="section-head">
+							<h2>Airing this week</h2>
+							<a class="see-all" href="/calendar">Calendar</a>
+						</div>
 						<ul>
 							{#each data.this_week as airing (airing.item.id)}
 								<li>
 									<a href={titleHref(airing.item)}>
 										{#if airing.item.poster_path}
 											<img src={img(airing.item.poster_path, 'w92')} alt="" loading="lazy" />
+										{:else}
+											<span class="noart"></span>
 										{/if}
 										<span class="who">
+											<span class="when">{relativeDate(airing.air_date)}</span>
 											<strong>{airing.item.name}</strong>
 											<span class="faint">
 												{episodeRange(airing)}
@@ -256,14 +253,14 @@
 												{/if}
 											</span>
 										</span>
-										<span class="when">{relativeDate(airing.air_date)}</span>
 									</a>
 								</li>
 							{/each}
 						</ul>
 					</section>
 				{:else if row === 'because'}
-					{#each because as group (group.seed.id)}
+					<!-- One: a second is the same idea again. -->
+					{#each because.slice(0, 1) as group (group.seed.id)}
 						<Rail title="Because you watched {group.seed.name}">
 							{#each group.items as item (titleKey(item))}
 								<Poster
@@ -341,72 +338,43 @@
 		text-decoration: none;
 	}
 
-	.shelf-tile {
+	.new-shelf {
 		display: flex;
-		align-items: center;
+		flex-direction: column;
 		gap: 12px;
-		height: 100%;
-		padding: 10px 14px 10px 10px;
-		border: 1px solid var(--line);
-		border-radius: var(--radius);
-		background: var(--bg-elev);
-		color: inherit;
-		text-decoration: none;
-		transition: border-color var(--fast) var(--ease);
+		color: var(--text-dim);
 	}
 
-	.shelf-tile:hover {
-		border-color: var(--line-strong);
-	}
-
-	.stack {
-		display: flex;
-		flex: none;
-	}
-
-	.stack img,
-	.stack .blank {
-		width: 40px;
-		aspect-ratio: 2 / 3;
-		border-radius: 5px;
-		object-fit: cover;
-		background: var(--bg-elev-2);
-	}
-
-	.stack img + img {
-		margin-left: -22px;
-		box-shadow: -2px 0 4px rgba(0, 0, 0, 0.3);
-	}
-
-	.stack .blank {
+	.new-shelf .plus {
 		display: grid;
 		place-items: center;
-		color: var(--text-faint);
+		aspect-ratio: 16 / 11;
+		border-radius: var(--radius);
+		border: 1.5px dashed var(--line-strong);
+		transition:
+			color var(--fast) var(--ease),
+			border-color var(--fast) var(--ease);
 	}
 
-	.shelf-text {
-		display: grid;
-		gap: 2px;
-		min-width: 0;
+	.new-shelf:hover .plus {
+		color: var(--accent);
+		border-color: var(--accent);
 	}
 
-	.shelf-text strong {
-		overflow: hidden;
-		white-space: nowrap;
-		text-overflow: ellipsis;
+	.new-shelf strong {
+		font-size: 0.95rem;
+		font-weight: 600;
+		padding: 0 2px;
 	}
 
-	.shelf-text .faint {
-		font-size: 0.8rem;
-	}
 	.hero {
 		position: relative;
 		isolation: isolate;
-		min-height: min(62vh, 520px);
+		min-height: min(56vh, 480px);
 		display: flex;
 		align-items: flex-end;
-		padding: calc(var(--header-h) + 40px) var(--page-pad) 34px;
-		background: var(--tint, var(--bg-elev));
+		padding: calc(var(--header-h) + 48px) var(--page-pad) 36px;
+		background: linear-gradient(to bottom, var(--tint, var(--bg-elev)) 40%, var(--bg));
 		overflow: hidden;
 	}
 
@@ -424,6 +392,9 @@
 		object-fit: cover;
 		object-position: center 20%;
 		z-index: -2;
+		/* The picture fades out itself, so its edge never shows as a line where
+		   the page begins. */
+		mask-image: linear-gradient(to top, transparent, #000 30%);
 	}
 
 	.backdrop.poster {
@@ -466,7 +437,7 @@
 	}
 
 	.hero-body {
-		max-width: 1500px;
+		max-width: 1440px;
 		margin: 0 auto;
 		width: 100%;
 		display: flex;
@@ -481,6 +452,13 @@
 		object-fit: contain;
 		object-position: left bottom;
 		filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.65));
+	}
+
+	/* On a dark theme a black logo would vanish into the page; a faint light
+	   halo keeps its outline without changing a coloured one. */
+	:global(:root:not([data-theme='light']):not([data-theme='pond-light'])) .logo {
+		filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.45))
+			drop-shadow(0 0 14px rgb(255 255 255 / 0.12)) drop-shadow(0 4px 18px rgb(0 0 0 / 0.5));
 	}
 
 	.facts {
@@ -509,40 +487,45 @@
 	}
 
 	.rows {
-		padding-top: 30px;
+		padding-top: 32px;
 	}
 
 	.week {
-		margin-bottom: 40px;
+		margin-bottom: 44px;
 	}
 
 	.week ul {
 		list-style: none;
 		margin: 0;
 		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+		gap: 10px;
 	}
 
-	.week a {
+	.week li a {
 		display: flex;
 		align-items: center;
 		gap: 14px;
-		padding: 9px 12px;
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--line);
+		height: 100%;
+		padding: 10px;
+		border-radius: var(--radius);
 		background: var(--bg-elev);
-		transition: border-color var(--fast) var(--ease);
+		transition: background var(--fast) var(--ease);
 	}
 
-	.week a:hover {
-		border-color: var(--line-strong);
+	.week li a:hover {
+		background: var(--bg-elev-2);
 	}
 
-	.week img {
-		width: 34px;
-		border-radius: 5px;
+	.week img,
+	.week .noart {
+		flex: none;
+		width: 46px;
+		aspect-ratio: 2 / 3;
+		border-radius: 6px;
+		object-fit: cover;
+		background: var(--bg-elev-2);
 		display: block;
 	}
 
@@ -555,22 +538,26 @@
 	}
 
 	.who strong {
-		font-size: 0.9rem;
+		font-size: 0.92rem;
 		font-weight: 600;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.who .faint {
-		font-size: 0.76rem;
+		font-size: 0.78rem;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
 	.when {
-		font-size: 0.8rem;
+		font-size: 0.72rem;
+		font-weight: 700;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
 		color: var(--accent);
-		font-weight: 600;
-		flex: none;
 	}
 
 	@media (max-width: 720px) {
@@ -582,11 +569,5 @@
 		.logo {
 			max-height: 96px;
 		}
-	}
-
-	.see-all {
-		font-size: 0.84rem;
-		font-weight: 600;
-		color: var(--accent);
 	}
 </style>

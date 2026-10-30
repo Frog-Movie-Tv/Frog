@@ -106,7 +106,7 @@ const showId = (await (await page.request.get(`${BASE}/api/titles/tv/${SHOW}`)).
 await page.request.put(`${BASE}/api/t/${showId}/library`, { data: { status: 'watching' } });
 
 await page.goto(`${BASE}/title/tv/${SHOW}`);
-await page.getByRole('heading', { name: 'Seasons' }).scrollIntoViewIfNeeded();
+await page.getByRole('heading', { name: 'Episodes' }).scrollIntoViewIfNeeded();
 const action = page.getByRole('button', { name: 'Mark watched', exact: true }).first();
 await action.waitFor();
 await page.waitForTimeout(500);

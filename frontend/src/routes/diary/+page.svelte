@@ -151,6 +151,11 @@
 	}
 
 	const fmt = $derived(settings.current.scoreFormat);
+
+	/** "Mon", in the reader's language, for a YYYY-MM-DD day. */
+	function weekday(day: string): string {
+		return new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' });
+	}
 </script>
 
 <svelte:head>
@@ -158,196 +163,213 @@
 </svelte:head>
 
 <div class="page">
-	<div class="section-head">
-		<h1>Diary</h1>
-		{#if total}<span class="faint">{plural(total, 'entry', 'entries')}</span>{/if}
-	</div>
-
-	{#if loading}
-		<Spinner label="Reading your diary" />
-	{:else if !entries.length}
-		<Empty
-			art="rest"
-			title="Nothing watched yet"
-			hint={undated
-				? `${plural(undated, 'watch', 'watches')} without a date are counted, but not shown here.`
-				: 'Tick an episode or mark a film watched and it will show up here.'}
-		>
-			<a class="btn primary" href="/library">Open library</a>
-		</Empty>
-	{:else}
-		{#each months as month (month.key)}
-			<section class="month">
-				<h2>{month.label}</h2>
-				<ol class="entries">
-					{#each month.entries as entry (keyOf(entry))}
-						{@const key = keyOf(entry)}
-						{@const expandable = entry.episodes.length > 1}
-						<li class="entry" class:open={open === key}>
-							<span class="day faint">{entry.day.slice(8, 10)}</span>
-
-							<div class="card-row">
-								<div class="row">
-									<a class="art" href={titleHref(entry)} aria-label={entry.title}>
-										{#if entry.poster_path}
-											<img src={img(entry.poster_path, 'w92')} alt="" loading="lazy" />
-										{:else}
-											<Icon name={entry.film ? 'film' : 'tv'} size={14} />
-										{/if}
-									</a>
-
-									<button
-										class="what"
-										aria-expanded={expandable ? open === key : undefined}
-										disabled={!expandable}
-										onclick={() => (open = open === key ? null : key)}
-									>
-										<span class="line">
-											<strong>{entry.title}</strong>
-											{#if entry.rewatch}<span class="pill tiny">Rewatch</span>{/if}
-											{#if entry.imported}<span class="pill tiny">Imported</span>{/if}
-										</span>
-										<span class="faint sub">
-											{#if entry.film}
-												Film
-											{:else if entry.episodes.length === 1}
-												{range(entry.episodes)}{#if entry.episodes[0].name}
-													· {entry.episodes[0].name}{/if}
-											{:else}
-												{range(entry.episodes)} · {plural(entry.count, 'episode')}
-											{/if}
-										</span>
-									</button>
-
-									{#if entry.film && entry.rating !== null}
-										<span class="score">{formatScore(entry.rating, fmt)}</span>
-									{:else if entry.episodes.length === 1 && entry.episodes[0].rating !== null}
-										<span class="score">{formatScore(entry.episodes[0].rating, fmt)}</span>
-									{/if}
-
-									{#if expandable}
-										<span class="chev" class:turned={open === key}>
-											<Icon name="chevron-down" size={16} />
-										</span>
-									{/if}
-
-									<button
-										class="icon-btn hit"
-										aria-label="Change date for {entry.title} on {entry.day}"
-										title="Change date"
-										onclick={() => changeDate(entry)}
-									>
-										<Icon name="calendar" size={15} />
-									</button>
-								</div>
-
-								{#if expandable && open === key}
-									<ul class="episodes">
-										{#each entry.episodes as ep (`${ep.season_number}-${ep.episode_number}`)}
-											<li>
-												<span class="code faint"
-													>{episodeCode(ep.season_number, ep.episode_number)}</span
-												>
-												<span class="ep-name">{ep.name ?? 'Untitled'}</span>
-												{#if ep.rating !== null}
-													<span class="score small">{formatScore(ep.rating, fmt)}</span>
-												{/if}
-											</li>
-										{/each}
-									</ul>
-								{/if}
-							</div>
-						</li>
-					{/each}
-				</ol>
-			</section>
-		{/each}
-
-		{#if entries.length < total}
-			<div class="more">
-				<button class="btn" disabled={loadingMore} onclick={() => load(entries.length)}>
-					{loadingMore ? 'Loading' : 'Show more'}
-				</button>
+	<div class="diary">
+		<div class="page-head">
+			<div>
+				<h1>Diary</h1>
+				{#if total}<p class="sub">{plural(total, 'entry', 'entries')}</p>{/if}
 			</div>
-		{/if}
+		</div>
 
-		{#if undated}
-			<p class="faint undated">
-				{plural(undated, 'watch', 'watches')} without a date are counted, but not shown here.
-			</p>
+		{#if loading}
+			<Spinner label="Reading your diary" />
+		{:else if !entries.length}
+			<Empty
+				art="rest"
+				title="Nothing watched yet"
+				hint={undated
+					? `${plural(undated, 'watch', 'watches')} without a date are counted, but not shown here.`
+					: 'Tick an episode or mark a film watched and it will show up here.'}
+			>
+				<a class="btn primary" href="/library">Open library</a>
+			</Empty>
+		{:else}
+			{#each months as month (month.key)}
+				<section class="month">
+					<h2>{month.label}</h2>
+					<ol class="entries">
+						{#each month.entries as entry, i (keyOf(entry))}
+							{@const key = keyOf(entry)}
+							{@const expandable = entry.episodes.length > 1}
+							{@const newDay = i === 0 || month.entries[i - 1].day !== entry.day}
+							<li class="entry" class:new-day={newDay}>
+								<!-- The day once, at the first thing watched on it. -->
+								<span class="date" aria-hidden={!newDay}>
+									{#if newDay}
+										<strong>{Number(entry.day.slice(8, 10))}</strong>
+										<small>{weekday(entry.day)}</small>
+									{/if}
+								</span>
+
+								<div class="body">
+									<div class="row">
+										<a class="art" href={titleHref(entry)} aria-label={entry.title}>
+											{#if entry.poster_path}
+												<img src={img(entry.poster_path, 'w92')} alt="" loading="lazy" />
+											{:else}
+												<Icon name={entry.film ? 'film' : 'tv'} size={16} />
+											{/if}
+										</a>
+
+										<button
+											class="what"
+											aria-expanded={expandable ? open === key : undefined}
+											disabled={!expandable}
+											onclick={() => (open = open === key ? null : key)}
+										>
+											<span class="line">
+												<strong>{entry.title}</strong>
+												{#if entry.rewatch}<span class="tag">Rewatch</span>{/if}
+												{#if entry.imported}<span class="tag">Imported</span>{/if}
+											</span>
+											<span class="detail">
+												{#if entry.film}
+													Film
+												{:else if entry.episodes.length === 1}
+													{range(entry.episodes)}{#if entry.episodes[0].name}
+														· {entry.episodes[0].name}{/if}
+												{:else}
+													{range(entry.episodes)} · {plural(entry.count, 'episode')}
+													<Icon name={open === key ? 'chevron-up' : 'chevron-down'} size={13} />
+												{/if}
+											</span>
+										</button>
+
+										{#if entry.film && entry.rating !== null}
+											<span class="score">{formatScore(entry.rating, fmt)}</span>
+										{:else if entry.episodes.length === 1 && entry.episodes[0].rating !== null}
+											<span class="score">{formatScore(entry.episodes[0].rating, fmt)}</span>
+										{/if}
+
+										<button
+											class="icon-btn hit"
+											aria-label="Change date for {entry.title} on {entry.day}"
+											title="Change date"
+											onclick={() => changeDate(entry)}
+										>
+											<Icon name="calendar" size={15} />
+										</button>
+									</div>
+
+									{#if expandable && open === key}
+										<ul class="episodes">
+											{#each entry.episodes as ep (`${ep.season_number}-${ep.episode_number}`)}
+												<li>
+													<span class="code"
+														>{episodeCode(ep.season_number, ep.episode_number)}</span
+													>
+													<span class="ep-name">{ep.name ?? 'Untitled'}</span>
+													{#if ep.rating !== null}
+														<span class="score small">{formatScore(ep.rating, fmt)}</span>
+													{/if}
+												</li>
+											{/each}
+										</ul>
+									{/if}
+								</div>
+							</li>
+						{/each}
+					</ol>
+				</section>
+			{/each}
+
+			{#if entries.length < total}
+				<div class="more">
+					<button class="btn" disabled={loadingMore} onclick={() => load(entries.length)}>
+						{loadingMore ? 'Loading' : 'Show more'}
+					</button>
+				</div>
+			{/if}
+
+			{#if undated}
+				<p class="undated">
+					{plural(undated, 'watch', 'watches')} without a date are counted, but not shown here.
+				</p>
+			{/if}
 		{/if}
-	{/if}
+	</div>
 </div>
 
 <style>
-	/* A diary is read down, not across: on a wide screen a full-width row
-	   puts the rating a metre away from the title it belongs to. */
-	.page > :global(*) {
-		max-width: 980px;
+	/* A diary is read down the middle of the page, like a journal. */
+	.diary {
+		max-width: 760px;
+		margin: 0 auto;
 	}
 
 	.month {
-		margin-bottom: 34px;
+		margin-bottom: 36px;
 	}
 
 	.month h2 {
 		position: sticky;
-		top: calc(var(--header-h) + 4px);
+		top: var(--header-h);
 		z-index: 5;
-		padding: 8px 0;
-		margin-bottom: 6px;
+		padding: 12px 0 10px;
 		background: var(--bg);
-		font-size: 1rem;
+		border-bottom: 1px solid var(--line);
+		font-size: 1.05rem;
 	}
 
 	.entries {
 		list-style: none;
 		margin: 0;
 		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 5px;
 	}
 
 	.entry {
+		display: grid;
+		grid-template-columns: 52px minmax(0, 1fr);
+		gap: 0 12px;
+	}
+
+	/* A new day draws a line across; a second watch that day does not. */
+	.entry.new-day .body {
+		border-top: 1px solid var(--line);
+	}
+
+	.entries > .entry:first-child .body {
+		border-top: 0;
+	}
+
+	.date {
 		display: flex;
-		align-items: flex-start;
-		gap: 12px;
+		flex-direction: column;
+		align-items: center;
+		padding-top: 14px;
+		line-height: 1.1;
 	}
 
-	.day {
-		width: 2.4ch;
-		padding-top: 18px;
-		text-align: right;
-		font-size: 0.78rem;
+	.date strong {
+		font-family: var(--font-display);
+		font-size: 1.35rem;
+		font-weight: 650;
 		font-variant-numeric: tabular-nums;
-		flex: none;
 	}
 
-	.card-row {
-		flex: 1;
+	.date small {
+		font-size: 0.7rem;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.body {
 		min-width: 0;
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--line);
-		background: var(--bg-elev);
-		overflow: hidden;
-	}
-
-	.entry.open .card-row {
-		border-color: var(--line-strong);
 	}
 
 	.row {
 		display: flex;
 		align-items: center;
-		gap: 12px;
-		padding: 8px 10px 8px 12px;
+		gap: 14px;
+		padding: 10px 0;
 	}
 
 	.art {
-		width: 32px;
+		width: 40px;
 		aspect-ratio: 2 / 3;
-		border-radius: 4px;
+		border-radius: 5px;
 		overflow: hidden;
 		display: grid;
 		place-items: center;
@@ -367,7 +389,7 @@
 		min-width: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		gap: 3px;
 		padding: 0;
 		border: none;
 		background: none;
@@ -380,6 +402,10 @@
 		cursor: default;
 	}
 
+	.what:not(:disabled):hover .detail {
+		color: var(--text);
+	}
+
 	.line {
 		display: flex;
 		align-items: baseline;
@@ -388,52 +414,52 @@
 	}
 
 	.line strong {
-		font-size: 0.9rem;
+		font-size: 0.95rem;
+		font-weight: 600;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
-	.sub {
-		font-size: 0.76rem;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.pill.tiny {
-		padding: 1px 7px;
-		font-size: 0.64rem;
+	.tag {
 		flex: none;
+		font-size: 0.68rem;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.detail {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 0.8rem;
+		color: var(--text-dim);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.score {
-		font-weight: 650;
-		font-size: 0.84rem;
 		flex: none;
+		font-family: var(--font-display);
+		font-weight: 650;
+		font-size: 0.95rem;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.score.small {
-		font-size: 0.78rem;
-	}
-
-	.chev {
-		display: grid;
-		color: var(--text-faint);
-		transition: transform var(--fast) var(--ease);
-	}
-
-	.chev.turned {
-		transform: rotate(180deg);
+		font-size: 0.82rem;
 	}
 
 	.icon-btn {
 		display: grid;
 		place-items: center;
-		width: 30px;
-		height: 30px;
-		border-radius: 8px;
-		border: 1px solid transparent;
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		border: 0;
 		background: none;
 		color: var(--text-faint);
 		cursor: pointer;
@@ -442,17 +468,14 @@
 
 	.icon-btn:hover {
 		color: var(--text);
-		border-color: var(--line);
+		background: var(--bg-elev-2);
 	}
 
 	.episodes {
 		list-style: none;
-		margin: 0;
-		padding: 4px 12px 10px 56px;
-		display: flex;
-		flex-direction: column;
-		gap: 3px;
-		border-top: 1px solid var(--line);
+		margin: 0 0 10px 54px;
+		padding: 4px 0 4px 14px;
+		border-left: 2px solid var(--line);
 		max-height: 340px;
 		overflow-y: auto;
 	}
@@ -462,13 +485,14 @@
 		align-items: baseline;
 		gap: 10px;
 		padding: 5px 0;
-		font-size: 0.82rem;
+		font-size: 0.84rem;
 	}
 
 	.code {
-		font-variant-numeric: tabular-nums;
-		font-size: 0.74rem;
 		flex: none;
+		color: var(--text-faint);
+		font-size: 0.76rem;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.ep-name {
@@ -488,12 +512,18 @@
 	.undated {
 		text-align: center;
 		font-size: 0.8rem;
+		color: var(--text-faint);
 		padding-bottom: 20px;
 	}
 
-	@media (max-width: 720px) {
+	@media (max-width: 560px) {
+		.entry {
+			grid-template-columns: 40px minmax(0, 1fr);
+			gap: 0 8px;
+		}
+
 		.episodes {
-			padding-left: 16px;
+			margin-left: 0;
 		}
 	}
 </style>

@@ -120,7 +120,7 @@
 </svelte:head>
 
 <div class="page">
-	<div class="section-head">
+	<div class="page-head">
 		<h1>Calendar</h1>
 		<div class="switch" role="group" aria-label="View">
 			<button class:on={view === 'month'} onclick={() => (view = 'month')}>Month</button>
