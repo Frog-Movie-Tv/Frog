@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.1](https://github.com/Frog-Movie-Tv/Frog/compare/v0.8.0...v0.8.1) (2026-10-30)
+
+
+### Fixes
+
+* **about:** call this release Toad ([4821a31](https://github.com/Frog-Movie-Tv/Frog/commit/4821a31c9b49fb78450bba844f996daaa22fd47a))
+* **about:** name the release Toad, with its notes and screenshots ([c3eb039](https://github.com/Frog-Movie-Tv/Frog/commit/c3eb0395416427f341730756a99738b6acb3edc9))
+
+
+### Documentation
+
+* write the Toad release notes and refresh the screenshots ([711e06c](https://github.com/Frog-Movie-Tv/Frog/commit/711e06c21c99d04d81009b5ab9fdc5588317f623))
+
 ## [0.8.0](https://github.com/Frog-Movie-Tv/Frog/compare/v0.7.0...v0.8.0) (2026-10-30)
 
 
