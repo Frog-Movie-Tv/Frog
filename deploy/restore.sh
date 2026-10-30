@@ -19,13 +19,15 @@ log() { echo "[$(date -Is)] $*"; }
 # shellcheck source=ops-log.sh
 . "$ROOT/deploy/ops-log.sh"
 
+# Newest first by name, which starts with the time of the backup. File times
+# are no guide: copies brought back from the backup repository all share one.
 if [ "$WHICH" = "--list" ]; then
-	ls -1t "$STORE"/*.age 2>/dev/null || echo "no backups in $STORE"
+	ls -1 "$STORE"/*.age 2>/dev/null | sort -r || echo "no backups in $STORE"
 	exit 0
 fi
 
 if [ "$WHICH" = "latest" ]; then
-	ARCHIVE="$(ls -1t "$STORE"/*.age 2>/dev/null | head -1 || true)"
+	ARCHIVE="$(ls -1 "$STORE"/*.age 2>/dev/null | sort -r | head -1 || true)"
 	[ -n "$ARCHIVE" ] || { log "no backups in $STORE"; exit 1; }
 else
 	ARCHIVE="$WHICH"
