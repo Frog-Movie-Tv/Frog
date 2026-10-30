@@ -1,5 +1,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicI64;
+use std::sync::Arc;
 
 /// Everything the process needs from the environment, read once at startup.
 #[derive(Clone, Debug)]
@@ -30,6 +32,24 @@ pub struct MdbListClient {
     pub key: String,
     /// Only tests point this elsewhere.
     pub api_url: String,
+    pub budget: Arc<Budget>,
+}
+
+/// Requests left today, as MDBList last said, and when that resets. Kept in
+/// memory: a restart forgets it, and the next answer says it again.
+#[derive(Debug)]
+pub struct Budget {
+    pub remaining: AtomicI64,
+    pub resets_at: AtomicI64,
+}
+
+impl Default for Budget {
+    fn default() -> Self {
+        Self {
+            remaining: AtomicI64::new(i64::MAX),
+            resets_at: AtomicI64::new(0),
+        }
+    }
 }
 
 impl std::fmt::Debug for MdbListClient {
@@ -117,6 +137,7 @@ impl Config {
             mdblist: env_opt("MDBLIST_API_KEY").map(|key| MdbListClient {
                 key,
                 api_url: env_or("MDBLIST_API_URL", "https://api.mdblist.com"),
+                budget: Arc::default(),
             }),
         })
     }
