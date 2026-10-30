@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 
 use crate::auth::Auth;
 use crate::error::AppResult;
+use crate::release::FOLLOWED;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -57,8 +58,8 @@ type PremiereRow = (
     i64,
 );
 
-/// Episodes of anything followed, plus release dates of films on the
-/// watchlist, inside a window.
+/// Episodes of anything followed (`release::FOLLOWED`), plus release dates of
+/// films on the watchlist, inside a window.
 pub async fn calendar(
     auth: Auth,
     State(state): State<AppState>,
@@ -72,7 +73,7 @@ pub async fn calendar(
     let from = normalise(&from, -45);
     let to = normalise(&to, 120);
 
-    let episodes: Vec<CalendarRow> = sqlx::query_as(
+    let episodes: Vec<CalendarRow> = sqlx::query_as(&format!(
         "SELECT t.kind, t.id, t.name, t.poster_path, t.accent_json,
                 e.air_date, e.season_number, e.episode_number, e.name,
                 (SELECT COUNT(*) FROM watch_event w
@@ -80,14 +81,12 @@ pub async fn calendar(
            FROM episode e
            JOIN title t ON t.id = e.title_id
            JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?
-          -- Completed too: a finished season and a sequel on its way are not
-          -- mutually exclusive, and the sequel's dates belong here.
-          WHERE l.status IN ('watching', 'planned', 'paused', 'completed')
+          WHERE {FOLLOWED}
             AND e.air_date IS NOT NULL
             AND e.air_date >= ? AND e.air_date <= ?
           ORDER BY e.air_date, t.name, e.season_number, e.episode_number
-          LIMIT 600",
-    )
+          LIMIT 600"
+    ))
     .bind(auth.user_id())
     .bind(auth.user_id())
     .bind(&from)
@@ -151,16 +150,18 @@ pub async fn calendar(
     // AniList knows premiere dates TMDB has not listed yet: a season that is
     // not on TMDB at all, or not yet with dates. Only whole dates, and only
     // when no episode of the same show is already on that day.
-    let premieres: Vec<PremiereRow> = sqlx::query_as(
+    let premieres: Vec<PremiereRow> = sqlx::query_as(&format!(
         "SELECT t.id, t.name, a.name, t.poster_path, t.accent_json, a.start_date,
                 a.season, a.episode_offset
            FROM anilist_entry a
            JOIN title t ON t.id = a.title_id AND t.kind = 'tv'
+           JOIN library_entry l ON l.title_id = t.id AND l.user_id = a.user_id
           WHERE a.user_id = ? AND a.state != 'ignored'
+            AND {FOLLOWED}
             AND a.media_status = 'NOT_YET_RELEASED'
             AND a.start_date IS NOT NULL
-            AND a.start_date >= ? AND a.start_date <= ?",
-    )
+            AND a.start_date >= ? AND a.start_date <= ?"
+    ))
     .bind(auth.user_id())
     .bind(&from)
     .bind(&to)

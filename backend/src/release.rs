@@ -11,6 +11,19 @@ use sqlx::SqlitePool;
 use crate::error::AppResult;
 use crate::store;
 
+/// Whether a show's coming episodes belong in front of this library row `l`
+/// (calendar, Airing this week, notifications). Something you are following
+/// does. A watchlisted show does only while nothing of it is out, so its
+/// premiere is there to look forward to; once it is releasing, it waits until
+/// you start it. A tick counts as starting, whatever the status says.
+pub const FOLLOWED: &str = "(l.status IN ('watching', 'paused', 'completed')
+    OR (l.status = 'planned'
+        AND (NOT EXISTS (SELECT 1 FROM episode o
+                          WHERE o.title_id = l.title_id AND o.season_number > 0
+                            AND o.air_date IS NOT NULL AND o.air_date < date('now'))
+             OR EXISTS (SELECT 1 FROM watch_event o
+                         WHERE o.user_id = l.user_id AND o.title_id = l.title_id))))";
+
 /// SQL condition: episode `e` has come out. TMDB lists announced episodes
 /// with no date, so an undated one only counts when a later one has aired;
 /// treating every undated episode as out is what made a season 2 that does

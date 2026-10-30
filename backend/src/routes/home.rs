@@ -7,6 +7,7 @@ use sqlx::SqlitePool;
 use crate::auth::Auth;
 use crate::catalog::{ExternalId, TitleRow, TITLE_COLUMNS};
 use crate::error::AppResult;
+use crate::release::FOLLOWED;
 use crate::state::AppState;
 use crate::store::{self, LibraryItem, NextEpisode};
 
@@ -152,17 +153,18 @@ async fn airing_this_week(
     user_id: i64,
     facts: &store::ItemFacts,
 ) -> AppResult<Vec<Airing>> {
-    let found: Vec<AiringRow> = sqlx::query_as(
+    let found: Vec<AiringRow> = sqlx::query_as(&format!(
         "SELECT e.title_id, e.season_number, e.episode_number, e.name, e.air_date
            FROM episode e
            JOIN library_entry l ON l.title_id = e.title_id AND l.user_id = ?
-          WHERE l.status IN ('watching', 'planned', 'paused')
+          WHERE {FOLLOWED}
+            AND l.status != 'completed'
             AND e.air_date IS NOT NULL
             AND e.air_date >= date('now')
             AND e.air_date <= date('now', '+7 day')
           ORDER BY e.air_date, e.season_number, e.episode_number
-          LIMIT 60",
-    )
+          LIMIT 60"
+    ))
     .bind(user_id)
     .fetch_all(pool)
     .await?;

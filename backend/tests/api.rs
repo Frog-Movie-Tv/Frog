@@ -563,6 +563,115 @@ async fn an_owner(h: &Harness) {
     .unwrap();
 }
 
+/// The calendar, Home's week and notifications agree on what is followed.
+#[tokio::test]
+async fn a_watchlisted_show_waits_until_it_is_started_or_has_not_begun() {
+    let h = Harness::new().await;
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "owner", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+    let day = |offset: i64| {
+        (chrono::Utc::now() + chrono::Duration::days(offset))
+            .format("%Y-%m-%d")
+            .to_string()
+    };
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES
+            (1, 'tv', 1, 'Watching'), (2, 'tv', 2, 'Releasing'), (3, 'tv', 3, 'Not out yet'),
+            (4, 'tv', 4, 'Started'), (5, 'tv', 5, 'Premieres today')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at) VALUES
+            (1, 1, 'watching', 'x', 'x'), (1, 2, 'planned', 'x', 'x'), (1, 3, 'planned', 'x', 'x'),
+            (1, 4, 'planned', 'x', 'x'), (1, 5, 'planned', 'x', 'x')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    for (title, season, episode, date) in [
+        (1, 1, 1, day(-7)),
+        (1, 1, 2, day(2)),
+        (2, 1, 1, day(-7)),
+        (2, 1, 2, day(2)),
+        (3, 1, 1, day(2)),
+        (4, 1, 1, day(-7)),
+        (4, 1, 2, day(2)),
+        (5, 1, 1, day(0)),
+        (5, 1, 2, day(3)),
+    ] {
+        sqlx::query(
+            "INSERT INTO episode (title_id, season_number, episode_number, air_date)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(title)
+        .bind(season)
+        .bind(episode)
+        .bind(date)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    }
+    // A special long ago does not make a show one that is releasing.
+    sqlx::query(
+        "INSERT INTO episode (title_id, season_number, episode_number, air_date)
+         VALUES (3, 0, 1, '2001-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at)
+         SELECT 1, 4, id, 'x' FROM episode WHERE title_id = 4 AND episode_number = 1",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let (_, body) = h.get("/api/calendar", Some(&cookie)).await;
+    let mut shown: Vec<&str> = body["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|e| e["title"].as_str())
+        .collect();
+    shown.sort_unstable();
+    shown.dedup();
+    assert_eq!(
+        shown,
+        ["Not out yet", "Premieres today", "Started", "Watching"],
+        "{body}"
+    );
+
+    let (_, body) = h.get("/api/home", Some(&cookie)).await;
+    let week: Vec<&str> = body["this_week"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|e| e["item"]["name"].as_str())
+        .collect();
+    assert!(!week.contains(&"Releasing"), "{week:?}");
+    assert!(week.contains(&"Watching"), "{week:?}");
+
+    let today = (chrono::Utc::now() + chrono::Duration::days(2)).date_naive();
+    let due = frog::jobs::due_announcements(&h.state.pool, 1, today)
+        .await
+        .unwrap();
+    let names: Vec<String> = due
+        .iter()
+        .filter_map(|a| a.payload()["title"].as_str().map(String::from))
+        .collect();
+    assert!(!names.iter().any(|n| n == "Releasing"), "{names:?}");
+    assert!(names.iter().any(|n| n == "Watching"), "{names:?}");
+}
+
 /// Seed one show with two aired seasons and a future episode, signed in.
 async fn show_with_seasons(h: &Harness) -> String {
     let (_, _, cookie) = h
