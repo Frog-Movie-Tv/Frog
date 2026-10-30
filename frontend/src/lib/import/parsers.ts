@@ -346,11 +346,14 @@ export function dedupe(rows: Incoming[]): Incoming[] {
 	const byTitle = new Map<string, Incoming>();
 
 	for (const row of rows) {
+		// TMDB numbers films and shows separately.
 		const id = row.tmdb_id
-			? `t${row.tmdb_id}`
+			? `t${row.kind}${row.tmdb_id}`
 			: row.imdb_id
 				? `i${row.imdb_id}`
-				: `${row.title.toLowerCase()}|${row.year ?? ''}|${row.season ?? ''}|${row.episode_offset ?? 0}`;
+				: row.anilist_id
+					? `a${row.anilist_id}`
+					: `${row.title.toLowerCase()}|${row.year ?? ''}|${row.season ?? ''}|${row.episode_offset ?? 0}`;
 
 		const existing = byTitle.get(id);
 		if (!existing) {

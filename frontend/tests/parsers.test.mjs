@@ -622,3 +622,66 @@ test('a Frog backup brings back the episodes that were watched', async () => {
 	assert.equal(dark.watches, undefined);
 	assert.equal(dark.progress, undefined);
 });
+
+test('dedupe tells a film from a show with the same TMDB id', () => {
+	const row = (over) => ({
+		key: 'k',
+		title: 'x',
+		year: null,
+		imdb_id: null,
+		tmdb_id: null,
+		kind: 'movie',
+		rating: null,
+		status: 'completed',
+		watched_at: null,
+		favourite: false,
+		rewatch: false,
+		source: 'x',
+		...over
+	});
+	const ids = (list) => list.map((r) => [r.title, r.kind, r.tmdb_id, r.anilist_id ?? null]);
+
+	assert.deepEqual(
+		ids(
+			dedupe([
+				row({ title: 'A Film', kind: 'movie', tmdb_id: 100 }),
+				row({ title: 'A Show', kind: 'tv', tmdb_id: 100 }),
+				row({ title: 'A Film', kind: 'movie', tmdb_id: 100, favourite: true })
+			])
+		),
+		[
+			['A Film', 'movie', 100, null],
+			['A Show', 'tv', 100, null]
+		]
+	);
+
+	// Two anime only AniList has, by the same name.
+	assert.deepEqual(
+		ids(
+			dedupe([
+				row({ title: 'Same Name', kind: 'tv', anilist_id: 1 }),
+				row({ title: 'Same Name', kind: 'tv', anilist_id: 2 })
+			])
+		),
+		[
+			['Same Name', 'tv', null, 1],
+			['Same Name', 'tv', null, 2]
+		]
+	);
+
+	// Seasons of one show, and parts of one season, stay apart.
+	const seasons = dedupe([
+		row({ title: 'Show', kind: 'tv', season: 1 }),
+		row({ title: 'Show', kind: 'tv', season: 2 }),
+		row({ title: 'Show', kind: 'tv', season: 2, episode_offset: 12 }),
+		row({ title: 'SHOW', kind: 'tv', season: 1 })
+	]);
+	assert.deepEqual(
+		seasons.map((r) => [r.season, r.episode_offset ?? 0]),
+		[
+			[1, 0],
+			[2, 0],
+			[2, 12]
+		]
+	);
+});
