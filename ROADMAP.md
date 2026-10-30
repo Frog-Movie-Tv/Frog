@@ -145,7 +145,8 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   `verify-shelves`, `verify-because`, `verify-anime`, `verify-leapfrog`
   (AniList is a stand-in server inside it), `verify-profile-stats` (no TMDB:
   it writes a small library straight into the database with `node:sqlite`),
-  `verify-2fa`, `verify-diary`, `verify-polish`, plus `npm run pwa-check` and
+  `verify-2fa`, `verify-diary`, `verify-import`, `verify-polish`, plus
+  `npm run pwa-check` and
   `npm run audit`. The ones that reach TMDB need a valid key; with a bad one
   every TMDB page answers 502.
 - **Web Push in tests:** headless Chrome throws away displayed notifications,
@@ -263,6 +264,15 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   nothing after it is left does it go back to the first gap. On the
   611-title Netflix library this moved 17 of 204 shows in progress, each to
   the episode after the furthest watched, and changed nothing else.
+- **The import review** (`frontend/src/lib/import/review.ts`, tested in
+  `tests/review.test.mjs`) sorts each row's messages into five kinds by their
+  wording, so a new warning needs a line there or it lands under "Check the
+  match". A closest match with any other doubt counts as "Check the match":
+  only a plain one can be kept in bulk. Bulk actions reach only the rows on
+  screen under a filter, never All, and a row left out stays on screen, dimmed,
+  until the filter changes. Rows needing a look are still imported as shown
+  unless someone leaves them out; that has not changed.
+  `node scripts/verify-import.mjs [file.csv]` walks it in real Chromium.
 - **Last watched counts dated watches only.** An undated watch holds the day
   it was recorded, so counting it made a show read "today" after an import.
   A title with only undated watches has no last-watched day; Home's Continue
