@@ -47,6 +47,7 @@ In progress.
 - **Every tracker, read closely.** A Frog backup brings back the episodes you
   watched, one Trakt episode counts as one episode, and Letterboxd lists stay
   out of your library.
+- **Quick at any size.** Home and even the largest shelf open in a moment.
 - **Pages that aren't there say so.** A mistyped address, or a title, person,
   studio or shelf that doesn't exist, gets a clear page with the way home.
 - **Up next picks up where you are.** It follows your latest episode rather
