@@ -53,7 +53,9 @@ a new source is a new reader and nothing else.
   `merge` only moves the status forward, fills an empty rating and adds a
   favourite; paused and dropped are never overridden.
 - **Watches are only ever added.** An episode already watched keeps its
-  watch. Progress without dates is undated (in totals, not in the diary).
+  watch. The one thing a later import can change about it: a watch an earlier
+  import left undated takes the day this one gives, and nothing else moves.
+  Progress without dates is undated (in totals, not in the diary).
   A dated film is one diary entry, once, with its rewatch flag; a finished
   film with no date gets one undated watch.
 - **Shows never get a title-level watch.**
@@ -93,10 +95,14 @@ a new source is a new reader and nothing else.
   named seasons ("STONE OCEAN", "Egghead Arc ①") are placed only when a TMDB
   season has that name, and a show is completed only when every season was
   seen to the end. Shows are split by season marker first, then by where
-  titles branch across the whole file, never by "the first colon". When a
-  season is in doubt the server looks the episode names up across the
-  show's seasons (`place_episodes` in `backend/src/transfer/matching.rs`); a name placed there
-  settles the season, the exact episode and its date, and proves the match.
+  titles branch across the whole file, never by "the first colon". The
+  server looks every row's episode names up (`find_episodes` in
+  `backend/src/transfer/matching.rs`): a row sure of its season reads that
+  one, one in doubt reads the whole show, and a name placed there settles the
+  exact episode and its date. In doubt it also settles the season and proves
+  the match; a numbered season stays where Netflix put it, and names not found
+  count from its first episode, undated, with no warning. "Episode N" needs
+  no lookup at all. Rows are matched six at a time (`MATCH_AT_ONCE`).
   `npm test` runs it against `tests/fixtures/netflix-viewing-history.csv`,
   real titles with made-up dates; `node --test` reads the TypeScript directly
   through `tests/ts-paths.mjs`.

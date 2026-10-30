@@ -51,13 +51,15 @@ export interface NetflixMeta {
 	seasonKind: SeasonKind;
 	/** Netflix's own name for the season: "Part 2", "STONE OCEAN". */
 	seasonName: string | null;
-	/** Episode numbers, when every episode is called "Episode N". */
+	/** Lowest and highest episode number, when every episode is called "Episode N". */
 	numbers?: [number, number];
+	/** Those numbers one by one, in the same order as `days`. */
+	numbered?: number[];
 	/** A title that might be a film or an episode; TMDB decides. */
 	loose?: boolean;
 	/** Watched with no episode name at all (a film, or a show's own name). */
 	single?: boolean;
-	/** The last day each of the row's `episodes` was watched, in the same order. */
+	/** The last day each of the row's episodes was watched. */
 	days?: string[];
 	/** Netflix's "Part 2" as a number, the season to fall back on. */
 	part?: number;
@@ -589,9 +591,11 @@ export function netflixRows(
 		row.netflix = { show: showName, seasonKind: g.kind, seasonName: g.seasonName };
 		if (g.kind === 'part') row.netflix.part = g.season ?? undefined;
 
+		row.netflix.days = [...g.episodes.values()].map((same) => latest(same).best);
 		if (numbered) {
 			const n = episodeNames.map((e) => Number(e.match(EPISODE_N)![1]));
 			row.netflix.numbers = [Math.min(...n), Math.max(...n)];
+			row.netflix.numbered = n;
 		}
 		if (g.kind === 'part') row.info = `Netflix calls this ${g.seasonName}`;
 		if (g.kind === 'named' || g.kind === 'none') row.warning = CHOOSE;
@@ -599,12 +603,8 @@ export function netflixRows(
 			row.info = `Netflix calls this “${g.seasonName}”`;
 			row.season_name = g.seasonName;
 		}
-		// TMDB looks the episodes up by name when it is unsure: of the season,
-		// or for a numbered one, of the show itself.
-		if (!numbered) {
-			row.episodes = [...g.names.values()];
-			row.netflix.days = [...g.episodes.values()].map((same) => latest(same).best);
-		}
+		// TMDB looks the episodes up by name; "Episode 3" says where it is by itself.
+		if (!numbered) row.episodes = [...g.names.values()];
 		rows.push(row);
 	}
 
@@ -740,6 +740,23 @@ function seasonByName(name: string, seasons: SeasonInfo[], show?: string): Seaso
 
 type SeasonInfo = { number: number; name: string; episodes: number };
 
+const watchedOn = (day: string | undefined) => (day ? `${day}T20:00:00Z` : null);
+
+/** What to say when more episodes were watched than TMDB's season has. */
+function tooMany(
+	watched: number,
+	season: number,
+	size: number
+): { warning?: string; info?: string } {
+	if (watched <= size) return {};
+	const line = `${watched} episodes watched, and TMDB's season ${season} has ${size}`;
+	// One or two over is Netflix counting a recap or a double episode: the
+	// whole season is ticked either way. More is a different split.
+	return watched - size <= 2
+		? { info: `${line}; all ticked` }
+		: { warning: `${line}; check the season` };
+}
+
 /**
  * Finish Netflix rows once TMDB has answered.
  *
@@ -770,22 +787,27 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 		}
 		// The episodes TMDB knows by name, each on the day it was watched.
 		const days = inc.netflix.days ?? [];
-		const placed = row.match?.placed ?? [];
+		let placed = row.match?.placed ?? [];
 		if (row.chosen.kind !== 'tv' || !placed.length) continue;
 		// Episodes found by name inside this show prove it is the show meant.
 		const proven = placed.length >= 2 || placed.length === inc.episodes?.length;
 		if (proven && row.match?.note === 'Closest match by name') row.match.note = null;
 		if (inc.netflix.seasonKind === 'number') {
-			// Netflix's season number stands, and the names only had to confirm
-			// the show; unless TMDB has no such season, when they say where
+			// Netflix's season number stands, and names found inside it date
+			// its episodes; unless TMDB has no such season, when they say where
 			// the episodes are instead.
-			if (!proven || !row.match?.note?.startsWith('TMDB lists no season')) continue;
-			row.match.note = null;
+			if (row.match?.note?.startsWith('TMDB lists no season')) {
+				if (!proven) continue;
+				row.match.note = null;
+			} else {
+				placed = placed.filter((p) => p.season === inc.season);
+				if (!placed.length) continue;
+			}
 		}
 		inc.watches = placed.map((p) => ({
 			season: p.season,
 			episode: p.episode,
-			watched_at: days[p.index] ? `${days[p.index]}T20:00:00Z` : null
+			watched_at: watchedOn(days[p.index])
 		}));
 	}
 
@@ -884,6 +906,9 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 					(m, s) => (bySeason.get(s)!.length > bySeason.get(m)!.length ? s : m),
 					order[0]
 				);
+				const size = regular.find((s) => s.number === main)?.episodes ?? 0;
+				// Netflix numbered this season and the names agree.
+				const numberStands = meta.seasonKind === 'number' && inc.season === main;
 
 				// Names TMDB writes differently ("JoJo" is translated twice): those
 				// episodes go next to the ones found, in the season most of them
@@ -891,29 +916,36 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 				// last, then before the first: Bleach's three arcs share one
 				// TMDB season and must not all count from its start. When the
 				// gaps are exactly as many as the episodes not found, they can
-				// only be those, and nothing is in doubt.
+				// only be those, and nothing is in doubt. A numbered season is
+				// watched from its start, so there the rest count from episode 1
+				// and need no second look, undated like any other count.
 				let doubt: string | undefined;
 				if (missing > 0) {
 					const list = bySeason.get(main)!;
 					const have = new Set(list.map((w) => w.episode));
 					const lo = Math.min(...have);
 					const hi = Math.max(...have);
-					const size = regular.find((s) => s.number === main)?.episodes ?? 0;
 					const gaps: number[] = [];
 					for (let n = lo + 1; n < hi; n++) if (!have.has(n)) gaps.push(n);
 					const around = [...gaps];
+					if (numberStands) for (let n = 1; n < lo; n++) around.push(n);
 					for (let n = hi + 1; n <= size; n++) around.push(n);
-					for (let n = lo - 1; n >= 1; n--) around.push(n);
+					if (!numberStands) for (let n = lo - 1; n >= 1; n--) around.push(n);
 					const fill = around.slice(0, missing);
 					list.push(...fill.map((episode) => ({ season: main, episode, watched_at: null })));
 					// Also certain: everything from episode 1 on, unbroken, as when a
 					// whole season was watched.
 					const ticked = list.map((w) => w.episode);
 					const fromStart = Math.min(...ticked) === 1 && Math.max(...ticked) === ticked.length;
-					if (fill.length !== missing || (gaps.length !== missing && !fromStart)) {
+					if (
+						!numberStands &&
+						(fill.length !== missing || (gaps.length !== missing && !fromStart))
+					) {
 						doubt = `${missing} of ${total} episodes not found by name; counted next to the ones that were`;
 					}
 				}
+				const over = numberStands ? tooMany(total, main, size) : {};
+				doubt ??= over.warning;
 
 				order.forEach((s, i) => {
 					const target =
@@ -924,9 +956,10 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 					t.progress = t.watches!.length;
 					t.episode_offset = 0;
 					t.warning = s === main ? doubt : undefined;
-					t.info = meta.seasonName
-						? `Netflix calls this “${meta.seasonName}”; season ${s} by its episode names`
-						: `Season ${s}, by its episode names`;
+					if (numberStands) t.info = over.info;
+					else if (meta.seasonName) {
+						t.info = `Netflix calls this “${meta.seasonName}”; season ${s} by its episode names`;
+					} else t.info = `Season ${s}, by its episode names`;
 					if (i > 0) {
 						split.push(target);
 						extra.set(row, [...(extra.get(row) ?? []), target]);
@@ -994,12 +1027,16 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 				const absolute = hi > season.episodes;
 				if (absolute || hi - lo + 1 === inc.progress) inc.episode_offset = lo - 1;
 				if (absolute) inc.warning = `Netflix numbers these ${lo}–${hi}; check the episodes`;
-			} else if (season && (inc.progress ?? 0) > season.episodes) {
-				const line = `${inc.progress} episodes watched, and TMDB's season ${season.number} has ${season.episodes}`;
-				// One or two over is Netflix counting a recap or a double episode:
-				// the whole season is ticked either way. More is a different split.
-				if ((inc.progress ?? 0) - season.episodes <= 2) inc.info = `${line}; all ticked`;
-				else inc.warning = `${line}; check the season`;
+				// The number says which episode it is, so each lands on its own day.
+				inc.watches = meta.numbered?.map((episode, i) => ({
+					season: season.number,
+					episode,
+					watched_at: watchedOn(meta.days?.[i])
+				}));
+			} else if (season) {
+				const { warning, info } = tooMany(inc.progress ?? 0, season.number, season.episodes);
+				if (warning) inc.warning = warning;
+				if (info) inc.info = info;
 			}
 
 			// Matched on a shorter name than the show's own ("Monster" for

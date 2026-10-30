@@ -585,9 +585,11 @@ pub async fn last_watched_at(
 ) -> AppResult<Option<String>> {
     // An aggregate always returns exactly one row, and that row holds NULL
     // when nothing matched -- so this has to be Option-inside-the-row, not
-    // fetch_optional, or a title with no watches fails to decode.
+    // fetch_optional, or a title with no watches fails to decode. An undated
+    // watch holds the day it was recorded, which is not when it was seen.
     let (last,): (Option<String>,) = sqlx::query_as(
-        "SELECT MAX(watched_at) FROM watch_event WHERE user_id = ? AND title_id = ?",
+        "SELECT MAX(watched_at) FROM watch_event
+          WHERE user_id = ? AND title_id = ? AND undated = 0",
     )
     .bind(user_id)
     .bind(title_id)
@@ -723,7 +725,8 @@ pub async fn build_items(
     .collect();
 
     let last: HashMap<i64, Option<String>> = sqlx::query_as::<_, (i64, Option<String>)>(
-        "SELECT title_id, MAX(watched_at) FROM watch_event WHERE user_id = ? GROUP BY title_id",
+        "SELECT title_id, MAX(watched_at) FROM watch_event
+          WHERE user_id = ? AND undated = 0 GROUP BY title_id",
     )
     .bind(user_id)
     .fetch_all(pool)

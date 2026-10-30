@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 use chrono::Duration;
+use futures_util::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -17,6 +18,10 @@ use crate::tmdb::models::{self, SearchItem, SeasonSummary};
 
 /// TMDB's genre id for Animation.
 const ANIMATION: i64 = 16;
+
+/// Rows looked up side by side within a batch: enough that a big import does
+/// not wait on TMDB one row at a time, few enough to stay well under its limit.
+const MATCH_AT_ONCE: usize = 6;
 
 /// A row as it came out of someone else's export.
 #[derive(Debug, Clone, Deserialize)]
@@ -121,76 +126,106 @@ pub async fn match_rows(
     .fetch_all(&state.pool)
     .await?;
 
-    let mut out = Vec::with_capacity(rows.len());
-    for row in rows {
-        let Resolved {
-            matched,
-            candidates,
-            mut note,
-            searched,
-        } = resolve(state, &row).await;
-        let mut last_season = None;
-        let mut season_counts = Vec::new();
-        let mut placed = Vec::new();
+    // `buffered` keeps the rows in the order they came.
+    Ok(stream::iter(rows)
+        .map(|row| match_row(state, &tracked, row))
+        .buffered(MATCH_AT_ONCE)
+        .collect()
+        .await)
+}
 
-        let show = matched
-            .as_ref()
-            .filter(|m| m.kind == "tv")
-            .and_then(|m| m.tmdb_id);
-        if let Some(show) = show {
-            if let Ok(detail) = state.tmdb.tv(show).await {
-                let seasons = models::seasons(&detail);
-                last_season = seasons.iter().map(|s| s.season_number).max();
-                // A season the show does not have is the anime case that needs
-                // a human: some shows are split into seasons differently on TMDB.
-                if let Some(season) = row.season {
-                    if !seasons.iter().any(|s| s.season_number == season) {
-                        note = Some(format!(
-                            "TMDB lists no season {season} for this show; check the match"
-                        ));
-                    }
+/// Everything the wizard needs to know about one row.
+async fn match_row(
+    state: &AppState,
+    tracked: &[(String, String, String)],
+    row: Incoming,
+) -> MatchResult {
+    let Resolved {
+        matched,
+        candidates,
+        mut note,
+        searched,
+    } = resolve(state, &row).await;
+    let mut last_season = None;
+    let mut season_counts = Vec::new();
+    let mut placed = Vec::new();
+
+    let show = matched
+        .as_ref()
+        .filter(|m| m.kind == "tv")
+        .and_then(|m| m.tmdb_id);
+    if let Some(show) = show {
+        if let Ok(detail) = state.tmdb.tv(show).await {
+            let seasons = models::seasons(&detail);
+            last_season = seasons.iter().map(|s| s.season_number).max();
+            // A season the show does not have is the anime case that needs
+            // a human: some shows are split into seasons differently on TMDB.
+            if let Some(season) = row.season {
+                if !seasons.iter().any(|s| s.season_number == season) {
+                    note = Some(format!(
+                        "TMDB lists no season {season} for this show; check the match"
+                    ));
                 }
-                // Only when something is in doubt: no season, or a note already.
-                // Reading every season of every show would make a big import slow.
-                if !row.episodes.is_empty() && (row.season.is_none() || note.is_some()) {
-                    placed = place_episodes(state, show, &seasons, &row.episodes).await;
-                }
-                season_counts = seasons
-                    .into_iter()
-                    .map(|s| SeasonCount {
-                        number: s.season_number,
-                        name: s.name,
-                        episodes: s.episode_count,
-                    })
-                    .collect();
             }
+            if !row.episodes.is_empty() {
+                placed = find_episodes(state, show, &row, &seasons, note.is_some()).await;
+            }
+            season_counts = seasons
+                .into_iter()
+                .map(|s| SeasonCount {
+                    number: s.season_number,
+                    name: s.name,
+                    episodes: s.episode_count,
+                })
+                .collect();
         }
-
-        let already = matched
-            .as_ref()
-            .and_then(SearchItem::external)
-            .and_then(|x| {
-                let (provider, key) = (x.provider(), x.key());
-                tracked
-                    .iter()
-                    .find(|(p, k, _)| p == provider && *k == key)
-                    .map(|(_, _, status)| status.clone())
-            });
-
-        out.push(MatchResult {
-            key: row.key,
-            matched,
-            candidates,
-            note,
-            already_tracked: already,
-            season: row.season,
-            last_season,
-            seasons: season_counts,
-            searched,
-            placed,
-        });
     }
-    Ok(out)
+
+    let already = matched
+        .as_ref()
+        .and_then(SearchItem::external)
+        .and_then(|x| {
+            let (provider, key) = (x.provider(), x.key());
+            tracked
+                .iter()
+                .find(|(p, k, _)| p == provider && *k == key)
+                .map(|(_, _, status)| status.clone())
+        });
+
+    MatchResult {
+        key: row.key,
+        matched,
+        candidates,
+        note,
+        already_tracked: already,
+        season: row.season,
+        last_season,
+        seasons: season_counts,
+        searched,
+        placed,
+    }
+}
+
+/// Look a row's episode names up on TMDB.
+///
+/// A row sure of its season reads only that one, so a big import stays quick.
+/// A row in doubt reads the whole show, specials left out.
+async fn find_episodes(
+    state: &AppState,
+    tmdb_id: i64,
+    row: &Incoming,
+    seasons: &[SeasonSummary],
+    in_doubt: bool,
+) -> Vec<Placed> {
+    if let Some(season) = row.season.filter(|_| !in_doubt) {
+        return place_episodes(state, tmdb_id, &[season], &row.episodes).await;
+    }
+    let every: Vec<i64> = seasons
+        .iter()
+        .map(|s| s.season_number)
+        .filter(|n| *n > 0)
+        .collect();
+    place_episodes(state, tmdb_id, &every, &row.episodes).await
 }
 
 /// What `resolve` decided for one row.
@@ -387,7 +422,7 @@ fn episode_key(name: &str) -> String {
         .collect()
 }
 
-/// Find episodes by name across a show's seasons (specials left out).
+/// Find episodes by name across the given seasons of a show.
 ///
 /// A name is placed only when exactly one episode has it; "Pilot" in two
 /// seasons places nothing. Netflix sometimes keeps part of an episode name
@@ -396,12 +431,12 @@ fn episode_key(name: &str) -> String {
 async fn place_episodes(
     state: &AppState,
     tmdb_id: i64,
-    seasons: &[SeasonSummary],
+    seasons: &[i64],
     names: &[String],
 ) -> Vec<Placed> {
     let mut by_name: HashMap<String, Vec<(i64, i64)>> = HashMap::new();
-    for s in seasons.iter().filter(|s| s.season_number > 0) {
-        let Ok(raw) = state.tmdb.season(tmdb_id, s.season_number).await else {
+    for season in seasons {
+        let Ok(raw) = state.tmdb.season(tmdb_id, *season).await else {
             continue;
         };
         for e in models::episodes_of_season(&raw) {

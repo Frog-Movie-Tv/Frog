@@ -387,6 +387,125 @@ async fn matching_places_episodes_by_name_when_the_season_is_in_doubt() {
     );
 }
 
+/// A row that knows its season has its episodes found there and nowhere else,
+/// and results keep the order the rows came in, however they were looked up.
+#[tokio::test]
+async fn a_numbered_season_is_searched_for_its_episode_names() {
+    let h = Harness::new().await;
+    let owner = h.owner().await;
+    h.cache_search("Dark", json!([show(70523, "Dark", 2017, &[18])]))
+        .await;
+    h.cache_show(70523, "Dark", &[(1, "Season 1", 3), (2, "Season 2", 3)])
+        .await;
+
+    let mut items: Vec<Value> = (0..20)
+        .map(|i| row(&format!("row-{i}"), "Dark", json!({ "kind": "tv" })))
+        .collect();
+    items[7] = row(
+        "row-7",
+        "Dark",
+        json!({
+            "kind": "tv", "season": 2,
+            "episodes": ["Chapter 2.3", "Chapter 1.1", "Not On TMDB"]
+        }),
+    );
+    let (status, body) = h
+        .post("/api/import/match", json!({ "items": items }), Some(&owner))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        result(&body, "row-7")["placed"],
+        json!([{ "index": 0, "season": 2, "episode": 3 }])
+    );
+    let keys: Vec<&str> = body["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["key"].as_str().unwrap())
+        .collect();
+    let wanted: Vec<String> = (0..20).map(|i| format!("row-{i}")).collect();
+    assert_eq!(keys, wanted);
+}
+
+/// An import that knows the day fills in one that did not, on the same watch,
+/// and leaves a dated watch alone. Until then the show has no last-watched
+/// day, rather than the day of the import.
+#[tokio::test]
+async fn a_dated_import_fills_in_an_undated_one() {
+    let h = Harness::new().await;
+    let owner = h.owner().await;
+    h.cache_show(70523, "Dark", &[(1, "Season 1", 3)]).await;
+
+    let (_, body) = h
+        .post(
+            "/api/import/apply",
+            json!({ "on_conflict": "overwrite", "items": [
+                { "kind": "tv", "tmdb_id": 70523, "status": "watching", "season": 1, "progress": 3 }
+            ]}),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(body["added"], json!(1), "{body}");
+    let (last,): (Option<String>,) = h
+        .one("SELECT MAX(watched_at) FROM watch_event WHERE undated = 0")
+        .await;
+    assert_eq!(last, None);
+
+    let (_, body) = h
+        .post(
+            "/api/import/apply",
+            json!({ "on_conflict": "overwrite", "items": [{
+                "kind": "tv", "tmdb_id": 70523, "status": "watching",
+                "episodes": [
+                    { "season": 1, "episode": 1, "watched_at": "2025-03-01T20:00:00Z" },
+                    { "season": 1, "episode": 2, "watched_at": null }
+                ]
+            }]}),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(body["updated"], json!(1), "{body}");
+
+    let watches: Vec<(i64, i64, String)> = sqlx::query_as(
+        "SELECT e.episode_number, w.undated, substr(w.watched_at, 1, 10)
+           FROM watch_event w JOIN episode e ON e.id = w.episode_id
+          ORDER BY e.episode_number",
+    )
+    .fetch_all(&h.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(watches.len(), 3, "no episode is ticked twice: {watches:?}");
+    assert_eq!(watches[0], (1, 0, "2025-03-01".to_string()));
+    assert_eq!((watches[1].0, watches[1].1), (2, 1));
+    assert_eq!((watches[2].0, watches[2].1), (3, 1));
+
+    let (status, library) = h.get_text("/api/library", &owner).await;
+    assert_eq!(status, StatusCode::OK, "{library}");
+    let library: Value = serde_json::from_str(&library).unwrap();
+    assert_eq!(
+        library["items"][0]["last_watched_at"],
+        json!("2025-03-01T20:00:00Z")
+    );
+
+    // A dated watch stays on its day whatever a later file says.
+    h.post(
+        "/api/import/apply",
+        json!({ "on_conflict": "overwrite", "items": [{
+            "kind": "tv", "tmdb_id": 70523, "status": "watching",
+            "episodes": [{ "season": 1, "episode": 1, "watched_at": "2026-01-01T20:00:00Z" }]
+        }]}),
+        Some(&owner),
+    )
+    .await;
+    let (kept,): (String,) = h
+        .one(
+            "SELECT substr(w.watched_at, 1, 10) FROM watch_event w
+               JOIN episode e ON e.id = w.episode_id WHERE e.episode_number = 1",
+        )
+        .await;
+    assert_eq!(kept, "2025-03-01");
+}
+
 #[tokio::test]
 async fn a_match_or_import_batch_is_capped() {
     let h = Harness::new().await;

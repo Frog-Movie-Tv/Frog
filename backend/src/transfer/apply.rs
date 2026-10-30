@@ -1,6 +1,7 @@
 //! Writing imported titles into one account's library without trampling
 //! what is there. The conflict mode says what happens to a title already
-//! tracked; watches are only ever added, never moved or removed.
+//! tracked; watches are only ever added, never moved or removed, though an
+//! undated one from an earlier import takes the day a later import gives.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -401,7 +402,8 @@ async fn tick_season(
 }
 
 /// Mark exactly these episodes watched: dated when the source says when,
-/// undated otherwise. An episode already watched is left as it is.
+/// undated otherwise. An episode already watched is left as it is, unless an
+/// earlier import could not say when and this one can.
 async fn tick_episodes(
     state: &AppState,
     user_id: i64,
@@ -425,11 +427,29 @@ async fn tick_episodes(
         }
     }
 
+    // One commit for the lot: a long run of single writes is slow.
+    let mut tx = state.pool.begin().await?;
     for e in episodes {
         let (at, undated) = match e.watched_at.as_deref() {
             Some(at) => (at.to_string(), 0),
             None => (chrono::Utc::now().to_rfc3339(), 1),
         };
+        if undated == 0 {
+            sqlx::query(
+                "UPDATE watch_event SET watched_at = ?1, undated = 0
+                  WHERE user_id = ?2 AND source = 'import' AND undated = 1
+                    AND episode_id = (SELECT id FROM episode
+                                       WHERE title_id = ?3 AND season_number = ?4
+                                         AND episode_number = ?5)",
+            )
+            .bind(&at)
+            .bind(user_id)
+            .bind(title_id)
+            .bind(e.season)
+            .bind(e.episode)
+            .execute(&mut *tx)
+            .await?;
+        }
         sqlx::query(
             "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
                                       source, undated)
@@ -446,9 +466,10 @@ async fn tick_episodes(
         .bind(undated)
         .bind(e.season)
         .bind(e.episode)
-        .execute(&state.pool)
+        .execute(&mut *tx)
         .await?;
     }
+    tx.commit().await?;
     Ok(())
 }
 

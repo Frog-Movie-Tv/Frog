@@ -67,13 +67,14 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 7. **The screenshots, the rest.** There is still no shelves shot.
 8. **The Projects board.** Backlog / In progress / Review / Done. Needs
    `gh auth refresh -s project` from an owner before it can be created.
-9. **Netflix: real dates on every episode.** Episodes TMDB finds by name
-   are ticked exactly, on the day Netflix gives. Seasons Netflix numbers
-   itself are not looked up (that would mean reading every season of every
-   show), so their episodes are still the first N, undated, and such a show
-   reads "last watched today". Looking those up too, in the background after
-   the import, would date everything. Films keep only their latest date;
-   earlier watches of the same film are a rewatch flag, not entries.
+9. **Netflix: the dates still missing.** On the 4,054-line file 3,145 of
+   3,550 episodes land on their day. The other 405 have names TMDB writes
+   differently or not at all (Kuroko's Basketball, The Order), so they are
+   counted from the start of the season, undated. Films keep only their
+   latest date; earlier watches of the same film are a rewatch flag, not
+   entries. Re-importing over an older import dates what it finds and leaves
+   the old count's other ticks undated (26 on this file), since an import
+   never removes a watch.
 10. **Netflix: untested shapes.** The personal-data ZIP
    (`CONTENT_INTERACTION/ViewingActivity.csv`) is read from its documented
    columns but has never been tried on a real one. Netflix's "Part N"
@@ -223,6 +224,10 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   nothing after it is left does it go back to the first gap. On the
   611-title Netflix library this moved 17 of 204 shows in progress, each to
   the episode after the furthest watched, and changed nothing else.
+- **Last watched counts dated watches only.** An undated watch holds the day
+  it was recorded, so counting it made a show read "today" after an import.
+  A title with only undated watches has no last-watched day; Home's Continue
+  watching then falls back on `updated_at`.
 - **Stats count only titles in the library.** Watches of removed titles stay
   in the database (the diary keeps them) but leave every total.
 - **Stats credits** live in `title_person`, filled by `store::ensure_title`

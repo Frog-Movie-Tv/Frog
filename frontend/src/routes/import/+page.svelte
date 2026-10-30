@@ -197,6 +197,8 @@
 	function choose(row: Row, candidate: SearchItem) {
 		row.chosen = candidate;
 		if (row.match) row.match.note = null;
+		// Episodes found by name belong to the title they were found in.
+		row.incoming.watches = undefined;
 		rows = [...rows];
 	}
 
