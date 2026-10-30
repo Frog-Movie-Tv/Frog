@@ -623,6 +623,11 @@ test('a Frog backup brings back the episodes that were watched', async () => {
 	assert.equal(dark.progress, undefined);
 });
 
+test('a date in any other shape keeps its day, at the usual hour', async () => {
+	const [row] = await rows('tvtime', 'seen.csv', 'show_name,created_at\nDark,"January 5, 2024"\n');
+	assert.equal(row.watched_at, '2024-01-05T20:00:00Z');
+});
+
 test('dedupe tells a film from a show with the same TMDB id', () => {
 	const row = (over) => ({
 		key: 'k',
