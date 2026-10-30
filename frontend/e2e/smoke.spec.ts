@@ -225,7 +225,7 @@ test("the what's new page lists the current release", async ({ page }) => {
 
 	const shortcut = page
 		.locator('li')
-		.filter({ hasText: /command palette on/i })
+		.filter({ hasText: /command palette/i, has: page.locator('kbd') })
 		.first();
 	await expect(shortcut.locator('kbd').first()).toBeVisible();
 	await expect(page.getByText('<kbd>')).toHaveCount(0);
