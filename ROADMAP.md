@@ -7,7 +7,7 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 0.7.0 "Treefrog" |
+| **Release** | 0.8.1 "Toad" |
 | **Next codenames** | Bullfrog (1.0) |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
@@ -297,6 +297,14 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   `lib/settings.svelte.ts`. Add the id to `HOME_ROWS` and to the default list.
 
 ## Shipped
+
+**0.8.0 and 0.8.1 Toad** — search ranked by how well a name answers, with films, shows,
+people, characters and studios apart, and filters with or without a name. Scores
+from IMDb, Rotten Tomatoes, Metacritic and others on one page through MDBList,
+with the age rating. AniList read only. Netflix import with every episode on its
+day, and a faster import review. Shelves at the top of Home, a People page with
+one search bar, a calendar that follows what you follow, a shorter Settings, and
+the UX pass.
 
 **0.7.0 Treefrog** — One search for titles, people, characters, studios and
 members, with studio pages. AniList placed by TMDB id from Fribb's list, by
