@@ -1,3 +1,4 @@
+import { titleKey } from '#lib/titles';
 import { bySeason, type Foldable } from './rows';
 
 /**
@@ -61,7 +62,7 @@ export interface RowGroup<T> {
 export function groupRows<T extends Foldable>(rows: T[]): RowGroup<T>[] {
 	const groups = new Map<string, RowGroup<T>>();
 	for (const row of rows) {
-		const key = row.chosen ? `${row.chosen.kind}-${row.chosen.tmdb_id}` : row.incoming.key;
+		const key = row.chosen ? titleKey(row.chosen) : row.incoming.key;
 		const group = groups.get(key);
 		if (group) group.rows.push(row);
 		else groups.set(key, { key, rows: [row] });

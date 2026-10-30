@@ -99,6 +99,19 @@ test('rows of one show come together, in season order, where the first one was',
 	);
 });
 
+test('an anime only AniList has groups by its AniList id', () => {
+	const anime = (anilist_id) => ({ kind: 'tv', tmdb_id: null, anilist_id, name: 'An Anime' });
+	const groups = groupRows([
+		row({ key: 'a', chosen: anime(21), season: 1 }),
+		row({ key: 'b', chosen: anime(22), season: 1 }),
+		row({ key: 'c', chosen: anime(21), season: 2 })
+	]);
+	assert.deepEqual(
+		groups.map((g) => g.rows.map((r) => r.incoming.key)),
+		[['a', 'c'], ['b']]
+	);
+});
+
 test('a show says how much is under it', () => {
 	const seasons = [
 		row({ season: 1, progress: 8 }),

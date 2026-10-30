@@ -3,6 +3,7 @@
 	import Icon from '#lib/components/Icon.svelte';
 	import Select from '#lib/components/Select.svelte';
 	import type { ReviewRow } from '#lib/import/review';
+	import { titleKey } from '#lib/titles';
 	import type { SearchItem, Status } from '#lib/types';
 	import { STATUS_LABEL, STATUSES } from '#lib/types';
 
@@ -69,7 +70,7 @@
 
 		{#if row.match?.candidates?.length}
 			<div class="candidates">
-				{#each row.match.candidates as c (`${c.kind}-${c.tmdb_id}`)}
+				{#each row.match.candidates as c (titleKey(c))}
 					<button class="cand" onclick={() => onchoose(row, c)}>
 						{c.name}{c.year ? ` (${c.year})` : ''}
 					</button>
