@@ -13,6 +13,45 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+- **Search that finds what you meant.** The title you named comes first, and
+  films, shows, people, characters and studios each have their own place. Tap
+  Filters to combine genre, year, score, sort and what is in your library, with
+  a name or on their own.
+- **Scores from everywhere.** A title page shows IMDb, Rotten Tomatoes,
+  Metacritic, Letterboxd, TMDB, AniList and more, side by side, with its age
+  rating.
+- **Shelves up front.** Your shelves sit at the top of Home, one tap away.
+- **People.** Search everyone on your Frog and everyone in film and TV from one
+  bar.
+- **A calendar that follows what you follow.** Shows you are watching appear,
+  and so do premieres on your watchlist. A watchlisted show that is already
+  airing waits until you start it. Airing this week and notifications agree.
+- **AniList comes in, and nothing goes back.** Your list arrives in Frog as it
+  always has. Frog never changes anything on your AniList.
+- **More logos.** Anime kept from AniList get their title logo where TMDB has
+  one, and studios get theirs. Search shows each studio once.
+- Keep notes on any film or show you track, right on its page.
+- Add titles to a hand-picked shelf straight from your library.
+- Every control on a phone is large enough to tap comfortably, and secondary
+  text is easier to read in every theme.
+- Changing the date of a film in the diary talks about the film and starts on
+  the day it is filed under.
+- Unmarking a whole season can be undone, and an undone episode goes back on
+  the day you watched it.
+- Removing your picture or banner, deleting a saved theme and resetting your
+  settings can all be undone.
+- Joining with an invite link looks like signing in.
+- Administration shows when each person last signed in, and sits like every
+  other page.
+- Each account on a shared device keeps its own settings.
+- Copies of a saved theme each get a name of their own.
+- A smart shelf keeps a rating rule such as "at least 8.5" when you edit it.
+- The library's status counts stay put while you filter.
+- Renaming a shelf starts with the name ready to type over; Escape cancels.
+- Title and search pages open faster.
+- Settings is shorter: custom CSS, corner radius, glass blur, grid spacing and
+  the settings file are gone.
+
 - **Netflix import.** Bring in your viewing activity from Netflix, or the ZIP
   from a data request with a profile of your choice. Every show lands on the
   right season with the episodes you saw, found by their names and kept on

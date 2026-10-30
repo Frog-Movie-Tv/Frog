@@ -190,6 +190,10 @@ async fn studios(state: &AppState, term: &str) -> AppResult<Vec<Value>> {
     for (id, name, logo, _) in known {
         add(id, name, logo, None);
     }
+    // A studio by this name exists: "A25" is not what "A24" was looking for.
+    if found.iter().any(|s| s.rank.0 < Closeness::Loose) {
+        found.retain(|s| s.rank.0 < Closeness::Loose);
+    }
     found.sort_by_key(|s| (s.rank, s.order));
     Ok(found.into_iter().take(20).map(|s| s.value).collect())
 }

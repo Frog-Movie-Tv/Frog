@@ -299,11 +299,34 @@ pub async fn search(
     items.retain(|i| filters.matches_status(i));
     filters.sorted(&mut items);
 
+    let person_first = page == 1 && !term.is_empty() && names_a_person(&state, term).await;
     Ok(Json(json!({
         "page": page,
         "next_page": next_page,
+        "person_first": person_first,
         "results": items,
     })))
+}
+
+/// Whether someone typed a person's whole name and no title's. TMDB's mixed
+/// search already says, so the page knows the order of its sections before
+/// the people themselves arrive, and nothing moves when they do.
+async fn names_a_person(state: &AppState, term: &str) -> bool {
+    let Ok(raw) = state.tmdb.search_multi(term, 1).await else {
+        return false;
+    };
+    let typed = text::words(term);
+    let mut person = false;
+    for r in raw["results"].as_array().into_iter().flatten() {
+        let name = r["title"].as_str().or(r["name"].as_str()).unwrap_or("");
+        if text::closeness(name, &typed) == Closeness::Exact {
+            if r["media_type"].as_str() != Some("person") {
+                return false;
+            }
+            person = true;
+        }
+    }
+    person
 }
 
 /// Titles by name from TMDB, ranked. With filters, as many of TMDB's pages

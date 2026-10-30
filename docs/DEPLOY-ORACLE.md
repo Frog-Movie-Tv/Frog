@@ -351,6 +351,7 @@ a client has only one, so staging needs a client of its own (or goes without
 AniList). Then add all three to that instance's `.env` and restart it:
 
 ```bash
+MDBLIST_API_KEY=your-free-key   # scores from IMDb, Rotten Tomatoes, Metacritic
 ANILIST_CLIENT_ID=12345
 ANILIST_CLIENT_SECRET=…
 ANILIST_REDIRECT_URI=https://<production domain>/api/anilist/callback
