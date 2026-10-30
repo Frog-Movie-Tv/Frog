@@ -7,7 +7,7 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 1.0.0 "Bullfrog" (once its release pull request is merged) |
+| **Release** | 1.0.0 "Bullfrog" |
 | **Next codenames** | Spring Peeper, Glass Frog, Horned Frog |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
