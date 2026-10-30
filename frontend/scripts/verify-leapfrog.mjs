@@ -228,6 +228,10 @@ check(
 	(await page.getByRole('heading', { name: 'Profile', level: 2 }).count()) === 0
 );
 await page.goto(`${BASE}/settings#this-instance`);
+await page
+	.locator('#this-instance')
+	.waitFor({ state: 'attached', timeout: 5000 })
+	.catch(() => {});
 check(
 	'an old link still lands in the right group',
 	(await page.locator('#this-instance').count()) === 1
