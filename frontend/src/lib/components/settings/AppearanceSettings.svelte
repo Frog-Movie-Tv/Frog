@@ -35,7 +35,7 @@
 				class:on={s.theme === t.id}
 				aria-label={t.label}
 				aria-pressed={s.theme === t.id}
-				onclick={() => settings.set('theme', t.id as ThemeName)}
+				onclick={() => settings.patch({ theme: t.id as ThemeName, customTheme: null })}
 			>
 				<span class="swatches" aria-hidden="true">
 					{#each t.swatches as c (c)}<i style:background={c}></i>{/each}
@@ -97,35 +97,6 @@
 			/>
 		</label>
 
-		<label class="row card">
-			<span class="label">
-				<strong>Corner radius</strong><span class="faint">{Math.round(16 * s.radiusScale)}px</span>
-			</span>
-			<input
-				type="range"
-				min="0"
-				max="2"
-				step="0.125"
-				value={s.radiusScale}
-				oninput={(e) => settings.set('radiusScale', Number(e.currentTarget.value))}
-			/>
-		</label>
-
-		<label class="row card">
-			<span class="label">
-				<strong>Glass blur</strong>
-				<span class="faint">{s.blur === 0 ? 'Off — solid bars' : `${s.blur}px`}</span>
-			</span>
-			<input
-				type="range"
-				min="0"
-				max="26"
-				step="2"
-				value={s.blur}
-				oninput={(e) => settings.set('blur', Number(e.currentTarget.value))}
-			/>
-		</label>
-
 		<div class="row card">
 			<span class="label">
 				<strong>Animation</strong>
@@ -176,20 +147,6 @@
 				step="2"
 				value={s.posterSize}
 				oninput={(e) => settings.set('posterSize', Number(e.currentTarget.value))}
-			/>
-		</label>
-
-		<label class="row card">
-			<span class="label"
-				><strong>Grid spacing</strong><span class="faint">{s.gridGap}px</span></span
-			>
-			<input
-				type="range"
-				min="6"
-				max="34"
-				step="2"
-				value={s.gridGap}
-				oninput={(e) => settings.set('gridGap', Number(e.currentTarget.value))}
 			/>
 		</label>
 

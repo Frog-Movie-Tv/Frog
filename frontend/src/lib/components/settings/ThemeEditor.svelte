@@ -64,8 +64,26 @@
 		themeName = theme.name;
 	}
 
+	/** Theme names identify saved themes, so a copy never reuses one. */
+	function unusedName(base: string): string {
+		const taken = new Set(s.savedThemes.map((t) => t.name));
+		if (!taken.has(base)) return base;
+		let n = 2;
+		while (taken.has(`${base} ${n}`)) n++;
+		return `${base} ${n}`;
+	}
+
+	function deleteTheme(theme: CustomTheme) {
+		const before = s.savedThemes;
+		settings.set(
+			'savedThemes',
+			before.filter((t) => t !== theme)
+		);
+		toasts.undoable(`Deleted “${theme.name}”`, () => settings.set('savedThemes', before));
+	}
+
 	function duplicateTheme(theme: CustomTheme) {
-		const copy = { ...theme, name: `${theme.name} copy` };
+		const copy = { ...theme, name: unusedName(`${theme.name} copy`) };
 		settings.patch({ savedThemes: [...s.savedThemes, copy], customTheme: copy });
 		themeName = copy.name;
 	}
@@ -139,24 +157,18 @@
 
 	{#if s.savedThemes.length}
 		<ul class="saved">
-			{#each s.savedThemes as theme (theme.name)}
+			<!-- By position: a list saved before names were kept unique can still
+			     hold two of one name, and must not break the page. -->
+			{#each s.savedThemes as theme, i (i)}
 				<li>
 					<span class="dots" aria-hidden="true">
-						{#each Object.values(theme.tokens) as c (c)}<i style:background={c}></i>{/each}
+						{#each Object.entries(theme.tokens) as [token, c] (token)}<i style:background={c}
+							></i>{/each}
 					</span>
 					<strong>{theme.name}</strong>
 					<button class="link" onclick={() => applyTheme(theme)}>Use</button>
 					<button class="link" onclick={() => duplicateTheme(theme)}>Duplicate</button>
-					<button
-						class="link danger"
-						onclick={() =>
-							settings.set(
-								'savedThemes',
-								s.savedThemes.filter((t) => t.name !== theme.name)
-							)}
-					>
-						Delete
-					</button>
+					<button class="link danger" onclick={() => deleteTheme(theme)}>Delete</button>
 				</li>
 			{/each}
 		</ul>

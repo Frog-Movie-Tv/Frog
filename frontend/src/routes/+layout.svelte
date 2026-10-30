@@ -49,10 +49,15 @@
 		const path = page.url.pathname;
 		const isPublic = PUBLIC.some((p) => path.startsWith(p));
 
+		// Signing in navigates on its own as well; whichever navigation loses
+		// is aborted, which is expected and not an error.
 		if (!session.authenticated && !isPublic) {
-			void goto(`/login?next=${encodeURIComponent(path)}`, { replaceState: true });
+			goto(`/login?next=${encodeURIComponent(path)}`, { replaceState: true }).catch(() => {});
 		} else if (session.authenticated && isPublic) {
-			void goto(settings.current.landingPage || '/', { replaceState: true });
+			const next = page.url.searchParams.get('next') ?? '';
+			// Only a path on this site; never somewhere a link chose for you.
+			const local = next.startsWith('/') && !next.startsWith('//') ? next : '';
+			goto(local || settings.current.landingPage || '/', { replaceState: true }).catch(() => {});
 		}
 	});
 
@@ -99,7 +104,7 @@
 		...ordered.filter((p) => !tabs.includes(p)),
 		{ href: '/people', label: 'People', icon: 'users' },
 		{ href: '/import', label: 'Import & export', icon: 'upload' },
-		{ href: '/whats-new', label: 'Release notes', icon: 'sparkle' },
+		{ href: '/whats-new', label: "What's new", icon: 'sparkle' },
 		// Only an administrator can do anything there, so only they see it.
 		...(session.status?.is_admin
 			? [{ href: '/admin', label: 'Administration', icon: 'shield' }]
@@ -247,21 +252,14 @@
 		align-items: center;
 		gap: 22px;
 		padding: 0 var(--page-pad);
-		background: var(--scrim);
-		backdrop-filter: saturate(160%) blur(var(--blur));
+		background: var(--bg-elev);
 		border-bottom: 1px solid var(--line);
-		/* Keep the blurred bar on its own compositor layer so it stops
-		   invalidating the content scrolling underneath it. */
+		/* On its own compositor layer, so it does not repaint with the content
+		   scrolling underneath it. */
 		isolation: isolate;
 		backface-visibility: hidden;
 		transform: translateZ(0);
 		contain: layout style;
-	}
-
-	:global(:root[data-blur='0']) .bar,
-	:global(:root[data-blur='0']) .tabs {
-		backdrop-filter: none;
-		background: var(--bg-elev);
 	}
 
 	.brand {
@@ -390,6 +388,13 @@
 			display: none;
 		}
 
+		.cmdk {
+			width: 44px;
+			height: 44px;
+			justify-content: center;
+			padding: 0;
+		}
+
 		main.with-chrome {
 			padding-bottom: 72px;
 		}
@@ -401,8 +406,7 @@
 			display: grid;
 			grid-auto-flow: column;
 			grid-auto-columns: 1fr;
-			background: var(--scrim);
-			backdrop-filter: saturate(160%) blur(var(--blur));
+			background: var(--bg-elev);
 			border-top: 1px solid var(--line);
 			padding-bottom: env(safe-area-inset-bottom);
 			backface-visibility: hidden;

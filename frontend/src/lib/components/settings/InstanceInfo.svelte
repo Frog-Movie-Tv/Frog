@@ -72,7 +72,7 @@
 	</div>
 
 	<div class="actions">
-		<a class="btn" href="/whats-new">Release notes</a>
+		<a class="btn" href="/whats-new">What's new</a>
 		<a class="btn ghost" href="/about">About</a>
 		<button class="btn ghost" onclick={checkForUpdates} disabled={update.state === 'checking'}>
 			{update.state === 'checking' ? 'Checking…' : 'Check for updates'}
