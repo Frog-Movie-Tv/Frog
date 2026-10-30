@@ -20,6 +20,8 @@ export interface NetflixPlay {
 	/** yyyy-mm-dd */
 	day: string;
 	profile: string | null;
+	/** How long it played, in the data-request file. The viewing history has none. */
+	seconds?: number;
 }
 
 export interface NetflixExport {
@@ -63,6 +65,8 @@ export interface NetflixMeta {
 	days?: string[];
 	/** Netflix's "Part 2" as a number, the season to fall back on. */
 	part?: number;
+	/** Seconds played in all, when the file says. */
+	seconds?: number;
 }
 
 const DAY_MS = 86_400_000;
@@ -208,7 +212,7 @@ export function readNetflix(text: string, now: Date = new Date()): NetflixExport
 		if (who) profiles.add(who);
 		// This file adds the number to episode names: "Pilot (Episode 1)".
 		const name = cleanTitle(r[title] ?? '').replace(/ \((?:Episode|Aflevering) \d+\)$/i, '');
-		plays.push({ title: name, day: day[0], profile: who });
+		plays.push({ title: name, day: day[0], profile: who, seconds: length ?? undefined });
 	}
 	return { plays, profiles: [...profiles].sort(), ignored, undated };
 }
@@ -386,6 +390,8 @@ export function netflixRows(
 ): NetflixResult {
 	const plays = data.plays.filter((p) => profile === null || p.profile === profile);
 	const daysOf = new Map<string, Set<string>>();
+	/** Seconds per title; undefined as soon as one play of it has no duration. */
+	const played = new Map<string, number | undefined>();
 	let skipped = 0;
 
 	for (const play of plays) {
@@ -398,6 +404,11 @@ export function netflixRows(
 		const set = daysOf.get(t) ?? new Set<string>();
 		set.add(play.day);
 		daysOf.set(t, set);
+		const sofar = played.has(t) ? played.get(t) : 0;
+		played.set(
+			t,
+			sofar === undefined || play.seconds === undefined ? undefined : sofar + play.seconds
+		);
 	}
 
 	const groups = new Map<string, Group>();
@@ -630,7 +641,8 @@ export function netflixRows(
 			seasonKind: 'none',
 			seasonName: null,
 			loose: true,
-			single: !episode
+			single: !episode,
+			seconds: played.get(title)
 		};
 		if (episode) {
 			row.episodes = [episode];
@@ -652,10 +664,15 @@ export function netflixRows(
 			`${data.undated} ${data.undated === 1 ? 'line' : 'lines'} with no readable date left out`
 		);
 	if (data.dateNote) notes.push(data.dateNote);
+	if (!plays.some((p) => p.seconds !== undefined)) notes.push(NO_WATCH_TIME);
 	return { rows, skipped, notes };
 }
 
 export const CHOOSE = 'Choose which season this is';
+
+/** The viewing history lists plays, not how long they lasted. */
+export const NO_WATCH_TIME =
+	'This file has titles and dates, not watch time, so a film you stopped early still comes in';
 
 /** Up to this many unnamed titles under one name are sent to TMDB one by one. */
 const SMALL = 6;
@@ -833,6 +850,9 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 			continue;
 		}
 		first.incoming.rewatch = true;
+		const a = first.incoming.netflix!.seconds;
+		const b = row.incoming.netflix!.seconds;
+		first.incoming.netflix!.seconds = a === undefined || b === undefined ? undefined : a + b;
 		if ((row.incoming.watched_at ?? '') > (first.incoming.watched_at ?? '')) {
 			first.incoming.watched_at = row.incoming.watched_at;
 		}

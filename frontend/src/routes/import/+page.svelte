@@ -19,8 +19,12 @@
 		groupRows,
 		groupSummary,
 		PROBLEM_KINDS,
+		holdBack,
 		PROBLEM_LABEL,
 		problemsOf,
+		setHeld,
+		SHOW_THRESHOLD,
+		THRESHOLD_OPTIONS,
 		type ProblemKind,
 		type ReviewRow as Row,
 		type RowGroup
@@ -30,7 +34,7 @@
 	import type { ImportSummary, SearchItem, Status } from '#lib/types';
 
 	type Step = 'source' | 'profile' | 'review' | 'done';
-	type Filter = 'all' | 'problems' | ProblemKind;
+	type Filter = 'all' | 'problems' | 'short' | ProblemKind;
 
 	let step = $state<Step>('source');
 	let format = $state('mal');
@@ -42,6 +46,7 @@
 	let filesRead = $state<string[]>([]);
 	let notes = $state<string[]>([]);
 	let filter = $state<Filter>('all');
+	let threshold = $state(SHOW_THRESHOLD);
 	/** Shows opened or closed by hand; the rest follow `isOpen`. */
 	let toggled = $state<Record<string, boolean>>({});
 	/** A Netflix export with several profiles, waiting for one to be chosen. */
@@ -49,10 +54,17 @@
 
 	const source = $derived(SOURCES.find((s) => s.id === format) ?? SOURCES[0]);
 	const included = $derived(rows.filter((r) => r.include && r.chosen));
+	/** Barely watched. Stays on its chip once added back, so that can be taken back too. */
+	const shortRows = $derived(rows.filter((r) => r.short));
+	const heldRows = $derived(shortRows.filter((r) => !r.include));
+	/** Titles rather than rows: a show of three rows is one thing to add back. */
+	const heldTitles = $derived(groupRows(heldRows).length);
+	const leftOut = $derived(rows.filter((r) => r.chosen && !r.include).length);
 	const tagged = $derived(rows.map((row) => ({ row, kinds: problemsOf(row) })));
 	// A row left out is settled, but it stays on screen until the filter
-	// changes, so a tick taken away by mistake is easy to put back.
-	const flagged = $derived(tagged.filter((t) => t.kinds.length));
+	// changes, so a tick taken away by mistake is easy to put back. A row the
+	// threshold left out asks nothing until it is added back.
+	const flagged = $derived(tagged.filter((t) => t.kinds.length && (t.row.include || !t.row.short)));
 	const needLook = $derived(flagged.filter((t) => t.row.include).length);
 	const chips = $derived(
 		PROBLEM_KINDS.map((kind) => {
@@ -63,11 +75,13 @@
 	/** Falls back to everything once the last row of a kind is settled. */
 	const active = $derived.by<Filter>(() => {
 		if (filter === 'problems') return flagged.length ? 'problems' : 'all';
+		if (filter === 'short') return shortRows.length ? 'short' : 'all';
 		return chips.some((c) => c.kind === filter) ? filter : 'all';
 	});
 	const shown = $derived.by(() => {
 		if (active === 'all') return rows;
 		if (active === 'problems') return flagged.map((t) => t.row);
+		if (active === 'short') return shortRows;
 		return flagged.filter((t) => t.kinds.includes(active)).map((t) => t.row);
 	});
 	const groups = $derived(groupRows(shown));
@@ -175,8 +189,10 @@
 			progress = { ...progress, done: Math.min(i + size, rows.length) };
 		}
 
-		if (rows.some((r) => r.incoming.netflix)) rows = settleNetflix(rows);
-		else foldAll();
+		if (rows.some((r) => r.incoming.netflix)) {
+			rows = settleNetflix(rows);
+			hold();
+		} else foldAll();
 		busy = false;
 	}
 
@@ -184,6 +200,27 @@
 	function foldAll() {
 		foldSeasons(rows);
 		rows = [...rows];
+	}
+
+	function hold() {
+		holdBack(rows, threshold);
+		rows = [...rows];
+	}
+
+	function setThreshold(value: string) {
+		threshold = Number(value);
+		hold();
+	}
+
+	function addBack() {
+		const back = [...heldRows];
+		const titles = heldTitles;
+		setHeld(back, false);
+		rows = [...rows];
+		toasts.undoable(titles === 1 ? 'Added back' : `${titles} added back`, () => {
+			setHeld(back, true);
+			rows = [...rows];
+		});
 	}
 
 	async function run() {
@@ -229,7 +266,7 @@
 		if (row.match) row.match.note = null;
 		// Episodes found by name belong to the title they were found in.
 		row.incoming.watches = undefined;
-		rows = [...rows];
+		hold();
 	}
 
 	function setSeason(row: Row, value: string) {
@@ -256,11 +293,15 @@
 
 	function setInclude(row: Row, include: boolean) {
 		row.include = include;
+		row.held = false;
 		rows = [...rows];
 	}
 
 	function setShowIncluded(group: RowGroup<Row>, include: boolean) {
-		for (const row of group.rows) row.include = include;
+		for (const row of group.rows) {
+			row.include = include;
+			row.held = false;
+		}
 		rows = [...rows];
 	}
 
@@ -297,6 +338,7 @@
 		notes = [];
 		netflix = null;
 		filter = 'all';
+		threshold = SHOW_THRESHOLD;
 		toggled = {};
 		step = 'source';
 	}
@@ -407,6 +449,14 @@
 			</div>
 
 			<div class="toolbar-right">
+				{#if format === 'netflix'}
+					<Select
+						value={String(threshold)}
+						label="Leave out shows with few episodes watched"
+						options={THRESHOLD_OPTIONS}
+						onchange={setThreshold}
+					/>
+				{/if}
 				<Select
 					value={onConflict}
 					label="Already in your library"
@@ -419,7 +469,7 @@
 			</div>
 		</div>
 
-		{#if flagged.length}
+		{#if flagged.length || shortRows.length}
 			<div class="chips" role="group" aria-label="Show">
 				<button
 					class="chip"
@@ -429,14 +479,26 @@
 				>
 					All <span class="n">{rows.length}</span>
 				</button>
-				<button
-					class="chip"
-					class:on={active === 'problems'}
-					aria-pressed={active === 'problems'}
-					onclick={() => (filter = 'problems')}
-				>
-					Needs a look <span class="n">{needLook}</span>
-				</button>
+				{#if flagged.length}
+					<button
+						class="chip"
+						class:on={active === 'problems'}
+						aria-pressed={active === 'problems'}
+						onclick={() => (filter = 'problems')}
+					>
+						Needs a look <span class="n">{needLook}</span>
+					</button>
+				{/if}
+				{#if shortRows.length}
+					<button
+						class="chip"
+						class:on={active === 'short'}
+						aria-pressed={active === 'short'}
+						onclick={() => (filter = 'short')}
+					>
+						Barely watched <span class="n">{heldTitles}</span>
+					</button>
+				{/if}
 				{#each chips as chip (chip.kind)}
 					<button
 						class="chip"
@@ -450,8 +512,14 @@
 			</div>
 		{/if}
 
-		{#if keepable.length || leavable.length}
+		{#if keepable.length || leavable.length || (active === 'short' && heldRows.length)}
 			<div class="bulk">
+				{#if active === 'short' && heldRows.length}
+					<button class="btn ghost small" onclick={addBack}>
+						<Icon name="plus" size={14} />
+						{heldTitles === 1 ? 'Add this one back' : `Add these ${heldTitles} back`}
+					</button>
+				{/if}
 				{#if keepable.length}
 					<button class="btn ghost small" onclick={keepMatches}>
 						<Icon name="check" size={14} />
@@ -555,6 +623,12 @@
 					<dt>Skipped</dt>
 					<dd>{summary.skipped}</dd>
 				</div>
+				{#if leftOut}
+					<div>
+						<dt>Left out</dt>
+						<dd>{leftOut}</dd>
+					</div>
+				{/if}
 				{#if summary.failed.length}
 					<div>
 						<dt>Failed</dt>
@@ -707,8 +781,10 @@
 
 	.toolbar-right {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		gap: 10px;
+		min-width: 0;
 	}
 
 	.btn.small {
@@ -826,6 +902,13 @@
 		bottom: 0;
 		padding: 14px 0;
 		background: linear-gradient(transparent, var(--bg) 35%);
+	}
+
+	/* Above the tab bar, or the import's one action sits behind it. */
+	@media (max-width: 760px) {
+		.footer {
+			bottom: calc(66px + env(safe-area-inset-bottom));
+		}
 	}
 
 	.done {

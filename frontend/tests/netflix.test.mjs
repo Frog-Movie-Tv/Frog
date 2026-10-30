@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import {
 	cleanTitle,
 	netflixRows,
+	NO_WATCH_TIME,
 	readDays,
 	readNetflix,
 	searchName,
@@ -40,7 +41,7 @@ const row = (r) => [
 test('the fixture comes out exactly as expected', () => {
 	const { rows, skipped, notes } = read();
 	assert.equal(skipped, 2);
-	assert.deepEqual(notes, ['2 plays have no show name and were left out']);
+	assert.deepEqual(notes, ['2 plays have no show name and were left out', NO_WATCH_TIME]);
 	// One line per row reads better than prettier's ten.
 	// prettier-ignore
 	assert.deepEqual(rows.map(row), [
@@ -203,6 +204,30 @@ test('the data-request file: profiles, trailers and short plays', () => {
 		[['The Flash: Season 1', 1, 1]]
 	);
 	assert.deepEqual(zjef.notes, ['3 trailers and short plays left out']);
+
+	// This file says how long things played: a film's plays add up, and the
+	// note about watch time has nothing to warn of.
+	const mihai = netflixRows(data, 'Mihai', NOW);
+	assert.equal(mihai.rows[0].netflix.seconds, 7260);
+});
+
+test('the viewing history says it has no watch time, and never guesses one', () => {
+	const { rows, notes } = read('Title,Date\nInception,23/10/2026\n');
+	assert.ok(notes.includes(NO_WATCH_TIME));
+	assert.equal(rows[0].netflix.seconds, undefined);
+});
+
+test('one play without a duration means a film has no known length', () => {
+	const csv = [
+		'Profile Name,Start Time,Duration,Title',
+		'Zjef,2026-10-20 21:04:11,00:10:00,Heat',
+		'Zjef,2026-10-21 21:04:11,,Heat',
+		'Zjef,2026-10-22 21:04:11,00:03:00,Arrival',
+		'Zjef,2026-10-23 21:04:11,00:04:00,Arrival'
+	].join('\n');
+	const { rows } = netflixRows(readNetflix(csv, NOW), null, NOW);
+	const seconds = Object.fromEntries(rows.map((r) => [r.title, r.netflix.seconds]));
+	assert.deepEqual(seconds, { Arrival: 420, Heat: undefined });
 });
 
 test('a file that is not Netflix says so', () => {

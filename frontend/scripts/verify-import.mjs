@@ -7,7 +7,9 @@
  *   3. keeping matches and leaving rows out can both be undone,
  *   4. a doubtful row is never touched by "Keep",
  *   5. nothing scrolls sideways on a phone,
- *   6. the import itself still finishes.
+ *   6. barely watched shows wait under their own chip, the threshold moves
+ *      them, and one action brings them all back and can be undone,
+ *   7. the import itself still finishes.
  *
  * Needs TMDB_API_KEY in .env. Takes a real export, or the fixture:
  *   node scripts/verify-import.mjs [file.csv] [outDir]
@@ -183,6 +185,29 @@ check('Leave out reaches only those rows', (await needLook(page)) === look - dou
 await page.getByRole('button', { name: 'Undo' }).click();
 check('and comes back', (await needLook(page)) === look);
 
+const readyNow = async () =>
+	Number((await page.locator('.counts strong').first().innerText()).trim());
+const threshold = async (name) => {
+	await page.getByRole('button', { name: 'Leave out shows with few episodes watched' }).click();
+	await page.getByRole('option', { name, exact: true }).click();
+};
+const atThree = await readyNow();
+const barely = await chip(page, 'Barely watched').count();
+check('shows barely watched have their own chip', barely === 1 || file.includes('fixtures'));
+if (barely) {
+	const held = await count(page, 'Barely watched');
+	await threshold('Keep every show');
+	check('keeping every show brings them in', (await readyNow()) > atThree, `${await readyNow()}`);
+	await threshold('Under 3 episodes left out');
+	check('moving it back leaves them out again', (await readyNow()) === atThree);
+
+	await chip(page, 'Barely watched').click();
+	await page.getByRole('button', { name: /^Add (this one|these \d+) back/ }).click();
+	check('one action adds them back', (await readyNow()) > atThree, `${held} titles`);
+	await page.getByRole('button', { name: 'Undo' }).click();
+	check('and it can be undone', (await readyNow()) === atThree);
+}
+
 await chip(page, 'All').click();
 const includes = await page.locator('.rows input[type=checkbox]').count();
 check('All is back', includes > 0 && (await page.locator('.show').count()) === shows);
@@ -200,6 +225,12 @@ const wide = await small.evaluate(
 	() => document.documentElement.scrollWidth - document.documentElement.clientWidth
 );
 check('nothing scrolls sideways on a phone', wide <= 0, `${wide}px`);
+const covered = await small.evaluate(() => {
+	const go = [...document.querySelectorAll('.footer .btn.primary')].pop();
+	const bar = document.querySelector('nav.tabs');
+	return go.getBoundingClientRect().bottom - bar.getBoundingClientRect().top;
+});
+check('the import button sits above the tab bar', covered <= 0, `${covered}px`);
 await phone.close();
 
 await button.click();

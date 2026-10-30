@@ -6,7 +6,10 @@ import {
 	CLOSEST,
 	groupRows,
 	groupSummary,
-	problemsOf
+	holdBack,
+	problemsOf,
+	setHeld,
+	SHOW_THRESHOLD
 } from '../src/lib/import/review.ts';
 import { CHOOSE } from '../src/lib/import/netflix.ts';
 
@@ -124,4 +127,169 @@ test('a show says how much is under it', () => {
 		'2 entries · 1 episode'
 	);
 	assert.equal(groupSummary([row({}), row({})]), '2 entries');
+});
+
+// ---------------------------------------------------------------- barely watched
+
+/** One Netflix row of a show or film, as it stands after settling. */
+function play({ id = 1, progress = 1, season = null, kind = 'tv', tracked = false, seconds, key }) {
+	return {
+		incoming: {
+			key: key ?? `${kind}${id}-${season}`,
+			title: 'x',
+			season,
+			progress,
+			netflix: { seconds }
+		},
+		match: { already_tracked: tracked ? { status: 'watching' } : null },
+		chosen: { kind, tmdb_id: id, name: 'A Title' },
+		include: true
+	};
+}
+const state = (rows) => rows.map((r) => [r.include, !!r.short]);
+
+test('a show under the threshold is left out, one at it stays', () => {
+	assert.equal(SHOW_THRESHOLD, 3);
+	const rows = [
+		play({ id: 1, progress: 1 }),
+		play({ id: 2, progress: 2 }),
+		play({ id: 3, progress: 3 }),
+		play({ id: 4, progress: 40 })
+	];
+	holdBack(rows, SHOW_THRESHOLD);
+	assert.deepEqual(state(rows), [
+		[false, true],
+		[false, true],
+		[true, false],
+		[true, false]
+	]);
+});
+
+test('a show counts every season: one episode of a later one does not leave it out', () => {
+	const rows = [
+		play({ id: 1, season: 1, progress: 8 }),
+		play({ id: 1, season: 2, progress: 1 }),
+		play({ id: 2, season: 1, progress: 1 }),
+		play({ id: 2, season: 2, progress: 1 })
+	];
+	holdBack(rows, 3);
+	assert.deepEqual(
+		rows.map((r) => r.include),
+		[true, true, false, false]
+	);
+});
+
+test('a title with no episode named reads as a film, whatever TMDB matched it to', () => {
+	const rows = [play({ progress: 0 })];
+	holdBack(rows, 3);
+	assert.equal(rows[0].include, true);
+	assert.equal(rows[0].short, false);
+});
+
+test('films stay when the file has no durations, and go only when it proves it', () => {
+	const rows = [
+		play({ kind: 'movie', id: 1, progress: null }),
+		play({ kind: 'movie', id: 2, progress: null, seconds: 300 }),
+		play({ kind: 'movie', id: 3, progress: null, seconds: 6000 })
+	];
+	holdBack(rows, 3);
+	assert.deepEqual(
+		rows.map((r) => r.include),
+		[true, false, true]
+	);
+	holdBack(rows, 0);
+	assert.equal(rows[1].include, true);
+});
+
+test('a show already in the library is never left out', () => {
+	const rows = [
+		play({ id: 1, season: 1, progress: 1, tracked: true }),
+		play({ id: 1, season: 2, progress: 1 })
+	];
+	holdBack(rows, 3);
+	assert.deepEqual(
+		rows.map((r) => r.include),
+		[true, true]
+	);
+});
+
+test('other sources and rows with no match are left alone', () => {
+	const other = {
+		incoming: { key: 'o', title: 'x', progress: 1 },
+		match: null,
+		chosen: { kind: 'tv', tmdb_id: 9, name: 'Trakt' },
+		include: true
+	};
+	const unmatched = { ...play({ id: 8 }), chosen: null };
+	holdBack([other, unmatched], 3);
+	assert.equal(other.include, true);
+	assert.equal(unmatched.include, true);
+	assert.equal(!!unmatched.short, false);
+});
+
+test('moving the threshold brings back what it left out, and only that', () => {
+	const rows = [play({ id: 1, progress: 2 }), play({ id: 2, progress: 5 })];
+	holdBack(rows, 3);
+	assert.deepEqual(state(rows), [
+		[false, true],
+		[true, false]
+	]);
+	holdBack(rows, 6);
+	assert.deepEqual(state(rows), [
+		[false, true],
+		[false, true]
+	]);
+	holdBack(rows, 2);
+	assert.deepEqual(state(rows), [
+		[true, false],
+		[true, false]
+	]);
+	holdBack(rows, 0);
+	assert.deepEqual(state(rows), [
+		[true, false],
+		[true, false]
+	]);
+});
+
+test('what the person chose survives the threshold moving', () => {
+	const added = play({ id: 1, progress: 1 });
+	const dropped = play({ id: 2, progress: 9 });
+	holdBack([added, dropped], 3);
+	// Ticked back in by hand, and another taken out by hand.
+	added.include = true;
+	added.held = false;
+	dropped.include = false;
+	holdBack([added, dropped], 5);
+	assert.equal(added.include, true, 'an added-back show stays');
+	holdBack([added, dropped], 0);
+	assert.equal(dropped.include, false, 'lowering never undoes a tick taken away by hand');
+	holdBack([added, dropped], 3);
+	assert.equal(dropped.include, false);
+});
+
+test('undoing "add back" leaves a show held, so the threshold can still bring it back', () => {
+	const rows = [play({ id: 1, progress: 2 })];
+	holdBack(rows, 3);
+	setHeld(rows, false);
+	assert.equal(rows[0].include, true);
+	setHeld(rows, true);
+	assert.equal(rows[0].include, false);
+	holdBack(rows, 0);
+	assert.equal(rows[0].include, true);
+});
+
+test('choosing another title counts that title instead', () => {
+	const a = play({ id: 1, progress: 2 });
+	const b = play({ id: 2, progress: 2, key: 'other' });
+	holdBack([a, b], 3);
+	assert.deepEqual(state([a, b]), [
+		[false, true],
+		[false, true]
+	]);
+	b.chosen = a.chosen;
+	holdBack([a, b], 3);
+	assert.deepEqual(state([a, b]), [
+		[true, false],
+		[true, false]
+	]);
 });
