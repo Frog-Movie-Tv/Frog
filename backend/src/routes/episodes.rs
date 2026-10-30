@@ -302,7 +302,6 @@ pub async fn set_state(
 /// After any watch change, move the library entry to match what has been
 /// watched against what has come out; `release::desired_status` has the rules.
 async fn after_change(state: &AppState, user_id: i64, title_id: i64) -> AppResult<Json<Value>> {
-    crate::anilist::touch(&state.pool, user_id).await;
     // Ticking an episode of a show not in the library puts it there.
     if store::get_entry(&state.pool, user_id, title_id)
         .await?

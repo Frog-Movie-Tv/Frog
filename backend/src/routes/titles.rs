@@ -524,7 +524,6 @@ pub async fn rate_season(
         body.rating,
     )
     .await?;
-    crate::anilist::touch(&state.pool, auth.user_id()).await;
     Ok(Json(json!({
         "ratings": crate::release::rating_units(&state.pool, auth.user_id(), title_id).await?
     })))

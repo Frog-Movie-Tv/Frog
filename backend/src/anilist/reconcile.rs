@@ -87,50 +87,6 @@ impl Changes {
     }
 }
 
-/// What to send to AniList once Frog's side is final, if anything.
-///
-/// A fresh entry (first sync, or placed again) sends only episodes watched in
-/// Frog that AniList has not seen, and keeps AniList's score. Later, only the
-/// fields that changed in Frog go, and only when AniList's side was not
-/// followed this time.
-pub fn outgoing(
-    fresh: bool,
-    changes: &Changes,
-    snap_frog: Option<&View>,
-    now: &View,
-    al: &View,
-) -> Option<View> {
-    let send = if fresh {
-        (now.progress > al.progress).then(|| View {
-            status: now.status.clone(),
-            progress: now.progress,
-            score: al.score,
-        })
-    } else if changes.frog_changed && !changes.follow {
-        let before = snap_frog;
-        Some(View {
-            status: if before.is_some_and(|b| b.status == now.status) {
-                al.status.clone()
-            } else {
-                now.status.clone()
-            },
-            progress: if before.is_some_and(|b| b.progress == now.progress) {
-                al.progress
-            } else {
-                now.progress
-            },
-            score: if before.is_some_and(|b| b.score == now.score) {
-                al.score
-            } else {
-                now.score
-            },
-        })
-    } else {
-        None
-    };
-    send.filter(|s| s != al)
-}
-
 /// The rating AniList's score asks for, if it should change: `Some(new)`,
 /// where `new` may be None (the score was taken off). A merge only fills an
 /// empty rating; following takes AniList's, including its removal.
@@ -234,42 +190,29 @@ mod tests {
     }
 
     #[test]
-    fn a_first_sync_merges_and_sends_only_what_anilist_has_not_seen() {
+    fn a_first_sync_merges() {
         let al = v("CURRENT", 3, 80);
         let frog = v("CURRENT", 5, 0);
         let c = Changes::between(None, None, &al, Some(&frog));
         assert!(c.first && !c.al_changed && !c.frog_changed && !c.follow);
         assert_eq!(c.mode(false), Some(Mode::Merge));
-        // Frog's further progress goes; AniList's score stays.
-        assert_eq!(
-            outgoing(true, &c, None, &frog, &al),
-            Some(v("CURRENT", 5, 80))
-        );
-        // Behind AniList: nothing is sent, nothing taken back.
-        assert_eq!(outgoing(true, &c, None, &v("CURRENT", 1, 0), &al), None);
     }
 
     #[test]
-    fn a_change_on_one_side_is_carried_to_the_other() {
+    fn a_change_on_anilist_comes_in_and_one_in_frog_stands() {
         let snap = v("CURRENT", 3, 0);
         // AniList moved on; Frog did not.
         let c = Changes::between(Some(&snap), Some(&snap), &v("CURRENT", 5, 0), Some(&snap));
         assert!(c.follow);
         assert_eq!(c.mode(false), Some(Mode::Follow));
-        assert_eq!(outgoing(false, &c, Some(&snap), &snap, &snap), None);
 
-        // Frog moved on; AniList did not: only what changed goes.
+        // Frog moved on; AniList did not: Frog's side stands.
         let now = v("CURRENT", 4, 70);
         let al = v("CURRENT", 3, 0);
         let before = v("CURRENT", 3, 70);
         let c = Changes::between(Some(&al), Some(&before), &al, Some(&now));
         assert!(c.frog_changed && !c.al_changed && !c.follow);
         assert_eq!(c.mode(false), None);
-        assert_eq!(
-            outgoing(false, &c, Some(&before), &now, &al),
-            Some(v("CURRENT", 4, 0)),
-            "the score did not change in Frog, so AniList's stays"
-        );
     }
 
     #[test]
@@ -289,16 +232,6 @@ mod tests {
             Some(&v("CURRENT", 5, 0)),
         );
         assert!(!behind.follow);
-        assert_eq!(
-            outgoing(
-                false,
-                &behind,
-                Some(&snap),
-                &v("CURRENT", 5, 0),
-                &v("CURRENT", 4, 0)
-            ),
-            Some(v("CURRENT", 5, 0))
-        );
     }
 
     #[test]

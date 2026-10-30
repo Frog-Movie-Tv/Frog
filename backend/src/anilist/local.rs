@@ -6,7 +6,7 @@
 use chrono::Utc;
 use sqlx::SqlitePool;
 
-use super::client::{push, Remote, View};
+use super::client::{Remote, View};
 use super::library::{self, film_watch, frog_view, run_ids, settle_show};
 use super::place::Target;
 use super::reconcile::{self, Changes, Mode};
@@ -89,14 +89,13 @@ async fn local_view(
 /// title of its own drawn from AniList (`media`): poster, synopsis, cast,
 /// episodes with their air dates. Where AniList lists the episodes, they are
 /// ticked and synced like any show's; where it does not (a film, or a show
-/// with nothing known yet), the count of episodes is kept instead. Status and
-/// score go both ways. Says whether Frog changed and whether AniList was
-/// written to.
+/// with nothing known yet), the count of episodes is kept instead. Says
+/// whether Frog changed.
 pub(super) async fn sync_local(
     acct: &Account<'_>,
     remote: &Remote,
     prior: Option<&Known>,
-) -> AppResult<(bool, bool)> {
+) -> AppResult<bool> {
     let (state, user_id) = (acct.state, acct.user_id);
     let film = remote.format.as_deref() == Some("MOVIE");
     let kind = if film { "movie" } else { "tv" };
@@ -147,7 +146,7 @@ pub(super) async fn sync_local(
     if f.is_none() && snap_al.is_some() {
         // Taken out of the library in Frog: left alone from now on.
         save_snapshots(&state.pool, user_id, remote.media_id, a, None, true).await?;
-        return Ok((false, false));
+        return Ok(false);
     }
     let c = Changes::between(snap_al.as_ref(), snap_frog.as_ref(), a, f.as_ref());
 
@@ -188,31 +187,16 @@ pub(super) async fn sync_local(
     }
     let f_now = local_view(&state.pool, user_id, title_id, film).await?;
 
-    // Changed only in Frog: its status and score go to AniList. The count
-    // stays AniList's, since there are no episodes here to count from.
-    let mut final_al = a.clone();
-    let mut pushed = false;
-    if let (Some(now), true) = (f_now.as_ref(), c.frog_changed && !c.al_changed) {
-        let send = View {
-            status: now.status.clone(),
-            progress: a.progress,
-            score: now.score,
-        };
-        if &send != a {
-            final_al = push(acct.api, acct.token, remote.media_id, &send).await?;
-            pushed = true;
-        }
-    }
     save_snapshots(
         &state.pool,
         user_id,
         remote.media_id,
-        &final_al,
+        a,
         f_now.as_ref(),
         false,
     )
     .await?;
-    Ok((f_now != f, pushed))
+    Ok(f_now != f)
 }
 
 /// An AniList-only show whose episodes AniList lists: synced exactly as a
@@ -222,7 +206,7 @@ async fn sync_local_episodes(
     remote: &Remote,
     prior: Option<&Known>,
     title_id: i64,
-) -> AppResult<(bool, bool)> {
+) -> AppResult<bool> {
     let (state, user_id) = (acct.state, acct.user_id);
     // The whole of AniList's own numbering, in the title Frog keeps for it.
     // There is no TMDB entry, and nothing here reads one.
@@ -251,7 +235,7 @@ async fn sync_local_episodes(
     let f = view(&state.pool).await?;
     if f.is_none() && snap_al.is_some() {
         save_snapshots(&state.pool, user_id, remote.media_id, a, None, true).await?;
-        return Ok((false, false));
+        return Ok(false);
     }
     let c = Changes::between(snap_al.as_ref(), snap_frog.as_ref(), a, f.as_ref());
     match c.mode(false) {
@@ -280,24 +264,16 @@ async fn sync_local_episodes(
     }
     let f_now = view(&state.pool).await?;
 
-    let mut final_al = a.clone();
-    let mut pushed = false;
-    if let Some(now) = f_now.as_ref() {
-        if let Some(send) = reconcile::outgoing(c.first, &c, snap_frog.as_ref(), now, a) {
-            final_al = push(acct.api, acct.token, remote.media_id, &send).await?;
-            pushed = true;
-        }
-    }
     save_snapshots(
         &state.pool,
         user_id,
         remote.media_id,
-        &final_al,
+        a,
         f_now.as_ref(),
         false,
     )
     .await?;
-    Ok((f_now != f, pushed))
+    Ok(f_now != f)
 }
 
 /// An AniList-only title this account kept, once the entry is placed on a
