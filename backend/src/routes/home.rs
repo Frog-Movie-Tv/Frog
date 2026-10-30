@@ -124,6 +124,7 @@ pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
         });
 
     let this_week = airing_this_week(pool, me, &facts).await?;
+    let shelves = crate::routes::shelves::summaries(pool, me).await?;
 
     Ok(Json(json!({
         "hero": hero,
@@ -141,6 +142,7 @@ pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
             .filter(|i| Some(i.title.id) != hero_id)
             .collect::<Vec<_>>(),
         "favourites": favourites,
+        "shelves": shelves,
     })))
 }
 

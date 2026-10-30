@@ -9,7 +9,7 @@
 	import Poster from '#lib/components/Poster.svelte';
 	import Rail from '#lib/components/Rail.svelte';
 	import RailSkeleton from '#lib/components/RailSkeleton.svelte';
-	import { episodeCode, prettyDate, relativeDate, runtime, year } from '#lib/format';
+	import { episodeCode, plural, prettyDate, relativeDate, runtime, year } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
@@ -90,6 +90,7 @@
 	const rows = $derived.by(() => {
 		if (!data) return [];
 		const available: Record<string, boolean> = {
+			shelves: data.shelves.length > 0,
 			continue: data.continue.length > 0,
 			upnext: data.waiting.length > 0,
 			thisweek: data.this_week.length > 0,
@@ -203,7 +204,26 @@
 
 		<div class="page rows">
 			{#each rows as row (row)}
-				{#if row === 'continue'}
+				{#if row === 'shelves'}
+					{#snippet allShelves()}<a class="see-all" href="/shelves">All shelves</a>{/snippet}
+					<Rail title="Your shelves" action={allShelves} wide>
+						{#each data.shelves as shelf (shelf.id)}
+							<a class="shelf-tile" href="/shelves/{shelf.id}">
+								<span class="stack" aria-hidden="true">
+									{#each shelf.posters.slice(0, 3) as poster (poster)}
+										<img src={img(poster, 'w92')} alt="" loading="lazy" />
+									{:else}
+										<span class="blank"><Icon name="layers" size={18} /></span>
+									{/each}
+								</span>
+								<span class="shelf-text">
+									<strong>{shelf.name}</strong>
+									<span class="faint">{plural(shelf.count, 'title')}</span>
+								</span>
+							</a>
+						{/each}
+					</Rail>
+				{:else if row === 'continue'}
 					<Rail title="Continue watching" wide>
 						{#each data.continue as entry (entry.item.id)}
 							<ContinueCard {entry} />
@@ -314,6 +334,71 @@
 {/if}
 
 <style>
+	.see-all {
+		color: var(--accent);
+		font-size: 0.86rem;
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.shelf-tile {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		height: 100%;
+		padding: 10px 14px 10px 10px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+		background: var(--bg-elev);
+		color: inherit;
+		text-decoration: none;
+		transition: border-color var(--fast) var(--ease);
+	}
+
+	.shelf-tile:hover {
+		border-color: var(--line-strong);
+	}
+
+	.stack {
+		display: flex;
+		flex: none;
+	}
+
+	.stack img,
+	.stack .blank {
+		width: 40px;
+		aspect-ratio: 2 / 3;
+		border-radius: 5px;
+		object-fit: cover;
+		background: var(--bg-elev-2);
+	}
+
+	.stack img + img {
+		margin-left: -22px;
+		box-shadow: -2px 0 4px rgba(0, 0, 0, 0.3);
+	}
+
+	.stack .blank {
+		display: grid;
+		place-items: center;
+		color: var(--text-faint);
+	}
+
+	.shelf-text {
+		display: grid;
+		gap: 2px;
+		min-width: 0;
+	}
+
+	.shelf-text strong {
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+
+	.shelf-text .faint {
+		font-size: 0.8rem;
+	}
 	.hero {
 		position: relative;
 		isolation: isolate;
