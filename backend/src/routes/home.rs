@@ -52,7 +52,7 @@ pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
                JOIN title t ON t.id = l.title_id
               WHERE l.user_id = ?1 AND l.status = 'watching'
               ORDER BY (SELECT MAX(w.watched_at) FROM watch_event w
-                         WHERE w.user_id = ?1 AND w.title_id = t.id) DESC,
+                         WHERE w.user_id = ?1 AND w.title_id = t.id AND w.undated = 0) DESC,
                        l.updated_at DESC
               LIMIT 24"
         ),
@@ -213,7 +213,7 @@ pub async fn seeds(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<SeedRow>> {
           WHERE l.user_id = ?1 AND (l.rating >= 70 OR l.favourite = 1)
           ORDER BY COALESCE(l.rating, 75) DESC,
                    (SELECT MAX(w.watched_at) FROM watch_event w
-                     WHERE w.user_id = ?1 AND w.title_id = t.id) DESC,
+                     WHERE w.user_id = ?1 AND w.title_id = t.id AND w.undated = 0) DESC,
                    l.updated_at DESC
           LIMIT 12",
     )

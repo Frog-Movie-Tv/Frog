@@ -62,13 +62,14 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 9. **The screenshots, the rest.** There is still no shelves shot.
 10. **The Projects board.** Backlog / In progress / Review / Done. Needs
    `gh auth refresh -s project` from an owner before it can be created.
-11. **Netflix: real dates on every episode.** Episodes TMDB finds by name
-   are ticked exactly, on the day Netflix gives. Seasons Netflix numbers
-   itself are not looked up (that would mean reading every season of every
-   show), so their episodes are still the first N, undated, and such a show
-   reads "last watched today". Looking those up too, in the background after
-   the import, would date everything. Films keep only their latest date;
-   earlier watches of the same film are a rewatch flag, not entries.
+11. **Netflix: the dates still missing.** On the 4,054-line file 3,145 of
+   3,550 episodes land on their day. The other 405 have names TMDB writes
+   differently or not at all (Kuroko's Basketball, The Order), so they are
+   counted from the start of the season, undated. Films keep only their
+   latest date; earlier watches of the same film are a rewatch flag, not
+   entries. Re-importing over an older import dates what it finds and leaves
+   the old count's other ticks undated (26 on this file), since an import
+   never removes a watch.
 12. **Netflix: untested shapes.** The personal-data ZIP
    (`CONTENT_INTERACTION/ViewingActivity.csv`) is read from its documented
    columns but has never been tried on a real one. Netflix's "Part N"
@@ -232,10 +233,18 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   named seasons ("STONE OCEAN", "Egghead Arc ①") are placed only when a TMDB
   season has that name, and a show is completed only when every season was
   seen to the end. Shows are split by season marker first, then by where
-  titles branch across the whole file, never by "the first colon". When a
-  season is in doubt the server looks the episode names up across the
-  show's seasons (`place_episodes` in `transfer.rs`); a name placed there
-  settles the season, the exact episode and its date, and proves the match.
+  titles branch across the whole file, never by "the first colon". The
+  server looks every row's episode names up (`find_episodes` in
+  `transfer.rs`): a row sure of its season reads that one, one in doubt reads
+  the whole show, and a name placed there settles the exact episode and its
+  date. In doubt it also settles the season and proves the match; a numbered
+  season stays where Netflix put it, and names not found count from its first
+  episode, undated, with no warning. "Episode N" needs no lookup at all.
+  Matching runs six rows at once (`MATCH_AT_ONCE`). On the real file, against
+  the same warm TMDB: 17.5 s to 12.6 s matching, 41.8 s to 41.1 s applying,
+  because apply reads every season anyway and the cache is already filled.
+  Cold, the same file took 160 s and 144 s before this; there is no cold
+  figure after it, since TMDB stays warm between runs.
   `npm test` runs it against `tests/fixtures/netflix-viewing-history.csv`,
   real titles with made-up dates; `node --test` reads the TypeScript directly
   through `tests/ts-paths.mjs`.
@@ -256,6 +265,10 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   nothing after it is left does it go back to the first gap. On the
   611-title Netflix library this moved 17 of 204 shows in progress, each to
   the episode after the furthest watched, and changed nothing else.
+- **Last watched counts dated watches only.** An undated watch holds the day
+  it was recorded, so counting it made a show read "today" after an import.
+  A title with only undated watches has no last-watched day; Home's Continue
+  watching then falls back on `updated_at`.
 - **Imported shows get no title-level diary entry.** `apply` only writes one
   for films; a show's watches are its episodes, and a title-level watch
   would count the show as a film in Stats.

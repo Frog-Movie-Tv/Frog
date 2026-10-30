@@ -411,7 +411,7 @@ test('a film released after it was watched is flagged', () => {
 
 test('episodes found by name settle the season, exactly and on their day', () => {
 	const supergirl = read().rows.find((r) => r.label === 'Supergirl');
-	// Episode names go along; the server looks them up only when in doubt.
+	// Episode names go along, for the server to look up.
 	assert.deepEqual(supergirl.episodes, [
 		'Better Angels',
 		'Myriad',
@@ -471,6 +471,109 @@ test('episodes found by name settle the season, exactly and on their day', () =>
 	assert.equal(second.season, 2);
 	assert.deepEqual(second.watches, [{ season: 2, episode: 3, watched_at: '2025-07-05T20:00:00Z' }]);
 	assert.equal(second.warning, undefined);
+});
+
+test('a numbered season puts each episode on its day, and counts the rest from the start', () => {
+	const parsed = read().rows.find((r) => r.label === 'Squid Game: Season 2');
+	const [lastDay] = parsed.netflix.days;
+	const answer = show(93405, 'Squid Game', [
+		[1, 9],
+		[2, 7],
+		[3, 6]
+	]);
+
+	// Both found: exactly those, on their days, nothing to check.
+	let row = byLabel(
+		settled({
+			'Squid Game: Season 2': {
+				...answer,
+				placed: [
+					{ index: 0, season: 2, episode: 6 },
+					{ index: 1, season: 2, episode: 5 }
+				]
+			}
+		}),
+		'Squid Game: Season 2'
+	);
+	assert.equal(row.season, 2);
+	assert.equal(row.progress, 2);
+	assert.deepEqual(row.watches[0], {
+		season: 2,
+		episode: 6,
+		watched_at: `${lastDay}T20:00:00Z`
+	});
+	assert.equal(row.warning, undefined);
+	assert.equal(row.info, undefined);
+
+	// One found: the other is counted, undated, from the start of the season.
+	row = byLabel(
+		settled({
+			'Squid Game: Season 2': {
+				...answer,
+				placed: [{ index: 0, season: 2, episode: 3 }]
+			}
+		}),
+		'Squid Game: Season 2'
+	);
+	assert.deepEqual(
+		row.watches.map((w) => [w.episode, w.watched_at !== null]),
+		[
+			[3, true],
+			[1, false]
+		]
+	);
+	assert.equal(row.warning, undefined);
+
+	// None found: as before, the first N, for the server to tick undated.
+	row = byLabel(settled({ 'Squid Game: Season 2': answer }), 'Squid Game: Season 2');
+	assert.equal(row.watches, undefined);
+	assert.equal(row.season, 2);
+	assert.equal(row.progress, 2);
+
+	// Found in another season: Netflix's number stands.
+	row = byLabel(
+		settled({
+			'Squid Game: Season 2': {
+				...answer,
+				note: 'Closest match by name',
+				placed: [
+					{ index: 0, season: 1, episode: 6 },
+					{ index: 1, season: 1, episode: 5 }
+				]
+			}
+		}),
+		'Squid Game: Season 2'
+	);
+	assert.equal(row.watches, undefined);
+	assert.equal(row.season, 2);
+});
+
+test('"Episode N" says where it is, so it needs no name to land on its day', () => {
+	const parsed = read().rows.find((r) => r.label === 'VINLAND SAGA: Season 1');
+	const rows = settled({ 'VINLAND SAGA: Season 1': show(88803, 'VINLAND SAGA', [[1, 24]]) });
+	const row = byLabel(rows, 'VINLAND SAGA: Season 1');
+	assert.equal(row.watches.length, 2);
+	assert.deepEqual(
+		row.watches.map((w) => w.episode),
+		parsed.netflix.numbered
+	);
+	assert.deepEqual(
+		row.watches.map((w) => w.watched_at.slice(0, 10)),
+		parsed.netflix.days
+	);
+	assert.equal(row.warning, undefined);
+});
+
+test('more plays than TMDB has episodes are still said, with the names found', () => {
+	const rows = settled({
+		'Squid Game: Season 2': {
+			...show(93405, 'Squid Game', [[2, 1]]),
+			placed: [{ index: 0, season: 2, episode: 1 }]
+		}
+	});
+	const row = byLabel(rows, 'Squid Game: Season 2');
+	assert.equal(row.progress, 1);
+	assert.equal(row.info, "2 episodes watched, and TMDB's season 2 has 1; all ticked");
 });
 
 test('a name that differs only in punctuation is not a problem', () => {

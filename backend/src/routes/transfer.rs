@@ -11,6 +11,7 @@ use axum::http::{header, HeaderMap, HeaderValue};
 use axum::response::IntoResponse;
 use axum::Json;
 use chrono::{Duration, Utc};
+use futures_util::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -112,6 +113,10 @@ pub struct MatchRequest {
 /// wizard sends a few hundred rows at a time and shows progress.
 const MAX_BATCH: usize = 200;
 
+/// Rows looked up side by side within a batch: enough that a big import does
+/// not wait on TMDB one row at a time, few enough to stay well under its limit.
+const MATCH_AT_ONCE: usize = 6;
+
 pub async fn match_titles(
     auth: Auth,
     State(state): State<AppState>,
@@ -132,69 +137,100 @@ pub async fn match_titles(
     .fetch_all(&state.pool)
     .await?;
 
-    let mut out = Vec::with_capacity(body.items.len());
-    for row in body.items {
-        let Resolved {
-            matched,
-            candidates,
-            mut note,
-            searched,
-        } = resolve(&state, &row).await;
-        let mut last_season = None;
-        let mut season_counts = Vec::new();
-        let mut placed = Vec::new();
-
-        if let Some(m) = matched.as_ref().filter(|m| m.kind == "tv") {
-            if let Ok(detail) = state.tmdb.tv(m.tmdb_id).await {
-                let seasons = crate::tmdb::models::seasons(&detail);
-                last_season = seasons.iter().map(|s| s.season_number).max();
-                // A season the show does not have is the anime case that needs
-                // a human: some shows are split into seasons differently on TMDB.
-                if let Some(season) = row.season {
-                    if !seasons.iter().any(|s| s.season_number == season) {
-                        note = Some(format!(
-                            "TMDB lists no season {season} for this show; check the match"
-                        ));
-                    }
-                }
-                // Only when something is in doubt: no season, or a note already.
-                // Reading every season of every show would make a big import slow.
-                if !row.episodes.is_empty() && (row.season.is_none() || note.is_some()) {
-                    placed = place_episodes(&state, m.tmdb_id, &seasons, &row.episodes).await;
-                }
-                season_counts = seasons
-                    .into_iter()
-                    .map(|s| SeasonCount {
-                        number: s.season_number,
-                        name: s.name,
-                        episodes: s.episode_count,
-                    })
-                    .collect();
-            }
-        }
-
-        let already = matched.as_ref().and_then(|m| {
-            tracked
-                .iter()
-                .find(|(kind, id, _)| *kind == m.kind && *id == m.tmdb_id)
-                .map(|(_, _, status)| status.clone())
-        });
-
-        out.push(MatchResult {
-            key: row.key,
-            matched,
-            candidates,
-            note,
-            already_tracked: already,
-            season: row.season,
-            last_season,
-            seasons: season_counts,
-            searched,
-            placed,
-        });
-    }
+    // `buffered` keeps the rows in the order they came.
+    let out: Vec<MatchResult> = stream::iter(body.items)
+        .map(|row| match_row(&state, &tracked, row))
+        .buffered(MATCH_AT_ONCE)
+        .collect()
+        .await;
 
     Ok(Json(json!({ "results": out })))
+}
+
+/// Everything the wizard needs to know about one row.
+async fn match_row(
+    state: &AppState,
+    tracked: &[(String, i64, String)],
+    row: Incoming,
+) -> MatchResult {
+    let Resolved {
+        matched,
+        candidates,
+        mut note,
+        searched,
+    } = resolve(state, &row).await;
+    let mut last_season = None;
+    let mut season_counts = Vec::new();
+    let mut placed = Vec::new();
+
+    if let Some(m) = matched.as_ref().filter(|m| m.kind == "tv") {
+        if let Ok(detail) = state.tmdb.tv(m.tmdb_id).await {
+            let seasons = crate::tmdb::models::seasons(&detail);
+            last_season = seasons.iter().map(|s| s.season_number).max();
+            // A season the show does not have is the anime case that needs
+            // a human: some shows are split into seasons differently on TMDB.
+            if let Some(season) = row.season {
+                if !seasons.iter().any(|s| s.season_number == season) {
+                    note = Some(format!(
+                        "TMDB lists no season {season} for this show; check the match"
+                    ));
+                }
+            }
+            if !row.episodes.is_empty() {
+                placed = find_episodes(state, m.tmdb_id, &row, &seasons, note.is_some()).await;
+            }
+            season_counts = seasons
+                .into_iter()
+                .map(|s| SeasonCount {
+                    number: s.season_number,
+                    name: s.name,
+                    episodes: s.episode_count,
+                })
+                .collect();
+        }
+    }
+
+    let already = matched.as_ref().and_then(|m| {
+        tracked
+            .iter()
+            .find(|(kind, id, _)| *kind == m.kind && *id == m.tmdb_id)
+            .map(|(_, _, status)| status.clone())
+    });
+
+    MatchResult {
+        key: row.key,
+        matched,
+        candidates,
+        note,
+        already_tracked: already,
+        season: row.season,
+        last_season,
+        seasons: season_counts,
+        searched,
+        placed,
+    }
+}
+
+/// Look a row's episode names up on TMDB.
+///
+/// A row sure of its season reads only that one, so a big import stays quick.
+/// A row in doubt reads the whole show, specials left out.
+async fn find_episodes(
+    state: &AppState,
+    tmdb_id: i64,
+    row: &Incoming,
+    seasons: &[crate::tmdb::models::SeasonSummary],
+    in_doubt: bool,
+) -> Vec<Placed> {
+    if let Some(season) = row.season.filter(|_| !in_doubt) {
+        return place_episodes(state, tmdb_id, &[season], &row.episodes).await;
+    }
+    let every: Vec<i64> = seasons
+        .iter()
+        .map(|s| s.season_number)
+        .filter(|n| *n > 0)
+        .collect();
+    place_episodes(state, tmdb_id, &every, &row.episodes).await
 }
 
 /// What `resolve` decided for one row.
@@ -373,7 +409,7 @@ fn episode_key(name: &str) -> String {
         .collect()
 }
 
-/// Find episodes by name across a show's seasons (specials left out).
+/// Find episodes by name across the given seasons of a show.
 ///
 /// A name is placed only when exactly one episode has it; "Pilot" in two
 /// seasons places nothing. Netflix sometimes keeps part of an episode name
@@ -382,13 +418,13 @@ fn episode_key(name: &str) -> String {
 async fn place_episodes(
     state: &AppState,
     tmdb_id: i64,
-    seasons: &[crate::tmdb::models::SeasonSummary],
+    seasons: &[i64],
     names: &[String],
 ) -> Vec<Placed> {
     let mut by_name: std::collections::HashMap<String, Vec<(i64, i64)>> =
         std::collections::HashMap::new();
-    for s in seasons.iter().filter(|s| s.season_number > 0) {
-        let Ok(raw) = state.tmdb.season(tmdb_id, s.season_number).await else {
+    for season in seasons {
+        let Ok(raw) = state.tmdb.season(tmdb_id, *season).await else {
             continue;
         };
         for e in crate::tmdb::models::episodes_of_season(&raw) {
@@ -869,7 +905,8 @@ async fn tick_season(
 }
 
 /// Mark exactly these episodes watched: dated when the source says when,
-/// undated otherwise. An episode already watched is left as it is.
+/// undated otherwise. An episode already watched is left as it is, unless an
+/// earlier import could not say when and this one can.
 async fn tick_episodes(
     state: &AppState,
     user_id: i64,
@@ -893,11 +930,29 @@ async fn tick_episodes(
         }
     }
 
+    // One commit for the lot: a long run of single writes is slow.
+    let mut tx = state.pool.begin().await?;
     for e in episodes {
         let (at, undated) = match e.watched_at.as_deref() {
             Some(at) => (at.to_string(), 0),
             None => (chrono::Utc::now().to_rfc3339(), 1),
         };
+        if undated == 0 {
+            sqlx::query(
+                "UPDATE watch_event SET watched_at = ?1, undated = 0
+                  WHERE user_id = ?2 AND source = 'import' AND undated = 1
+                    AND episode_id = (SELECT id FROM episode
+                                       WHERE title_id = ?3 AND season_number = ?4
+                                         AND episode_number = ?5)",
+            )
+            .bind(&at)
+            .bind(user_id)
+            .bind(title_id)
+            .bind(e.season)
+            .bind(e.episode)
+            .execute(&mut *tx)
+            .await?;
+        }
         sqlx::query(
             "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
                                       source, undated)
@@ -914,9 +969,10 @@ async fn tick_episodes(
         .bind(undated)
         .bind(e.season)
         .bind(e.episode)
-        .execute(&state.pool)
+        .execute(&mut *tx)
         .await?;
     }
+    tx.commit().await?;
     Ok(())
 }
 

@@ -42,7 +42,7 @@ pub fn order_clause(sort: Option<&str>, order: Option<&str>, user_id: i64) -> St
         "updated" => "l.updated_at".into(),
         "last_watched" => format!(
             "(SELECT MAX(w.watched_at) FROM watch_event w
-                WHERE w.title_id = t.id AND w.user_id = {user_id})"
+                WHERE w.title_id = t.id AND w.user_id = {user_id} AND w.undated = 0)"
         ),
         _ => "l.added_at".into(),
     };

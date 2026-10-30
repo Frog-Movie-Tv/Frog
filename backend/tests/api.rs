@@ -812,6 +812,192 @@ async fn importing_an_anime_season_ticks_that_season_undated() {
     assert_eq!(status, "watching");
 }
 
+/// Give one cached season real episode names, in order from episode 1.
+async fn name_episodes(h: &Harness, id: i64, season: i64, names: &[&str]) {
+    let episodes: Vec<Value> = names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            json!({
+                "season_number": season, "episode_number": i + 1,
+                "name": name, "air_date": "2015-01-01"
+            })
+        })
+        .collect();
+    sqlx::query("UPDATE tmdb_cache SET body = ? WHERE cache_key = ?")
+        .bind(json!({ "season_number": season, "episodes": episodes }).to_string())
+        .bind(format!("/tv/{id}/season/{season}?lang=en-US"))
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+}
+
+/// A row that knows its season has its episodes found there and nowhere else:
+/// "Pilot" in two seasons would place nothing if the whole show were read.
+#[tokio::test]
+async fn a_numbered_season_is_searched_for_its_episode_names() {
+    let h = Harness::new().await;
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+    cache_show(&h, 1399, "Some Show", &[(1, 2), (2, 2)]).await;
+    name_episodes(&h, 1399, 1, &["Pilot", "Second"]).await;
+    name_episodes(&h, 1399, 2, &["Pilot", "Fourth"]).await;
+
+    let (status, body, _) = h
+        .post(
+            "/api/import/match",
+            json!({ "items": [{
+                "key": "a", "title": "Some Show", "kind": "tv", "tmdb_id": 1399,
+                "rating": null, "status": "watching", "watched_at": null,
+                "year": null, "imdb_id": null, "season": 2,
+                "episodes": ["Pilot", "Fourth", "Not On TMDB"]
+            }]}),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["results"][0]["placed"],
+        json!([
+            { "index": 0, "season": 2, "episode": 1 },
+            { "index": 1, "season": 2, "episode": 2 }
+        ])
+    );
+}
+
+/// Results come back in the order the rows went in, however they were looked up.
+#[tokio::test]
+async fn matching_keeps_the_rows_in_order() {
+    let h = Harness::new().await;
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+    let items: Vec<Value> = (0..20)
+        .map(|i| {
+            json!({
+                "key": format!("row-{i}"), "title": "Nothing", "rating": null,
+                "status": null, "watched_at": null, "year": null, "imdb_id": null,
+                "tmdb_id": null, "kind": "tv"
+            })
+        })
+        .collect();
+    let (status, body, _) = h
+        .post(
+            "/api/import/match",
+            json!({ "items": items }),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let keys: Vec<&str> = body["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["key"].as_str().unwrap())
+        .collect();
+    let wanted: Vec<String> = (0..20).map(|i| format!("row-{i}")).collect();
+    assert_eq!(keys, wanted);
+}
+
+/// An import that knows the day fills in one that did not, on the same tick,
+/// and never touches a date or a watch of anyone else's. Until then the show
+/// has no last-watched day, rather than the day of the import.
+#[tokio::test]
+async fn a_dated_import_fills_in_an_undated_one() {
+    let h = Harness::new().await;
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+    cache_show(&h, 1429, "Attack on Titan", &[(1, 3)]).await;
+
+    let (status, body, _) = h
+        .post(
+            "/api/import/apply",
+            json!({ "on_conflict": "overwrite", "items": [
+                { "kind": "tv", "tmdb_id": 1429, "status": "watching", "season": 1, "progress": 3 }
+            ]}),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let (_, library) = h.get("/api/library", Some(&cookie)).await;
+    assert_eq!(library["items"][0]["last_watched_at"], Value::Null);
+
+    let (status, body, _) = h
+        .post(
+            "/api/import/apply",
+            json!({ "on_conflict": "overwrite", "items": [{
+                "kind": "tv", "tmdb_id": 1429, "status": "watching",
+                "episodes": [
+                    { "season": 1, "episode": 1, "watched_at": "2025-03-01T20:00:00Z" },
+                    { "season": 1, "episode": 2, "watched_at": null }
+                ]
+            }]}),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let watches: Vec<(i64, i64, String)> = sqlx::query_as(
+        "SELECT e.episode_number, w.undated, substr(w.watched_at, 1, 10)
+           FROM watch_event w JOIN episode e ON e.id = w.episode_id
+          ORDER BY e.episode_number",
+    )
+    .fetch_all(&h.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(watches.len(), 3, "no episode is ticked twice: {watches:?}");
+    assert_eq!(watches[0], (1, 0, "2025-03-01".to_string()));
+    assert_eq!((watches[1].0, watches[1].1), (2, 1));
+    assert_eq!((watches[2].0, watches[2].1), (3, 1));
+
+    let (_, library) = h.get("/api/library", Some(&cookie)).await;
+    assert_eq!(
+        library["items"][0]["last_watched_at"],
+        json!("2025-03-01T20:00:00Z")
+    );
+
+    // A dated watch stays on its day whatever a later file says.
+    let (status, body, _) = h
+        .post(
+            "/api/import/apply",
+            json!({ "on_conflict": "overwrite", "items": [{
+                "kind": "tv", "tmdb_id": 1429, "status": "watching",
+                "episodes": [
+                    { "season": 1, "episode": 1, "watched_at": "2026-01-01T20:00:00Z" }
+                ]
+            }]}),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (kept,): (String,) = sqlx::query_as(
+        "SELECT substr(w.watched_at, 1, 10) FROM watch_event w
+           JOIN episode e ON e.id = w.episode_id WHERE e.episode_number = 1",
+    )
+    .fetch_one(&h.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(kept, "2025-03-01");
+}
+
 /// "Season 3 Part 2, 4 episodes in" is TMDB season 3 episodes 13 to 16.
 #[tokio::test]
 async fn a_later_part_of_a_season_is_offset_onto_tmdb_numbering() {

@@ -18,6 +18,10 @@ In progress.
   right season with the episodes you saw, found by their names and kept on
   the day you watched them, films keep their day too, and anything Netflix
   leaves unclear is set aside for you to check.
+- **Every Netflix episode on its day.** Whole seasons land in your diary
+  episode by episode, each on the day you watched it, and Last watched shows
+  the day you really saw a title. Import the file again with Let the file win
+  to date what you brought in before.
 - **AniList, matched with care.** Specials and OVAs, sequels with names of
   their own and long runs like One Piece land on the right show, season and
   episode by themselves. When Frog is not sure, it says why and waits for a
