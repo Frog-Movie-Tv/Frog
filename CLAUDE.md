@@ -207,7 +207,11 @@ Two owners work on this in parallel, often both with Claude Code.
   approval.
 - **Conventional Commits**, because release-please reads them. `feat`, `fix`,
   `perf`, `refactor` and `docs` reach the changelog; `test`, `build`, `ci`,
-  `chore` and `style` do not. On `0.x` a `feat` bumps the **patch**.
+  `chore` and `style` do not. Since 1.0 a `fix` bumps the patch and a `feat` the
+  **minor**.
+- **A change people can notice brings its release note.** A line under Upcoming
+  in `RELEASE-NOTES.md`, in product voice, in the same pull request. CI fails
+  without it; `Release-Notes: none` in a commit says it reaches nobody.
 - **Never edit a version or `CHANGELOG.md`.** Both are generated.
   `RELEASE-NOTES.md` is the hand-written, product-voice file the app reads.
 - **New migrations get timestamped names** (`202610261730_thing.sql`, digits
@@ -230,9 +234,12 @@ live runs it: the server is production only); release-please keeps a release
 pull request open, and merging that one tags the release, which is what
 production follows.
 
-The `/release` skill is now only for the part a person has to do: writing the
-`RELEASE-NOTES.md` entry in product voice with a pond codename, and checking
-the screenshots. Commit or push only when the owner asks.
+Every release gets an image, whatever its size: the build never looks at the
+version. Notes are written with each change under Upcoming, and
+`scripts/draft-release-notes.mjs` gives them their version in the release pull
+request. The `/release` skill is now only for the part a person has to do: a big
+release's codename and notes, and checking the screenshots. Commit or push only
+when the owner asks.
 
 ## Working style the owner expects
 

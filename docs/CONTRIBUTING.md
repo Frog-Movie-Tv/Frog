@@ -66,10 +66,9 @@ test tooling only. What ships is the image CI builds.
 Types that reach the changelog: `feat`, `fix`, `perf`, `refactor`, `docs`.
 Types that do not: `test`, `build`, `ci`, `chore`, `style`.
 
-While Frog is on `0.x`, **a feature bumps the patch**
-(`bump-patch-for-minor-pre-major`), so `feat` on 0.4.0 produces 0.4.1. A
-breaking change (`!` or a `BREAKING CHANGE:` footer) bumps the minor. Do not
-add one lightly.
+Since 1.0, `fix` bumps the patch and `feat` the minor, so `feat` on 1.0.1
+produces 1.1.0. A breaking change (`!` or a `BREAKING CHANGE:` footer) bumps
+the major. Do not add one lightly.
 
 ## Releases
 
@@ -80,24 +79,40 @@ people editing a changelog is a merge conflict every time.
   open that bumps `version.txt`, `backend/Cargo.toml` and
   `frontend/package.json`, and writes the changelog from the commit messages.
   Merging it tags the release.
-- **`RELEASE-NOTES.md` is written by hand, in Frog's voice.** It is what the
-  *What's new* page inside the app shows, and a generated list of commit
-  subjects is not something you show a person. Short, neutral, complete
-  sentences, no implementation detail. The `/release` skill has the rules.
-- **The release pull request needs its notes.** CI fails while
-  `RELEASE-NOTES.md` has no `## [x.y.z]` section for the version in
-  `version.txt`. Before merging release-please's pull request, push a commit to
-  it that turns the Upcoming section into that version's section.
+- **`RELEASE-NOTES.md` is written by hand, in Frog's voice, with the change.**
+  It is what the *What's new* page inside the app shows, and a generated list
+  of commit subjects is not something you show a person. Short, neutral,
+  complete sentences, no implementation detail. The `/release` skill has the
+  rules.
+- **Every `fix` or `feat` a person can notice adds a line under Upcoming**, in
+  the same pull request, under Improvements or Fixes. CI fails without one
+  (`scripts/check-release-notes.mjs`). A commit that reaches nobody says so in
+  its message with `Release-Notes: none`; scopes `ci`, `build`, `deploy`, `test`
+  and `docs` need nothing.
+- **The release takes it from there.** When release-please opens its pull
+  request, `scripts/draft-release-notes.mjs` turns Upcoming into that version's
+  section, with the newest codename and the date. Only with nothing under
+  Upcoming does it draft from the commit messages, marked as a draft to rewrite.
+  The bot rebuilds its pull request from `main` whenever something merges, so
+  notes from several pull requests add up, and an edit made on the release
+  pull request is lost at the next merge. Correct notes under Upcoming instead.
+- **Nothing goes live until a person says so.** The bot gathers every merged
+  pull request into one release pull request; merging that one is the release.
+- **Every release gets an image, however small.** Nothing in the build looks
+  at the version: merging the release pull request tags it, and `release-please.yml`
+  publishes it as `:<version>` and `:latest`, which production pulls.
+- **After 1.0, `fix` bumps the patch and `feat` the minor.** Both ship the same
+  way. A small feature keeps the newest codename; a new one is a decision, with
+  `Release-As`.
 - **Production follows the latest release tag, and there is no staging.**
   Merging a pull request builds the `:main` image, which nothing live runs;
   merging the release pull request puts it in front of people.
 
 ### Cutting a big release
 
-While Frog is on `0.x`, every change bumps the patch — `0.4.5`, `0.4.6`, and
-so on — because `bump-patch-for-minor-pre-major` is on. That is right for most
-weeks and wrong when something large lands, and release-please cannot tell the
-difference on its own. You tell it.
+Commit types decide the version, which is right for most weeks and wrong when
+something large lands, and release-please cannot tell the difference on its own.
+You tell it.
 
 Put a `Release-As:` footer on any commit that reaches `main`:
 

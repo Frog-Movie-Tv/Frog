@@ -45,11 +45,11 @@ jobs:
           node-version: 22
 
       # The release check refuses a version with nothing to say for itself on
-      # the What's new page, and that has stopped two releases now. Draft the
-      # section from the same commit messages release-please already used, so
-      # the release is never blocked; it is marked as a draft to rewrite in
-      # Frog's voice before merging.
-      - name: Draft the release notes if nobody has written them
+      # the What's new page. Notes are written with each change, so this gives
+      # what is under Upcoming its version. Only with nothing there does it
+      # draft from the commit messages, marked as a draft to rewrite, so the
+      # release is never blocked.
+      - name: Give the release its notes
         if: ${{ steps.release.outputs.pr }}
         run: node scripts/draft-release-notes.mjs
 
