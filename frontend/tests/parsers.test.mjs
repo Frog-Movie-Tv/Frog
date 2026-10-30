@@ -2,7 +2,7 @@
 // tracker's own shape. Run with `npm test`.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { gzipSync, strToU8 } from 'fflate';
+import { gzipSync, strToU8, zipSync } from 'fflate';
 import { animeTitle, dedupe, parseCsv, readFile } from '../src/lib/import/parsers.ts';
 
 /** Read one file as the import page does, and return its rows. */
@@ -446,6 +446,32 @@ test('a gzipped export is unpacked first', async () => {
 		delete globalThis.DOMParser;
 	}
 });
+
+test('a Letterboxd ZIP reads its library and leaves its comments and lists', async () => {
+	const header = 'Date,Name,Year,Letterboxd URI\n';
+	const zip = zipSync({
+		'watched.csv': strToU8(`${header}2024-01-01,Heat,1995,https://boxd.it/1\n`),
+		'ratings.csv': strToU8('Date,Name,Year,Letterboxd URI,Rating\n2024-01-02,Alien,1979,x,3.5\n'),
+		'likes/films.csv': strToU8(`${header}2024-01-03,Heat,1995,https://boxd.it/1\n`),
+		'comments.csv': strToU8(`${header}2024-01-04,Not a film,2000,x\n`),
+		'reviews.csv': strToU8(`${header}2024-01-05,Not a film,2000,x\n`),
+		'lists/best.csv': strToU8(`${header}2024-01-06,Not a film,2000,x\n`),
+		'profile.txt': strToU8('hello')
+	});
+	const files = await readFile('letterboxd', new File([zip], 'letterboxd-export.zip'));
+	assert.deepEqual(
+		files.map((f) => [f.name, f.rows.map((r) => [r.title, r.status, r.rating, r.favourite])]),
+		[
+			['watched.csv', [['Heat', 'completed', null, false]]],
+			['ratings.csv', [['Alien', 'completed', 70, false]]],
+			['likes/films.csv', [['Heat', 'completed', null, true]]]
+		]
+	);
+	const empty = zipSync({ 'readme.txt': strToU8('hello') });
+	await assert.rejects(readFile('letterboxd', new File([empty], 'x.zip')), /No usable CSV files/);
+});
+
+// ---------------------------------------------------------------- corners
 
 test('Letterboxd: half stars, blank rows and a diary with no watched date', async () => {
 	const list = await rows(

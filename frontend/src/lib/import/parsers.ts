@@ -272,7 +272,7 @@ export async function readFile(format: string, file: File): Promise<ParsedFile[]
 			const wanted = format === 'mal' ? '.xml' : '.csv';
 			if (!path.toLowerCase().endsWith(wanted)) continue;
 			// Letterboxd also ships comments and lists, which are not a library.
-			if (/comment|review|list\//i.test(path)) continue;
+			if (/comment|review|lists?\//i.test(path)) continue;
 			const rows = readOne(format, path, strFromU8(bytes));
 			if (rows.length) out.push({ name: path, rows });
 		}
