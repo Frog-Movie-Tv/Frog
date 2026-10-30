@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { titleHref } from '#lib/titles';
 	import { api, img } from '#lib/api';
 	import Icon from '#lib/components/Icon.svelte';
 	import Select from '#lib/components/Select.svelte';
@@ -257,21 +258,24 @@
 	}
 
 	async function pick(entry: AniListEntry, result: SearchItem) {
+		// Placing is onto TMDB's titles: a result without a TMDB id cannot be one.
+		const tmdbId = result.tmdb_id;
+		if (tmdbId == null) return;
 		if (result.kind === 'movie') {
-			await choose(entry, 'movie', result.tmdb_id);
+			await choose(entry, 'movie', tmdbId);
 			return;
 		}
 		picking = true;
 		try {
-			const detail = await api.title('tv', result.tmdb_id);
+			const detail = await api.titleAt('tv', tmdbId);
 			// Specials are a season too: an OVA or ONA often lives there.
 			const seasons = [...detail.seasons].sort((a, b) =>
 				a.season_number === 0 ? 1 : b.season_number === 0 ? -1 : a.season_number - b.season_number
 			);
-			const spot = suggest(entry, result.tmdb_id, seasons);
+			const spot = suggest(entry, tmdbId, seasons);
 			season = spot.season;
 			fromEpisode = spot.episode;
-			picked = { tmdb_id: result.tmdb_id, name: result.name, seasons };
+			picked = { tmdb_id: tmdbId, name: result.name, seasons };
 		} catch (e) {
 			toasts.error(e);
 		} finally {
@@ -299,7 +303,7 @@
 	/** Keep an automatic match as it is, and never move it again. */
 	async function confirm(entry: AniListEntry) {
 		const t = entry.title;
-		if (!t) return;
+		if (!t || t.tmdb_id == null) return;
 		try {
 			await api.anilistChoose(entry.media_id, {
 				kind: t.kind,
@@ -621,7 +625,7 @@
 											<span class="note">{entry.note}</span>
 										{/if}
 										{#if entry.kept && entry.state !== 'placed'}
-											<a class="where" href="/title/{entry.kept.kind}/{entry.kept.tmdb_id}">
+											<a class="where" href={titleHref(entry.kept)}>
 												<Icon name="chevron-right" size={12} />
 												In your library as AniList has it
 											</a>

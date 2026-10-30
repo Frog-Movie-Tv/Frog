@@ -143,7 +143,7 @@ async fn an_older_database_migrates_without_losing_anything() {
     assert_eq!(
         count(
             &pool,
-            "SELECT COUNT(*) FROM title WHERE anilist_id IS NOT NULL"
+            "SELECT COUNT(*) FROM title_external WHERE provider = 'anilist'"
         )
         .await,
         0

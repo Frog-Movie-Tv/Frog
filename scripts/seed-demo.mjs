@@ -162,11 +162,23 @@ async function main() {
 	if (!key) {
 		console.log('\nNo TMDB key in .env, so the libraries are empty.');
 	} else {
+		// Titles are opened by their TMDB address, which puts them in Frog's
+		// catalog; everything after that goes by Frog's own id.
+		const frogIds = new Map();
+		const frogId = async (kind, tmdbId, cookie) => {
+			const key = `${kind}/${tmdbId}`;
+			if (!frogIds.has(key)) {
+				const detail = await api(`/api/titles/${key}`, { cookie });
+				frogIds.set(key, detail.json.item.id);
+			}
+			return frogIds.get(key);
+		};
 		for (const [i, titles] of LIBRARIES.entries()) {
 			for (const t of titles) {
 				process.stdout.write(`  ${ACCOUNTS[i].username}: ${t.kind} ${t.tmdb_id} … `);
 				try {
-					await api(`/api/titles/${t.kind}/${t.tmdb_id}/library`, {
+					const id = await frogId(t.kind, t.tmdb_id, cookies[i]);
+					await api(`/api/t/${id}/library`, {
 						method: 'PUT',
 						body: { status: t.status, rating: t.rating ?? null },
 						cookie: cookies[i]
@@ -180,7 +192,8 @@ async function main() {
 		// One account has watched part of a show, so progress and the diary
 		// have something in them.
 		try {
-			await api('/api/titles/tv/94605/episodes/1/watch', {
+			const id = await frogId('tv', 94605, cookies[0]);
+			await api(`/api/t/${id}/episodes/1/watch`, {
 				method: 'POST',
 				body: { watched: true, when: 'release' },
 				cookie: cookies[0]

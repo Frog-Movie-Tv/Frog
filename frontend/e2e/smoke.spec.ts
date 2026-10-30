@@ -136,6 +136,7 @@ test('a bad title or shelf address reads like Frog, not like the server', async 
 	for (const [path, heading] of [
 		['/title/book/1', "That isn't a film or a show"],
 		['/title/movie/abc', "This title isn't on TMDB"],
+		['/t/abc', "This title isn't on TMDB"],
 		['/shelves/99999', 'No shelf here']
 	] as const) {
 		await page.goto(path);
@@ -389,7 +390,11 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/push',
 		'/api/shelves',
 		'/api/shelves/1',
-		'/api/titles/movie/1/shelves',
+		'/api/titles/movie/1',
+		'/api/titles/anilist/1',
+		'/api/t/1',
+		'/api/t/1/seasons/1',
+		'/api/t/1/shelves',
 		'/api/home/because',
 		'/api/account',
 		'/api/account/sessions',
@@ -424,16 +429,24 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/shelves/1/items',
 		'/api/invites',
 		'/api/anilist/connect',
-		'/api/anilist/sync'
+		'/api/anilist/sync',
+		'/api/t/1/episodes/watch',
+		'/api/t/1/episodes/1/watch',
+		'/api/t/1/episodes/1/1/watch'
 	]) {
 		const res = await request.post(path, { data: {} });
 		expect(res.status(), `POST ${path} should be 401`).toBe(401);
 	}
-	for (const path of ['/api/titles/tv/1/seasons/1/rating', '/api/anilist/entries/1']) {
+	for (const path of [
+		'/api/t/1/seasons/1/rating',
+		'/api/t/1/library',
+		'/api/t/1/episodes/1/1/state',
+		'/api/anilist/entries/1'
+	]) {
 		const res = await request.put(path, { data: { rating: 80 } });
 		expect(res.status(), `PUT ${path} should be 401`).toBe(401);
 	}
-	for (const path of ['/api/account', '/api/account/library']) {
+	for (const path of ['/api/account', '/api/account/library', '/api/t/1/library']) {
 		const res = await request.delete(path, { data: {} });
 		expect(res.status(), `DELETE ${path} should be 401`).toBe(401);
 	}

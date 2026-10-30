@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use sqlx::SqlitePool;
 
 use crate::auth::Auth;
+use crate::catalog;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::store;
@@ -37,29 +38,23 @@ async fn episode_id(pool: &SqlitePool, title_id: i64, season: i64, episode: i64)
         .ok_or_else(|| AppError::NotFound(format!("no S{season}E{episode} for this show")))
 }
 
-/// Make sure the show exists locally and its seasons are present, so ticking an
-/// episode works even on a title that was never formally added.
-async fn resolve(state: &AppState, kind: &str, tmdb_id: i64) -> AppResult<i64> {
-    if kind != "tv" {
+/// The show by Frog's id, with its episodes listed, so ticking one works even
+/// on a show that was never formally added.
+async fn show(state: &AppState, title_id: i64) -> AppResult<i64> {
+    if catalog::get_title(&state.pool, title_id).await?.kind != "tv" {
         return Err(AppError::BadRequest("only shows have episodes".into()));
     }
-    match store::find_title_id(&state.pool, kind, tmdb_id).await? {
-        Some(id) => Ok(id),
-        None => {
-            let (id, detail) = store::ensure_title(state, kind, tmdb_id).await?;
-            store::sync_all_seasons(state, id, &detail).await?;
-            Ok(id)
-        }
-    }
+    catalog::ensure_episodes(state, title_id, None).await?;
+    Ok(title_id)
 }
 
 pub async fn set_watched(
     auth: Auth,
     State(state): State<AppState>,
-    Path((kind, tmdb_id, season, episode)): Path<(String, i64, i64, i64)>,
+    Path((title_id, season, episode)): Path<(i64, i64, i64)>,
     Json(body): Json<WatchBody>,
 ) -> AppResult<Json<Value>> {
-    let title_id = resolve(&state, &kind, tmdb_id).await?;
+    let title_id = show(&state, title_id).await?;
     let ep_id = episode_id(&state.pool, title_id, season, episode).await?;
 
     if body.watched {
@@ -249,10 +244,10 @@ async fn bulk(
 pub async fn set_season_watched(
     auth: Auth,
     State(state): State<AppState>,
-    Path((kind, tmdb_id, season)): Path<(String, i64, i64)>,
+    Path((title_id, season)): Path<(i64, i64)>,
     Json(body): Json<BulkWatchBody>,
 ) -> AppResult<Json<Value>> {
-    let title_id = resolve(&state, &kind, tmdb_id).await?;
+    let title_id = show(&state, title_id).await?;
     bulk(&state, auth.user_id(), title_id, Some(season), &body).await?;
     after_change(&state, auth.user_id(), title_id).await
 }
@@ -261,10 +256,10 @@ pub async fn set_season_watched(
 pub async fn set_show_watched(
     auth: Auth,
     State(state): State<AppState>,
-    Path((kind, tmdb_id)): Path<(String, i64)>,
+    Path(title_id): Path<i64>,
     Json(body): Json<BulkWatchBody>,
 ) -> AppResult<Json<Value>> {
-    let title_id = resolve(&state, &kind, tmdb_id).await?;
+    let title_id = show(&state, title_id).await?;
     bulk(&state, auth.user_id(), title_id, None, &body).await?;
     after_change(&state, auth.user_id(), title_id).await
 }
@@ -281,10 +276,10 @@ pub struct EpisodeStateBody {
 pub async fn set_state(
     auth: Auth,
     State(state): State<AppState>,
-    Path((kind, tmdb_id, season, episode)): Path<(String, i64, i64, i64)>,
+    Path((title_id, season, episode)): Path<(i64, i64, i64)>,
     Json(body): Json<EpisodeStateBody>,
 ) -> AppResult<Json<Value>> {
-    let title_id = resolve(&state, &kind, tmdb_id).await?;
+    let title_id = show(&state, title_id).await?;
     let ep_id = episode_id(&state.pool, title_id, season, episode).await?;
 
     sqlx::query(
@@ -324,7 +319,7 @@ async fn after_change(state: &AppState, user_id: i64, title_id: i64) -> AppResul
     }
     crate::release::reconcile(&state.pool, user_id, title_id).await?;
 
-    let row = store::get_title(&state.pool, title_id).await?;
+    let row = catalog::get_title(&state.pool, title_id).await?;
     let item = store::build_item(&state.pool, user_id, row).await?;
     Ok(Json(json!({ "item": item })))
 }

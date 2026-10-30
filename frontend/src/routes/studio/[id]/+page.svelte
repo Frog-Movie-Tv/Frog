@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { titleKey } from '#lib/titles';
 	import { page } from '$app/state';
 	import { api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
@@ -103,11 +104,11 @@
 			<Empty art="search" title="Nothing listed yet" hint="TMDB has no titles for this studio." />
 		{:else}
 			<Grid>
-				{#each shown as item (`${item.kind}-${item.tmdb_id}`)}
+				{#each shown as item (titleKey(item))}
 					<Poster
 						kindBadge={films > 0 && shows > 0}
 						kind={item.kind}
-						tmdbId={item.tmdb_id}
+						ref={item}
 						name={item.name}
 						posterPath={item.poster_path}
 						fallbackPath={item.backdrop_path}

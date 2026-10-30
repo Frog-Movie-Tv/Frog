@@ -38,27 +38,76 @@ something.
 
 ```
 backend/            Rust: axum 0.8, sqlx 0.8 (SQLite), tokio
-  src/routes/       one module per area; thin — parse, call store, serialise
-  src/store.rs      reads and writes of one account's own data
-  src/auth.rs       sessions, roles, the Auth and AdminAuth extractors
-  src/anilist.rs    AniList sync: sign-in, placing entries by id, both ways
+  src/routes/       HTTP only, one module per area: parse, name the account, call, shape
+  src/catalog.rs    Frog's titles and their TMDB/AniList/IMDb ids (title_external), episodes
+  src/store.rs      one account's library: entries, progress, up next, moving data between titles
+  src/images.rs     the picture cache and its budget
+  src/release.rs    when an episode is out; what a show's status should be
+  src/transfer/     imports (matching.rs, apply.rs) and exports (export.rs)
+  src/anilist/      AniList: client, idmap, place, reconcile, library, local,
+                    media, records, sync — docs/ANILIST.md has the map
   src/tmdb/         TMDB client, cache, and the JSON → view mapping
-  src/jobs/         background worker (sessions, cache pruning, show refresh)
-  migrations/       numbered .sql files, embedded at compile time
-  tests/api.rs      integration tests against a temp database
+  src/auth.rs       sessions, roles, the Auth and AdminAuth extractors
+  src/jobs/         background worker (sessions, caches, shows, AniList, ops)
+  migrations/       timestamped .sql files, embedded at compile time
+  tests/            api, anilist, catalog, images, transfer, scoping, migrations;
+                    common/ has the fixtures (title_seed, title_id)
 frontend/           SvelteKit 3 + Svelte 5 runes, adapter-static SPA, Vite 8
   src/lib/components/   Icon, Select, Rating, Poster, Rail, Empty, …
-  src/lib/import/       client-side parsers for other trackers' exports
+  src/lib/components/settings/   one component per Settings group
+  src/lib/import/       client-side readers: common, parsers, anime, netflix
+  tests/            node --test unit tests (parsers, Netflix)
   scripts/          icons, changelog → JSON, screenshots, audit, e2e server
   e2e/smoke.spec.ts Playwright, desktop + Pixel 7
 scripts/dev.ps1, dev.sh   one command: build, seed two demo accounts, run
 scripts/seed-demo.mjs     the two demo accounts, for seeing isolation by eye
 deploy/             compose, Caddyfile, install/update/backup/restore scripts
+ARCHITECTURE.md     layers, modules, data model — read before moving code
+docs/ANILIST.md     the AniList sync, module by module
+docs/IMPORTS.md     imports and exports, and the rules they must keep
+docs/CATALOG-IDENTITY.md  Frog's own title ids, provider ids, merges, addresses
 docs/INSTALL.md     install, updating, backups
 docs/CONTRIBUTING.md  how the two of us work on it
 docs/DEPLOY-ORACLE.md the live deployment, and the research behind it
 RELEASE-NOTES.md        source of truth for release notes (parsed into the app)
 ```
+
+## Where new code goes
+
+[ARCHITECTURE.md](ARCHITECTURE.md) has the layers. In short:
+
+- **Titles are Frog's.** Personal rows, links and API paths use `title.id`
+  (`/t/{id}`, `/api/t/{id}/…`). A TMDB or AniList id is looked up with
+  `catalog::find` / `catalog::ensure`, never stored on a personal row, never
+  used as a title's identity. Frontend links come from `lib/titles.ts`.
+- **Routes are HTTP only.** Check input, take the account from `Auth`, call a
+  domain module or `store`, shape the JSON. A decision (who wins, what a
+  row means, what a status should be) does not belong in a route.
+- **Domain modules decide; persistence modules read and write.** Keep the
+  decision as a pure function on plain values where you can (see
+  `anilist/reconcile.rs`, `transfer/matching.rs::choose`) and test it
+  without a database.
+- **A domain that owns tables owns their SQL** (`anilist/records.rs` for
+  `anilist_*`). Library, title and episode reads that more than one area
+  needs go in `store.rs`. A simple read only one route uses may stay in
+  that route; move it out the moment a second caller wants it.
+- **Providers are reached through their client** (`tmdb`, `anilist::client`,
+  `anilist::media`). Never call TMDB or AniList from a route or from `store`
+  with a hand-built request.
+- **Lower layers never import upper ones.** `store` and domain modules never
+  use `crate::routes`; `anilist`'s modules depend one way (see
+  docs/ANILIST.md).
+- **Before adding a helper, look for the one that exists.** Status words,
+  merging (`transfer::merged_status`), release rules (`release.rs`), CSV
+  (`lib/import/common.ts`), downloads (`lib/download.ts`) each have one home.
+- **Split a file when it does two unrelated jobs, not because it is long.**
+  `anilist/place.rs` and `import/netflix.ts` are long and cohesive. No
+  catch-all `utils` modules, and no trait or layer that has one
+  implementation and no test that needs it.
+- **Change the docs with the code.** A new module, table or data flow goes
+  in ARCHITECTURE.md or the subsystem guide in the same pull request.
+- These are defaults, not gates: if the existing structure is wrong for a
+  new feature, change it and say why in the pull request.
 
 ## Commands
 
@@ -70,14 +119,15 @@ In Git Bash, put cargo on PATH first: `export PATH="$HOME/.cargo/bin:$PATH"`.
 | Run it without Docker, no seed | `.\scripts\run-local.ps1` (development only) |
 | Backend checks | `cd backend && cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo test` |
 | Frontend types | `cd frontend && npm run check` |
-| Frontend build | `cd frontend && npm run build` (also regenerates `static/changelog.json`) |
+| Frontend unit tests | `cd frontend && npm test` — parsers and Netflix, no network |
+| Frontend build | `cd frontend && npm run build` (also writes `static/changelog.json`, which is not tracked) |
 | End-to-end | `cd frontend && npx playwright test` — needs `npm run build` and a built backend first |
 | Page audit | `cd frontend && npm run audit` — every page, both viewports, console errors, service worker |
-| Screenshots | `cd frontend && npm run screenshots` — needs the TMDB key, takes ~8 min |
+| Screenshots | `cd frontend && npm run screenshots` — needs the TMDB key, ~8 min, 1.5× (`-- --scale=2 --out=dir` to compare) |
 | Icons | `cd frontend && npm run icons` — regenerates every icon from `scripts/mascots.mjs` |
 
 Ports: the owner's instance uses 8080. E2E uses 8098/8099, audit 8095,
-screenshots 8096, pwa-check 8094, and the verify scripts 8088–8093 and 8097 —
+screenshots 8096, pwa-check 8094, and the verify scripts 8085–8086, 8088–8093 and 8097 —
 each with its own throwaway database.
 
 ## Gotchas that have already cost time
@@ -99,6 +149,11 @@ each with its own throwaway database.
 - **Bash heredocs break on apostrophes in this environment.** For anything
   with a `'` in it, use the Write/Edit tools, or write a Python patch script to
   the scratchpad and run that.
+- **SQLite cannot rebuild a referenced table inside a migration.** sqlx runs
+  every migration in a transaction, where `PRAGMA foreign_keys = OFF` does
+  nothing, so dropping and recreating a table others point at cascades into
+  them. `db::rebuild_title` shows how it is done instead. Seed scripts that
+  write titles straight into SQL must also write their `title_external` row.
 - **Stop the running server before `cargo build --release`** — Windows locks
   `frog.exe` and the build fails with "Access is denied".
 - **The Claude browser pane cannot register service workers.** It fails even
@@ -159,9 +214,10 @@ Two owners work on this in parallel, often both with Claude Code.
 
 ## Shipping
 
-Releases are automatic. Merging to `main` deploys to staging; release-please
-keeps a release pull request open, and merging that one tags the release, which
-is what production follows.
+Releases are automatic. Merging to `main` builds the `:main` image (nothing
+live runs it: the server is production only); release-please keeps a release
+pull request open, and merging that one tags the release, which is what
+production follows.
 
 The `/release` skill is now only for the part a person has to do: writing the
 `RELEASE-NOTES.md` entry in product voice with a pond codename, and checking

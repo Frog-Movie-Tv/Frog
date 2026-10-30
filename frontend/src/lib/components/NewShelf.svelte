@@ -3,16 +3,17 @@
 	import Icon from './Icon.svelte';
 	import { api } from '#lib/api';
 	import { toasts } from '#lib/toast.svelte';
-	import type { Kind, Shelf } from '#lib/types';
+	import type { Shelf } from '#lib/types';
 
 	interface Props {
 		oncreated: (shelf: Shelf) => void;
 		onclose: () => void;
 		/** Put this title on the new shelf straight away. */
-		title?: { kind: Kind; tmdbId: number } | null;
+		/** A title to put on the new shelf, by Frog's id. */
+		titleId?: number | null;
 	}
 
-	let { oncreated, onclose, title = null }: Props = $props();
+	let { oncreated, onclose, titleId = null }: Props = $props();
 
 	let name = $state('');
 	// A shelf made from a title page is for that title: hand-picked.
@@ -30,8 +31,8 @@
 		busy = true;
 		try {
 			const { shelf } = await api.createShelf({ name: name.trim(), kind });
-			if (title && kind === 'manual') {
-				await api.addToShelf(shelf.id, title.kind, title.tmdbId);
+			if (titleId && kind === 'manual') {
+				await api.addToShelf(shelf.id, titleId);
 				shelf.count = 1;
 			}
 			oncreated(shelf);
@@ -76,7 +77,7 @@
 			/>
 		</label>
 
-		{#if !title}
+		{#if !titleId}
 			<div class="kinds" role="radiogroup" aria-label="Kind of shelf">
 				<button
 					type="button"

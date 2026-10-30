@@ -13,6 +13,7 @@
 		type ParsedFile
 	} from '#lib/import/parsers';
 	import { applyItem, bySeason, foldSeasons } from '#lib/import/rows';
+	import { titleKey } from '#lib/titles';
 	import { toasts } from '#lib/toast.svelte';
 	import type { ImportSummary, MatchResult, SearchItem, Status } from '#lib/types';
 	import { STATUS_LABEL, STATUSES } from '#lib/types';
@@ -409,7 +410,7 @@
 
 						{#if row.match?.candidates?.length}
 							<div class="candidates">
-								{#each row.match.candidates as c (`${c.kind}-${c.tmdb_id}`)}
+								{#each row.match.candidates as c (titleKey(c))}
 									<button class="cand" onclick={() => choose(row, c)}>
 										{c.name}{c.year ? ` (${c.year})` : ''}
 									</button>

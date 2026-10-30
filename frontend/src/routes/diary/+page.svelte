@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { titleHref } from '#lib/titles';
 	import { api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
@@ -20,8 +21,9 @@
 	interface Entry {
 		day: string;
 		watched_at: string;
+		/** Frog's id for the title. */
+		id: number;
 		kind: 'movie' | 'tv';
-		tmdb_id: number;
 		title: string;
 		poster_path: string | null;
 		film: boolean;
@@ -63,7 +65,7 @@
 		}
 	}
 
-	const keyOf = (e: Entry) => `${e.day}-${e.kind}-${e.tmdb_id}-${e.film}`;
+	const keyOf = (e: Entry) => `${e.day}-${e.id}-${e.film}`;
 
 	const months = $derived.by(() => {
 		const out: { key: string; label: string; entries: Entry[] }[] = [];
@@ -130,7 +132,7 @@
 		const answer = await whenWatched.ask(entry.title, `${what} on ${prettyDate(entry.day)}`, false);
 		if (!answer) return;
 		try {
-			const { changed } = await api.redateDiary(entry.kind, entry.tmdb_id, entry.day, answer);
+			const { changed } = await api.redateDiary(entry.id, entry.day, answer);
 			toasts.push(
 				answer.when === 'unknown'
 					? `${plural(changed, 'watch', 'watches')} moved out of the diary`
@@ -181,11 +183,7 @@
 
 							<div class="card-row">
 								<div class="row">
-									<a
-										class="art"
-										href="/title/{entry.kind}/{entry.tmdb_id}"
-										aria-label={entry.title}
-									>
+									<a class="art" href={titleHref(entry)} aria-label={entry.title}>
 										{#if entry.poster_path}
 											<img src={img(entry.poster_path, 'w92')} alt="" loading="lazy" />
 										{:else}

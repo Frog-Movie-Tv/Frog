@@ -9,7 +9,7 @@
 set -euo pipefail
 
 INSTANCE="${1:?usage: update.sh production|staging}"
-ROOT="/opt/frog"
+ROOT="${FROG_ROOT:-/opt/frog}"
 DIR="$ROOT/$INSTANCE"
 [ -d "$DIR" ] || { echo "no such instance: $DIR"; exit 1; }
 cd "$DIR"
@@ -74,6 +74,11 @@ rm -f "$SNAPSHOT"
 	exit 1
 }
 
+# The schema generation Frog keeps in SQLite's user_version. It only goes up
+# when a release changes the schema so the one before it cannot run on it.
+generation() { sqlite3 "$1" 'PRAGMA user_version;' 2>/dev/null || echo 0; }
+GENERATION_BEFORE="$(generation "$SNAPSHOT")"
+
 # Migrations run as the server starts, so healthy means migrated and serving.
 wait_healthy() {
 	for _ in $(seq 1 60); do
@@ -117,19 +122,29 @@ fi
 
 # The previous binary starts on a schema the new one migrated, as long as
 # migrations stay additive. Keeping that database keeps anything written since.
-up_previous
-if wait_healthy; then
-	log "rolled back to $BEFORE; the newer migrations stay applied"
-	record rollback true "Back on the previous image."
-	rm -f "$SNAPSHOT"
-	exit 1
+# A release that raised the schema generation is not additive: the previous
+# image would pass /healthz (it only asks the database for SELECT 1) and fail
+# on every title, so go straight to the snapshot.
+docker compose stop frog > /dev/null 2>&1 || true
+GENERATION_AFTER="$(generation "$VOLUME/frog.db")"
+if [ "$GENERATION_AFTER" -gt "$GENERATION_BEFORE" ]; then
+	log "the new image changed the schema past what the previous one reads ($GENERATION_BEFORE → $GENERATION_AFTER)"
+	record rollback false "The update changed the database past what the previous image reads."
+else
+	up_previous
+	if wait_healthy; then
+		log "rolled back to $BEFORE; the newer migrations stay applied"
+		record rollback true "Back on the previous image."
+		rm -f "$SNAPSHOT"
+		exit 1
+	fi
+	log "the previous image is not healthy either"
+	record rollback false "The previous image did not start on the updated database."
+	docker compose logs --tail 50 frog || true
 fi
 
-# The previous binary will not run on what the new one left behind, so put the
-# database back as it was before the update.
-log "the previous image is not healthy either; restoring the pre-update database"
-record rollback false "The previous image did not start on the updated database."
-docker compose logs --tail 50 frog || true
+# Put the database back as it was before the update.
+log "restoring the pre-update database"
 docker compose down
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 mv "$VOLUME/frog.db" "$VOLUME/frog.db.failed-update-$STAMP"

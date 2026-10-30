@@ -110,6 +110,24 @@ async function waitForServer() {
 	throw new Error('server never started');
 }
 
+/**
+ * Frog's own address for a title TMDB names: opening it puts it in the
+ * catalog. Seeding stops here if it cannot, rather than carrying on with an
+ * empty library that every later check would pass on.
+ */
+async function titleApi(kind, tmdbId) {
+	const res = await call('GET', `/api/titles/${kind}/${tmdbId}`);
+	if (!res.ok) throw new Error(`could not open ${kind} ${tmdbId}: ${res.status}`);
+	return `/api/t/${(await res.json()).item.id}`;
+}
+
+/** A seeding call that must work. */
+async function must(method, path, body) {
+	const res = await call(method, path, body);
+	if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${await res.text()}`);
+	return res;
+}
+
 const problems = [];
 
 await waitForServer();
@@ -121,15 +139,16 @@ await call('POST', '/api/auth/setup', {
 
 console.log('seeding…');
 for (const e of SEED) {
-	await call('PUT', `/api/titles/${e.kind}/${e.id}/library`, {
+	const t = await titleApi(e.kind, e.id);
+	await must('PUT', `${t}/library`, {
 		status: e.status,
 		rating: e.rating ?? null,
 		favourite: e.favourite ?? false
 	});
 	for (const season of e.seasons ?? []) {
-		await call('POST', `/api/titles/${e.kind}/${e.id}/episodes/${season}/watch`, { watched: true });
+		await must('POST', `${t}/episodes/${season}/watch`, { watched: true });
 		for (const ep of [8, 9]) {
-			await call('POST', `/api/titles/${e.kind}/${e.id}/episodes/${season}/${ep}/watch`, {
+			await must('POST', `${t}/episodes/${season}/${ep}/watch`, {
 				watched: false
 			});
 		}

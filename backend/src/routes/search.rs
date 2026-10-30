@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::auth::Auth;
+use crate::catalog::ExternalId;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::tmdb::models::SearchItem;
@@ -61,10 +62,13 @@ pub async fn trending(auth: Auth, State(state): State<AppState>) -> AppResult<Js
     Ok(Json(serde_json::json!({ "results": items })))
 }
 
-/// (kind, tmdb_id, name, poster, backdrop, release date, vote, genres)
+/// (id, kind, primary provider, its id, name, poster, backdrop, release date,
+///  vote, genres)
 type KnownRow = (
-    String,
     i64,
+    String,
+    Option<String>,
+    Option<String>,
     String,
     Option<String>,
     Option<String>,
@@ -88,11 +92,13 @@ async fn known_titles(
     }
     let pattern = term.replace(['\\', '%', '_'], "");
     let rows: Vec<KnownRow> = sqlx::query_as(
-        "SELECT t.kind, t.tmdb_id, t.name, t.poster_path, t.backdrop_path, t.release_date,
-                t.tmdb_vote, t.genres_json
+        "SELECT t.id, t.kind, x.provider, x.external_id, t.name, t.poster_path,
+                t.backdrop_path, t.release_date, t.tmdb_vote, t.genres_json
            FROM title t
-          WHERE t.name LIKE ?1 || '%' OR t.name LIKE '% ' || ?1 || '%'
-             OR t.original_name LIKE ?1 || '%'
+           LEFT JOIN title_external x ON x.title_id = t.id AND x.is_primary = 1
+          WHERE t.merged_into IS NULL
+            AND (t.name LIKE ?1 || '%' OR t.name LIKE '% ' || ?1 || '%'
+                 OR t.original_name LIKE ?1 || '%')
           ORDER BY EXISTS (SELECT 1 FROM library_entry l
                             WHERE l.title_id = t.id AND l.user_id = ?2) DESC,
                    t.tmdb_vote DESC
@@ -104,24 +110,34 @@ async fn known_titles(
     .await?;
     Ok(rows
         .into_iter()
-        .filter(|r| !(hide_animation && r.7.contains("Animation")))
+        .filter(|r| !(hide_animation && r.9.contains("Animation")))
         .map(
-            |(kind, tmdb_id, name, poster_path, backdrop_path, date, vote, _)| SearchItem {
-                kind,
-                tmdb_id,
-                name,
-                poster_path,
-                backdrop_path,
-                year: date
-                    .as_deref()
-                    .and_then(|d| d.get(..4))
-                    .and_then(|y| y.parse().ok()),
-                overview: None,
-                vote,
-                popularity: None,
-                vote_count: None,
-                genre_ids: Vec::new(),
-                in_library: None,
+            |(id, kind, provider, key, name, poster_path, backdrop_path, date, vote, _)| {
+                let source = provider
+                    .zip(key)
+                    .and_then(|(p, k)| ExternalId::parse(&p, &k));
+                SearchItem {
+                    kind,
+                    tmdb_id: source.as_ref().and_then(ExternalId::tmdb_id),
+                    anilist_id: match source {
+                        Some(ExternalId::AniList(a)) => Some(a),
+                        _ => None,
+                    },
+                    id: Some(id),
+                    name,
+                    poster_path,
+                    backdrop_path,
+                    year: date
+                        .as_deref()
+                        .and_then(|d| d.get(..4))
+                        .and_then(|y| y.parse().ok()),
+                    overview: None,
+                    vote,
+                    popularity: None,
+                    vote_count: None,
+                    genre_ids: Vec::new(),
+                    in_library: None,
+                }
             },
         )
         .collect())
@@ -134,10 +150,7 @@ fn merge_known(tmdb: Vec<SearchItem>, known: Vec<SearchItem>, term: &str) -> Vec
     let exact = |i: &SearchItem| i.name.to_lowercase() == needle;
     let mut out: Vec<SearchItem> = Vec::new();
     let push = |item: SearchItem, out: &mut Vec<SearchItem>| {
-        if !out
-            .iter()
-            .any(|o| o.kind == item.kind && o.tmdb_id == item.tmdb_id)
-        {
+        if !out.iter().any(|o| o.same_as(&item)) {
             out.push(item);
         }
     };
@@ -215,9 +228,11 @@ pub async fn annotate_library(
         return Ok(());
     }
 
-    let rows: Vec<(String, i64, String)> = sqlx::query_as(
-        "SELECT t.kind, t.tmdb_id, l.status
-           FROM library_entry l JOIN title t ON t.id = l.title_id
+    // Every provider id of every title in the library, with its status.
+    let rows: Vec<(String, String, i64, String)> = sqlx::query_as(
+        "SELECT x.provider, x.external_id, l.title_id, l.status
+           FROM library_entry l
+           JOIN title_external x ON x.title_id = l.title_id
           WHERE l.user_id = ?",
     )
     .bind(user_id)
@@ -225,10 +240,16 @@ pub async fn annotate_library(
     .await?;
 
     for item in items.iter_mut() {
-        item.in_library = rows
-            .iter()
-            .find(|(kind, id, _)| *kind == item.kind && *id == item.tmdb_id)
-            .map(|(_, _, status)| status.clone());
+        let Some(source) = item.external() else {
+            continue;
+        };
+        let (provider, key) = (source.provider(), source.key());
+        if let Some((_, _, title_id, status)) =
+            rows.iter().find(|(p, k, _, _)| p == provider && *k == key)
+        {
+            item.in_library = Some(status.clone());
+            item.id = Some(*title_id);
+        }
     }
     Ok(())
 }
