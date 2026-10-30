@@ -34,13 +34,13 @@ their own. It costs nothing at all.
 </td>
 <td width="50%">
 <img src="docs/screenshots/title-desktop-pond.png" alt="A show page tinted with colours taken from its own poster">
-<p align="center"><b>A title page</b><br><sub>Coloured by its own poster, down to the buttons</sub></p>
+<p align="center"><b>A title page</b><br><sub>Its logo, the scores that matter, and every episode at a glance</sub></p>
 </td>
 </tr>
 <tr>
 <td>
-<img src="docs/screenshots/diary-desktop-pond.png" alt="A diary of watched episodes grouped by month">
-<p align="center"><b>Your diary</b><br><sub>Everything you have watched, newest first</sub></p>
+<img src="docs/screenshots/diary-desktop-pond.png" alt="A diary of watched episodes, one column, grouped by month and day">
+<p align="center"><b>Your diary</b><br><sub>Everything you have watched, day by day</sub></p>
 </td>
 <td>
 <img src="docs/screenshots/stats-desktop-pond.png" alt="Time watched, streaks, genres and the people you watch most">
@@ -59,8 +59,8 @@ their own. It costs nothing at all.
 </tr>
 <tr>
 <td>
-<img src="docs/screenshots/search-desktop-pond.png" alt="Search results for a name: films and shows, then people and studios">
-<p align="center"><b>Search everything</b><br><sub>Films, shows, people, characters, studios and members</sub></p>
+<img src="docs/screenshots/search-desktop-pond.png" alt="Search results for a name, with a tab for each kind of result and a row of filters">
+<p align="center"><b>Search everything</b><br><sub>Films, shows, people, characters and studios, with filters to browse by</sub></p>
 </td>
 <td>
 <img src="docs/screenshots/calendar-desktop-pond.png" alt="The calendar of upcoming episodes">
@@ -109,22 +109,28 @@ only reads: it never changes anything on your AniList.
 **Find anything.** One search for films, shows, people, characters, studios
 and the other members of your Frog, each with a tab of its own. Results lead
 with the thing you actually meant, a few letters of something you track are
-enough, and every studio has a page of what it made.
+enough, and every studio has a page of what it made. Or leave the name empty
+and browse: genre, year, score and what is already in your library sit in a
+row of menus under the search bar.
+
+**Scores you can compare.** Every title page shows AniList, IMDb, Rotten
+Tomatoes and Metacritic side by side, each with its mark and all as
+percentages.
 
 **Watch the trailer, then where to watch it.** Trailers play right on the
 title page, and each streaming logo opens that service searching for the
 title.
 
-**Tick episodes off.** There is a circle beside every episode. Tap it and the
-show moves itself to Watching; tick the last one and it completes itself. Mark
-a show completed and Frog ticks every aired episode, asking when you watched
-them and which specials you saw. Rate
-episodes one by one, leave notes on them, and see a whole series at a glance as
-a grid of coloured squares.
+**Tick episodes off.** Every season has a tab, and every episode a card with
+a circle on its still. Tap it and the show moves itself to Watching; tick the
+last one and it completes itself. Mark a show completed and Frog ticks every
+aired episode, asking when you watched them and which specials you saw. Rate
+whole seasons once they have finished, and leave a note on any episode.
 
 **Know what is next.** Home opens on whatever you are in the middle of and
-names the exact next episode. The calendar shows the month ahead, and the diary
-reads back everything you have watched.
+names the exact next episode, then everything else you are following, your
+shelves and the week's new episodes. The calendar shows the month ahead, and
+the diary reads back everything you have watched, day by day.
 
 **Hear about it the day it lands.** Turn on notifications and Frog tells you
 when a show you follow has a new episode out. Mute any show with the bell on
@@ -145,10 +151,9 @@ mouse.
 stars, or three smileys. Switch whenever you like: the number underneath never
 changes, so nothing is ever rounded away.
 
-**Make it look how you want.** Four themes plus a colour editor, six fonts, text
-size, corner radius, how much glass blur, how much animation, four card styles,
-poster size, what appears on a card, which rows show on Home and in what order,
-and a box for your own CSS if none of that is enough. Export the lot as a file.
+**Make it look how you want.** Four themes plus a colour editor, six fonts,
+text size, how much animation, four card styles, poster size, what appears on a
+card, and which rows show on Home and in what order.
 
 **Keep spoilers out.** Blur the still for anything you have not watched yet.
 
@@ -162,7 +167,8 @@ keeps working when you have no signal.
 - **It is yours.** The whole database is one file on your own disk. No account
   on someone else's computer, nothing that can be discontinued.
 - **It is free, genuinely.** No subscription, no paid tier, no API that starts
-  charging later. The only thing it needs is a free TMDB key.
+  charging later. The only thing it needs is a free TMDB key; free MDBList and
+  fanart.tv keys add scores and logos if you want them.
 - **It is quiet.** No ads, no tracking, no analytics, no telemetry, no emails.
 - **It is fast.** Everything you have looked at once is cached locally, so most
   pages never touch the network at all.
@@ -183,8 +189,10 @@ Frog assumes everyone on it wants to be left alone, including from each other.
 - **Sharing is something you switch on.** A profile lets others *on your Frog*
   see what you are watching. It starts off, and it is never visible outside.
 - Everything sits behind a password, with two-factor sign-in if you want it.
-- Nothing leaves the machine except requests to TMDB for artwork, and those
-  are cached so they mostly happen once.
+- Nothing leaves the machine except requests for details, artwork and
+  scores: to TMDB, to AniList, and to MDBList and fanart.tv if you gave them
+  a key. None of them is told who you are, and what comes back is cached so
+  most requests happen once.
 - There is no analytics of any kind, and no "anonymous usage data".
 
 ## Questions
@@ -241,7 +249,10 @@ visible to anyone without an account.
 <br>
 
 [TMDB](https://www.themoviedb.org), a community-built film and television
-database. Frog uses their free API and caches whatever it fetches.
+database, with anime from [AniList](https://anilist.co) and title logos TMDB
+lacks from [fanart.tv](https://fanart.tv). Scores from IMDb, Rotten Tomatoes
+and Metacritic come through [MDBList](https://mdblist.com). Frog uses their free
+APIs and caches whatever it fetches.
 
 </details>
 

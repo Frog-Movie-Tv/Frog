@@ -9,9 +9,56 @@ people working on Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Bullfrog —
+## Upcoming — Spring Peeper —
 
 In progress.
+
+## [1.0.0] — Bullfrog — 2026-10-30
+
+Frog 1.0. A calmer home, a search you can steer, and title pages that put the
+show first.
+
+![Home in the Pond theme](docs/screenshots/home-desktop-pond.png)
+
+### Highlights
+
+- **A home with one idea per row.** What you are watching leads, with shows
+  waiting on their next episode at the end of the same row. Your shelves, the
+  week's new episodes and one row of recommendations follow.
+- **Search you can steer.** Genre, year, score, your library and sort sit in a
+  row of menus under the search bar. Films, shows, people, characters, studios
+  and members each have a tab, and the count on every tab is the whole answer.
+- **Title pages that put the show first.** One line of facts, the scores that
+  matter, and every control in one family. Episodes are cards under a tab for
+  each season, with a tick on every still.
+- **Scores you can compare.** AniList, IMDb, Rotten Tomatoes and Metacritic,
+  each with its mark and all as percentages. TMDB stands in when the others
+  have nothing yet.
+- **Logos for nearly everything.** Titles TMDB has no logo for get one from
+  fanart.tv, and a new season or special borrows the logo of the show it
+  belongs to.
+- **A diary that reads like one.** A single column down the middle of the
+  page, each day once, with the month always in view.
+
+### Improvements
+
+- The bar along the top holds every section, a search field and your account.
+- Shelves have covers, and Home offers a new one in a single tap.
+- Filters work without a name: pick a genre or a year and browse.
+- Shelves, Library, Calendar, Diary, Stats, Import and Administration share
+  one page heading.
+- Administration lines its sections up in two even columns.
+- Dark logos stay readable on dark themes.
+- On a phone, search filters open as a sheet along the bottom of the screen.
+
+### Fixes
+
+- A genre only shows have, such as Talk, finds only shows, and one only films
+  have finds only films.
+- "Not in my library" together with a status finds everything with that
+  status, not only what TMDB happens to list first.
+- A year filter applies as soon as all four digits are in.
+- Home and title pages blend into the page without a line under the artwork.
 
 ## [0.8.1] — Toad — 2026-10-30
 
@@ -473,6 +520,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.0.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.0.0
 [0.8.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.8.1
 [0.8.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.7.0
