@@ -127,6 +127,7 @@ impl Harness {
             mdblist: Some(MdbListClient {
                 key: "secret-key".into(),
                 api_url: base,
+                budget: Arc::default(),
             }),
         };
         let pool = frog::db::connect(&url).await.unwrap();
