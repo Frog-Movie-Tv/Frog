@@ -13,158 +13,84 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+## [0.8.1] — Toad — 2026-10-30
+
+The notes for Toad, in order, and its name on About.
+
+### Improvements
+
+- What's new sets out everything in Toad as highlights, improvements and fixes.
+- About carries this release's name.
+
+## [0.8.0] — Toad — 2026-10-30
+
+A search that finds what you meant, scores from every site on one page, and your
+Netflix history on the days you watched it.
+
+![Search in the Pond theme](docs/screenshots/search-desktop-pond.png)
+
+### Highlights
+
 - **Search that finds what you meant.** The title you named comes first, and
-  films, shows, people, characters and studios each have their own place. Tap
-  Filters to combine genre, year, score, sort and what is in your library, with
-  a name or on their own.
+  films, shows, people, characters and studios each have their own place.
+- **Filters.** Combine genre, year, score, sort and what is in your library,
+  with a name or on their own.
 - **Scores from everywhere.** A title page shows IMDb, Rotten Tomatoes,
-  Metacritic, Letterboxd, TMDB, AniList and more, side by side, with its age
+  Metacritic, Letterboxd, TMDB, AniList and more side by side, with its age
   rating.
+- **Netflix import.** Bring in your viewing activity, or the ZIP from a data
+  request. Every show lands on the right season, and every episode and film on
+  the day you watched it. Anything unclear is set aside for you to check.
 - **Shelves up front.** Your shelves sit at the top of Home, one tap away.
 - **People.** Search everyone on your Frog and everyone in film and TV from one
   bar.
 - **A calendar that follows what you follow.** Shows you are watching appear,
   and so do premieres on your watchlist. A watchlisted show that is already
   airing waits until you start it. Airing this week and notifications agree.
-- **AniList comes in, and nothing goes back.** Your list arrives in Frog as it
-  always has. Frog never changes anything on your AniList.
-- **More logos.** Anime kept from AniList get their title logo where TMDB has
-  one, and studios get theirs. Search shows each studio once.
+- **AniList comes in, and nothing goes back.** Your list arrives in Frog within
+  minutes, matched with care, with a full page for anything TMDB does not have
+  yet. Frog never changes anything on your AniList.
+- **Rate seasons.** Every season gets a rating of its own once it has finished
+  airing.
+
+### Improvements
+
 - Keep notes on any film or show you track, right on its page.
 - Add titles to a hand-picked shelf straight from your library.
+- Long imports are quick to review: rows of one show sit together, chips sort
+  what needs a look, and close matches can be kept or left out in one go.
+- Anime kept from AniList get their title logo where TMDB has one, and studios
+  get theirs. Search shows each studio once.
+- Title and search pages open faster, and Home and the largest shelf open in a
+  moment.
+- The library's name filter ignores accents and capitals, so "pokemon" finds
+  Pokémon.
 - Every control on a phone is large enough to tap comfortably, and secondary
   text is easier to read in every theme.
-- Changing the date of a film in the diary talks about the film and starts on
-  the day it is filed under.
-- Unmarking a whole season can be undone, and an undone episode goes back on
-  the day you watched it.
 - Removing your picture or banner, deleting a saved theme and resetting your
   settings can all be undone.
+- Unmarking a whole season can be undone, and an undone episode goes back on
+  the day you watched it.
 - Joining with an invite link looks like signing in.
-- Administration shows when each person last signed in, and sits like every
-  other page.
-- Each account on a shared device keeps its own settings.
-- Copies of a saved theme each get a name of their own.
-- A smart shelf keeps a rating rule such as "at least 8.5" when you edit it.
-- The library's status counts stay put while you filter.
-- Renaming a shelf starts with the name ready to type over; Escape cancels.
-- Title and search pages open faster.
+- Administration shows when each person last signed in, the last backup and
+  update, and notifies administrators when one fails.
 - Settings is shorter: custom CSS, corner radius, glass blur, grid spacing and
   the settings file are gone.
 
-- **Netflix import.** Bring in your viewing activity from Netflix, or the ZIP
-  from a data request with a profile of your choice. Every show lands on the
-  right season with the episodes you saw, found by their names and kept on
-  the day you watched them, films keep their day too, and anything Netflix
-  leaves unclear is set aside for you to check.
-- **Every Netflix episode on its day.** Whole seasons land in your diary
-  episode by episode, each on the day you watched it, and Last watched shows
-  the day you really saw a title. Import the file again with Let the file win
-  to date what you brought in before.
-- **A faster import review.** Rows of one show sit together under it, chips
-  sort everything that needs a look by what is the matter, and a list of close
-  matches can be kept or left out in one go, with an undo.
-- **AniList, matched with care.** Specials and OVAs, sequels with names of
-  their own and long runs like One Piece land on the right show, season and
-  episode by themselves. When Frog is not sure, it says why and waits for a
-  quick check instead of guessing, and your own choices always stay put.
-- **Everything on your AniList, in Frog.** A title TMDB does not have yet
-  gets a full page all the same: cover, synopsis, cast and crew, trailer,
-  where to stream it, related shows, and every episode with its air date,
-  ready to tick, on Home and on the calendar. Its voice actors and studio
-  have pages too. When TMDB adds it, it moves across by itself, progress and
-  all, without a second copy.
-- **Watch anywhere, it arrives.** Episodes you tick on AniList, or a site that
-  updates it for you, reach Frog within minutes, with Frog closed. Settings
-  says when it last synced, and asks you to reconnect only when AniList needs
-  it. Lowering a count on AniList never erases watches you logged in Frog.
-- **Rate seasons.** Every season gets a rating of its own once it has
-  finished airing, and on AniList each part keeps its own score. Seasons you
-  rated the same all the way through carry that rating over.
-- **Finished stays finished.** A completed season stays completed when the
-  next one is announced, and its premiere shows on the calendar. Nothing
-  turns up in Continue watching before it is out.
-- **Find it however you type it.** The library's name filter ignores accents
-  and capitals, so "pokemon" finds Pokémon and "shippuden" finds Shippūden.
-- **Every tracker, read closely.** A Frog backup brings back the episodes you
-  watched, one Trakt episode counts as one episode, and Letterboxd lists stay
-  out of your library.
-- **Quick at any size.** Home and even the largest shelf open in a moment.
-- **Pages that aren't there say so.** A mistyped address, or a title, person,
-  studio or shelf that doesn't exist, gets a clear page with the way home.
-- **Up next picks up where you are.** It follows your latest episode rather
-  than the first one you skipped, and only goes back for what you missed once
-  you're caught up.
-- **Know how the server is doing.** Administration shows the last backup,
-  the last update and any rollback, and administrators get a notification
-  when one of them fails.
+### Fixes
 
-## [0.8.0] — Treefrog — 2026-10-30
-
-<!-- Drafted from the commit messages so the release is not blocked.
-     Rewrite it in Frog's voice before merging: say what a person can now
-     do, not what changed in the code. -->
-
-### Changes
-
-- Remove custom CSS and other technical settings
-- Read from AniList and never write to it
-- Show what the server did and tell administrators when it fails
-- Show what the server did and tell administrators when it fails
-- Place entries with care, keep what TMDB lacks, sync reliably
-- Place entries with care, keep what TMDB lacks, sync reliably
-- Read from AniList and never write to it
-- Give every title a Frog id of its own
-- Give every title a Frog id of its own
-- Send backups to a private repository with a deploy key
-- Send backups to a private repository with a deploy key
-- Put shelves at the top
-- Bring in Netflix viewing activity
-- Group review rows by the title itself
-- Netflix viewing activity, and a fast library at any size
-- Place Netflix episodes by name
-- Put every Netflix episode on its real day
-- Put every Netflix episode on its real day
-- Review a long import quickly
-- Search members and film and TV people from one bar
-- Search, ratings, shelves on Home, read-only AniList and the UX pass
-- Rank by how well a name answers, and filter films and shows
-- Separate films, shows and people, and add filters
-- Show scores from other sites and the age rating
-- Use the same frame as every other page, and keep last sign-in
-- Leave out watchlisted shows that are already releasing
-- Carry the UX pass over to the current code
-- Back up to the organisation's repository, and restore the newest backup
-- Let a rollback start on a newer schema ([#43](https://github.com/Frog-Movie-Tv/Frog/issues/43))
-- Name a manual backup as one, not as the nightly
-- Pick the newest backup by its name, not its file time
-- Continue from the latest episode, not the first gap
-- Bring back watched episodes from a Frog backup
-- Count a Trakt episode as an episode, not its show
-- Keep numbers that are part of an anime name
-- Keep the day of a date in any other format
-- Keep titles apart that only share a number
-- Leave Letterboxd lists out of a ZIP
-- Tick nothing for a finished anime special
-- Ignore accents and case in the name filter ([#45](https://github.com/Frog-Movie-Tv/Frog/issues/45))
-- Keep a library of hundreds fast
-- Keep the MDBList budget with its client
-- Say plainly when a page or title is not there
-- Load every font under the live policy, and check pages against it
-- Ship fonts as files so the deployed policy loads them
-- Build shelves and Home from one reading
-- Build shelves and Home from one reading
-- Remove custom CSS and other technical settings
-- Keep backups in an owner's account, since the organisation has no deploy keys
-- Keep backups in the organisation's repository
-- Say what a manual backup reports
-- Use the backup repository's exact name
-- Describe read-only AniList, ratings and the new key
-- Say what the readers do and still leave out
-- Backups leave the server, and a real restore passed
-- Note how pages word a failed load
-- Note how up next is chosen, and a flaky AniList test
-- Release 0.8.0
+- Each account on a shared device keeps its own settings.
+- Pages that are not there say so, with the way home.
+- Up next follows your latest episode rather than the first one you skipped.
+- A completed season stays completed when the next one is announced.
+- A Frog backup brings back the episodes you watched, one Trakt episode counts
+  as one episode, and Letterboxd lists stay out of your library.
+- A smart shelf keeps a rating rule such as "at least 8.5" when you edit it.
+- The library's status counts stay put while you filter.
+- Copies of a saved theme each get a name of their own.
+- Renaming a shelf starts with the name ready to type over; Escape cancels.
+- Changing the date of a film in the diary talks about the film and starts on
+  the day it is filed under.
 
 ## [0.7.0] — Treefrog — 2026-10-28
 
@@ -547,6 +473,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[0.8.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.8.1
 [0.8.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.6.0
