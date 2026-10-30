@@ -92,6 +92,13 @@ pub async fn create_session(
     .execute(pool)
     .await?;
 
+    // Every session starts with a sign-in, and this outlives the session.
+    sqlx::query("UPDATE app_user SET last_sign_in_at = ? WHERE id = ?")
+        .bind(now.to_rfc3339())
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+
     Ok(token)
 }
 

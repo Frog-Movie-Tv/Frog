@@ -154,7 +154,7 @@
 			await api.revokeInvite(invite.id);
 			if (fresh && invite.state === 'open') fresh = null;
 			await load();
-			toasts.push('Invite withdrawn.');
+			toasts.push('Invite withdrawn');
 		} catch (e) {
 			toasts.push(e instanceof Error ? e.message : 'Could not withdraw it');
 		}
@@ -167,9 +167,9 @@
 	async function copy(text: string) {
 		try {
 			await navigator.clipboard.writeText(text);
-			toasts.push('Link copied.');
+			toasts.push('Link copied');
 		} catch {
-			toasts.push('Could not copy. Select the link and copy it by hand.');
+			toasts.push('Could not copy. Select the link and copy it by hand', 'error');
 		}
 	}
 
@@ -199,206 +199,208 @@
 			hint="Ask whoever runs this instance if you need it."
 		/>
 	{:else}
-		<section class="block">
-			<h2>People</h2>
-			<ul class="users">
-				{#each users as user (user.id)}
-					<li class="card" class:off={user.disabled}>
-						<div class="who">
-							<span class="avatar" aria-hidden="true"
-								>{user.username.slice(0, 1).toUpperCase()}</span
-							>
-							<span class="label">
-								<strong>{user.username}</strong>
-								<span class="faint">
-									{ROLE[user.role]}
-									· {user.titles === 1 ? '1 title' : `${user.titles} titles`}
-									· {user.last_sign_in
-										? `signed in ${relativeDate(user.last_sign_in)}`
-										: 'not signed in yet'}
-									{#if user.disabled}· <span class="off-label">switched off</span>{/if}
-								</span>
-							</span>
-						</div>
-						{#if manageable(user)}
-							<div class="controls">
-								{#if owner}
-									<Select
-										label="Role for {user.username}"
-										compact
-										value={user.role}
-										options={[
-											{ value: 'user', label: 'Member' },
-											{ value: 'admin', label: 'Administrator' }
-										]}
-										onchange={(v) => setRole(user, v as 'admin' | 'user')}
-									/>
-								{/if}
-								<button class="btn ghost" onclick={() => setDisabled(user, !user.disabled)}>
-									{user.disabled ? 'Switch on' : 'Switch off'}
-								</button>
-								<button
-									class="btn ghost danger"
-									aria-label="Delete {user.username}"
-									onclick={() => remove(user)}
+		<div class="sections">
+			<section class="block">
+				<h2>People</h2>
+				<ul class="users">
+					{#each users as user (user.id)}
+						<li class="card" class:off={user.disabled}>
+							<div class="who">
+								<span class="avatar" aria-hidden="true"
+									>{user.username.slice(0, 1).toUpperCase()}</span
 								>
-									<Icon name="trash" size={16} /> Delete
-								</button>
+								<span class="label">
+									<strong>{user.username}</strong>
+									<span class="faint">
+										{ROLE[user.role]}
+										· {user.titles === 1 ? '1 title' : `${user.titles} titles`}
+										· {user.last_sign_in
+											? `signed in ${relativeDate(user.last_sign_in)}`
+											: 'not signed in yet'}
+										{#if user.disabled}· <span class="off-label">switched off</span>{/if}
+									</span>
+								</span>
 							</div>
-						{/if}
-					</li>
-				{/each}
-			</ul>
-		</section>
-
-		<section class="block">
-			<h2>Invite someone</h2>
-			<p class="muted">
-				A link that works once and then stops. Nobody can create an account without one.
-			</p>
-
-			<div class="row">
-				<label class="field">
-					<span>Role</span>
-					<Select
-						value={role}
-						label="Role"
-						onchange={(v) => (role = v as 'user' | 'admin')}
-						options={[
-							{ value: 'user', label: 'User' },
-							...(owner ? [{ value: 'admin', label: 'Administrator' }] : [])
-						]}
-					/>
-				</label>
-
-				<label class="field">
-					<span>Expires after</span>
-					<Select
-						value={days}
-						label="Expires after"
-						onchange={(v) => (days = v)}
-						options={[
-							{ value: '1', label: 'A day' },
-							{ value: '7', label: 'A week' },
-							{ value: '30', label: 'A month' }
-						]}
-					/>
-				</label>
-
-				<button class="btn primary" onclick={create} disabled={busy}>
-					{busy ? 'Making it…' : 'Make a link'}
-				</button>
-			</div>
-
-			{#if fresh}
-				<div class="fresh card">
-					<p>
-						<strong>Copy this now.</strong> It is shown once — Frog keeps only a fingerprint of it.
-					</p>
-					<code>{linkFor(fresh)}</code>
-					<button class="btn" onclick={() => copy(linkFor(fresh!))}>
-						<Icon name="copy" size={15} />
-						Copy link
-					</button>
-				</div>
-			{/if}
-		</section>
-
-		<section class="block">
-			<h2>Invites</h2>
-			{#if loading}
-				<p class="muted">Loading…</p>
-			{:else if invites.length === 0}
-				<Empty art="none" title="No invites yet" hint="Make one above to let somebody in." />
-			{:else}
-				<ul class="invites">
-					{#each invites as invite (invite.id)}
-						<li class="card">
-							<div>
-								<strong>{invite.role === 'admin' ? 'Administrator' : 'User'}</strong>
-								<span class="state {invite.state}">{invite.state}</span>
-							</div>
-							<p class="muted">
-								{#if invite.state === 'used'}
-									Used by {invite.used_by ?? 'someone'} on {when(invite.used_at ?? '')}
-								{:else if invite.state === 'expired'}
-									Expired on {when(invite.expires_at)}
-								{:else}
-									Expires on {when(invite.expires_at)}
-								{/if}
-								{#if invite.created_by}· made by {invite.created_by}{/if}
-							</p>
-							{#if invite.state === 'open'}
-								<button class="btn ghost" onclick={() => revoke(invite)}>Withdraw</button>
+							{#if manageable(user)}
+								<div class="controls">
+									{#if owner}
+										<Select
+											label="Role for {user.username}"
+											compact
+											value={user.role}
+											options={[
+												{ value: 'user', label: 'Member' },
+												{ value: 'admin', label: 'Administrator' }
+											]}
+											onchange={(v) => setRole(user, v as 'admin' | 'user')}
+										/>
+									{/if}
+									<button class="btn ghost" onclick={() => setDisabled(user, !user.disabled)}>
+										{user.disabled ? 'Switch on' : 'Switch off'}
+									</button>
+									<button
+										class="btn ghost danger"
+										aria-label="Delete {user.username}"
+										onclick={() => remove(user)}
+									>
+										<Icon name="trash" size={16} /> Delete
+									</button>
+								</div>
 							{/if}
 						</li>
 					{/each}
 				</ul>
-			{/if}
-		</section>
+			</section>
 
-		<section class="block">
-			<h2>This instance</h2>
-			<dl class="facts card">
-				<div>
-					<dt>Version</dt>
-					<dd>{session.status?.version ?? '—'}</dd>
-				</div>
-				<div>
-					<dt>Accounts</dt>
-					<dd>{instance?.accounts ?? '—'}</dd>
-				</div>
-				<div>
-					<dt>Database</dt>
-					<dd>{instance ? size(instance.database_bytes) : '—'}</dd>
-				</div>
-				<div>
-					<dt>Artwork kept offline</dt>
-					<dd>{instance ? size(instance.image_cache_bytes) : '—'}</dd>
-				</div>
-				<div>
-					<dt>Updates</dt>
-					<dd><a href="/settings#this-instance">Check in Settings</a></dd>
-				</div>
-			</dl>
-		</section>
+			<section class="block">
+				<h2>Invite someone</h2>
+				<p class="muted">
+					A link that works once and then stops. Nobody can create an account without one.
+				</p>
 
-		<section class="block" id="server">
-			<h2>Server</h2>
-			<dl class="facts card">
-				<div>
-					<dt>Last backup</dt>
-					<dd>
-						{#if server?.backup}
-							{@render outcome(server.backup)}
-						{:else if instance?.last_backup}
-							{relativeDate(instance.last_backup.at)}{instance.last_backup.pushed
-								? ''
-								: ' · kept on the server only'}
-						{:else}
-							None recorded yet
-						{/if}
-					</dd>
+				<div class="row">
+					<label class="field">
+						<span>Role</span>
+						<Select
+							value={role}
+							label="Role"
+							onchange={(v) => (role = v as 'user' | 'admin')}
+							options={[
+								{ value: 'user', label: 'Member' },
+								...(owner ? [{ value: 'admin', label: 'Administrator' }] : [])
+							]}
+						/>
+					</label>
+
+					<label class="field">
+						<span>Expires after</span>
+						<Select
+							value={days}
+							label="Expires after"
+							onchange={(v) => (days = v)}
+							options={[
+								{ value: '1', label: 'A day' },
+								{ value: '7', label: 'A week' },
+								{ value: '30', label: 'A month' }
+							]}
+						/>
+					</label>
+
+					<button class="btn primary" onclick={create} disabled={busy}>
+						{busy ? 'Making it…' : 'Make a link'}
+					</button>
 				</div>
-				<div>
-					<dt>Last update</dt>
-					<dd>
-						{#if server?.update}
-							{@render outcome(server.update)}
-						{:else}
-							None recorded yet
-						{/if}
-					</dd>
-				</div>
-				{#if server?.rollback}
-					<div>
-						<dt>{server.rollback.kind === 'restore' ? 'Last restore' : 'Last rollback'}</dt>
-						<dd>{@render outcome(server.rollback)}</dd>
+
+				{#if fresh}
+					<div class="fresh card">
+						<p>
+							<strong>Copy this now.</strong> It is shown once — Frog keeps only a fingerprint of it.
+						</p>
+						<code>{linkFor(fresh)}</code>
+						<button class="btn" onclick={() => copy(linkFor(fresh!))}>
+							<Icon name="copy" size={15} />
+							Copy link
+						</button>
 					</div>
 				{/if}
-			</dl>
-			<p class="faint">Administrators get a notification when one of these fails.</p>
-		</section>
+			</section>
+
+			<section class="block">
+				<h2>Invites</h2>
+				{#if loading}
+					<p class="muted">Loading…</p>
+				{:else if invites.length === 0}
+					<Empty art="none" title="No invites yet" hint="Make one above to let somebody in." />
+				{:else}
+					<ul class="invites">
+						{#each invites as invite (invite.id)}
+							<li class="card">
+								<div>
+									<strong>{invite.role === 'admin' ? 'Administrator' : 'Member'}</strong>
+									<span class="state {invite.state}">{invite.state}</span>
+								</div>
+								<p class="muted">
+									{#if invite.state === 'used'}
+										Used by {invite.used_by ?? 'someone'} on {when(invite.used_at ?? '')}
+									{:else if invite.state === 'expired'}
+										Expired on {when(invite.expires_at)}
+									{:else}
+										Expires on {when(invite.expires_at)}
+									{/if}
+									{#if invite.created_by}· made by {invite.created_by}{/if}
+								</p>
+								{#if invite.state === 'open'}
+									<button class="btn ghost" onclick={() => revoke(invite)}>Withdraw</button>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
+
+			<section class="block">
+				<h2>This instance</h2>
+				<dl class="facts card">
+					<div>
+						<dt>Version</dt>
+						<dd>{session.status?.version ?? '—'}</dd>
+					</div>
+					<div>
+						<dt>Accounts</dt>
+						<dd>{instance?.accounts ?? '—'}</dd>
+					</div>
+					<div>
+						<dt>Database</dt>
+						<dd>{instance ? size(instance.database_bytes) : '—'}</dd>
+					</div>
+					<div>
+						<dt>Artwork kept offline</dt>
+						<dd>{instance ? size(instance.image_cache_bytes) : '—'}</dd>
+					</div>
+					<div>
+						<dt>Updates</dt>
+						<dd><a href="/settings#this-instance">Check in Settings</a></dd>
+					</div>
+				</dl>
+			</section>
+
+			<section class="block" id="server">
+				<h2>Server</h2>
+				<dl class="facts card">
+					<div>
+						<dt>Last backup</dt>
+						<dd>
+							{#if server?.backup}
+								{@render outcome(server.backup)}
+							{:else if instance?.last_backup}
+								{relativeDate(instance.last_backup.at)}{instance.last_backup.pushed
+									? ''
+									: ' · kept on the server only'}
+							{:else}
+								None recorded yet
+							{/if}
+						</dd>
+					</div>
+					<div>
+						<dt>Last update</dt>
+						<dd>
+							{#if server?.update}
+								{@render outcome(server.update)}
+							{:else}
+								None recorded yet
+							{/if}
+						</dd>
+					</div>
+					{#if server?.rollback}
+						<div>
+							<dt>{server.rollback.kind === 'restore' ? 'Last restore' : 'Last rollback'}</dt>
+							<dd>{@render outcome(server.rollback)}</dd>
+						</div>
+					{/if}
+				</dl>
+				<p class="faint">Administrators get a notification when one of these fails.</p>
+			</section>
+		</div>
 	{/if}
 </div>
 
@@ -428,14 +430,18 @@
 		color: var(--bad);
 	}
 
-	/* Same frame and heading as every other page; only the column narrows. */
+	/* The frame every other page has, with the sections side by side where
+	   there is room rather than a narrow column down one edge. */
 	.page {
 		display: grid;
 		gap: 28px;
 	}
 
-	.page > :global(*) {
-		max-width: 760px;
+	.sections {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
+		gap: 28px;
+		align-items: start;
 	}
 
 	header h1 {
