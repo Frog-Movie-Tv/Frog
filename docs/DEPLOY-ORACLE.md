@@ -366,7 +366,7 @@ server reaches it with a deploy key of its own, `/opt/frog/backup-key`, that
 `install.sh` creates and prints.
 
 1. Create a **private**, empty repository in the organisation:
-   `gh repo create Frog-Movie-Tv/frog-backups --private`.
+   `gh repo create Frog-Movie-Tv/Frog-Backups --private`.
    Frog-Movie-Tv has deploy keys switched off by default, and only an
    organisation owner can allow them: the organisation's **Settings**, the
    **Deploy keys** policy (searching the settings for "deploy keys" finds it).
@@ -379,7 +379,7 @@ server reaches it with a deploy key of its own, `/opt/frog/backup-key`, that
    push, and records it in `backup.env`:
 
    ```bash
-   sudo /opt/frog/deploy/backup-repo.sh git@github.com:Frog-Movie-Tv/frog-backups.git
+   sudo /opt/frog/deploy/backup-repo.sh git@github.com:Frog-Movie-Tv/Frog-Backups.git
    ```
 
 4. Make a backup and see it arrive in the repository:
@@ -453,7 +453,7 @@ cd /opt/frog/restoretest && sudo docker compose up -d
 
 # The newest backup, fetched from the repository rather than this disk.
 sudo GIT_SSH_COMMAND="ssh -i /opt/frog/backup-key -o IdentitiesOnly=yes" \
-  git clone -q git@github.com:Frog-Movie-Tv/frog-backups.git /tmp/frog-backups-check
+  git clone -q git@github.com:Frog-Movie-Tv/Frog-Backups.git /tmp/frog-backups-check
 ARCHIVE="$(ls -1t /tmp/frog-backups-check/production/*.age | head -1)"
 
 # Asks you to type "restoretest", then to paste the age private key and press Ctrl-D.
