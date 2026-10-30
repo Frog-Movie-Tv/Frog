@@ -42,7 +42,8 @@ export function animeTitle(title: string): AnimeTitle {
 		[/(?:\s*:|\s+[-–])?\s+(?:Season|Saison)\s*(\d+)\s*$/i, (m) => Number(m[1])],
 		[/(?:\s*:|\s+[-–])?\s+(\d+)(?:st|nd|rd|th)\s+Season\s*$/i, (m) => Number(m[1])],
 		[/\s+(II|III|IV|V|VI|VII|VIII)\s*$/, (m) => ROMAN[m[1]]],
-		[/\s+([2-9])\s*$/, (m) => Number(m[1])],
+		// "Kaiju No. 8" is a name, not a season.
+		[/(?<!\bNo\.?)\s+([2-9])\s*$/, (m) => Number(m[1])],
 		[/(?:\s*:|\s+[-–])?\s+(?:The\s+)?Final\s+Season\s*$/i, () => null]
 	];
 
@@ -109,6 +110,7 @@ function fromAnime(a: AnimeRow): Incoming {
 	const format = a.format.toUpperCase();
 	if (format === 'MOVIE') {
 		row.kind = 'movie';
+		row.title = display;
 		row.watched_at = a.status === 'completed' ? toDate(a.finished ?? '') : null;
 		return row;
 	}

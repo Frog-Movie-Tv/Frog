@@ -380,6 +380,20 @@ test('MyAnimeList: status, score and progress in its own words', async () => {
 	);
 });
 
+test('MyAnimeList: a film keeps its whole name, and its day when finished', async () => {
+	const list = await malRows(
+		{ title: 'Kara no Kyoukai 5', type: 'Movie', status: 'Completed', finish: '2022-02-03' },
+		{ title: 'Your Name.', type: 'Movie', status: 'Plan to Watch', finish: '2022-02-03' }
+	);
+	assert.deepEqual(
+		list.map((r) => [r.title, r.kind, r.status, r.watched_at, r.season, r.progress]),
+		[
+			['Kara no Kyoukai 5', 'movie', 'completed', '2022-02-03T20:00:00Z', undefined, undefined],
+			['Your Name.', 'movie', 'planned', null, undefined, undefined]
+		]
+	);
+});
+
 test('MyAnimeList: a special ticks nothing, even when finished', async () => {
 	const [special] = await malRows({
 		title: 'Cowboy Bebop',
@@ -689,4 +703,18 @@ test('dedupe tells a film from a show with the same TMDB id', () => {
 			[2, 12]
 		]
 	);
+});
+
+test('a number that is part of the name is not a season', () => {
+	const cases = [
+		['Kaiju No. 8', { base: 'Kaiju No. 8', season: null, part: null, unnumbered: false }],
+		['Kaiju No. 8 Season 2', { base: 'Kaiju No. 8', season: 2, part: null, unnumbered: false }],
+		['Mob Psycho 100', { base: 'Mob Psycho 100', season: null, part: null, unnumbered: false }],
+		['Steins;Gate 0', { base: 'Steins;Gate 0', season: null, part: null, unnumbered: false }],
+		['Area 88', { base: 'Area 88', season: null, part: null, unnumbered: false }],
+		['Show: Cour 2', { base: 'Show', season: null, part: 2, unnumbered: false }],
+		['Show Saison 3', { base: 'Show', season: 3, part: null, unnumbered: false }],
+		['Show - Season 2 Part 2', { base: 'Show', season: 2, part: 2, unnumbered: false }]
+	];
+	for (const [title, want] of cases) assert.deepEqual(animeTitle(title), want, title);
 });
