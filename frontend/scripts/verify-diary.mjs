@@ -196,7 +196,7 @@ check(
 	(await dialog.getByRole('radio', { name: /^Today/ }).count()) === 0
 );
 await dialog.getByRole('radio', { name: /I don't know/ }).click();
-await dialog.getByRole('button', { name: 'Mark watched' }).click();
+await dialog.locator('.btn.primary').click();
 await page.waitForTimeout(1200);
 check('the diary is empty again', (await page.getByText('Nothing watched yet').count()) === 1);
 

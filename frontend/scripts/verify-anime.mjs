@@ -103,16 +103,18 @@ await page.locator('input[type="file"]').setInputFiles(xmlPath);
 await page.getByText(/ready/).first().waitFor({ timeout: 60000 });
 await page.waitForFunction(() => !document.querySelector('.progress'), null, { timeout: 120000 });
 
-const rowCount = await page.locator('ul.rows > li').count();
+const rowCount = await page.locator('ul.rows .row').count();
 check('four entries read', rowCount === 4, `${rowCount} rows`);
 
-const s2 = page.locator('ul.rows > li').filter({ hasText: 'Attack on Titan Season 2' });
-const s2Match = (await s2.locator('.line strong').textContent())?.trim();
+// Seasons of one show sit together, under its name.
+const s2 = page.locator('ul.rows .row').filter({ hasText: 'Attack on Titan Season 2' });
+const s2Show = page.locator('ul.rows > li').filter({ hasText: 'Attack on Titan Season 2' });
+const s2Match = (await s2Show.locator('.line strong').first().textContent())?.trim();
 const s2Season = await s2.locator('.season input').inputValue();
 check('Season 2 matches the TMDB show', s2Match === 'Attack on Titan', s2Match);
 check('...as its season 2', s2Season === '2', `season ${s2Season}`);
 
-const final = page.locator('ul.rows > li').filter({ hasText: 'The Final Season' });
+const final = page.locator('ul.rows .row').filter({ hasText: 'The Final Season' });
 check(
 	'"The Final Season" asks which season it is',
 	(await final.getByText('Choose which season this is').count()) === 1
@@ -120,7 +122,7 @@ check(
 await final.locator('.season input').fill('4');
 await final.locator('.season input').dispatchEvent('change');
 
-const film = page.locator('ul.rows > li').filter({ hasText: 'Your Name.' });
+const film = page.locator('ul.rows .row').filter({ hasText: 'Your Name.' });
 check(
 	'the film is matched as a film',
 	(await film.locator('.pill').textContent())?.trim() === 'Film'
