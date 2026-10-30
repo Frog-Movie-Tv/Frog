@@ -380,6 +380,20 @@ test('MyAnimeList: status, score and progress in its own words', async () => {
 	);
 });
 
+test('MyAnimeList: a special ticks nothing, even when finished', async () => {
+	const [special] = await malRows({
+		title: 'Cowboy Bebop',
+		type: 'OVA',
+		episodes: 3,
+		watched: 3,
+		status: 'Completed'
+	});
+	assert.equal(special.season, 0);
+	// Zero, not nothing: with no count a finished row ticks the whole season.
+	assert.equal(special.progress, 0);
+	assert.equal(special.warning, 'Special: matched to the show, episodes not ticked');
+});
+
 test('MyAnimeList: "The Final Season" asks which one it is', async () => {
 	const [row] = await malRows({ title: 'Shingeki no Kyojin: The Final Season', watched: 4 });
 	assert.equal(row.title, 'Shingeki no Kyojin');

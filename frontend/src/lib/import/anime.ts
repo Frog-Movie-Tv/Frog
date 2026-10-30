@@ -118,7 +118,7 @@ function fromAnime(a: AnimeRow): Incoming {
 		// Specials live in TMDB's season 0, numbered differently: import the
 		// status, leave the episodes for a person to tick.
 		row.season = 0;
-		row.progress = null;
+		row.progress = 0;
 		row.warning = 'Special: matched to the show, episodes not ticked';
 		return row;
 	}
