@@ -10,6 +10,7 @@ use frog::state::AppState;
 /// for a negative one (how AniList-only titles were addressed before Frog had
 /// ids of its own). Test databases only; the app never sees this view.
 pub async fn add_title_seed(state: &AppState) {
+    let mut tx = state.pool.begin().await.expect("title_seed");
     for sql in [
         "CREATE VIEW IF NOT EXISTS title_seed AS
          SELECT id, kind, 0 AS tmdb_id, name, original_name, overview, poster_path,
@@ -40,10 +41,12 @@ pub async fn add_title_seed(state: &AppState) {
            FROM title_external WHERE provider = 'tmdb'",
     ] {
         sqlx::query(sql)
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await
             .expect("title_seed");
     }
+    // One commit, so no connection ever sees the view without its trigger.
+    tx.commit().await.expect("title_seed");
 }
 
 /// Frog's id for a title as a provider names it (a negative id is AniList's),
