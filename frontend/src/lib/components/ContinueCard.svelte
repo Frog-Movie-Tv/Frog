@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { titleHref } from '#lib/titles';
 	import Icon from './Icon.svelte';
 	import { img } from '#lib/api';
 	import { episodeCode, prettyDate } from '#lib/format';
@@ -18,7 +19,7 @@
 	);
 </script>
 
-<a class="card" href="/title/{item.kind}/{item.tmdb_id}" style:--tint={item.accent.shade}>
+<a class="card" href={titleHref(item)} style:--tint={item.accent.shade}>
 	<div class="art">
 		{#if backdrop}
 			<img src={backdrop} alt="" loading="lazy" decoding="async" />

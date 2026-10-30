@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { titleHref } from '#lib/titles';
 	import Icon from '#lib/components/Icon.svelte';
 	import { api, img, type LibraryQuery } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
@@ -327,7 +328,7 @@
 				<Poster
 					morph
 					kind={item.kind}
-					tmdbId={item.tmdb_id}
+					ref={item}
 					name={item.name}
 					posterPath={item.poster_path}
 					year={year(item.release_date)}
@@ -341,7 +342,7 @@
 	{:else if style === 'landscape'}
 		<div class="landscape">
 			{#each items as item (item.id)}
-				<a class="land" href="/title/{item.kind}/{item.tmdb_id}">
+				<a class="land" href={titleHref(item)}>
 					<div class="art">
 						{#if item.backdrop_path || item.poster_path}
 							<img
@@ -368,7 +369,7 @@
 		<ul class="list">
 			{#each items as item (item.id)}
 				<li>
-					<a href="/title/{item.kind}/{item.tmdb_id}">
+					<a href={titleHref(item)}>
 						{#if item.poster_path}
 							<img src={img(item.poster_path, 'w92')} alt="" loading="lazy" />
 						{/if}
@@ -406,7 +407,7 @@
 				<tbody>
 					{#each items as item (item.id)}
 						<tr>
-							<td><a href="/title/{item.kind}/{item.tmdb_id}">{item.name}</a></td>
+							<td><a href={titleHref(item)}>{item.name}</a></td>
 							<td class="num">{year(item.release_date)}</td>
 							<td>{item.kind === 'tv' ? 'Show' : 'Film'}</td>
 							<td>{item.entry ? STATUS_LABEL[item.entry.status] : '—'}</td>

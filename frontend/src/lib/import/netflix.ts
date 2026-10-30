@@ -1,5 +1,6 @@
 import type { MatchResult, SearchItem, Status } from '#lib/types';
-import { parseCsv, type Incoming } from './parsers';
+import { titleKey } from '#lib/titles';
+import { newRow, parseCsv, type Incoming } from './common';
 
 /**
  * Netflix's viewing activity.
@@ -575,7 +576,7 @@ export function netflixRows(
 		}
 
 		const { name, year } = searchName(showName);
-		const row = blank(name, 'Netflix');
+		const row = newRow(name, 'Netflix', 'netflix');
 		const { best } = latest(titles);
 		row.kind = 'tv';
 		row.year = year;
@@ -612,7 +613,7 @@ export function netflixRows(
 	/** A title sent on its own; `episode` is its episode name when it might be one. */
 	function looseRow(title: string, same: string[], episode: string | null): Incoming {
 		const { name, year } = searchName(title);
-		const row = blank(name, 'Netflix');
+		const row = newRow(name, 'Netflix', 'netflix');
 		const { best, days } = latest(same);
 		row.year = year;
 		row.status = 'completed';
@@ -670,25 +671,6 @@ function prefixes(segs: string[]): string[] {
 	const out: string[] = [];
 	for (let i = segs.length - 1; i >= 1; i--) out.push(searchName(segs.slice(0, i).join(': ')).name);
 	return [...new Set(out)].filter((p) => p !== full);
-}
-
-let counter = 0;
-
-function blank(title: string, source: string): Incoming {
-	return {
-		key: `netflix-${++counter}`,
-		title,
-		year: null,
-		imdb_id: null,
-		tmdb_id: null,
-		kind: null,
-		rating: null,
-		status: null,
-		watched_at: null,
-		favourite: false,
-		rewatch: false,
-		source
-	};
 }
 
 // ---------------------------------------------------------------- after matching
@@ -830,7 +812,7 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 	}
 
 	// Films that turned out to be the same film.
-	const films = new Map<number, T>();
+	const films = new Map<string, T>();
 	for (const row of rows) {
 		if (!row.incoming.netflix || row.chosen?.kind !== 'movie') continue;
 		const watched = Number(row.incoming.watched_at?.slice(0, 4));
@@ -845,9 +827,9 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 		if (row.match?.searched && !row.incoming.warning) {
 			row.incoming.warning = `Found by searching “${row.match.searched}”; check the match`;
 		}
-		const first = films.get(row.chosen.tmdb_id);
+		const first = films.get(titleKey(row.chosen));
 		if (!first) {
-			films.set(row.chosen.tmdb_id, row);
+			films.set(titleKey(row.chosen), row);
 			continue;
 		}
 		first.incoming.rewatch = true;
@@ -857,10 +839,11 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 		gone.add(row);
 	}
 
-	const shows = new Map<number, T[]>();
+	const shows = new Map<string, T[]>();
 	for (const row of rows) {
 		if (!row.incoming.netflix || row.chosen?.kind !== 'tv' || gone.has(row)) continue;
-		shows.set(row.chosen.tmdb_id, [...(shows.get(row.chosen.tmdb_id) ?? []), row]);
+		const key = titleKey(row.chosen);
+		shows.set(key, [...(shows.get(key) ?? []), row]);
 	}
 
 	const idle = new Date(now.getTime() - 182 * DAY_MS).toISOString();

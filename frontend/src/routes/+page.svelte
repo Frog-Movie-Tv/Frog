@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { titleHref, titleKey } from '#lib/titles';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { api, img } from '#lib/api';
@@ -187,9 +188,9 @@
 
 					<div class="hero-actions">
 						{#if heroCaughtUp}
-							<a class="btn" href="/title/{heroItem.kind}/{heroItem.tmdb_id}">View show</a>
+							<a class="btn" href={titleHref(heroItem)}>View show</a>
 						{:else}
-							<a class="btn primary" href="/title/{heroItem.kind}/{heroItem.tmdb_id}">
+							<a class="btn primary" href={titleHref(heroItem)}>
 								<Icon name="play" size={14} filled />
 								{heroFresh ? 'Start watching' : heroNext ? 'Next episode' : 'Open'}
 							</a>
@@ -220,7 +221,7 @@
 						<ul>
 							{#each data.this_week as airing (airing.item.id)}
 								<li>
-									<a href="/title/{airing.item.kind}/{airing.item.tmdb_id}">
+									<a href={titleHref(airing.item)}>
 										{#if airing.item.poster_path}
 											<img src={img(airing.item.poster_path, 'w92')} alt="" loading="lazy" />
 										{/if}
@@ -242,12 +243,12 @@
 						</ul>
 					</section>
 				{:else if row === 'because'}
-					{#each because as group (group.seed.kind + group.seed.tmdb_id)}
+					{#each because as group (group.seed.id)}
 						<Rail title="Because you watched {group.seed.name}">
-							{#each group.items as item (item.kind + item.tmdb_id)}
+							{#each group.items as item (titleKey(item))}
 								<Poster
 									kind={item.kind}
-									tmdbId={item.tmdb_id}
+									ref={item}
 									name={item.name}
 									posterPath={item.poster_path}
 									year={item.year}
@@ -263,7 +264,7 @@
 						{#each shelves[row].items.slice(0, 20) as item (item.id)}
 							<Poster
 								kind={item.kind}
-								tmdbId={item.tmdb_id}
+								ref={item}
 								name={item.name}
 								posterPath={item.poster_path}
 								year={year(item.release_date)}
@@ -279,7 +280,7 @@
 						{#each data.recent as item (item.id)}
 							<Poster
 								kind={item.kind}
-								tmdbId={item.tmdb_id}
+								ref={item}
 								name={item.name}
 								posterPath={item.poster_path}
 								year={year(item.release_date)}
@@ -295,7 +296,7 @@
 						{#each data.favourites as item (item.id)}
 							<Poster
 								kind={item.kind}
-								tmdbId={item.tmdb_id}
+								ref={item}
 								name={item.name}
 								posterPath={item.poster_path}
 								year={year(item.release_date)}

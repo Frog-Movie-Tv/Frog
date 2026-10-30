@@ -33,9 +33,201 @@ pub async fn connect(database_url: &str) -> anyhow::Result<SqlitePool> {
     let migrator = migrator();
     heal_line_endings(&pool, &migrator).await?;
     migrator.run(&pool).await?;
+    rebuild_title(&pool).await?;
+    mark_generation(&pool).await?;
 
     fill_search_names(&pool).await?;
     Ok(pool)
+}
+
+/// The `title` table as Frog keeps it: its own id and the metadata it shows.
+/// Which provider knows it lives in `title_external`. The column names
+/// `tmdb_status` and `tmdb_vote` are kept from when TMDB was the only
+/// source; they hold the primary provider's values.
+const TITLE_TABLE: &str = "CREATE TABLE title_rebuilt (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind             TEXT    NOT NULL CHECK (kind IN ('movie', 'tv')),
+    name             TEXT    NOT NULL,
+    original_name    TEXT,
+    overview         TEXT,
+    poster_path      TEXT,
+    backdrop_path    TEXT,
+    logo_path        TEXT,
+    release_date     TEXT,
+    last_air_date    TEXT,
+    tmdb_status      TEXT,
+    runtime          INTEGER,
+    episode_count    INTEGER,
+    season_count     INTEGER,
+    genres_json      TEXT    NOT NULL DEFAULT '[]',
+    tmdb_vote        REAL,
+    collection_id    INTEGER,
+    accent_json      TEXT,
+    refreshed_at     TEXT,
+    people_synced_at TEXT,
+    search_name      TEXT,
+    next_air_date    TEXT,
+    next_air_season  INTEGER,
+    next_air_episode INTEGER,
+    merged_into      INTEGER REFERENCES title (id) ON DELETE SET NULL
+)";
+
+/// The columns copied across, which are every column `TITLE_TABLE` has.
+const TITLE_COLUMNS: &str = "id, kind, name, original_name, overview, poster_path, backdrop_path,
+    logo_path, release_date, last_air_date, tmdb_status, runtime, episode_count, season_count,
+    genres_json, tmdb_vote, collection_id, accent_json, refreshed_at, people_synced_at,
+    search_name, next_air_date, next_air_season, next_air_episode, merged_into";
+
+/// Drop the provider ids `title` used to carry (`tmdb_id`, `anilist_id`,
+/// `imdb_id`) once `202610301000_catalog_identity` has copied them into
+/// `title_external`.
+///
+/// This is a migration that SQLite cannot run inside sqlx's migration
+/// transaction: a column in a UNIQUE constraint only goes by rebuilding the
+/// table, and rebuilding a table others reference needs foreign keys off,
+/// which SQLite ignores inside a transaction. With them on, the old table's
+/// drop would cascade into every library, watch and episode. So it runs here,
+/// on one connection with foreign keys off, in its own transaction, and only
+/// while `title` still has `tmdb_id`: running it again does nothing, and an
+/// interrupted run leaves the old table as it was. Ids are copied as they
+/// are and the id sequence is carried over, so no Frog id is ever reused.
+pub async fn rebuild_title(pool: &SqlitePool) -> anyhow::Result<()> {
+    let (pending,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM pragma_table_info('title') WHERE name = 'tmdb_id'")
+            .fetch_one(pool)
+            .await?;
+    if pending == 0 {
+        return Ok(());
+    }
+    let mut conn = pool.acquire().await?;
+    sqlx::query("PRAGMA foreign_keys = OFF")
+        .execute(&mut *conn)
+        .await?;
+    let result = rebuild_title_on(&mut conn).await;
+    // Back on before the connection returns to the pool, whatever happened.
+    sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(&mut *conn)
+        .await?;
+    result
+}
+
+/// The schema generation this binary leaves, in SQLite's `user_version`.
+/// It goes up only when a release changes the schema so that the release
+/// before it can no longer run on it. `deploy/update.sh` compares it with
+/// the pre-update snapshot: if a failed update raised it, starting the
+/// previous image would look healthy (its health check is `SELECT 1`) and
+/// break on every title, so it restores the snapshot instead. Generation 1
+/// is the catalog: `title` without provider ids.
+pub const SCHEMA_GENERATION: i64 = 1;
+
+async fn mark_generation(pool: &SqlitePool) -> anyhow::Result<()> {
+    let (current,): (i64,) = sqlx::query_as("PRAGMA user_version")
+        .fetch_one(pool)
+        .await?;
+    if current < SCHEMA_GENERATION {
+        sqlx::query(&format!("PRAGMA user_version = {SCHEMA_GENERATION}"))
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
+/// What `202610301000_catalog_identity` did, again, for rows an older binary
+/// wrote after it ran. If this rebuild ever fails, `deploy/update.sh` can put
+/// the previous image back on the migrated database, and that binary adds
+/// titles with only `tmdb_id` and saves pins as `{ kind, tmdb_id }`. Without
+/// this, the next rebuild would leave those titles with no provider.
+const CATCH_UP: [&str; 5] = [
+    "INSERT OR IGNORE INTO title_external (title_id, provider, external_id, is_primary, added_at)
+     SELECT t.id, 'tmdb', t.kind || '/' || t.tmdb_id, 1, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+       FROM title t
+      WHERE t.tmdb_id > 0
+        AND NOT EXISTS (SELECT 1 FROM title_external x WHERE x.title_id = t.id AND x.is_primary = 1)",
+    "INSERT OR IGNORE INTO title_external (title_id, provider, external_id, is_primary, added_at)
+     SELECT t.id, 'anilist', CAST(-t.tmdb_id AS TEXT), 1, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+       FROM title t
+      WHERE t.tmdb_id < 0
+        AND NOT EXISTS (SELECT 1 FROM title_external x WHERE x.title_id = t.id AND x.is_primary = 1)",
+    "INSERT OR IGNORE INTO title_external (title_id, provider, external_id, is_primary, added_at)
+     SELECT id, 'anilist', CAST(anilist_id AS TEXT), 0, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+       FROM title WHERE anilist_id IS NOT NULL AND tmdb_id > 0",
+    "INSERT OR IGNORE INTO title_external (title_id, provider, external_id, is_primary, added_at)
+     SELECT id, 'imdb', imdb_id, 0, strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+       FROM title WHERE imdb_id IS NOT NULL AND imdb_id != '' ORDER BY id",
+    "UPDATE app_user
+        SET pins_json = (
+            SELECT COALESCE(json_group_array(json_object('title_id', title_id)), '[]')
+              FROM (SELECT t.id AS title_id
+                      FROM json_each(app_user.pins_json) p
+                      JOIN title t ON t.kind = json_extract(p.value, '$.kind')
+                                  AND t.tmdb_id = json_extract(p.value, '$.tmdb_id')
+                     ORDER BY p.key))
+      WHERE pins_json IS NOT NULL AND json_valid(pins_json)
+        AND EXISTS (SELECT 1 FROM json_each(app_user.pins_json) p
+                     WHERE json_extract(p.value, '$.tmdb_id') IS NOT NULL)",
+];
+
+async fn rebuild_title_on(conn: &mut sqlx::SqliteConnection) -> anyhow::Result<()> {
+    use sqlx::Connection;
+    let mut tx = conn.begin().await?;
+    for sql in CATCH_UP {
+        sqlx::query(sql).execute(&mut *tx).await?;
+    }
+    // Every title must have its provider before the ids go: a title an
+    // older binary wrote under an id another title already holds is not
+    // one this can settle by itself.
+    let (unmapped,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM title t
+          WHERE (t.tmdb_id IS NOT NULL AND t.tmdb_id != 0)
+            AND NOT EXISTS (SELECT 1 FROM title_external x WHERE x.title_id = t.id AND x.is_primary = 1)",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    if unmapped > 0 {
+        anyhow::bail!("{unmapped} titles have no provider mapping; title was not rebuilt");
+    }
+    let (sequence,): (Option<i64>,) =
+        sqlx::query_as("SELECT MAX(seq) FROM sqlite_sequence WHERE name = 'title'")
+            .fetch_one(&mut *tx)
+            .await?;
+    let (before,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM title")
+        .fetch_one(&mut *tx)
+        .await?;
+    sqlx::query(TITLE_TABLE).execute(&mut *tx).await?;
+    sqlx::query(&format!(
+        "INSERT INTO title_rebuilt ({TITLE_COLUMNS}) SELECT {TITLE_COLUMNS} FROM title"
+    ))
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DROP TABLE title").execute(&mut *tx).await?;
+    sqlx::query("ALTER TABLE title_rebuilt RENAME TO title")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("CREATE INDEX idx_title_name ON title (name)")
+        .execute(&mut *tx)
+        .await?;
+    if let Some(seq) = sequence {
+        sqlx::query("UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'title'")
+            .bind(seq)
+            .execute(&mut *tx)
+            .await?;
+    }
+    let (after,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM title")
+        .fetch_one(&mut *tx)
+        .await?;
+    let broken: Vec<(String,)> = sqlx::query_as("SELECT \"table\" FROM pragma_foreign_key_check")
+        .fetch_all(&mut *tx)
+        .await?;
+    if after != before || !broken.is_empty() {
+        // Dropping the transaction rolls it back: the old table stays.
+        anyhow::bail!(
+            "rebuilding title would lose rows ({before} → {after}) or break references in {:?}",
+            broken.iter().map(|b| b.0.as_str()).collect::<Vec<_>>()
+        );
+    }
+    tx.commit().await?;
+    tracing::info!(titles = after, "title rebuilt without provider ids");
+    Ok(())
 }
 
 /// Give every title its folded `search_name`. The migration that added the

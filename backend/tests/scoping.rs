@@ -52,12 +52,12 @@ const ALLOWED: [(&str, &str); 5] = [
         "housekeeping: expired sessions of every account go at once",
     ),
     (
-        "FROM title t WHERE t.people_synced_at IS NULL",
+        "WHERE t.people_synced_at IS NULL",
         "decides which shared titles need credits; reads library_entry only to \
          see whether anybody tracks them, and writes nothing personal",
     ),
     (
-        "SELECT t.id, t.tmdb_id FROM library_entry l JOIN title t",
+        "SELECT DISTINCT t.id FROM library_entry l JOIN title t",
         "refreshes shared episode data for shows somebody tracks; writes only \
          title and episode",
     ),

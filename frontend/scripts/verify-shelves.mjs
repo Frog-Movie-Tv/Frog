@@ -98,20 +98,27 @@ const call = async (method, path, body) => {
 	return json;
 };
 
+/** Frog's own address for a title TMDB names; opening it adds it to Frog. */
+const titleApi = async (kind, id) =>
+	`/api/t/${(await call('GET', `/api/titles/${kind}/${id}`)).item.id}`;
+
 console.log('== seeding ==');
 // Breaking Bad: started and rated 9. The Office: rated 8.5 but not started.
 // Chernobyl: finished and rated 9.5. A film rated 10.
-await call('PUT', '/api/titles/tv/1396/library', { status: 'watching', rating: 90 });
-await call('POST', '/api/titles/tv/1396/episodes/1/1/watch', { watched: true });
-await call('PUT', '/api/titles/tv/2316/library', { status: 'planned', rating: 85 });
-await call('PUT', '/api/titles/tv/87108/library', { status: 'watching', rating: 95 });
-await call('POST', '/api/titles/tv/87108/episodes/watch', { watched: true, when: 'unknown' });
+await call('PUT', `${await titleApi('tv', 1396)}/library`, { status: 'watching', rating: 90 });
+await call('POST', `${await titleApi('tv', 1396)}/episodes/1/1/watch`, { watched: true });
+await call('PUT', `${await titleApi('tv', 2316)}/library`, { status: 'planned', rating: 85 });
+await call('PUT', `${await titleApi('tv', 87108)}/library`, { status: 'watching', rating: 95 });
+await call('POST', `${await titleApi('tv', 87108)}/episodes/watch`, {
+	watched: true,
+	when: 'unknown'
+});
 for (const [id, rating] of [
 	[278, 100],
 	[680, 88],
 	[155, 90]
 ]) {
-	await call('PUT', `/api/titles/movie/${id}/library`, { status: 'completed', rating });
+	await call('PUT', `${await titleApi('movie', id)}/library`, { status: 'completed', rating });
 }
 check('library seeded', true);
 
@@ -226,7 +233,8 @@ let comfort;
 	const shown = await page
 		.locator('.grid a')
 		.evaluateAll((links) => links.map((a) => a.getAttribute('href')));
-	check('the order survives a reload', shown[1] === '/title/movie/155', shown.join(' '));
+	const darkKnight = (await titleApi('movie', 155)).replace('/api', '');
+	check('the order survives a reload', shown[1] === darkKnight, shown.join(' '));
 
 	await page.getByRole('button', { name: 'Edit' }).click();
 	await page.getByRole('button', { name: 'Remove Pulp Fiction' }).click();
@@ -259,7 +267,7 @@ let comfort;
 		has: page.getByRole('heading', { name: 'Comfort films' })
 	});
 	await rail.waitFor({ timeout: 15000 });
-	const onHome = await rail.locator('a[href^="/title/"]').count();
+	const onHome = await rail.locator('a[href^="/t/"]').count();
 	check('the shelf is a row on Home', onHome === 3, `${onHome} posters`);
 	check(
 		'with a way to the whole shelf',
@@ -330,7 +338,9 @@ let comfort;
 	);
 	check(
 		'the page shows what matched',
-		(await page.locator('.grid a[href="/title/tv/1396"]').count()) === 1
+		(await page
+			.locator(`.grid a[href="${(await titleApi('tv', 1396)).replace('/api', '')}"]`)
+			.count()) === 1
 	);
 	await page.screenshot({ path: join(out, '4-smart-shelf.png') });
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { sameTitle, titleHref, titleKey } from '#lib/titles';
 	import { goto } from '$app/navigation';
 	import { api, img } from '#lib/api';
 	import Icon, { type IconName } from '#lib/components/Icon.svelte';
@@ -178,18 +179,18 @@
 			label: i.name,
 			hint: i.entry ? STATUS_LABEL[i.entry.status] : undefined,
 			poster: i.poster_path,
-			run: () => goto(`/title/${i.kind}/${i.tmdb_id}`)
+			run: () => goto(`/t/${i.id}`)
 		}));
 
 		const found: Command[] = remote
-			.filter((r) => !mine.some((m) => m.kind === r.kind && m.tmdb_id === r.tmdb_id))
+			.filter((r) => !mine.some((m) => sameTitle(m, r)))
 			.map((r) => ({
-				id: `r-${r.kind}-${r.tmdb_id}`,
+				id: `r-${titleKey(r)}`,
 				group: 'On TMDB',
 				label: r.name,
 				hint: `${r.kind === 'tv' ? 'Show' : 'Film'}${r.year ? ` \u00b7 ${r.year}` : ''}`,
 				poster: r.poster_path,
-				run: () => goto(`/title/${r.kind}/${r.tmdb_id}`)
+				run: () => goto(titleHref(r) ?? '/search')
 			}));
 
 		// Your own library first, then where to go, then what to do, and only

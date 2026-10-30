@@ -4,12 +4,14 @@
 	import { formatScore } from '#lib/format';
 	import { morph as opened } from '#lib/morph.svelte';
 	import { settings } from '#lib/settings.svelte';
+	import { titleHref, type TitleRef } from '#lib/titles';
 	import type { Kind, Status } from '#lib/types';
 	import { STATUS_LABEL } from '#lib/types';
 
 	interface Props {
 		kind: Kind;
-		tmdbId: number;
+		/** Which title: by Frog's id, or as a provider names it. */
+		ref: TitleRef;
 		name: string;
 		posterPath: string | null;
 		year?: string | number | null;
@@ -28,7 +30,7 @@
 
 	let {
 		kind,
-		tmdbId,
+		ref,
 		name,
 		posterPath,
 		year = null,
@@ -49,13 +51,16 @@
 		rating === null ? null : formatScore(rating, settings.current.scoreFormat)
 	);
 	const show = $derived(settings.current);
-	const key = $derived(`${kind}-${tmdbId}`);
+	const href = $derived(titleHref({ ...ref, kind }));
+	// The title page names its poster by Frog's id; a provider's address is
+	// only a step on the way there.
+	const key = $derived(ref.id ? `t${ref.id}` : `${kind}-${ref.tmdb_id ?? ref.anilist_id}`);
 	const named = $derived(morph && opened.key === key);
 </script>
 
 <a
 	class="poster"
-	href="/title/{kind}/{tmdbId}"
+	href={href ?? undefined}
 	title={name}
 	style:view-transition-name={named ? `poster-${key}` : undefined}
 	onclick={(e) => {

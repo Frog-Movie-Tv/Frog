@@ -9,10 +9,11 @@ use serde_json::{json, Value};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use crate::auth::Auth;
+use crate::catalog::{self, TitleRow, TITLE_COLUMNS};
 use crate::error::{AppError, AppResult};
 use crate::routes::library::order_clause;
 use crate::state::AppState;
-use crate::store::{self, LibraryItem, TitleRow, STATUSES};
+use crate::store::{self, LibraryItem, STATUSES};
 
 /// What a smart shelf matches. Every field is optional; an empty rule set
 /// matches the whole library.
@@ -103,15 +104,12 @@ fn film_seen(user_id: i64) -> String {
 pub async fn evaluate(pool: &SqlitePool, user_id: i64, rules: &Rules) -> AppResult<Vec<TitleRow>> {
     let watched_eps = watched_eps(user_id);
     let film_seen = film_seen(user_id);
-    let mut q: QueryBuilder<Sqlite> = QueryBuilder::new(
-        "SELECT t.id, t.kind, t.tmdb_id, t.name, t.overview, t.poster_path, t.backdrop_path,
-                t.logo_path, t.release_date, t.last_air_date, t.tmdb_status, t.runtime,
-                t.episode_count, t.season_count, t.genres_json, t.tmdb_vote, t.imdb_id,
-                t.collection_id, t.accent_json
+    let mut q: QueryBuilder<Sqlite> = QueryBuilder::new(format!(
+        "SELECT {TITLE_COLUMNS}
            FROM library_entry l
            JOIN title t ON t.id = l.title_id
-          WHERE l.user_id = ",
-    );
+          WHERE l.user_id = "
+    ));
     q.push_bind(user_id);
     if let Some(kind) = &rules.kind {
         q.push(" AND t.kind = ").push_bind(kind.clone());
@@ -203,16 +201,13 @@ fn rules_of(raw: &str) -> Rules {
 }
 
 async fn manual_titles(pool: &SqlitePool, shelf_id: i64) -> AppResult<Vec<TitleRow>> {
-    Ok(sqlx::query_as::<_, TitleRow>(
-        "SELECT t.id, t.kind, t.tmdb_id, t.name, t.overview, t.poster_path, t.backdrop_path,
-                t.logo_path, t.release_date, t.last_air_date, t.tmdb_status, t.runtime,
-                t.episode_count, t.season_count, t.genres_json, t.tmdb_vote, t.imdb_id,
-                t.collection_id, t.accent_json
+    Ok(sqlx::query_as::<_, TitleRow>(&format!(
+        "SELECT {TITLE_COLUMNS}
            FROM shelf_item s
            JOIN title t ON t.id = s.title_id
           WHERE s.shelf_id = ?
-          ORDER BY s.position, s.rowid",
-    )
+          ORDER BY s.position, s.rowid"
+    ))
     .bind(shelf_id)
     .fetch_all(pool)
     .await?)
@@ -439,8 +434,8 @@ async fn manual(pool: &SqlitePool, user_id: i64, id: i64) -> AppResult<()> {
 
 #[derive(Deserialize)]
 pub struct ItemBody {
-    pub kind: String,
-    pub tmdb_id: i64,
+    /// Frog's id for the title.
+    pub title_id: i64,
 }
 
 pub async fn add_item(
@@ -450,14 +445,7 @@ pub async fn add_item(
     Json(body): Json<ItemBody>,
 ) -> AppResult<Json<Value>> {
     manual(&state.pool, auth.user_id(), id).await?;
-    let title_id = match store::find_title_id(&state.pool, &body.kind, body.tmdb_id).await? {
-        Some(t) => t,
-        None => {
-            store::ensure_title(&state, &body.kind, body.tmdb_id)
-                .await?
-                .0
-        }
-    };
+    let title_id = catalog::get_title(&state.pool, body.title_id).await?.id;
     sqlx::query(
         "INSERT OR IGNORE INTO shelf_item (shelf_id, title_id, position)
          VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM shelf_item WHERE shelf_id = ?))",
@@ -473,16 +461,14 @@ pub async fn add_item(
 pub async fn remove_item(
     auth: Auth,
     State(state): State<AppState>,
-    Path((id, kind, tmdb_id)): Path<(i64, String, i64)>,
+    Path((id, title_id)): Path<(i64, i64)>,
 ) -> AppResult<Json<Value>> {
     manual(&state.pool, auth.user_id(), id).await?;
-    if let Some(title_id) = store::find_title_id(&state.pool, &kind, tmdb_id).await? {
-        sqlx::query("DELETE FROM shelf_item WHERE shelf_id = ? AND title_id = ?")
-            .bind(id)
-            .bind(title_id)
-            .execute(&state.pool)
-            .await?;
-    }
+    sqlx::query("DELETE FROM shelf_item WHERE shelf_id = ? AND title_id = ?")
+        .bind(id)
+        .bind(title_id)
+        .execute(&state.pool)
+        .await?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -517,11 +503,8 @@ pub async fn reorder_items(
 pub async fn for_title(
     auth: Auth,
     State(state): State<AppState>,
-    Path((kind, tmdb_id)): Path<(String, i64)>,
+    Path(title_id): Path<i64>,
 ) -> AppResult<Json<Value>> {
-    let title_id = store::find_title_id(&state.pool, &kind, tmdb_id)
-        .await?
-        .unwrap_or(-1);
     let rows: Vec<(i64, String, bool)> = sqlx::query_as(
         "SELECT s.id, s.name,
                 EXISTS (SELECT 1 FROM shelf_item i

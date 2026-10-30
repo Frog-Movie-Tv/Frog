@@ -71,10 +71,9 @@ pub fn router(state: AppState) -> Router {
         .route("/shelves/{id}/items", post(shelves::add_item))
         .route("/shelves/{id}/items/order", put(shelves::reorder_items))
         .route(
-            "/shelves/{id}/items/{kind}/{tmdb_id}",
+            "/shelves/{id}/items/{title_id}",
             delete(shelves::remove_item),
         )
-        .route("/titles/{kind}/{tmdb_id}/shelves", get(shelves::for_title))
         .route("/push", get(push::status))
         .route("/push/subscribe", post(push::subscribe))
         .route("/push/unsubscribe", post(push::unsubscribe))
@@ -121,33 +120,31 @@ pub fn router(state: AppState) -> Router {
         .route("/import/match", post(transfer::match_titles))
         .route("/import/apply", post(transfer::apply))
         .route("/person/{person_id}", get(titles::person))
-        .route("/titles/{kind}/{tmdb_id}", get(titles::detail))
+        // A title as a provider names it (`movie/550`, `tv/1399`,
+        // `anilist/21`): opens it, adding it to the catalog if it is new.
+        .route("/titles/{kind}/{id}", get(titles::detail))
+        // Everything else about a title goes by Frog's own id.
+        .route("/t/{id}", get(titles::detail_by_id))
+        .route("/t/{id}/seasons/{season}", get(titles::season))
+        .route("/t/{id}/seasons/{season}/rating", put(titles::rate_season))
         .route(
-            "/titles/{kind}/{tmdb_id}/seasons/{season}",
-            get(titles::season),
+            "/t/{id}/library",
+            put(library::upsert).delete(library::remove),
         )
+        .route("/t/{id}/shelves", get(shelves::for_title))
         .route(
-            "/titles/{kind}/{tmdb_id}/seasons/{season}/rating",
-            put(titles::rate_season),
-        )
-        .route("/titles/{kind}/{tmdb_id}/library", put(library::upsert))
-        .route("/titles/{kind}/{tmdb_id}/library", delete(library::remove))
-        .route(
-            "/titles/{kind}/{tmdb_id}/episodes/{season}/{episode}/watch",
+            "/t/{id}/episodes/{season}/{episode}/watch",
             post(episodes::set_watched),
         )
         .route(
-            "/titles/{kind}/{tmdb_id}/episodes/{season}/{episode}/state",
+            "/t/{id}/episodes/{season}/{episode}/state",
             put(episodes::set_state),
         )
         .route(
-            "/titles/{kind}/{tmdb_id}/episodes/{season}/watch",
+            "/t/{id}/episodes/{season}/watch",
             post(episodes::set_season_watched),
         )
-        .route(
-            "/titles/{kind}/{tmdb_id}/episodes/watch",
-            post(episodes::set_show_watched),
-        )
+        .route("/t/{id}/episodes/watch", post(episodes::set_show_watched))
         .route("/diary/redate", post(timeline::redate));
 
     Router::new()

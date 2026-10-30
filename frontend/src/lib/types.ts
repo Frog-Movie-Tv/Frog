@@ -34,9 +34,9 @@ export interface LibraryEntry {
 
 /** A title plus my state: what the grid, the rows and the hero all draw. */
 export interface LibraryItem {
+	/** Frog's id for the title. */
 	id: number;
 	kind: Kind;
-	tmdb_id: number;
 	name: string;
 	overview: string | null;
 	poster_path: string | null;
@@ -49,7 +49,6 @@ export interface LibraryItem {
 	episode_count: number | null;
 	season_count: number | null;
 	tmdb_vote: number | null;
-	imdb_id: string | null;
 	collection_id: number | null;
 	genres: string[];
 	accent: Palette;
@@ -59,9 +58,15 @@ export interface LibraryItem {
 	last_watched_at: string | null;
 }
 
+/** A film or show as a provider lists it: not necessarily in Frog yet. */
 export interface SearchItem {
 	kind: Kind;
-	tmdb_id: number;
+	/** TMDB's id; null for an anime only AniList has. */
+	tmdb_id: number | null;
+	/** AniList's id, for an anime TMDB lacks. */
+	anilist_id?: number | null;
+	/** Frog's id, when the title is in your library. */
+	id?: number | null;
 	name: string;
 	poster_path: string | null;
 	backdrop_path: string | null;
@@ -73,7 +78,7 @@ export interface SearchItem {
 
 /** One "Because you watched" row on Home. */
 export interface BecauseRow {
-	seed: { kind: Kind; tmdb_id: number; name: string };
+	seed: { id: number; name: string };
 	items: SearchItem[];
 }
 
@@ -193,7 +198,14 @@ export interface TitleDetail {
 	/** Shows only: what can be rated, season by season (or AniList part by part). */
 	ratings?: RatingUnit[];
 	/** This title has since been found on TMDB and lives there now. */
-	moved_to?: { kind: Kind; tmdb_id: number } | null;
+	moved_to?: { id: number } | null;
+	/** Every provider id the title is known by. */
+	external?: {
+		tmdb: { kind: Kind; id: number } | null;
+		anilist: number[];
+		imdb: string[];
+		primary: 'tmdb' | 'anilist' | null;
+	};
 	/** Known from AniList alone: no TMDB entry, so no cast, seasons or links. */
 	anilist_only?: boolean;
 }
@@ -284,8 +296,8 @@ export interface Shelf {
 
 /** A title ranked on the stats page. */
 export interface StatsTitle {
+	id: number;
 	kind: Kind;
-	tmdb_id: number;
 	name: string;
 	poster_path: string | null;
 	watches: number;
@@ -393,7 +405,7 @@ export interface ImportSummary {
 	added: number;
 	updated: number;
 	skipped: number;
-	failed: { tmdb_id: number; error: string }[];
+	failed: { tmdb_id: number | null; anilist_id?: number; error: string }[];
 }
 
 /** An invite link, as the admin page lists them. Never the code itself. */
@@ -423,7 +435,8 @@ export interface Account {
 	banner_backdrop: string | null;
 	/** Which part of the banner shows, as "x% y%". */
 	banner_position: string | null;
-	pins: { kind: Kind; tmdb_id: number }[];
+	/** Frog ids of titles in the library, in order. */
+	pins: { title_id: number }[];
 	/** Whether a picture of each kind is uploaded. */
 	avatar: boolean;
 	banner: boolean;
@@ -436,7 +449,7 @@ export interface ProfileEdit {
 	bio?: string;
 	banner_backdrop?: string;
 	banner_position?: string;
-	pins?: { kind: Kind; tmdb_id: number }[];
+	pins?: { title_id: number }[];
 }
 
 export interface PersonSummary {
@@ -553,10 +566,13 @@ export interface AniListEntry {
 	media_status: string | null;
 	start_date: string | null;
 	title: {
+		/** Frog's id. */
+		id: number;
 		name: string;
 		poster_path: string | null;
 		kind: Kind;
-		tmdb_id: number;
+		/** TMDB's id: placing is in TMDB's terms. */
+		tmdb_id: number | null;
 		season: number | null;
 		from_episode: number;
 	} | null;
@@ -567,15 +583,15 @@ export interface AniListEntry {
 	/** When Frog next looks for its place. */
 	next_try_at?: string | null;
 	/** In the library as it is on AniList until it is placed. */
-	kept?: { kind: Kind; tmdb_id: number } | null;
+	kept?: { id: number; kind: Kind } | null;
 }
 
 export type AniListChoice =
 	{ ignore: true } | { kind: Kind; tmdb_id: number; season?: number; from_episode?: number };
 
 export interface ProfileCard {
+	id: number;
 	kind: Kind;
-	tmdb_id: number;
 	name: string;
 	poster_path: string | null;
 	rating: number | null;
@@ -642,6 +658,7 @@ export interface CharacterResult {
 	title: {
 		kind: Kind | null;
 		tmdb_id: number | null;
+		anilist_id?: number | null;
 		name: string | null;
 		poster_path: string | null;
 	};

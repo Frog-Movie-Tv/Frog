@@ -20,7 +20,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use chrono::{NaiveDate, Utc};
 use serde_json::{json, Value};
 
-use super::{media_name, remember_media, Api, Remote, ANIMATION, MEDIA_QUERY};
+use super::client::{full_date, media_name, titles_of, Api, Remote, MEDIA_QUERY};
+use super::idmap::remember_media;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::tmdb::models;
@@ -31,6 +32,9 @@ pub const RESOLVER: i64 = 2;
 
 /// Below this, a placement is a suggestion for the person, not a fact.
 pub const CONFIDENT: i64 = 70;
+
+/// TMDB's genre id for Animation.
+const ANIMATION: i64 = 16;
 
 /// (tvdb_id, tvdb_season, tvdb_epoffset, imdb_id,
 ///  tmdb_kind, tmdb_id, tmdb_season, tmdb_offset)
@@ -769,30 +773,6 @@ type ChainRow = (
     Option<String>,
     String,
 );
-
-/// A full yyyy-mm-dd from AniList's fuzzy date, or nothing.
-pub(super) fn full_date(d: &Value) -> Option<String> {
-    let (y, m, day) = (
-        d["year"].as_i64()?,
-        d["month"].as_i64()?,
-        d["day"].as_i64()?,
-    );
-    NaiveDate::from_ymd_opt(y as i32, m as u32, day as u32)
-        .map(|d| d.format("%Y-%m-%d").to_string())
-}
-
-/// Every title AniList gives a media, in order of usefulness.
-pub(super) fn titles_of(media: &Value) -> Vec<String> {
-    let mut titles: Vec<String> = Vec::new();
-    for key in ["english", "romaji", "native"] {
-        if let Some(t) = media["title"][key].as_str().map(str::trim) {
-            if !t.is_empty() && !titles.iter().any(|known| known == t) {
-                titles.push(t.to_string());
-            }
-        }
-    }
-    titles
-}
 
 /// What links `id` to the rest of its series, from the shared cache or
 /// AniList. An entry whose length was still unknown is asked about again

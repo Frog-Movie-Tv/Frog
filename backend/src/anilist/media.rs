@@ -16,7 +16,7 @@
 use chrono::{DateTime, FixedOffset, Utc};
 use serde_json::{json, Value};
 
-use super::Api;
+use super::client::Api;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::tmdb::models::{EpisodeInfo, SearchItem};
@@ -91,7 +91,7 @@ fn name_of(media: &Value) -> Option<String> {
 }
 
 fn date_of(d: &Value) -> Option<String> {
-    super::place::full_date(d)
+    super::client::full_date(d)
 }
 
 /// AniList writes its synopses with a little HTML and a source line; TMDB's
@@ -230,21 +230,23 @@ async fn as_item(state: &AppState, media: &Value) -> AppResult<Option<Value>> {
     .bind(id)
     .fetch_optional(&state.pool)
     .await?;
-    let (kind, item_id) = match mapped {
-        Some((kind, tmdb_id)) => (kind, tmdb_id),
+    let (kind, item_id, source) = match mapped {
+        Some((kind, tmdb_id)) => (kind, tmdb_id, "tmdb"),
         None => (
             if media["format"].as_str() == Some("MOVIE") {
                 "movie".to_string()
             } else {
                 "tv".to_string()
             },
-            -id,
+            id,
+            "anilist",
         ),
     };
     let date = date_of(&media["startDate"])
         .or_else(|| media["startDate"]["year"].as_i64().map(|y| format!("{y}")));
     let mut item = json!({
         "id": item_id,
+        "source": source,
         "poster_path": image_path(media["coverImage"]["extraLarge"].as_str()),
         "backdrop_path": image_path(media["bannerImage"].as_str()),
         "vote_average": media["averageScore"].as_f64().map(|s| s / 10.0),
@@ -258,6 +260,23 @@ async fn as_item(state: &AppState, media: &Value) -> AppResult<Option<Value>> {
         item["first_air_date"] = json!(date);
     }
     Ok(Some(item))
+}
+
+/// An anime by its AniList id as a list item: the TMDB title when the anime
+/// lists know it, else AniList's own. For an import that names it that way.
+pub async fn search_item(state: &AppState, media_id: i64) -> AppResult<SearchItem> {
+    let mut media = fetch(state, media_id).await?;
+    // The detail query does not ask for the type; it only reads anime.
+    media["type"] = json!("ANIME");
+    let kind = if media["format"].as_str() == Some("MOVIE") {
+        "movie"
+    } else {
+        "tv"
+    };
+    as_item(state, &media)
+        .await?
+        .and_then(|v| SearchItem::from_value(&v, Some(kind)))
+        .ok_or_else(|| AppError::NotFound("AniList has no such anime".into()))
 }
 
 /// One anime from AniList, cached like TMDB's answers: half a day while it
@@ -426,7 +445,7 @@ pub async fn as_tmdb(state: &AppState, kind: &str, media: &Value) -> AppResult<V
         .or_else(|| media["title"]["romaji"].as_str());
     let start = date_of(&media["startDate"]);
     let end = date_of(&media["endDate"]);
-    let status = super::local_status(media["status"].as_str());
+    let status = super::local::local_status(media["status"].as_str());
     let duration = media["duration"].as_i64();
     let eps = episodes(media);
 
@@ -540,7 +559,8 @@ pub async fn as_tmdb(state: &AppState, kind: &str, media: &Value) -> AppResult<V
 
     let poster = image_path(media["coverImage"]["extraLarge"].as_str());
     let mut raw = json!({
-        "id": -media_id,
+        "id": media_id,
+        "source": "anilist",
         "original_name": original,
         "overview": media["description"].as_str().map(plain_text),
         "poster_path": poster,
