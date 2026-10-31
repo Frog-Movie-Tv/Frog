@@ -4505,3 +4505,225 @@ async fn a_shared_library_filters_sorts_and_comes_in_pages() {
         .await;
     assert_eq!(code, StatusCode::BAD_REQUEST);
 }
+
+// ---------------------------------------------------------------------------
+// A show with nothing watched, on Home.
+// ---------------------------------------------------------------------------
+
+/// A show TMDB's cache can answer for, with `episodes` episodes in one season.
+async fn a_show_on_tmdb(h: &Harness, tmdb_id: i64, episodes: i64) {
+    let detail = json!({
+        "id": tmdb_id, "name": "Monsters vs. Aliens", "first_air_date": "2013-03-23",
+        "number_of_episodes": episodes, "number_of_seasons": 1, "status": "Ended",
+        "seasons": [{ "season_number": 1, "episode_count": episodes, "name": "Season 1" }],
+        "credits": { "cast": [{ "id": 5727, "name": "Diedrich Bader" }] }
+    });
+    let season = json!({
+        "season_number": 1,
+        "episodes": (1..=episodes).map(|n| json!({
+            "episode_number": n, "name": format!("Episode {n}"), "air_date": "2013-03-23"
+        })).collect::<Vec<_>>()
+    });
+    let keys = [
+        format!("/tv/{tmdb_id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,content_ratings&include_image_language=en,null,ja"),
+        format!("/tv/{tmdb_id}/season/1?lang=en-US"),
+    ];
+    for (key, body) in keys.iter().zip([&detail, &season]) {
+        sqlx::query(
+            "INSERT OR REPLACE INTO tmdb_cache (cache_key, body, fetched_at, expires_at)
+             VALUES (?, ?, '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')",
+        )
+        .bind(key)
+        .bind(body.to_string())
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn a_show_imported_with_nothing_to_tick_still_has_its_episodes() {
+    let h = Harness::with_tmdb_key("test-key").await;
+    let (owner, _) = two_accounts(&h).await;
+    a_show_on_tmdb(&h, 60789, 3).await;
+
+    // What Netflix's row for a show's own name sends: no season, no episodes.
+    let (code, body, _) = h
+        .post(
+            "/api/import/apply",
+            json!({ "items": [{ "kind": "tv", "tmdb_id": 60789, "status": "watching",
+                                "progress": 0 }], "on_conflict": "skip" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["added"], json!(1), "{body}");
+
+    let id = h.tid("tv", 60789).await;
+    let (listed,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM episode WHERE title_id = ?")
+        .bind(id)
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(listed, 3);
+
+    // A tracker's Watching stands, and the show says where to start.
+    let (_, home) = h.get("/api/home", Some(&owner)).await;
+    assert_eq!(home["hero"]["next"]["episode_number"], json!(1));
+    assert_eq!(home["hero"]["next"]["aired"], json!(true));
+}
+
+#[tokio::test]
+async fn a_planned_import_that_ticks_episodes_is_under_way() {
+    let h = Harness::with_tmdb_key("test-key").await;
+    let (owner, _) = two_accounts(&h).await;
+    a_show_on_tmdb(&h, 60789, 3).await;
+
+    // Netflix sent it as planned, and the review gave it a season.
+    let (code, body, _) = h
+        .post(
+            "/api/import/apply",
+            json!({ "items": [{ "kind": "tv", "tmdb_id": 60789, "status": "planned",
+                                "season": 1, "progress": 2 }], "on_conflict": "skip" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    let (_, library) = h.get("/api/library", Some(&owner)).await;
+    assert_eq!(library["items"][0]["entry"]["status"], json!("watching"));
+    assert_eq!(library["items"][0]["watched_episodes"], json!(2));
+}
+
+#[tokio::test]
+async fn nothing_watched_and_no_next_episode_stays_off_continue_watching() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    // As an older import left it: no episodes listed, and only TMDB's count.
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, episode_count, season_count)
+         VALUES (1, 'tv', 60789, 'Monsters vs. Aliens', 50, 1),
+                (2, 'tv', 70000, 'Caught Up', NULL, 1)",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, 1, 'watching', '2026-01-01', '2026-01-01'),
+                (1, 2, 'watching', '2026-01-01', '2026-01-02')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO episode (id, title_id, season_number, episode_number, air_date)
+         VALUES (1, 2, 1, 1, '2020-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, source)
+         VALUES (1, 2, 1, '2020-01-02T20:00:00Z', 'manual')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let (_, home) = h.get("/api/home", Some(&owner)).await;
+    let shown = [&home["hero"]]
+        .into_iter()
+        .map(|e| e["item"]["name"].clone())
+        .chain(
+            home["continue"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .chain(home["waiting"].as_array().unwrap())
+                .map(|e| e["item"]["name"].clone()),
+        )
+        .collect::<Vec<_>>();
+    assert_eq!(shown, [json!("Caught Up")], "{home}");
+}
+
+#[tokio::test]
+async fn the_repair_moves_only_a_show_that_cannot_have_been_watched() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES
+            (1, 'tv', 1, 'Never listed'),
+            (2, 'tv', 2, 'Listed'),
+            (3, 'tv', 3, 'Paused'),
+            (4, 'tv', -4, 'From AniList'),
+            (5, 'movie', 5, 'A film'),
+            (6, 'tv', 6, 'On AniList')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO episode (title_id, season_number, episode_number, air_date)
+         VALUES (2, 1, 1, '2020-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, rating, notes, added_at, updated_at)
+         VALUES (1, 1, 'watching', 80, 'kept', '2026-01-01', '2026-01-01'),
+                (1, 2, 'watching', NULL, NULL, '2026-01-01', '2026-01-01'),
+                (1, 3, 'paused', NULL, NULL, '2026-01-01', '2026-01-01'),
+                (1, 4, 'watching', NULL, NULL, '2026-01-01', '2026-01-01'),
+                (1, 5, 'watching', NULL, NULL, '2026-01-01', '2026-01-01'),
+                (1, 6, 'watching', NULL, NULL, '2026-01-01', '2026-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO anilist_entry (user_id, media_id, title_id, state, name, updated_at)
+         VALUES (1, 9, 6, 'placed', 'On AniList', '2026-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    sqlx::raw_sql(include_str!(
+        "../migrations/202610311000_nothing_watched_is_not_watching.sql"
+    ))
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let (_, library) = h
+        .get("/api/library?sort=name&order=asc", Some(&owner))
+        .await;
+    let status = |name: &str| {
+        library["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["name"] == name)
+            .unwrap()["entry"]["status"]
+            .clone()
+    };
+    assert_eq!(status("Never listed"), json!("planned"));
+    assert_eq!(
+        status("Listed"),
+        json!("watching"),
+        "somebody could tick it"
+    );
+    assert_eq!(status("Paused"), json!("paused"));
+    assert_eq!(status("From AniList"), json!("watching"));
+    assert_eq!(status("A film"), json!("watching"));
+    assert_eq!(status("On AniList"), json!("watching"));
+    let kept = frog::store::get_entry(&h.state.pool, 1, 1)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (kept.rating, kept.notes.as_deref()),
+        (Some(80.0), Some("kept"))
+    );
+}

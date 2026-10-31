@@ -11,7 +11,7 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Spring Peeper —
 
-In progress.
+Edit your library in one go, and see someone else's from their profile.
 
 ### Highlights
 
@@ -32,6 +32,8 @@ In progress.
 
 ### Fixes
 
+- Continue watching says what is next for every show. A show imported with
+  nothing watched waits on your watchlist.
 - A letter avatar stands clear of the banner behind it, in every theme.
 - Every title page opens, however a person is listed in its cast. Someone with
   two parts has one card, with both parts on it.

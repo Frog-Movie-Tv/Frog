@@ -66,6 +66,13 @@ a new source is a new reader and nothing else.
   for an episode makes the show `watching`, never `completed`, and its rating
   is not the show's.
 - **Shows never get a title-level watch.**
+- **Every show imported has its episodes listed**, whether or not anything is
+  ticked. Without them it has no next episode and only TMDB's count to go by.
+- **A Netflix show with nothing to tick arrives as planned.** A show's own name
+  with no episode, or episodes with no season to place them in, say it was
+  opened, not how far anyone got. Giving it a season in the review ticks those
+  episodes, and `apply` then moves it to `watching`. A tracker that says
+  `watching` itself is taken at its word, as above.
 - **A planned later season** does not send a show you are part-way through
   back to planned.
 - **Dates:** readers keep the day of a timestamp and set it to 20:00 UTC; the

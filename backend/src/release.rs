@@ -234,6 +234,13 @@ pub fn desired_status(
     (current != Some(want)).then_some(want)
 }
 
+/// Whether a show marked Watching belongs in Continue watching. Nothing out
+/// yet is coming, and the calendar has it. Nothing watched and no next episode
+/// known leaves nothing to say about it: it is neither under way nor finished.
+pub fn continues(watched: i64, total: i64, has_next: bool) -> bool {
+    total > 0 && (watched > 0 || has_next)
+}
+
 /// Something that can be rated on its own: a season, or one AniList entry
 /// where AniList splits a TMDB season into several (or runs one entry across
 /// many TMDB seasons, as a long series does).
@@ -470,6 +477,15 @@ mod tests {
             desired_status(Some("watching"), &state(12, 12, false), false),
             None
         );
+    }
+
+    #[test]
+    fn continue_watching_has_something_to_say_about_each_show() {
+        assert!(continues(3, 12, true), "under way");
+        assert!(continues(0, 12, true), "marked watching, ready to start");
+        assert!(continues(12, 12, false), "caught up");
+        assert!(!continues(0, 0, true), "nothing out");
+        assert!(!continues(0, 50, false), "no episodes listed, nothing seen");
     }
 
     #[test]

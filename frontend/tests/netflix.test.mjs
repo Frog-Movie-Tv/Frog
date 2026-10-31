@@ -401,6 +401,34 @@ test('completed only when every season was seen to the end', () => {
 	assert.equal(byLabel(done, 'Squid Game: Season 3').status, 'completed');
 });
 
+test('a show with nothing to tick waits on the watchlist', () => {
+	// A title with no episode name, matched to a show rather than a film: the
+	// row Monsters vs. Aliens came from.
+	const single = read().rows.find((r) => r.netflix.single);
+	const rows = settled({
+		[single.label]: show(60789, 'A Show', [
+			[1, 20],
+			[2, 30]
+		])
+	});
+	const named = byLabel(rows, single.label);
+	assert.equal(named.progress, 0);
+	assert.equal(named.status, 'planned');
+});
+
+test('a show whose episodes have no season to go to waits too, until the review gives one', () => {
+	const unnamed = read().rows.find((r) => r.netflix.seasonKind === 'none' && !r.netflix.single);
+	const rows = settled({
+		[unnamed.label]: show(1, 'A Show', [
+			[1, 20],
+			[2, 30]
+		])
+	});
+	const row = byLabel(rows, unnamed.label);
+	assert.equal(row.season, null);
+	assert.equal(row.status, 'planned');
+});
+
 test('a film found only by a shorter name is flagged', () => {
 	const rows = settled({
 		'Rebel Moon — Part Two: The Scargiver': {

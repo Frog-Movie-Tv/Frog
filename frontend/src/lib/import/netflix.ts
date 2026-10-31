@@ -1088,7 +1088,14 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 			(m, r) => ((r.incoming.watched_at ?? '') > m ? r.incoming.watched_at! : m),
 			''
 		);
-		const status: Status = complete ? 'completed' : last && last < idle ? 'paused' : 'watching';
+		// Named with no episode, or no season to place them in: nothing gets
+		// ticked, and a show with nothing watched is not being watched. If the
+		// review gives it a season, the server moves it on as it ticks.
+		const ticked = all.some(
+			(r) => r.incoming.watches?.length || (r.incoming.season != null && r.incoming.progress)
+		);
+		const underWay = last && last < idle ? 'paused' : 'watching';
+		const status: Status = complete ? 'completed' : ticked ? underWay : 'planned';
 		for (const row of all) row.incoming.status = status;
 	}
 

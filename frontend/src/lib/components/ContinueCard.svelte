@@ -58,8 +58,10 @@
 			<span class="next muted">
 				Next episode {next.air_date ? prettyDate(next.air_date) : 'to be announced'}
 			</span>
-		{:else}
+		{:else if item.watched_episodes >= item.total_episodes}
 			<span class="next muted">Finished</span>
+		{:else}
+			<span class="next muted">Caught up</span>
 		{/if}
 
 		{#if item.total_episodes > 0}
