@@ -11,6 +11,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Spring Peeper —
 
+In progress.
+
+## [1.0.2] — Bullfrog — 2026-10-31
+
 Edit your library in one go, and see someone else's from their profile.
 
 ### Highlights
@@ -594,6 +598,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.0.2]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.0.2
 [1.0.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.0.1
 [1.0.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.0.0
 [0.8.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v0.8.1
