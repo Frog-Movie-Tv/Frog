@@ -64,11 +64,12 @@ impl Marking {
 }
 
 /// Turn a yyyy-mm-dd into the timestamp watches are stored with, refusing
-/// anything that is not a real calendar date or lies in the future.
+/// anything that is not a real calendar date or lies in the future. Today is
+/// the person's, and tomorrow by UTC can already be that somewhere.
 pub fn evening_of(date: &str) -> AppResult<String> {
     let day = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .map_err(|_| AppError::BadRequest("pick a valid date".into()))?;
-    if day > Utc::now().date_naive() {
+    if day > Utc::now().date_naive() + chrono::Days::new(1) {
         return Err(AppError::BadRequest("that date is in the future".into()));
     }
     Ok(format!("{date}T20:00:00Z"))

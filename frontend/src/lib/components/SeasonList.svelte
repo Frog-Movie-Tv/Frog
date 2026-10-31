@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import { api, img } from '#lib/api';
-	import { episodeCode, prettyDate, relativeDate, runtime } from '#lib/format';
+	import { episodeCode, localDay, prettyDate, relativeDate, runtime } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import { uniqueBy } from '#lib/unique';
@@ -215,7 +215,7 @@
 		}
 	}
 
-	const today = new Date().toISOString().slice(0, 10);
+	const today = localDay();
 
 	/** TMDB gives an air date; anything later than today has not happened. */
 	function unaired(ep: EpisodeView): boolean {

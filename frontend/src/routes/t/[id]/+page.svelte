@@ -12,7 +12,7 @@
 	import Spinner from '#lib/components/Spinner.svelte';
 	import TrackControls from '#lib/components/TrackControls.svelte';
 	import { failure, idParam, type Failure } from '#lib/failure';
-	import { episodeCode, prettyDate, runtime, year } from '#lib/format';
+	import { episodeCode, localDay, prettyDate, runtime, year } from '#lib/format';
 	import { providerLink } from '#lib/providers';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
@@ -25,7 +25,7 @@
 	let loading = $state(true);
 	let error = $state<Failure | null>(null);
 	let trailerOpen = $state<string | null>(null);
-	const today = new Date().toISOString().slice(0, 10);
+	const today = localDay();
 	let outside = $state<TitleScores | null>(null);
 
 	/** Frog's id for the title: the page's own address. */
@@ -213,7 +213,11 @@
 			const { item: updated } = await api.setShowWatched(item.id, true, answer);
 			await refreshAfterEpisodes(updated);
 			seasonsVersion++;
-			toasts.push(`Marked ${updated.watched_episodes} episodes watched`);
+			toasts.push(
+				updated.watched_episodes
+					? `Marked ${updated.watched_episodes} episodes watched`
+					: 'Nothing has aired yet'
+			);
 		} catch (e) {
 			toasts.error(e);
 		} finally {

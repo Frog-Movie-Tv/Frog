@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { fly, fade } from 'svelte/transition';
 	import Icon from './Icon.svelte';
+	import { localDay } from '#lib/format';
 	import { whenWatched, type WhenMode } from '#lib/when.svelte';
 
-	const today = new Date().toISOString().slice(0, 10);
+	const today = localDay();
 
 	let mode = $state<WhenMode>('release');
 	let date = $state(today);
