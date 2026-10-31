@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.0.2](https://github.com/Frog-Movie-Tv/Frog/compare/v1.0.1...v1.0.2) (2026-10-31)
+
+
+### Features
+
+* **library:** edit mode, one request per action ([ddcd043](https://github.com/Frog-Movie-Tv/Frog/commit/ddcd0432414372678e527100abcb11c998de1040))
+* **profiles:** open someone's whole library from their profile ([ddcd043](https://github.com/Frog-Movie-Tv/Frog/commit/ddcd0432414372678e527100abcb11c998de1040))
+
+
+### Fixes
+
+* **calendar:** open on the month of the day it picks ([ddcd043](https://github.com/Frog-Movie-Tv/Frog/commit/ddcd0432414372678e527100abcb11c998de1040))
+* **cards:** stack a title card's labels in one corner ([ddcd043](https://github.com/Frog-Movie-Tv/Frog/commit/ddcd0432414372678e527100abcb11c998de1040))
+* **home:** a show with nothing watched is never Finished ([ddcd043](https://github.com/Frog-Movie-Tv/Frog/commit/ddcd0432414372678e527100abcb11c998de1040))
+* **import:** a preferred kind wins however the name is punctuated ([ddcd043](https://github.com/Frog-Movie-Tv/Frog/commit/ddcd0432414372678e527100abcb11c998de1040))
+* **layout:** keep Administration and People inside a narrow phone ([ddcd043](https://github.com/Frog-Movie-Tv/Frog/commit/ddcd0432414372678e527100abcb11c998de1040))
+* **library:** undo on a title page puts back every field ([ddcd043](https://github.com/Frog-Movie-Tv/Frog/commit/ddcd0432414372678e527100abcb11c998de1040))
+* **pages:** no repeated pins or home rows, and a palette that keeps up ([ddcd043](https://github.com/Frog-Movie-Tv/Frog/commit/ddcd0432414372678e527100abcb11c998de1040))
+* **pages:** say so when a page cannot load, and offer to try again ([ddcd043](https://github.com/Frog-Movie-Tv/Frog/commit/ddcd0432414372678e527100abcb11c998de1040))
+* **palette:** show keyboard hints only where there is a keyboard ([ddcd043](https://github.com/Frog-Movie-Tv/Frog/commit/ddcd0432414372678e527100abcb11c998de1040))
+* **people:** show the whole photo as a portrait card ([ddcd043](https://github.com/Frog-Movie-Tv/Frog/commit/ddcd0432414372678e527100abcb11c998de1040))
+* **profiles:** give the letter avatar a solid background ([ddcd043](https://github.com/Frog-Movie-Tv/Frog/commit/ddcd0432414372678e527100abcb11c998de1040))
+* **titles:** open a title whose provider repeats itself ([ddcd043](https://github.com/Frog-Movie-Tv/Frog/commit/ddcd0432414372678e527100abcb11c998de1040))
+
 ## [1.0.1](https://github.com/Frog-Movie-Tv/Frog/compare/v1.0.0...v1.0.1) (2026-10-30)
 
 
