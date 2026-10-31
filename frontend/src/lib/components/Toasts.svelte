@@ -32,7 +32,7 @@
 	.stack {
 		position: fixed;
 		left: 50%;
-		bottom: calc(18px + env(safe-area-inset-bottom));
+		bottom: calc(18px + env(safe-area-inset-bottom) + var(--toast-lift, 0px));
 		transform: translateX(-50%);
 		display: flex;
 		flex-direction: column;

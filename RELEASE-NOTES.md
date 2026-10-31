@@ -13,6 +13,13 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Highlights
+
+- **Edit your library.** Press Edit, tick as many titles as you like and remove
+  them, mark them watched, change their status, favourite them or put them on a
+  shelf, all at once. It works in every view and on a phone, and a removal can
+  be undone in full.
+
 ### Improvements
 
 - Cast, people and characters show the whole photo, as a small portrait card.

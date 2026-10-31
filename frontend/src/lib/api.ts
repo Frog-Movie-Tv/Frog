@@ -31,6 +31,7 @@ import type {
 	SearchItem,
 	SeasonDetail,
 	FullStats,
+	EntryRecord,
 	Shelf,
 	ShelfRules,
 	Stats,
@@ -137,6 +138,37 @@ export interface LibraryQuery {
 	order?: 'asc' | 'desc';
 	limit?: number;
 }
+
+type Picked = { title_ids: number[] };
+
+/** What Library's edit mode can do to the titles it has ticked. */
+export type BulkAction =
+	| ({ action: 'remove' } & Picked)
+	| { action: 'restore'; entries: EntryRecord[] }
+	| ({ action: 'watched' } & Picked & WhenAnswer)
+	| ({ action: 'status'; status: 'completed' } & Picked & WhenAnswer)
+	| ({ action: 'status'; status: Exclude<Status, 'completed'> } & Picked)
+	| ({ action: 'favourite'; favourite: boolean } & Picked)
+	| ({ action: 'shelf'; shelf_id: number } & Picked);
+
+interface Marked {
+	marked: number;
+	/** Nothing out yet to have watched. */
+	skipped: number;
+}
+
+/** What each action answers. `before` is what undo sends back. */
+type BulkAnswer<A extends BulkAction['action'], Finishing extends boolean> = A extends 'watched'
+	? Marked
+	: A extends 'status'
+		? Finishing extends true
+			? Marked
+			: { before: EntryRecord[] }
+		: A extends 'restore'
+			? { restored: number }
+			: A extends 'shelf'
+				? { added: number }
+				: { before: EntryRecord[] };
 
 function qs(params: Record<string, unknown>): string {
 	const search = new URLSearchParams();
@@ -256,6 +288,13 @@ export const api = {
 
 	library: (query: LibraryQuery = {}) =>
 		get<LibraryAnswer>(`/api/library${qs(query as Record<string, unknown>)}`),
+	/** One action on many titles, in one request. */
+	bulk: <B extends BulkAction>(body: B) =>
+		send<BulkAnswer<B['action'], B extends { status: 'completed' } ? true : false>>(
+			'POST',
+			'/api/library/bulk',
+			body
+		),
 	stats: () => get<Stats>('/api/library/stats'),
 	shelves: () => get<{ shelves: Shelf[] }>('/api/shelves'),
 	shelf: (id: number) => get<{ shelf: Shelf; items: LibraryItem[] }>(`/api/shelves/${id}`),

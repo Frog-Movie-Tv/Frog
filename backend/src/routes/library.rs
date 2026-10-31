@@ -4,10 +4,14 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::auth::Auth;
+use crate::bulk::{self, Marking};
 use crate::catalog;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
-use crate::store::{self, LibraryFilter, LibraryPatch, Page};
+use crate::store::{self, EntryRecord, LibraryFilter, LibraryPatch, Page};
+
+/// Room to send a whole library back: ten thousand entries with long notes.
+pub const BULK_MAX_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
@@ -159,19 +163,8 @@ pub async fn upsert(
     let finished_now = body.patch.status.as_deref() == Some("completed")
         && before.as_ref().map(|e| e.status.as_str()) != Some("completed");
     if kind == "movie" && finished_now {
-        sqlx::query(
-            "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch, source)
-             SELECT ?, ?, NULL, ?, 0, 'manual'
-              WHERE NOT EXISTS (
-                    SELECT 1 FROM watch_event WHERE user_id = ? AND title_id = ?)",
-        )
-        .bind(auth.user_id())
-        .bind(title_id)
-        .bind(chrono::Utc::now().to_rfc3339())
-        .bind(auth.user_id())
-        .bind(title_id)
-        .execute(&state.pool)
-        .await?;
+        let now = chrono::Utc::now().to_rfc3339();
+        store::add_first_film_watch(&state.pool, auth.user_id(), title_id, &now, false).await?;
     }
 
     if kind == "tv" && is_new && body.sync_seasons {
@@ -198,4 +191,88 @@ pub async fn remove(
     }
     store::remove_entry(&state.pool, auth.user_id(), title_id).await?;
     Ok(Json(json!({ "ok": true })))
+}
+
+/// One action on many titles, in one request.
+#[derive(Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum BulkBody {
+    Remove {
+        title_ids: Vec<i64>,
+    },
+    /// What `remove`, `status` or `favourite` said a moment ago.
+    Restore {
+        entries: Vec<EntryRecord>,
+    },
+    Watched {
+        title_ids: Vec<i64>,
+        #[serde(flatten)]
+        marking: Marking,
+    },
+    Status {
+        title_ids: Vec<i64>,
+        status: String,
+        /// When a title moved to Completed was watched.
+        #[serde(flatten)]
+        marking: Marking,
+    },
+    Favourite {
+        title_ids: Vec<i64>,
+        favourite: bool,
+    },
+    Shelf {
+        title_ids: Vec<i64>,
+        shelf_id: i64,
+    },
+}
+
+pub async fn bulk(
+    auth: Auth,
+    State(state): State<AppState>,
+    Json(body): Json<BulkBody>,
+) -> AppResult<Json<Value>> {
+    let me = auth.user_id();
+    let pool = &state.pool;
+    Ok(Json(match body {
+        BulkBody::Remove { title_ids } => {
+            bulk::check_size(&title_ids)?;
+            json!({ "before": bulk::remove(pool, me, &title_ids).await? })
+        }
+        BulkBody::Restore { entries } => {
+            json!({ "restored": store::restore_entries(pool, me, &entries).await? })
+        }
+        BulkBody::Watched { title_ids, marking } => {
+            bulk::check_size(&title_ids)?;
+            json!(bulk::mark_watched(&state, me, &title_ids, &marking, false).await?)
+        }
+        BulkBody::Status {
+            title_ids,
+            status,
+            marking,
+        } => {
+            bulk::check_size(&title_ids)?;
+            if !store::STATUSES.contains(&status.as_str()) {
+                return Err(AppError::BadRequest(format!("unknown status {status}")));
+            }
+            if status == "completed" {
+                json!(bulk::mark_watched(&state, me, &title_ids, &marking, true).await?)
+            } else {
+                json!({ "before": bulk::set_status(pool, me, &title_ids, &status).await? })
+            }
+        }
+        BulkBody::Favourite {
+            title_ids,
+            favourite,
+        } => {
+            bulk::check_size(&title_ids)?;
+            json!({ "before": bulk::set_favourite(pool, me, &title_ids, favourite).await? })
+        }
+        BulkBody::Shelf {
+            title_ids,
+            shelf_id,
+        } => {
+            bulk::check_size(&title_ids)?;
+            json!({ "added": bulk::add_to_shelf(pool, me, shelf_id, &title_ids).await? })
+        }
+    }))
 }

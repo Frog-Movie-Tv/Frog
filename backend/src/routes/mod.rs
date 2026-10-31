@@ -60,6 +60,11 @@ pub fn router(state: AppState) -> Router {
         .route("/diary", get(timeline::diary))
         .route("/library", get(library::list))
         .route("/library/stats", get(library::stats))
+        // Undo sends back what a remove answered, notes and all.
+        .route(
+            "/library/bulk",
+            post(library::bulk).layer(DefaultBodyLimit::max(library::BULK_MAX_BYTES)),
+        )
         .route("/stats", get(stats::stats))
         .route("/shelves", get(shelves::list).post(shelves::create))
         .route("/shelves/order", put(shelves::reorder))

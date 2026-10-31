@@ -58,6 +58,22 @@ export interface LibraryItem {
 	last_watched_at: string | null;
 }
 
+/** One library entry whole, as the server keeps it: what undo puts back. */
+export interface EntryRecord {
+	title_id: number;
+	status: Status;
+	rating: number | null;
+	favourite: boolean;
+	notes: string | null;
+	started_at: string | null;
+	finished_at: string | null;
+	rewatch_count: number;
+	added_at: string;
+	updated_at: string;
+	notify: boolean;
+	progress: number | null;
+}
+
 /** A film or show as a provider lists it: not necessarily in Frog yet. */
 export interface SearchItem {
 	kind: Kind;

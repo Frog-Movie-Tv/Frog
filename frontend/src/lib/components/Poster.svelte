@@ -5,10 +5,11 @@
 	import { morph as opened } from '#lib/morph.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import { titleHref, type TitleRef } from '#lib/titles';
+	import type { HTMLAnchorAttributes } from 'svelte/elements';
 	import type { Kind, Status } from '#lib/types';
 	import { STATUS_LABEL } from '#lib/types';
 
-	interface Props {
+	interface Props extends HTMLAnchorAttributes {
 		kind: Kind;
 		/** Which title: by Frog's id, or as a provider names it. */
 		ref: TitleRef;
@@ -26,6 +27,8 @@
 		size?: string;
 		/** A backdrop to crop when TMDB has no poster, as small titles often do. */
 		fallbackPath?: string | null;
+		/** Library's edit mode: ticked or not. Unset, the card has no tick. */
+		selected?: boolean;
 	}
 
 	let {
@@ -41,7 +44,9 @@
 		morph = false,
 		kindBadge = false,
 		size = 'w342',
-		fallbackPath = null
+		fallbackPath = null,
+		selected,
+		...rest
 	}: Props = $props();
 
 	const src = $derived(img(posterPath, size));
@@ -69,8 +74,9 @@
 		// Named now, before the transition takes its picture of this page.
 		e.currentTarget.style.viewTransitionName = `poster-${key}`;
 	}}
+	{...rest}
 >
-	<div class="art">
+	<div class="art" class:picked={selected}>
 		{#if src}
 			<img {src} alt="" loading="lazy" decoding="async" />
 		{:else}
@@ -101,6 +107,12 @@
 
 		{#if progress > 0 && progress < 100 && show.showProgress}
 			<div class="progress"><i style:width="{progress}%"></i></div>
+		{/if}
+
+		{#if selected !== undefined}
+			<span class="tick" class:on={selected} aria-hidden="true">
+				{#if selected}<Icon name="check" size={15} />{/if}
+			</span>
 		{/if}
 	</div>
 
@@ -213,6 +225,32 @@
 	.badge.kind.right {
 		left: auto;
 		right: 7px;
+	}
+
+	/* Library's edit mode. Bottom left: the badges keep the top, the score
+	   the bottom right. */
+	.tick {
+		position: absolute;
+		left: 7px;
+		bottom: 7px;
+		display: grid;
+		place-items: center;
+		width: 26px;
+		height: 26px;
+		border-radius: 50%;
+		border: 2px solid #fff;
+		background: rgba(10, 10, 14, 0.55);
+		color: var(--accent-ink);
+	}
+
+	.tick.on {
+		border-color: var(--accent);
+		background: var(--accent);
+	}
+
+	.art.picked {
+		outline: 3px solid var(--accent);
+		outline-offset: 1px;
 	}
 
 	.score {

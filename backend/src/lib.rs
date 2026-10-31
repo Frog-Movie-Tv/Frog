@@ -1,5 +1,6 @@
 pub mod anilist;
 pub mod auth;
+pub mod bulk;
 pub mod catalog;
 pub mod config;
 pub mod db;

@@ -82,7 +82,7 @@ the ones above.
 | Layer | Modules | Does |
 | --- | --- | --- |
 | HTTP | `routes/*` | Parse and check the request, name the account (`Auth`, `AdminAuth`), call the layer below, shape the answer. |
-| Domain | `catalog`, `transfer`, `anilist`, `release`, `push`, `jobs` | Decisions and workflows: which title a provider id names, what an import means, who wins a sync, when an episode is out, what a show's status is. |
+| Domain | `catalog`, `transfer`, `anilist`, `release`, `bulk`, `push`, `jobs` | Decisions and workflows: which title a provider id names, what an import means, who wins a sync, when an episode is out, what a show's status is. |
 | Persistence | `catalog`, `store`, `anilist::records`, `images`, `db` | Reads and writes. `catalog` owns the shared titles, episodes and provider ids; `store` owns one account's library; each domain may own its own tables (`anilist::records` owns `anilist_*`, `images` owns `image_cache`). |
 | Providers | `tmdb`, `anilist::client`, `anilist::media` | Talking to other services, cached; nothing else calls them directly. `catalog::ensure` is how a provider's answer becomes a title. |
 | Shared | `auth`, `config`, `error`, `state`, `text`, `palette`, `totp`, `ops` | Small and specific; no catch-all helpers module. |
@@ -102,6 +102,7 @@ left. See CLAUDE.md for the rule.
 | `catalog` | Frog's titles and their provider ids (`title_external`): finding a title by any provider's id, making or refreshing one from a provider, episodes, credits, poster colour. |
 | `store` | One account's library: entries, the filtered list and what its filters offer (`LibraryFilter`), progress, "up next", emptying it, and moving one account's data between titles (`move_title_data`). |
 | `images` | The picture cache in SQLite, and its budget. |
+| `bulk` | One action on many titles of a library, one request each, and the marking of aired episodes it shares with "Mark all watched" (`tick_aired`, `When`). Removing, changing a status or favouriting answers with what the titles held (`store::EntryRecord`), which is what undo sends back. |
 | `release` | When an episode counts as out, and the status a show should have (`reconcile`). |
 | `transfer` | Imports (matching, applying) and exports. |
 | `anilist` | AniList sign-in, and reading each account's list into its library. Read only. |

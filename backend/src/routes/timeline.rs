@@ -351,7 +351,7 @@ pub struct RedateBody {
     pub title_id: i64,
     /// The diary day the group sits on now, yyyy-mm-dd.
     pub day: String,
-    pub when: crate::routes::episodes::When,
+    pub when: crate::bulk::When,
     pub date: Option<String>,
 }
 
@@ -363,7 +363,7 @@ pub async fn redate(
     State(state): State<AppState>,
     Json(body): Json<RedateBody>,
 ) -> AppResult<Json<Value>> {
-    use crate::routes::episodes::{evening_of, When};
+    use crate::bulk::{evening_of, When};
 
     let title_id = body.title_id;
 

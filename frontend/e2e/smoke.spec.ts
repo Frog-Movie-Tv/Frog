@@ -653,6 +653,105 @@ test('a title whose provider repeats itself still opens', async ({ page }) => {
 	expect(crashes).toEqual([]);
 });
 
+test('edit mode ticks titles in every view instead of opening them', async ({
+	page,
+	isMobile
+}, testInfo) => {
+	await signIn(page);
+	seedLibrary(testInfo.project.name);
+	const saved = await (await page.request.get('/api/settings')).json();
+	const views = [
+		{ card: 'poster', first: '.grid a.poster' },
+		{ card: 'landscape', first: 'a.land' },
+		{ card: 'list', first: '.list a' },
+		{ card: 'compact', first: 'tbody a' }
+	];
+	for (const { card, first } of views) {
+		await page.request.put('/api/settings', { data: { ...saved, cardStyle: card } });
+		await page.goto('/library');
+		await page.getByRole('button', { name: 'Edit', exact: true }).click();
+		await page.locator(first).first().click();
+		await expect(page, `${card} stays on the list`).toHaveURL('/library');
+		await expect(page.getByText('1 selected')).toBeVisible();
+		await page.getByRole('button', { name: 'Select all' }).click();
+		await expect(page.getByText('5 selected')).toBeVisible();
+		await page.getByRole('button', { name: 'Select none' }).click();
+		await expect(page.getByText('0 selected')).toBeVisible();
+		await page.getByRole('button', { name: 'Done', exact: true }).click();
+		await page.locator(first).first().click();
+		await expect(page, `${card} opens again once done`).toHaveURL(/\/t\/\d+/);
+	}
+	await page.request.put('/api/settings', { data: saved });
+
+	// Select all covers what the filters show, not the whole library.
+	await page.goto('/library?kind=movie');
+	await page.getByRole('button', { name: 'Edit', exact: true }).click();
+	await page.getByRole('button', { name: 'Select all' }).click();
+	await expect(page.getByText('2 selected')).toBeVisible();
+
+	if (isMobile) {
+		const bar = page.getByRole('toolbar', { name: 'Edit your library' });
+		const fits = await bar.evaluate((el) => el.getBoundingClientRect().right <= innerWidth);
+		expect(fits, 'the bar fits a phone').toBe(true);
+	}
+	clearLibrary(testInfo.project.name);
+});
+
+test('removing many titles is one request, and undo brings back every field', async ({
+	page
+}, testInfo) => {
+	await signIn(page);
+	seedLibrary(testInfo.project.name);
+	await page.request.put('/api/t/9102/library', {
+		data: { rating: 91, notes: 'Saw it twice', status: 'paused', favourite: true }
+	});
+	const before = await (await page.request.get('/api/library?sort=name&order=asc')).json();
+	const held = (answer: { items: { id: number; entry: unknown }[] }) =>
+		answer.items.find((i) => i.id === 9102)?.entry;
+
+	await page.goto('/library');
+	await page.getByRole('button', { name: 'Edit', exact: true }).click();
+	await page.getByRole('button', { name: 'Select all' }).click();
+
+	const sent: string[] = [];
+	page.on('request', (r) => {
+		if (r.method() !== 'GET' && r.url().includes('/api/')) sent.push(r.url());
+	});
+	await page.getByRole('button', { name: 'Remove' }).click();
+	await expect(page.getByText('Removed 5 titles')).toBeVisible();
+	await expect(titles(page)).toHaveCount(0);
+	expect(sent.map((u) => new URL(u).pathname)).toEqual(['/api/library/bulk']);
+
+	await page.getByRole('button', { name: 'Undo' }).click();
+	await expect(titles(page)).toHaveCount(5);
+	const after = await (await page.request.get('/api/library?sort=name&order=asc')).json();
+	expect(held(after)).toEqual(held(before));
+	clearLibrary(testInfo.project.name);
+});
+
+test('marking many titles watched asks once', async ({ page }, testInfo) => {
+	await signIn(page);
+	seedLibrary(testInfo.project.name);
+	await page.goto('/library?kind=movie');
+	await page.getByRole('button', { name: 'Edit', exact: true }).click();
+	await page.getByRole('button', { name: 'Select all' }).click();
+	await page.getByRole('button', { name: 'Watched', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByText('When did you watch this?')).toBeVisible();
+	await dialog.getByRole('radio', { name: /I don't know/ }).click();
+	await dialog.getByRole('button', { name: 'Mark watched' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.getByText('Marked 2 titles watched')).toBeVisible();
+	const diary = await (await page.request.get('/api/diary')).json();
+	expect(diary.undated).toBeGreaterThanOrEqual(2);
+
+	const db = new DatabaseSync(join('.e2e-data', testInfo.project.name, 'e2e.db'));
+	db.exec('PRAGMA busy_timeout = 5000');
+	db.exec('DELETE FROM watch_event WHERE title_id BETWEEN 9101 AND 9105');
+	db.close();
+	clearLibrary(testInfo.project.name);
+});
+
 test('renaming a shelf starts in the name field', async ({ page }) => {
 	await signIn(page);
 	const created = await page.request.post('/api/shelves', {
@@ -829,6 +928,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		expect(res.status(), `${path} should be 401`).toBe(401);
 	}
 	for (const path of [
+		'/api/library/bulk',
 		'/api/auth/two-factor/start',
 		'/api/auth/two-factor/confirm',
 		'/api/auth/two-factor/disable',

@@ -225,7 +225,7 @@ async fn collection_parts(state: &AppState, user_id: i64, collection_id: i64) ->
         )
         .await?;
 
-    let mut parts: Vec<SearchItem> = raw
+    let parts: Vec<SearchItem> = raw
         .get("parts")
         .and_then(Value::as_array)
         .map(|a| {
