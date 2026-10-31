@@ -161,9 +161,12 @@ check(
 check('it stays on screen, dimmed', (await page.locator('.rows .row.off').count()) === 1);
 
 const keep = page.getByRole('button', { name: /^Keep (this match|these \d+ matches)/ });
+// One row left says "Keep this match", with no number in it.
 check(
 	'Keep counts only rows still included',
-	(await keep.innerText()).includes(String(closest - 1)),
+	closest === 2
+		? (await keep.innerText()).includes('this match')
+		: (await keep.innerText()).includes(String(closest - 1)),
 	(await keep.innerText()).trim()
 );
 await keep.click();
@@ -173,17 +176,20 @@ check('Undo brings them back', (await needLook(page)) === look - 1);
 await firstBox.check();
 check('the row left out is back too', (await needLook(page)) === look);
 
-await chip(page, 'Check the match').click();
-const doubtful = await count(page, 'Check the match');
-check(
-	'Keep is not offered for doubtful rows',
-	(await page.getByRole('button', { name: /^Keep/ }).count()) === 0,
-	`${doubtful} rows`
-);
-await page.getByRole('button', { name: /^Leave (this one|these \d+) out/ }).click();
-check('Leave out reaches only those rows', (await needLook(page)) === look - doubtful);
-await page.getByRole('button', { name: 'Undo' }).click();
-check('and comes back', (await needLook(page)) === look);
+// Which rows are in doubt is TMDB's answer of the day: a small file may have none.
+if (await chip(page, 'Check the match').count()) {
+	await chip(page, 'Check the match').click();
+	const doubtful = await count(page, 'Check the match');
+	check(
+		'Keep is not offered for doubtful rows',
+		(await page.getByRole('button', { name: /^Keep/ }).count()) === 0,
+		`${doubtful} rows`
+	);
+	await page.getByRole('button', { name: /^Leave (this one|these \d+) out/ }).click();
+	check('Leave out reaches only those rows', (await needLook(page)) === look - doubtful);
+	await page.getByRole('button', { name: 'Undo' }).click();
+	check('and comes back', (await needLook(page)) === look);
+}
 
 const readyNow = async () =>
 	Number((await page.locator('.counts strong').first().innerText()).trim());

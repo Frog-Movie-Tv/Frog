@@ -47,6 +47,7 @@ backend/            Rust: axum 0.8, sqlx 0.8 (SQLite), tokio
   src/catalog.rs    Frog's titles and their TMDB/AniList/IMDb ids (title_external), episodes
   src/store.rs      one account's library: entries, progress, up next, moving data between titles
   src/images.rs     the picture cache and its budget
+  src/bulk.rs       one action on many titles; marking aired episodes
   src/release.rs    when an episode is out; what a show's status should be
   src/transfer/     imports (matching.rs, apply.rs) and exports (export.rs)
   src/anilist/      AniList: client, idmap, place, reconcile, library, local,

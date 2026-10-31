@@ -15,7 +15,7 @@ Deeper guides: [the catalog](docs/CATALOG-IDENTITY.md),
 | Question | Answer | Why |
 | --- | --- | --- |
 | Users | Several, invitation only | Every personal table carries a `user_id` with a foreign key, and `backend/tests/scoping.rs` fails the build if a query forgets it. Isolation is enforced per request, not hidden in the interface. |
-| Profiles | Opt in, instance only | Off until an account turns it on, and visible only to other accounts on the same instance. Every route except `/healthz` and the auth endpoints sits behind a session. |
+| Profiles | Opt in, instance only | Off until an account turns it on, and visible only to other accounts on the same instance. On, others see the whole library and its ratings, never its notes (`store::SharedItem`). Every route except `/healthz` and the auth endpoints sits behind a session. |
 | Imports | Letterboxd, Trakt, IMDb, TV Time, MyAnimeList, Netflix, Frog backups | All of them reduce to one intermediate shape, so a new source is a parser rather than a redesign. AniList is read on its own and never written to. |
 | Scrobbling | Not built | It only sees what plays through a media server the owners do not use. Anime arrives through the AniList sync; the rest is ticked by hand, on purpose. Plex is out regardless: its webhooks need Plex Pass. |
 | Hosting | Oracle Cloud Always Free, Docker, Caddy | A public site on a free instance, HTTPS issued automatically, updating itself from the newest release image. See [docs/DEPLOY-ORACLE.md](docs/DEPLOY-ORACLE.md). It still runs on a laptop for development. |
@@ -103,7 +103,7 @@ left. See CLAUDE.md for the rule.
 | `store` | One account's library: entries, the filtered list and what its filters offer (`LibraryFilter`), progress, "up next", emptying it, and moving one account's data between titles (`move_title_data`). |
 | `images` | The picture cache in SQLite, and its budget. |
 | `bulk` | One action on many titles of a library, one request each, and the marking of aired episodes it shares with "Mark all watched" (`tick_aired`, `When`). Removing, changing a status or favouriting answers with what the titles held (`store::EntryRecord`), which is what undo sends back. |
-| `release` | When an episode counts as out, and the status a show should have (`reconcile`). |
+| `release` | When an episode counts as out, the status a show should have (`reconcile`), and whether Continue watching has anything to say about it (`continues`). |
 | `transfer` | Imports (matching, applying) and exports. |
 | `anilist` | AniList sign-in, and reading each account's list into its library. Read only. |
 | `push` | Web Push: subscriptions and sending. |
