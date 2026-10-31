@@ -3,7 +3,8 @@
 	import { api } from '#lib/api';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
-	import { localDay, prettyDate } from '#lib/format';
+	import { localDay } from '#lib/day';
+	import { prettyDate } from '#lib/format';
 	import { whenWatched } from '#lib/when.svelte';
 	import type { Kind, LibraryItem, Status } from '#lib/types';
 	import { STATUSES, STATUS_LABEL } from '#lib/types';

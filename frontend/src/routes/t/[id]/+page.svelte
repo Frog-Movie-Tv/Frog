@@ -12,7 +12,8 @@
 	import Spinner from '#lib/components/Spinner.svelte';
 	import TrackControls from '#lib/components/TrackControls.svelte';
 	import { failure, idParam, type Failure } from '#lib/failure';
-	import { episodeCode, localDay, prettyDate, runtime, year } from '#lib/format';
+	import { localDay } from '#lib/day';
+	import { episodeCode, prettyDate, runtime, year } from '#lib/format';
 	import { providerLink } from '#lib/providers';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';

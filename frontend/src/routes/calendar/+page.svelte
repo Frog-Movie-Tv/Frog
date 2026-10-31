@@ -6,7 +6,8 @@
 	import Spinner from '#lib/components/Spinner.svelte';
 	import LoadFailed from '#lib/components/LoadFailed.svelte';
 	import { failure, type Failure } from '#lib/failure';
-	import { episodeCode, localDay, plural, prettyDate, relativeDate } from '#lib/format';
+	import { localDay } from '#lib/day';
+	import { episodeCode, plural, prettyDate, relativeDate } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 
 	interface Entry {

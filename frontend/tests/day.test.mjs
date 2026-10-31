@@ -1,7 +1,7 @@
 // Dates as a person reads them. Run with `npm test`.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { localDay } from '../src/lib/format.ts';
+import { localDay } from '../src/lib/day.ts';
 
 test("today is the viewer's own day, whatever UTC says", () => {
 	// Half past midnight on the first, local time.

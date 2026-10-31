@@ -1,7 +1,8 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import { api, img } from '#lib/api';
-	import { episodeCode, localDay, prettyDate, relativeDate, runtime } from '#lib/format';
+	import { localDay } from '#lib/day';
+	import { episodeCode, prettyDate, relativeDate, runtime } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import { uniqueBy } from '#lib/unique';

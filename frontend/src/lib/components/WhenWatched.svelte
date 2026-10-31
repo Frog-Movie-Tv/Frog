@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { fly, fade } from 'svelte/transition';
 	import Icon from './Icon.svelte';
-	import { localDay } from '#lib/format';
+	import { localDay } from '#lib/day';
 	import { whenWatched, type WhenMode } from '#lib/when.svelte';
 
 	const today = localDay();
