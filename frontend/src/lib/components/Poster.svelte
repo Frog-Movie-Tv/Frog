@@ -91,14 +91,15 @@
 			{/if}
 		{/if}
 
-		{#if status && show.showBadge}
-			<span class="badge" data-status={status}>{STATUS_LABEL[status]}</span>
-		{:else if kindBadge}
-			<span class="badge kind">{kind === 'tv' ? 'Show' : 'Film'}</span>
-		{/if}
-
-		{#if kindBadge && status && show.showBadge}
-			<span class="badge kind right">{kind === 'tv' ? 'Show' : 'Film'}</span>
+		{#if kindBadge || (status && show.showBadge)}
+			<div class="badges">
+				{#if status && show.showBadge}
+					<span class="badge" data-status={status}>{STATUS_LABEL[status]}</span>
+				{/if}
+				{#if kindBadge}
+					<span class="badge kind">{kind === 'tv' ? 'Show' : 'Film'}</span>
+				{/if}
+			</div>
 		{/if}
 
 		{#if scored && show.showRating}
@@ -194,10 +195,23 @@
 		overflow: hidden;
 	}
 
-	.badge {
+	/* Stacked, on every width: a narrow card has no room for two side by side. */
+	.badges {
 		position: absolute;
 		top: 7px;
 		left: 7px;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 4px;
+		max-width: calc(100% - 14px);
+	}
+
+	.badge {
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 		padding: 3px 8px;
 		border-radius: var(--radius-pill);
 		font-size: 0.64rem;
@@ -220,11 +234,6 @@
 	.badge.kind {
 		background: rgba(10, 10, 14, 0.8);
 		font-weight: 650;
-	}
-
-	.badge.kind.right {
-		left: auto;
-		right: 7px;
 	}
 
 	/* Library's edit mode. Bottom left: the badges keep the top, the score

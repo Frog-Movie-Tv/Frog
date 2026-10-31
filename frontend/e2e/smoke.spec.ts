@@ -187,7 +187,8 @@ test('the command palette input sits on one line with its icon and esc badge', a
 
 	const row = dialog.locator('.query');
 	const icon = row.locator('svg').first();
-	const esc = row.locator('kbd');
+	// A phone has a close button where a keyboard has its esc badge.
+	const esc = row.locator('kbd:visible, button:visible');
 
 	const [inputBox, iconBox, escBox, rowBox] = await Promise.all([
 		input.boundingBox(),
@@ -205,6 +206,30 @@ test('the command palette input sits on one line with its icon and esc badge', a
 	expect(rowBox!.height).toBeLessThan(64);
 
 	await page.screenshot({ path: testInfo.outputPath('palette.png') });
+});
+
+test('keyboard hints only show where there is a keyboard', async ({ page, isMobile }) => {
+	await signIn(page);
+	await page.goto('/');
+	const palette = page.getByRole('dialog', { name: 'Command palette' });
+	await page.getByRole('button', { name: 'Search and commands' }).click();
+	await expect(palette).toBeVisible();
+
+	const hints = palette.locator('kbd:visible');
+	const close = palette.getByRole('button', { name: 'Close' });
+	if (isMobile) {
+		await expect(page.locator('.bar kbd')).toBeHidden();
+		await expect(hints).toHaveCount(0);
+		await close.click();
+		await expect(palette).toBeHidden();
+	} else {
+		await expect(page.locator('.bar kbd')).toHaveText('Ctrl K');
+		await expect(palette.getByText('esc')).toBeVisible();
+		await expect(palette.locator('footer')).toBeVisible();
+		await expect(close).toBeHidden();
+		await page.keyboard.press('Escape');
+		await expect(palette).toBeHidden();
+	}
 });
 
 test("the what's new page lists the current release", async ({ page }) => {
@@ -750,6 +775,74 @@ test('marking many titles watched asks once', async ({ page }, testInfo) => {
 	db.exec('DELETE FROM watch_event WHERE title_id BETWEEN 9101 AND 9105');
 	db.close();
 	clearLibrary(testInfo.project.name);
+});
+
+test('labels on a title card never overlap, on the narrowest phone', async ({ page }) => {
+	await signIn(page);
+	await page.setViewportSize({ width: 320, height: 640 });
+	const item = (n: number, kind: string, in_library: string | null) => ({
+		kind,
+		tmdb_id: n,
+		id: null,
+		name: `Title ${n}`,
+		poster_path: null,
+		backdrop_path: null,
+		year: 2020,
+		overview: null,
+		vote: null,
+		popularity: 1,
+		vote_count: 1,
+		genre_ids: [],
+		in_library
+	});
+	const statuses = ['watching', 'completed', 'planned', 'paused', 'dropped', null];
+	const titles = statuses.flatMap((status, i) => [
+		item(i * 2 + 1, 'movie', status),
+		item(i * 2 + 2, 'tv', status)
+	]);
+	await page.route('**/api/studios/7', (route) =>
+		route.fulfill({ json: { id: 7, name: 'A Studio', titles } })
+	);
+	await page.route('**/api/search?*', (route) =>
+		route.fulfill({ json: { results: titles, next_page: null } })
+	);
+	await page.route('**/api/search/more?*', (route) =>
+		route.fulfill({ json: { people: [], characters: [], studios: [] } })
+	);
+
+	const overlapping = () =>
+		page.evaluate(() => {
+			const clash = (a: DOMRect, b: DOMRect) =>
+				a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+			const found: string[] = [];
+			for (const card of document.querySelectorAll('.art')) {
+				const host = card.closest('.result') ?? card;
+				const labels = [...host.querySelectorAll('.badge, .quick .q')].filter(
+					(el) => (el as HTMLElement).offsetWidth > 0
+				);
+				if (labels.length < 2) continue;
+				labels.forEach((a, i) =>
+					labels.slice(i + 1).forEach((b) => {
+						if (clash(a.getBoundingClientRect(), b.getBoundingClientRect())) {
+							found.push(`${a.textContent?.trim()} and ${b.textContent?.trim() || 'the button'}`);
+						}
+					})
+				);
+			}
+			return { cards: document.querySelectorAll('.art').length, found };
+		});
+
+	await page.goto('/studio/7');
+	await expect(page.getByText('Title 12').first()).toBeVisible();
+	const onStudio = await overlapping();
+	expect(onStudio.cards).toBe(12);
+	expect(onStudio.found).toEqual([]);
+
+	await page.goto('/search?q=title&type=movies');
+	await expect(page.getByText('Title 11').first()).toBeVisible();
+	const onSearch = await overlapping();
+	expect(onSearch.cards).toBeGreaterThan(0);
+	expect(onSearch.found).toEqual([]);
 });
 
 test('renaming a shelf starts in the name field', async ({ page }) => {
