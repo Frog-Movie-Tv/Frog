@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { titleKey } from '#lib/titles';
+	import { uniqueBy } from '#lib/unique';
 	import { page } from '$app/state';
 	import { api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
@@ -42,9 +43,10 @@
 		}
 	}
 
-	const films = $derived(studio?.titles.filter((t) => t.kind === 'movie').length ?? 0);
-	const shows = $derived(studio?.titles.filter((t) => t.kind === 'tv').length ?? 0);
-	const shown = $derived((studio?.titles ?? []).filter((t) => !only || t.kind === only));
+	const titles = $derived(uniqueBy(studio?.titles ?? [], titleKey));
+	const films = $derived(titles.filter((t) => t.kind === 'movie').length);
+	const shows = $derived(titles.filter((t) => t.kind === 'tv').length);
+	const shown = $derived(titles.filter((t) => !only || t.kind === only));
 	const logo = $derived(img(studio?.logo_path, 'w300'));
 </script>
 

@@ -253,7 +253,7 @@
 
 									{#if expandable && open === key}
 										<ul class="episodes">
-											{#each entry.episodes as ep (`${ep.season_number}-${ep.episode_number}`)}
+											{#each entry.episodes as ep, n (n)}
 												<li>
 													<span class="code"
 														>{episodeCode(ep.season_number, ep.episode_number)}</span

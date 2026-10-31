@@ -16,6 +16,7 @@
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
+	import { uniqueBy } from '#lib/unique';
 	import type {
 		CharacterResult,
 		MoreResults,
@@ -233,7 +234,13 @@
 			? api
 					.searchMore(q)
 					.then((res) => {
-						if (mine === token) more = res;
+						if (mine === token) {
+							more = {
+								...res,
+								people: uniqueBy(res.people, (p) => p.id),
+								studios: uniqueBy(res.studios, (s) => s.id)
+							};
+						}
 					})
 					.catch(() => {
 						if (mine === token) more = NONE;
@@ -299,8 +306,9 @@
 				)
 			: []
 	);
-	const films = $derived(results.filter((r) => r.kind === 'movie'));
-	const shows = $derived(results.filter((r) => r.kind === 'tv'));
+	// Two providers' answers can turn out to be one title of Frog's.
+	const films = $derived(uniqueBy(results, titleKey).filter((r) => r.kind === 'movie'));
+	const shows = $derived(uniqueBy(results, titleKey).filter((r) => r.kind === 'tv'));
 	const counts = $derived<Record<Tab, number>>({
 		all: 0,
 		movies: films.length,
@@ -319,11 +327,10 @@
 	});
 	/** Trending, narrowed to films or shows when that tab is open. */
 	const trendingShown = $derived(
-		tab === 'movies'
-			? trending.filter((t) => t.kind === 'movie')
-			: tab === 'shows'
-				? trending.filter((t) => t.kind === 'tv')
-				: trending
+		uniqueBy(trending, titleKey).filter(
+			(t) =>
+				tab === 'all' || t.kind === (tab === 'movies' ? 'movie' : tab === 'shows' ? 'tv' : t.kind)
+		)
 	);
 
 	/** What each filter menu says it is set to. */

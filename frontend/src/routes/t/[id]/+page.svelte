@@ -17,6 +17,7 @@
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import { titleKey } from '#lib/titles';
+	import { uniqueBy } from '#lib/unique';
 	import { whenWatched } from '#lib/when.svelte';
 	import type { LibraryItem, TitleDetail, TitleScore, TitleScores } from '#lib/types';
 
@@ -163,7 +164,7 @@
 		if (item.kind === 'tv' && item.episode_count) bits.push(`${item.episode_count} episodes`);
 		if (item.tmdb_status && item.kind === 'tv') bits.push(item.tmdb_status);
 		if (detail?.anilist_only) bits.push('From AniList');
-		return bits;
+		return [...new Set(bits)];
 	});
 
 	/** One card per person: a writer-director reads as one name, not two. */
@@ -180,15 +181,20 @@
 		return people;
 	});
 
-	const playing = $derived(detail?.trailers.find((t) => t.key === trailerOpen) ?? null);
+	const cast = $derived(uniqueBy(detail?.cast ?? [], (p) => p.id));
+	const trailers = $derived(uniqueBy(detail?.trailers ?? [], (t) => t.key));
+	const parts = $derived(uniqueBy(detail?.collection?.parts ?? [], titleKey));
+	const recommendations = $derived(uniqueBy(detail?.recommendations ?? [], titleKey));
+
+	const playing = $derived(trailers.find((t) => t.key === trailerOpen) ?? null);
 
 	const providers = $derived(detail?.providers);
 	const providerGroups = $derived(
 		providers
 			? [
-					{ label: 'Stream', list: providers.flatrate },
-					{ label: 'Rent', list: providers.rent },
-					{ label: 'Buy', list: providers.buy }
+					{ label: 'Stream', list: uniqueBy(providers.flatrate, (p) => p.id) },
+					{ label: 'Rent', list: uniqueBy(providers.rent, (p) => p.id) },
+					{ label: 'Buy', list: uniqueBy(providers.buy, (p) => p.id) }
 				].filter((g) => g.list.length)
 			: []
 	);
@@ -463,10 +469,10 @@
 				</section>
 			{/if}
 
-			{#if detail.cast.length}
+			{#if cast.length}
 				<section class="block">
 					<Rail title="Cast">
-						{#each detail.cast as person (person.id)}
+						{#each cast as person (person.id)}
 							<a class="person" href="/person/{person.id}">
 								<div class="face">
 									{#if person.profile_path}
@@ -483,7 +489,7 @@
 				</section>
 			{/if}
 
-			{#if detail.trailers.length}
+			{#if trailers.length}
 				<section class="block">
 					{#if playing}
 						<div class="player">
@@ -499,8 +505,8 @@
 							></iframe>
 						</div>
 					{/if}
-					<Rail title={detail.trailers.length === 1 ? 'Trailer' : 'Trailers'} wide>
-						{#each detail.trailers as t (t.key)}
+					<Rail title={trailers.length === 1 ? 'Trailer' : 'Trailers'} wide>
+						{#each trailers as t (t.key)}
 							<button
 								class="trailer"
 								class:on={trailerOpen === t.key}
@@ -527,10 +533,10 @@
 				</section>
 			{/if}
 
-			{#if detail.collection?.parts?.length}
+			{#if parts.length}
 				<section class="block">
-					<Rail title={detail.collection.name ?? 'Franchise'}>
-						{#each detail.collection.parts as part (titleKey(part))}
+					<Rail title={detail.collection?.name ?? 'Franchise'}>
+						{#each parts as part (titleKey(part))}
 							<Poster
 								kind={part.kind}
 								ref={part}
@@ -545,10 +551,10 @@
 				</section>
 			{/if}
 
-			{#if detail.recommendations.length}
+			{#if recommendations.length}
 				<section class="block">
 					<Rail title="More like this">
-						{#each detail.recommendations as rec (titleKey(rec))}
+						{#each recommendations as rec (titleKey(rec))}
 							<Poster
 								kind={rec.kind}
 								ref={rec}

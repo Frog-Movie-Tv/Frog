@@ -13,6 +13,13 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Fixes
+
+- Every title page opens, however a person is listed in its cast. Someone with
+  two parts has one card, with both parts on it.
+- The diary opens a day with the same episode watched twice, and shelves show
+  titles that share a poster.
+
 ## [1.0.1] — Bullfrog — 2026-10-30
 
 Library filters that stay where you left them, and a Netflix import of what you

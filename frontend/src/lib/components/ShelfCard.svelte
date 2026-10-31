@@ -25,7 +25,7 @@
 >
 	<span class="cover" aria-hidden="true">
 		{#if fan.length}
-			{#each fan as poster, i (poster)}
+			{#each fan as poster, i (i)}
 				<img class="p{i}" src={img(poster, 'w185')} alt="" loading="lazy" />
 			{/each}
 		{:else}

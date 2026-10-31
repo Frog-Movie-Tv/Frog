@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { titleHref } from '#lib/titles';
+	import { titleHref, titleKey } from '#lib/titles';
+	import { uniqueBy } from '#lib/unique';
 	import { api, img } from '#lib/api';
 	import Icon from '#lib/components/Icon.svelte';
 	import Select from '#lib/components/Select.svelte';
@@ -443,7 +444,7 @@
 			</form>
 			{#if results.length}
 				<ul class="results">
-					{#each results as r (r.kind + r.tmdb_id)}
+					{#each uniqueBy(results, titleKey) as r (titleKey(r))}
 						<li>
 							<button class="result" disabled={picking} onclick={() => pick(entry, r)}>
 								{#if img(r.poster_path, 'w92')}

@@ -235,6 +235,7 @@ async fn collection_parts(state: &AppState, user_id: i64, collection_id: i64) ->
         })
         .unwrap_or_default();
 
+    let mut parts = models::unique_items(parts);
     parts.sort_by_key(|p| p.year.unwrap_or(9999));
     crate::routes::search::annotate_library(state, user_id, &mut parts).await?;
 

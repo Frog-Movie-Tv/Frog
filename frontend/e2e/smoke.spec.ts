@@ -550,6 +550,109 @@ test('a name sorts from A, and Back from a title keeps the filters', async ({
 	clearLibrary(testInfo.project.name);
 });
 
+/** A title page's answer as the server would give it, with `extra` on top. */
+function titleAnswer(id: number, kind: 'movie' | 'tv', name: string, extra: object) {
+	return {
+		item: {
+			id,
+			kind,
+			name,
+			overview: null,
+			poster_path: null,
+			backdrop_path: null,
+			logo_path: null,
+			release_date: '2013-01-01',
+			last_air_date: null,
+			tmdb_status: null,
+			runtime: null,
+			episode_count: null,
+			season_count: null,
+			tmdb_vote: null,
+			collection_id: null,
+			genres: [],
+			accent: { accent: '#6cc46b', shade: '#102018', tint: '#081008' },
+			entry: null,
+			watched_episodes: 0,
+			total_episodes: 0,
+			last_watched_at: null
+		},
+		tagline: null,
+		homepage: null,
+		cast: [],
+		crew: [],
+		trailers: [],
+		providers: { flatrate: [], rent: [], buy: [], link: null },
+		provider_region: 'BE',
+		seasons: [],
+		recommendations: [],
+		similar: [],
+		collection: null,
+		next_up: null,
+		ratings: [],
+		...extra
+	};
+}
+
+test('a title whose provider repeats itself still opens', async ({ page }) => {
+	// This suite runs the production build, where a repeated key in a list
+	// throws and takes the page with it. Monsters vs. Aliens did exactly that.
+	await signIn(page);
+	const person = { id: 5727, name: 'Diedrich Bader', character: 'Coverton', profile_path: null };
+	const film = (name: string) => ({
+		kind: 'movie',
+		tmdb_id: 7,
+		id: null,
+		name,
+		poster_path: null,
+		backdrop_path: null,
+		year: 2001,
+		overview: null,
+		vote: null,
+		in_library: null
+	});
+	const trailer = { key: 't', name: 'Trailer', site: 'YouTube', kind: 'Trailer', official: true };
+	const provider = { id: 8, name: 'Netflix', logo_path: null };
+	const season = { season_number: 1, name: 'Season 1', episode_count: 1 };
+	const answer = titleAnswer(9199, 'tv', 'Repeats', {
+		cast: [person, { ...person, character: 'The Missing Link' }],
+		crew: [{ id: 1, name: 'Maker', job: 'Creator', profile_path: null }],
+		trailers: [trailer, trailer],
+		providers: { flatrate: [provider, provider], rent: [], buy: [], link: null },
+		seasons: [season, season],
+		recommendations: [film('One'), film('One')],
+		collection: { id: 1, name: 'Set', parts: [film('Part'), film('Part')] }
+	});
+	await page.route('**/api/t/9199', (route) => route.fulfill({ json: answer }));
+	await page.route('**/api/t/9199/scores', (route) =>
+		route.fulfill({ json: { ratings: [], age_rating: null } })
+	);
+	await page.route('**/api/t/9199/seasons/1', (route) =>
+		route.fulfill({
+			json: {
+				season_number: 1,
+				episodes: [1, 1].map(() => ({
+					season_number: 1,
+					episode_number: 1,
+					name: 'Pilot',
+					watched: false,
+					watch_count: 0,
+					undated: false
+				}))
+			}
+		})
+	);
+
+	const crashes: string[] = [];
+	page.on('pageerror', (e) => crashes.push(e.message));
+	await page.goto('/t/9199');
+	await expect(page.getByRole('heading', { name: 'Repeats' })).toBeVisible();
+	await expect(page.locator('a.person')).toHaveCount(1);
+	await expect(page.locator('.plogo')).toHaveCount(1);
+	await expect(page.locator('.trailer')).toHaveCount(1);
+	await expect(page.locator('.episode')).toHaveCount(1);
+	expect(crashes).toEqual([]);
+});
+
 test('renaming a shelf starts in the name field', async ({ page }) => {
 	await signIn(page);
 	const created = await page.request.post('/api/shelves', {

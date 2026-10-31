@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { titleHref, titleKey } from '#lib/titles';
+	import { uniqueBy } from '#lib/unique';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { api, img } from '#lib/api';
@@ -248,7 +249,7 @@
 					<!-- One: a second is the same idea again. -->
 					{#each because.slice(0, 1) as group (group.seed.id)}
 						<Rail title="Because you watched {group.seed.name}">
-							{#each group.items as item (titleKey(item))}
+							{#each uniqueBy(group.items, titleKey) as item (titleKey(item))}
 								<Poster
 									kind={item.kind}
 									ref={item}
