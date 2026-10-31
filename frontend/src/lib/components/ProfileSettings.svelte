@@ -391,7 +391,8 @@
 		<span class="label">
 			<strong>Show my profile</strong>
 			<span class="faint">
-				Others on this Frog can see it. Off, only you can.
+				Others on this Frog can see your profile, your whole library and your ratings, but not your
+				notes. Off, only you can.
 				{#if username}<a href="/people/{encodeURIComponent(username)}">See your profile</a>{/if}
 			</span>
 		</span>

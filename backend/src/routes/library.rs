@@ -33,18 +33,7 @@ pub async fn list(
     State(state): State<AppState>,
     Query(q): Query<ListQuery>,
 ) -> AppResult<Json<Value>> {
-    if let Some(status) = &q.status {
-        if !store::STATUSES.contains(&status.as_str()) {
-            return Err(AppError::BadRequest(format!("unknown status {status}")));
-        }
-    }
-    let filter = LibraryFilter {
-        status: q.status,
-        kind: q.kind,
-        genre: q.genre,
-        term: q.q,
-        favourite: q.favourite == Some(true),
-    };
+    let filter = q.filter()?;
 
     // The whole library unless asked for less: a Netflix import alone brings
     // six hundred titles, and the page has no "load more".
@@ -67,7 +56,25 @@ pub async fn list(
     })))
 }
 
-fn to_map(rows: Vec<(String, i64)>) -> Value {
+impl ListQuery {
+    /// What the list narrows by, checked.
+    pub fn filter(&self) -> AppResult<LibraryFilter> {
+        if let Some(status) = &self.status {
+            if !store::STATUSES.contains(&status.as_str()) {
+                return Err(AppError::BadRequest(format!("unknown status {status}")));
+            }
+        }
+        Ok(LibraryFilter {
+            status: self.status.clone(),
+            kind: self.kind.clone(),
+            genre: self.genre.clone(),
+            term: self.q.clone(),
+            favourite: self.favourite == Some(true),
+        })
+    }
+}
+
+pub fn to_map(rows: Vec<(String, i64)>) -> Value {
     Value::Object(rows.into_iter().map(|(k, v)| (k, json!(v))).collect())
 }
 

@@ -118,6 +118,7 @@ pub fn router(state: AppState) -> Router {
         .route("/anilist/entries/{media_id}", put(anilist::choose))
         .route("/profiles", get(profiles::list))
         .route("/profiles/{username}", get(profiles::get))
+        .route("/profiles/{username}/library", get(profiles::library))
         .route("/profiles/{username}/images/{kind}", get(profiles::image))
         .route("/invites", get(invites::list).post(invites::create))
         .route("/invites/{id}", delete(invites::revoke))

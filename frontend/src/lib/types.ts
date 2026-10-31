@@ -58,6 +58,22 @@ export interface LibraryItem {
 	last_watched_at: string | null;
 }
 
+/** What someone else's profile shows of a library entry: never their notes. */
+export type SharedEntry = Pick<LibraryEntry, 'status' | 'rating' | 'favourite'>;
+
+/** A title of a library, mine or, read only, someone else's. */
+export type SharedItem = Omit<LibraryItem, 'entry'> & { entry: SharedEntry | null };
+
+/** One account's library, a page at a time. */
+export interface SharedLibrary {
+	owner: { username: string; display_name: string | null };
+	items: SharedItem[];
+	/** How many titles the filters show, on every page. */
+	total: number;
+	counts: Partial<Record<Status, number>>;
+	genres: string[];
+}
+
 /** One library entry whole, as the server keeps it: what undo puts back. */
 export interface EntryRecord {
 	title_id: number;

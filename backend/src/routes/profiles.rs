@@ -3,7 +3,7 @@
 //! here needs a session), and a private profile answers exactly like a missing
 //! one, so looking does not reveal who has an account.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -12,8 +12,14 @@ use serde_json::{json, Value};
 
 use crate::auth::Auth;
 use crate::error::{AppError, AppResult};
+use crate::routes::library::{to_map, ListQuery};
 use crate::routes::stats::streaks;
 use crate::state::AppState;
+use crate::store::{self, Page, SharedItem};
+
+/// A page of someone's library, unless asked for less, and the most at once.
+const SHARED_PAGE: i64 = 60;
+const SHARED_MOST: i64 = 1000;
 
 /// (username, display name, me, has a picture)
 type ListRow = (String, Option<String>, bool, bool);
@@ -237,6 +243,49 @@ pub async fn get(
         "watching": cards(watching),
         "favourites": cards(favourites),
         "recent": cards(recent),
+    })))
+}
+
+/// Someone's whole library, read only, a page at a time: having the profile
+/// on is the only switch, so `visible` answers for this too. It carries
+/// `SharedItem`s, which have no notes to give away.
+pub async fn library(
+    auth: Auth,
+    State(state): State<AppState>,
+    Path(username): Path<String>,
+    Query(q): Query<ListQuery>,
+) -> AppResult<Json<Value>> {
+    let owner = visible(&state, &auth, &username).await?;
+    let (user_id, username, display_name) = (owner.0, owner.1, owner.4);
+    let pool = &state.pool;
+    let filter = q.filter()?;
+    let page = Page {
+        sort: q.sort.as_deref(),
+        order: q.order.as_deref(),
+        limit: q.limit.unwrap_or(SHARED_PAGE).clamp(1, SHARED_MOST),
+        offset: q.offset.unwrap_or(0).max(0),
+    };
+
+    let rows = store::library_titles(pool, user_id, &filter, &page).await?;
+    let items: Vec<SharedItem> = store::build_items(pool, user_id, rows)
+        .await?
+        .into_iter()
+        .map(SharedItem::from)
+        .collect();
+    let counts = store::library_counts(pool, user_id, &filter).await?;
+    let total: i64 = counts
+        .iter()
+        .filter(|(status, _)| filter.status.as_ref().is_none_or(|s| s == status))
+        .map(|(_, n)| n)
+        .sum();
+    let genres = store::library_genres(pool, user_id).await?;
+
+    Ok(Json(json!({
+        "owner": { "username": username, "display_name": display_name },
+        "items": items,
+        "total": total,
+        "counts": to_map(counts),
+        "genres": genres,
     })))
 }
 

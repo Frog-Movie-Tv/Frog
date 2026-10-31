@@ -27,6 +27,7 @@ import type {
 	MatchResult,
 	Kind,
 	LibraryItem,
+	SharedLibrary,
 	PersonDetail,
 	SearchItem,
 	SeasonDetail,
@@ -137,6 +138,7 @@ export interface LibraryQuery {
 	sort?: 'added' | 'updated' | 'name' | 'rating' | 'release' | 'last_watched';
 	order?: 'asc' | 'desc';
 	limit?: number;
+	offset?: number;
 }
 
 type Picked = { title_ids: number[] };
@@ -250,6 +252,10 @@ export const api = {
 
 	profiles: () => get<{ profiles: PersonSummary[] }>('/api/profiles'),
 	profile: (username: string) => get<Profile>(`/api/profiles/${encodeURIComponent(username)}`),
+	profileLibrary: (username: string, query: LibraryQuery) =>
+		get<SharedLibrary>(
+			`/api/profiles/${encodeURIComponent(username)}/library${qs(query as Record<string, unknown>)}`
+		),
 
 	invites: () => get<{ invites: Invite[] }>('/api/invites'),
 	createInvite: (role: Invite['role'], days?: number) =>

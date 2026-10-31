@@ -4340,3 +4340,168 @@ async fn the_bulk_action_is_behind_the_wall() {
         .await;
     assert_eq!(code, StatusCode::UNAUTHORIZED);
 }
+
+// ---------------------------------------------------------------------------
+// Someone's whole library, from their profile.
+// ---------------------------------------------------------------------------
+
+/// The owner's library of four titles, with a note on every one, and their
+/// profile on or off.
+async fn a_shared_library(h: &Harness, owner: &str, public: bool) {
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, genres_json) VALUES
+            (1, 'movie', 21, 'Alpha', '[\"Drama\"]'),
+            (2, 'movie', 22, 'Beta', '[\"Comedy\"]'),
+            (3, 'tv', 23, 'Gamma', '[\"Drama\"]'),
+            (4, 'tv', 24, 'Delta', '[\"Drama\"]')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    for (id, status) in [
+        (1, "completed"),
+        (2, "planned"),
+        (3, "watching"),
+        (4, "paused"),
+    ] {
+        let (code, body, _) = h
+            .put(
+                &format!("/api/t/{id}/library"),
+                json!({ "status": status, "rating": 70 + id, "notes": "private note",
+                        "favourite": id == 1, "sync_seasons": false }),
+                Some(owner),
+            )
+            .await;
+        assert_eq!(code, StatusCode::OK, "{body}");
+    }
+    let (code, body, _) = h
+        .put(
+            "/api/account/profile",
+            json!({ "public": public }),
+            Some(owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+}
+
+#[tokio::test]
+async fn a_shared_library_never_carries_notes() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    a_shared_library(&h, &owner, true).await;
+
+    // My own page keeps them, so the note really is there to leak.
+    let (_, mine) = h.get("/api/library", Some(&owner)).await;
+    assert!(mine.to_string().contains("private note"));
+
+    let (code, theirs) = h.get("/api/profiles/mihai/library", Some(&guest)).await;
+    assert_eq!(code, StatusCode::OK, "{theirs}");
+    assert_eq!(theirs["total"], json!(4));
+    let text = theirs.to_string();
+    assert!(!text.contains("private note"), "{text}");
+    assert!(!text.contains("\"notes\""), "not even empty: {text}");
+
+    // The fields it does carry, and nothing about how the entry came about.
+    let entry = &theirs["items"][0]["entry"];
+    let mut fields: Vec<&str> = entry
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    fields.sort_unstable();
+    assert_eq!(fields, ["favourite", "rating", "status"]);
+
+    // Nor anywhere else a profile answers from.
+    let (_, profile) = h.get("/api/profiles/mihai", Some(&guest)).await;
+    assert!(!profile.to_string().contains("private note"));
+}
+
+#[tokio::test]
+async fn a_shared_library_goes_by_the_same_rule_as_the_profile() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    a_shared_library(&h, &owner, false).await;
+
+    let (private, off) = h.get("/api/profiles/mihai/library", Some(&guest)).await;
+    let (missing, none) = h.get("/api/profiles/nobody/library", Some(&guest)).await;
+    assert_eq!(private, StatusCode::NOT_FOUND);
+    assert_eq!(missing, StatusCode::NOT_FOUND);
+    assert_eq!(off, none, "a private library answers like a missing one");
+
+    // You always see your own.
+    let (code, _) = h.get("/api/profiles/mihai/library", Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK);
+
+    let (code, _) = h.get("/api/profiles/mihai/library", None).await;
+    assert_eq!(code, StatusCode::UNAUTHORIZED);
+
+    // Switched on: nothing else to turn on.
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&owner),
+    )
+    .await;
+    let (code, _) = h.get("/api/profiles/mihai/library", Some(&guest)).await;
+    assert_eq!(code, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn a_shared_library_filters_sorts_and_comes_in_pages() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    a_shared_library(&h, &owner, true).await;
+    let names = |v: &Value| -> Vec<String> {
+        v["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["name"].as_str().unwrap().to_string())
+            .collect()
+    };
+
+    let (_, first) = h
+        .get(
+            "/api/profiles/mihai/library?sort=name&order=asc&limit=3",
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(names(&first), ["Alpha", "Beta", "Delta"]);
+    assert_eq!(first["total"], json!(4), "more than one page holds");
+    let (_, second) = h
+        .get(
+            "/api/profiles/mihai/library?sort=name&order=asc&limit=3&offset=3",
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(names(&second), ["Gamma"]);
+
+    let (_, shows) = h
+        .get(
+            "/api/profiles/mihai/library?kind=tv&status=paused",
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(names(&shows), ["Delta"]);
+    assert_eq!(shows["total"], json!(1));
+    assert_eq!(shows["counts"]["watching"], json!(1));
+
+    let (_, liked) = h
+        .get("/api/profiles/mihai/library?favourite=true", Some(&guest))
+        .await;
+    assert_eq!(names(&liked), ["Alpha"]);
+
+    let (_, rated) = h
+        .get(
+            "/api/profiles/mihai/library?sort=rating&order=desc&limit=1",
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(names(&rated), ["Delta"], "by their ratings");
+
+    let (code, _) = h
+        .get("/api/profiles/mihai/library?status=nonsense", Some(&guest))
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+}

@@ -41,6 +41,47 @@ pub struct LibraryItem {
     pub last_watched_at: Option<String>,
 }
 
+/// What another account may see of a library entry. Named field by field on
+/// purpose: notes are private, and so is anything added to `LibraryEntry`
+/// until someone decides otherwise here.
+#[derive(Debug, Clone, Serialize)]
+pub struct SharedEntry {
+    pub status: String,
+    pub rating: Option<f64>,
+    pub favourite: bool,
+}
+
+/// A title of someone else's library, as their profile shows it.
+#[derive(Debug, Clone, Serialize)]
+pub struct SharedItem {
+    #[serde(flatten)]
+    pub title: TitleRow,
+    pub genres: Vec<String>,
+    pub accent: Palette,
+    pub entry: Option<SharedEntry>,
+    pub watched_episodes: i64,
+    pub total_episodes: i64,
+    pub last_watched_at: Option<String>,
+}
+
+impl From<LibraryItem> for SharedItem {
+    fn from(item: LibraryItem) -> Self {
+        Self {
+            title: item.title,
+            genres: item.genres,
+            accent: item.accent,
+            entry: item.entry.map(|e| SharedEntry {
+                status: e.status,
+                rating: e.rating,
+                favourite: e.favourite,
+            }),
+            watched_episodes: item.watched_episodes,
+            total_episodes: item.total_episodes,
+            last_watched_at: item.last_watched_at,
+        }
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct LibraryPatch {
     pub status: Option<String>,

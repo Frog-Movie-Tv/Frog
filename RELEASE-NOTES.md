@@ -19,6 +19,8 @@ In progress.
   them, mark them watched, change their status, favourite them or put them on a
   shelf, all at once. It works in every view and on a phone, and a removal can
   be undone in full.
+- **See someone's whole library.** A profile that is on opens its library, with
+  the same filters and views as your own. Notes stay private.
 
 ### Improvements
 

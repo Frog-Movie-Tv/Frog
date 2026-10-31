@@ -845,6 +845,76 @@ test('labels on a title card never overlap, on the narrowest phone', async ({ pa
 	expect(onSearch.found).toEqual([]);
 });
 
+test("someone's whole library opens from their profile, without their notes", async ({
+	page,
+	playwright,
+	baseURL
+}, testInfo) => {
+	await signIn(page);
+	const name = `friend${Date.now() % 100000}`;
+	const invite = await (await page.request.post('/api/invites', { data: { role: 'user' } })).json();
+	const friend = await playwright.request.newContext({ baseURL });
+	await friend.post('/api/auth/register', {
+		data: { username: name, password: 'another-long-pass', invite: invite.code, remember: true }
+	});
+	await friend.put('/api/account/profile', { data: { public: true } });
+
+	const secret = 'Only for me to read';
+	const db = new DatabaseSync(join('.e2e-data', testInfo.project.name, 'e2e.db'));
+	db.exec('PRAGMA busy_timeout = 5000');
+	const now = '2026-01-01T00:00:00Z';
+	const { id: user } = db.prepare('SELECT id FROM app_user WHERE username = ?').get(name) as {
+		id: number;
+	};
+	for (let id = 9300; id < 9370; id++) {
+		db.prepare(
+			`INSERT OR IGNORE INTO title (id, kind, name, genres_json, refreshed_at) VALUES (?, 'movie', ?, '[]', ?)`
+		).run(id, `Shared ${id}`, now);
+		db.prepare(
+			`INSERT OR IGNORE INTO title_external (title_id, provider, external_id, is_primary, added_at)
+			 VALUES (?, 'tmdb', ?, 1, ?)`
+		).run(id, `movie/${id}`, now);
+		db.prepare(
+			`INSERT OR REPLACE INTO library_entry (user_id, title_id, status, notes, added_at, updated_at)
+			 VALUES (?, ?, 'completed', ?, ?, ?)`
+		).run(user, id, secret, now, now);
+	}
+	db.close();
+
+	const answers: string[] = [];
+	page.on('response', async (r) => {
+		if (r.url().includes('/library')) answers.push(await r.text().catch(() => ''));
+	});
+
+	await page.goto(`/people/${name}`);
+	await page.locator('.identity').getByRole('link', { name: 'Library' }).click();
+	await expect(page).toHaveURL(new RegExp(`/people/${name}/library`));
+	await expect(titles(page)).toHaveCount(60);
+	await expect(page.getByText('70 titles')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
+
+	// Further down, the next page. Reading on is not a button to find.
+	await page.locator('.more').scrollIntoViewIfNeeded();
+	await expect(titles(page)).toHaveCount(70);
+	expect(answers.join('')).not.toContain(secret);
+
+	// The viewer's own page for the title, not theirs.
+	await titles(page).first().click();
+	await expect(page).toHaveURL(/\/t\/93\d\d/);
+
+	// Turned off, it reads as if it was never there.
+	await friend.put('/api/account/profile', { data: { public: false } });
+	await page.goto(`/people/${name}/library`);
+	await expect(page.getByRole('heading', { name: 'No profile here' })).toBeVisible();
+	const [off, none] = await Promise.all([
+		page.request.get(`/api/profiles/${name}/library`),
+		page.request.get('/api/profiles/nobody-at-all/library')
+	]);
+	expect(off.status()).toBe(404);
+	expect(await off.text()).toBe(await none.text());
+	await friend.dispose();
+});
+
 test('renaming a shelf starts in the name field', async ({ page }) => {
 	await signIn(page);
 	const created = await page.request.post('/api/shelves', {
@@ -1007,6 +1077,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/admin/server',
 		'/api/profiles',
 		'/api/profiles/someone',
+		'/api/profiles/someone/library',
 		'/api/profiles/someone/images/avatar',
 		'/api/anilist',
 		'/api/anilist/entries',

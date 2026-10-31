@@ -224,6 +224,10 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
   shallow navigation, so Back and a shared link land on the same list. A
   shallow address is in `page.shallow`, not `page.url`: read it through
   `lib/address.ts`.
+- **One library page, two owners.** `LibraryBrowser` is your Library, and read
+  only, in pages, someone else's (`/people/{name}/library`). The second is served
+  as `store::SharedItem`, a type with no notes in it, so a new field on an entry
+  stays private until someone names it there.
 - **Links go by Frog's id.** `lib/titles.ts` (`titleHref`, `titleKey`) is
   the one place that decides a title's address: `/t/{id}` once Frog has it,
   the provider's address for a search result it does not.

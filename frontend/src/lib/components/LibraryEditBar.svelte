@@ -5,12 +5,12 @@
 	import { plural } from '#lib/format';
 	import { toasts } from '#lib/toast.svelte';
 	import { whenWatched, type WhenAnswer } from '#lib/when.svelte';
-	import type { EntryRecord, LibraryItem, Shelf, Status } from '#lib/types';
+	import type { EntryRecord, SharedItem, Shelf, Status } from '#lib/types';
 	import { STATUS_LABEL, STATUSES } from '#lib/types';
 
 	interface Props {
 		/** The titles ticked, among those on screen. */
-		chosen: LibraryItem[];
+		chosen: SharedItem[];
 		/** How many titles the filters show. */
 		shown: number;
 		onselectall: () => void;

@@ -90,11 +90,21 @@
 						@{profile.username} · joined {prettyDate(profile.joined)}
 					</p>
 				</div>
-				{#if profile.me}
-					<a class="btn ghost edit" href="/settings#account">
-						<Icon name="pencil" size={15} /> Edit profile
+				<div class="tools">
+					<a
+						class="btn ghost"
+						href={profile.me
+							? '/library'
+							: `/people/${encodeURIComponent(profile.username)}/library`}
+					>
+						<Icon name="grid" size={15} /> Library
 					</a>
-				{/if}
+					{#if profile.me}
+						<a class="btn ghost" href="/settings#account">
+							<Icon name="pencil" size={15} /> Edit profile
+						</a>
+					{/if}
+				</div>
 			</div>
 			{#if profile.bio}
 				<p class="bio">{profile.bio}</p>
@@ -242,7 +252,10 @@
 		font-size: 0.88rem;
 	}
 
-	.edit {
+	.tools {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
 		margin-bottom: 4px;
 	}
 

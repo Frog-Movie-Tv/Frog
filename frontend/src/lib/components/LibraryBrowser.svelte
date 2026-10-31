@@ -1,12 +1,19 @@
 <script module lang="ts">
 	import type { LibraryAnswer } from '#lib/api';
+	import type { SharedLibrary } from '#lib/types';
+
+	/** One reading: all of my own library, or pages of someone else's. */
+	type Answer = LibraryAnswer | SharedLibrary;
 
 	/**
 	 * The last answer, so Back from a title draws the same grid at once and the
 	 * browser has something to put the scroll position on. A fresh reading
 	 * replaces it straight after.
 	 */
-	let last: { key: string; answer: LibraryAnswer } | null = null;
+	let last: { key: string; answer: Answer } | null = null;
+
+	/** How many of someone else's titles to read at a time. */
+	const PAGE = 60;
 </script>
 
 <script lang="ts">
@@ -27,8 +34,17 @@
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
-	import type { Kind, LibraryItem, Status } from '#lib/types';
+	import { uniqueBy } from '#lib/unique';
+	import { ApiError } from '#lib/api';
+	import type { Kind, SharedItem, Status } from '#lib/types';
 	import { STATUS_LABEL, STATUSES } from '#lib/types';
+
+	interface Props {
+		/** Whose library, read only. Left out, it is your own. */
+		owner?: string;
+	}
+
+	let { owner }: Props = $props();
 
 	type Sort = NonNullable<LibraryQuery['sort']>;
 	type Order = 'asc' | 'desc';
@@ -43,9 +59,11 @@
 	const start = address().searchParams;
 	const startSort = SORTS.find((s) => s === start.get('sort')) ?? 'added';
 
-	let answer = $state<LibraryAnswer | null>(null);
+	let answer = $state<Answer | null>(null);
 	let loading = $state(true);
 	let failed = $state(false);
+	/** Someone else's library that is private, or was never there. */
+	let missing = $state(false);
 	let sheetOpen = $state(false);
 	let menuOpen = $state(false);
 
@@ -68,7 +86,12 @@
 	}
 
 	const name = $derived(term.trim());
-	const items = $derived(answer?.items ?? []);
+	const items = $derived<SharedItem[]>(answer?.items ?? []);
+	/** How many titles the filters show, loaded or not. */
+	const total = $derived(answer && 'total' in answer ? answer.total : items.length);
+	const shared = $derived(answer && 'owner' in answer ? answer.owner : null);
+	const ownerName = $derived(shared?.display_name || shared?.username || owner || '');
+	const home = $derived(owner ? `/people/${encodeURIComponent(owner)}/library` : '/library');
 	const counts = $derived(answer?.counts ?? {});
 	const everyStatus = $derived(Object.values(counts).reduce((n, c) => n + (c ?? 0), 0));
 
@@ -96,14 +119,14 @@
 		}))
 	]);
 
-	const sortOptions = [
+	const sortOptions = $derived([
 		{ value: 'added', label: 'Recently added' },
 		{ value: 'updated', label: 'Recently updated' },
 		{ value: 'last_watched', label: 'Last watched' },
 		{ value: 'name', label: 'Name' },
-		{ value: 'rating', label: 'My rating' },
+		{ value: 'rating', label: owner ? 'Rating' : 'My rating' },
 		{ value: 'release', label: 'Release date' }
-	];
+	]);
 
 	/** The address these filters have, leaving out whatever is at its default. */
 	function search(): string {
@@ -132,7 +155,7 @@
 	}
 
 	/** Who is asking as well as what: a shared device has more than one library. */
-	const keyOf = (text: string) => `${session.status?.username ?? ''}${text}`;
+	const keyOf = (text: string) => `${session.status?.username ?? ''}${owner ?? ''}${text}`;
 
 	const firstKey = keyOf(search());
 	if (last?.key === firstKey) {
@@ -151,7 +174,7 @@
 			() => {
 				sent = name;
 				if (wanted !== untrack(() => address().search)) {
-					void goto(`/library${wanted}`, { shallow: true, replace: true });
+					void goto(`${home}${wanted}`, { shallow: true, replace: true });
 				}
 				void load(query, keyOf(wanted));
 			},
@@ -180,18 +203,60 @@
 		const mine = ++token;
 		loading = true;
 		try {
-			const read = await api.library(query);
+			// Everything already in view, so coming back does not shrink the page.
+			const read = owner
+				? await api.profileLibrary(owner, { ...query, limit: Math.max(PAGE, items.length) })
+				: await api.library(query);
 			if (mine !== token) return;
 			answer = read;
 			last = { key, answer: read };
 			failed = false;
+			missing = false;
 		} catch (e) {
 			if (mine !== token) return;
 			failed = true;
-			toasts.error(e);
+			missing = !!owner && e instanceof ApiError && e.status === 404;
+			if (!missing) toasts.error(e);
 		} finally {
 			if (mine === token) loading = false;
 		}
+	}
+
+	/** The next page of someone else's library. */
+	async function loadMore() {
+		if (!owner || loading || !answer || items.length >= total) return;
+		const mine = ++token;
+		const before = answer;
+		loading = true;
+		try {
+			const read = await api.profileLibrary(owner, {
+				...currentQuery(),
+				limit: PAGE,
+				offset: items.length
+			});
+			if (mine !== token) return;
+			answer = {
+				...read,
+				items: uniqueBy([...before.items, ...read.items], (i) => i.id)
+			};
+			last = { key: keyOf(search()), answer };
+		} catch (e) {
+			if (mine === token) toasts.error(e);
+		} finally {
+			if (mine === token) loading = false;
+		}
+	}
+
+	/** Reads on as the end of the list comes near. */
+	function reachedEnd(node: HTMLElement) {
+		const seen = new IntersectionObserver(
+			(entries) => {
+				if (entries.some((e) => e.isIntersecting)) void loadMore();
+			},
+			{ rootMargin: '600px' }
+		);
+		seen.observe(node);
+		return { destroy: () => seen.disconnect() };
 	}
 
 	function reset() {
@@ -210,7 +275,7 @@
 	const style = $derived(settings.current.cardStyle);
 	const fmt = $derived(settings.current.scoreFormat);
 
-	function progressOf(item: LibraryItem): number {
+	function progressOf(item: SharedItem): number {
 		return item.total_episodes > 0 ? (item.watched_episodes / item.total_episodes) * 100 : 0;
 	}
 
@@ -279,16 +344,22 @@
 />
 
 <div class="page">
+	{#if owner}
+		<a class="back faint hit" href="/people/{encodeURIComponent(owner)}">
+			<Icon name="chevron-left" size={16} />
+			{ownerName}
+		</a>
+	{/if}
 	<div class="page-head">
 		<h1>Library</h1>
 		<div class="head-tools actions">
-			{#if answer}<span class="faint">{plural(items.length, 'title')}</span>{/if}
-			{#if items.length && !editing}
+			{#if answer}<span class="faint">{plural(total, 'title')}</span>{/if}
+			{#if !owner && items.length && !editing}
 				<button class="btn ghost" onclick={() => (editing = true)}>
 					<Icon name="pencil" size={15} /> Edit
 				</button>
 			{/if}
-			<div class="menu-wrap">
+			<div class="menu-wrap" class:gone={owner}>
 				<button
 					class="btn ghost icon-only"
 					aria-label="Library options"
@@ -453,28 +524,41 @@
 				<div class="sheet-row">
 					<button class="btn ghost" onclick={reset}>Clear all</button>
 					<button class="btn primary grow" onclick={() => (sheetOpen = false)}>
-						Show {plural(items.length, 'title')}
+						Show {plural(total, 'title')}
 					</button>
 				</div>
 			</div>
 		</div>
 	{/if}
 
-	{#if loading && !items.length}
-		<Spinner label="Loading your library" />
+	{#if missing}
+		<Empty
+			art="search"
+			title="No profile here"
+			hint="It may be private, or there is no such account on this Frog."
+		>
+			<a class="btn" href="/people">Everyone sharing</a>
+		</Empty>
+	{:else if loading && !items.length}
+		<Spinner label={owner ? 'Loading this library' : 'Loading your library'} />
 	{:else if failed && !items.length}
-		<Empty title="Could not load your library" hint="The server did not answer. Try again." />
+		<Empty
+			title={owner ? 'Could not load this library' : 'Could not load your library'}
+			hint="The server did not answer. Try again."
+		/>
 	{:else if !items.length}
 		<Empty
 			art={filtered ? 'search' : 'rest'}
-			title={filtered ? 'Nothing matches' : 'Your library is empty'}
+			title={filtered ? 'Nothing matches' : owner ? 'Nothing here yet' : 'Your library is empty'}
 			hint={filtered
 				? 'Loosen a filter and it will come back.'
-				: 'Everything you track will live here.'}
+				: owner
+					? undefined
+					: 'Everything you track will live here.'}
 		>
 			{#if filtered}
 				<button class="btn" onclick={reset}>Clear filters</button>
-			{:else}
+			{:else if !owner}
 				<a class="btn primary" href="/search">Find something to watch</a>
 				<a class="btn ghost" href="/import">
 					<Icon name="upload" size={16} />
@@ -594,6 +678,12 @@
 					{/each}
 				</tbody>
 			</table>
+		</div>
+	{/if}
+
+	{#if items.length < total}
+		<div class="more" use:reachedEnd>
+			<button class="btn ghost" disabled={loading} onclick={loadMore}>Show more</button>
 		</div>
 	{/if}
 
@@ -954,6 +1044,25 @@
 
 	tr.on td {
 		background: var(--accent-soft);
+	}
+
+	.back {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		margin-bottom: 8px;
+		font-size: 0.86rem;
+		text-decoration: none;
+	}
+
+	.gone {
+		display: none;
+	}
+
+	.more {
+		display: grid;
+		place-items: center;
+		padding: 24px 0;
 	}
 
 	/* The last row clears the bar. */
