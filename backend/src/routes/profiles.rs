@@ -141,7 +141,7 @@ pub async fn get(
         .filter_map(|p| p["title_id"].as_i64())
         .collect();
     let mut pinned = Vec::new();
-    for title_id in pins {
+    for title_id in crate::tmdb::models::unique_by(pins, |id| *id) {
         let row: Option<CardRow> = sqlx::query_as(
             "SELECT t.kind, t.id, t.name, t.poster_path, l.rating
                FROM library_entry l JOIN title t ON t.id = l.title_id

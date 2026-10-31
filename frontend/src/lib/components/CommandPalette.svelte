@@ -39,9 +39,10 @@
 	}
 
 	// The whole library is small enough to hold in memory and filter locally,
-	// which makes jumping to something you already track instant.
+	// which makes jumping to something you already track instant. Read at each
+	// opening: a title added since has to be there.
 	$effect(() => {
-		if (!open || mine.length || !session.authenticated) return;
+		if (!open || !session.authenticated) return;
 		void api
 			.library({ limit: 2000 })
 			.then((r) => (mine = r.items))
