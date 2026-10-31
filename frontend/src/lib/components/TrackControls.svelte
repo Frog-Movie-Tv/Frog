@@ -3,14 +3,12 @@
 	import { api } from '#lib/api';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
-	import { prettyDate } from '#lib/format';
+	import { localDay, prettyDate } from '#lib/format';
 	import { whenWatched } from '#lib/when.svelte';
 	import type { Kind, LibraryItem, Status } from '#lib/types';
 	import { STATUSES, STATUS_LABEL } from '#lib/types';
 	import Rating from './Rating.svelte';
 	import Select from './Select.svelte';
-
-	const today = () => new Date().toISOString().slice(0, 10);
 
 	interface Props {
 		item: LibraryItem;
@@ -58,7 +56,7 @@
 			.season(item.id, 0)
 			.then((s) =>
 				s.episodes
-					.filter((e) => !e.watched && (!e.air_date || e.air_date <= today()))
+					.filter((e) => !e.watched && (!e.air_date || e.air_date <= localDay()))
 					.map((e) => ({
 						key: e.episode_number,
 						label: e.name || `Special ${e.episode_number}`,
@@ -84,24 +82,18 @@
 	}
 
 	async function remove() {
-		// Hold on to what was there, so taking it back is exact rather than
-		// approximate: status, rating, favourite and notes all come home.
-		const previous = item.entry;
+		// The server says what it took away, so taking it back is exact: every
+		// field comes home, the day it was added and a counted progress too.
+		const { id, name } = item;
 		saving = true;
 		try {
-			await api.untrack(item.id);
+			const { before } = await api.bulk({ action: 'remove', title_ids: [id] });
 			onchange({ ...item, entry: null });
 
-			toasts.undoable(`Removed ${item.name}`, async () => {
-				if (!previous) return;
+			toasts.undoable(`Removed ${name}`, async () => {
 				try {
-					const { item: restored } = await api.track(item.id, {
-						status: previous.status,
-						rating: previous.rating,
-						favourite: previous.favourite,
-						notes: previous.notes
-					});
-					onchange(restored);
+					await api.bulk({ action: 'restore', entries: before });
+					onchange((await api.title(id)).item);
 				} catch (e) {
 					toasts.error(e);
 				}
