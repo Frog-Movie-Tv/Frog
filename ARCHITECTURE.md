@@ -15,7 +15,7 @@ Deeper guides: [the catalog](docs/CATALOG-IDENTITY.md),
 | Question | Answer | Why |
 | --- | --- | --- |
 | Users | Several, invitation only | Every personal table carries a `user_id` with a foreign key, and `backend/tests/scoping.rs` fails the build if a query forgets it. Isolation is enforced per request, not hidden in the interface. |
-| Profiles | Opt in, instance only | Off until an account turns it on, and visible only to other accounts on the same instance. Every route except `/healthz` and the auth endpoints sits behind a session. |
+| Profiles | Opt in, instance only | Off until an account turns it on, and visible only to other accounts on the same instance. On, others see the whole library and its ratings, never its notes (`store::SharedItem`). Every route except `/healthz` and the auth endpoints sits behind a session. |
 | Imports | Letterboxd, Trakt, IMDb, TV Time, MyAnimeList, Netflix, Frog backups | All of them reduce to one intermediate shape, so a new source is a parser rather than a redesign. AniList is read on its own and never written to. |
 | Scrobbling | Not built | It only sees what plays through a media server the owners do not use. Anime arrives through the AniList sync; the rest is ticked by hand, on purpose. Plex is out regardless: its webhooks need Plex Pass. |
 | Hosting | Oracle Cloud Always Free, Docker, Caddy | A public site on a free instance, HTTPS issued automatically, updating itself from the newest release image. See [docs/DEPLOY-ORACLE.md](docs/DEPLOY-ORACLE.md). It still runs on a laptop for development. |
@@ -82,7 +82,7 @@ the ones above.
 | Layer | Modules | Does |
 | --- | --- | --- |
 | HTTP | `routes/*` | Parse and check the request, name the account (`Auth`, `AdminAuth`), call the layer below, shape the answer. |
-| Domain | `catalog`, `transfer`, `anilist`, `release`, `push`, `jobs` | Decisions and workflows: which title a provider id names, what an import means, who wins a sync, when an episode is out, what a show's status is. |
+| Domain | `catalog`, `transfer`, `anilist`, `release`, `bulk`, `push`, `jobs` | Decisions and workflows: which title a provider id names, what an import means, who wins a sync, when an episode is out, what a show's status is. |
 | Persistence | `catalog`, `store`, `anilist::records`, `images`, `db` | Reads and writes. `catalog` owns the shared titles, episodes and provider ids; `store` owns one account's library; each domain may own its own tables (`anilist::records` owns `anilist_*`, `images` owns `image_cache`). |
 | Providers | `tmdb`, `anilist::client`, `anilist::media` | Talking to other services, cached; nothing else calls them directly. `catalog::ensure` is how a provider's answer becomes a title. |
 | Shared | `auth`, `config`, `error`, `state`, `text`, `palette`, `totp`, `ops` | Small and specific; no catch-all helpers module. |
@@ -102,7 +102,8 @@ left. See CLAUDE.md for the rule.
 | `catalog` | Frog's titles and their provider ids (`title_external`): finding a title by any provider's id, making or refreshing one from a provider, episodes, credits, poster colour. |
 | `store` | One account's library: entries, the filtered list and what its filters offer (`LibraryFilter`), progress, "up next", emptying it, and moving one account's data between titles (`move_title_data`). |
 | `images` | The picture cache in SQLite, and its budget. |
-| `release` | When an episode counts as out, and the status a show should have (`reconcile`). |
+| `bulk` | One action on many titles of a library, one request each, and the marking of aired episodes it shares with "Mark all watched" (`tick_aired`, `When`). Removing, changing a status or favouriting answers with what the titles held (`store::EntryRecord`), which is what undo sends back. |
+| `release` | When an episode counts as out, the status a show should have (`reconcile`), and whether Continue watching has anything to say about it (`continues`). |
 | `transfer` | Imports (matching, applying) and exports. |
 | `anilist` | AniList sign-in, and reading each account's list into its library. Read only. |
 | `push` | Web Push: subscriptions and sending. |
@@ -223,6 +224,10 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
   shallow navigation, so Back and a shared link land on the same list. A
   shallow address is in `page.shallow`, not `page.url`: read it through
   `lib/address.ts`.
+- **One library page, two owners.** `LibraryBrowser` is your Library, and read
+  only, in pages, someone else's (`/people/{name}/library`). The second is served
+  as `store::SharedItem`, a type with no notes in it, so a new field on an entry
+  stays private until someone names it there.
 - **Links go by Frog's id.** `lib/titles.ts` (`titleHref`, `titleKey`) is
   the one place that decides a title's address: `/t/{id}` once Frog has it,
   the provider's address for a search result it does not.

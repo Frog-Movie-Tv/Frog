@@ -3,24 +3,34 @@
 	import Avatar from '#lib/components/Avatar.svelte';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
+	import LoadFailed from '#lib/components/LoadFailed.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
+	import { failure, type Failure } from '#lib/failure';
 	import { session } from '#lib/session.svelte';
 	import type { PersonResult, PersonSummary } from '#lib/types';
 
 	let profiles = $state<PersonSummary[]>([]);
 	let loading = $state(true);
+	let failed = $state<Failure | null>(null);
 	let term = $state('');
 	let crew = $state<PersonResult[]>([]);
 	let looked = $state('');
 
 	$effect(() => {
-		if (!session.authenticated) return;
+		if (session.authenticated) loadProfiles();
+	});
+
+	function loadProfiles() {
+		loading = true;
+		failed = null;
 		void api
 			.profiles()
 			.then((r) => (profiles = r.profiles))
-			.catch(() => (profiles = []))
+			.catch((e) => {
+				failed = failure(e, { title: 'Could not load people', hint: 'Try again in a minute.' });
+			})
 			.finally(() => (loading = false));
-	});
+	}
 
 	// Film and TV people come from a search; members are already here.
 	$effect(() => {
@@ -103,6 +113,8 @@
 
 		{#if loading}
 			<Spinner label="Loading people" />
+		{:else if failed && !q}
+			<LoadFailed {failed} onretry={loadProfiles} />
 		{:else if !q && others.length === 0}
 			<Empty
 				art="rest"
@@ -203,6 +215,7 @@
 
 	.people {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -227,9 +240,9 @@
 		place-items: center;
 		flex: none;
 		width: 48px;
-		height: 48px;
+		aspect-ratio: 2 / 3;
 		overflow: hidden;
-		border-radius: 50%;
+		border-radius: var(--radius-sm);
 		background: var(--bg-elev-2);
 		color: var(--text-dim);
 	}
@@ -237,7 +250,7 @@
 	.face img {
 		width: 100%;
 		height: 100%;
-		object-fit: cover;
+		object-fit: contain;
 	}
 
 	.who {

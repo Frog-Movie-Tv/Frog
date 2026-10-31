@@ -60,6 +60,11 @@ pub fn router(state: AppState) -> Router {
         .route("/diary", get(timeline::diary))
         .route("/library", get(library::list))
         .route("/library/stats", get(library::stats))
+        // Undo sends back what a remove answered, notes and all.
+        .route(
+            "/library/bulk",
+            post(library::bulk).layer(DefaultBodyLimit::max(library::BULK_MAX_BYTES)),
+        )
         .route("/stats", get(stats::stats))
         .route("/shelves", get(shelves::list).post(shelves::create))
         .route("/shelves/order", put(shelves::reorder))
@@ -113,6 +118,7 @@ pub fn router(state: AppState) -> Router {
         .route("/anilist/entries/{media_id}", put(anilist::choose))
         .route("/profiles", get(profiles::list))
         .route("/profiles/{username}", get(profiles::get))
+        .route("/profiles/{username}/library", get(profiles::library))
         .route("/profiles/{username}/images/{kind}", get(profiles::image))
         .route("/invites", get(invites::list).post(invites::create))
         .route("/invites/{id}", delete(invites::revoke))

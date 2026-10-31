@@ -166,6 +166,7 @@ const ROUTES = [
 	'/shelves',
 	'/people',
 	'/people/audit',
+	'/people/audit/library',
 	'/settings',
 	'/import',
 	'/about',

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { titleKey } from '#lib/titles';
+	import { uniqueBy } from '#lib/unique';
 	import { page } from '$app/state';
 	import { api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
@@ -45,7 +46,9 @@
 	}
 
 	const shown = $derived(
-		(person?.credits ?? []).filter((c) => !seenOnly || c.item.in_library !== null)
+		uniqueBy(person?.credits ?? [], (c) => titleKey(c.item)).filter(
+			(c) => !seenOnly || c.item.in_library !== null
+		)
 	);
 	const credits = $derived(shown.filter((c) => !c.appearance));
 	const appearances = $derived(shown.filter((c) => c.appearance));

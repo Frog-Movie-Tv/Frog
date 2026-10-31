@@ -26,7 +26,9 @@
 		place-items: center;
 		overflow: hidden;
 		flex: none;
-		background: var(--accent-soft);
+		/* The accent's soft tint is mostly see-through. On an opaque base, so a
+		   banner behind it stays behind it, in every theme. */
+		background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--bg-elev);
 		color: var(--accent);
 		font-weight: 700;
 		font-size: calc(var(--size) * 0.42);

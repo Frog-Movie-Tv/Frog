@@ -7,7 +7,7 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 1.0.0 "Bullfrog" |
+| **Release** | 1.0.2 "Bullfrog" |
 | **Next codenames** | Spring Peeper, Glass Frog, Horned Frog |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
@@ -125,6 +125,14 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 18. **Netflix: try the threshold on more than one file.** 3 was judged on one
    export. The menu in the review moves it for one import; if another person's
    file says 2 or 4, change `SHOW_THRESHOLD`.
+19. **Left from the solid pass.** Each small, none broken:
+   - Marking titles watched in edit mode has no undo. Status, favourite and
+     remove do. It would need the watches it added taken back.
+   - On the Light themes a white title logo sits on the pale end of Home's hero,
+     where it reads less well than on Dark.
+   - A Netflix show already in a library as On hold with nothing ticked stays
+     there. Only Watching was moved to the watchlist.
+   - The Status menu of edit mode covers Done while it is open on a phone.
 
 ## Known issues
 
@@ -135,6 +143,7 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 | **AniList-only titles, what AniList cannot give** | Accepted, not planned. No title logo for the hero and no episode synopses (AniList has neither). Streaming links show for every country, since AniList does not say where a service carries a show. AniList voice actors and studios are AniList people in Stats, apart from the same person on TMDB. Episode names and thumbnails are left out when the streaming site numbers past AniList's episode count. Everything else (detail, artwork, episodes, sync, ratings, shelves, Stats) works as for any title and is covered by `tests/anilist.rs` and `verify-leapfrog`. |
 | **Characters come from what Frog has seen** | Search finds anime characters through AniList, and everyone else from the casts of titles somebody on this Frog has opened. TMDB has no character search. |
 | **No staging** | 954 MB will not carry a second instance. `install.sh --with-staging` sets one up if it ever moves to a bigger machine. |
+| **A show marked Watching by hand, with nothing ticked** | Stays in Continue watching as "Start S01E01", on purpose. So does one a tracker other than Netflix calls `watching`; `docs/IMPORTS.md` takes a tracker at its word. |
 | **Notifications untested on a real phone** | Verified through FCM in Chrome; not on Android, and tapping one is untested. |
 | **Server messages are English only** | Validation errors and notification text. Fine while the interface is English only. |
 | **Imports keep the day, not the time** | Every reader sets a watch to 20:00 UTC on its day, so Trakt's exact time is not kept. Recorded in `docs/IMPORTS.md` and pinned by `tests/parsers.test.mjs`; keeping exact times needs its own requirements and tests. |
@@ -281,6 +290,23 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   it was recorded, so counting it made a show read "today" after an import.
   A title with only undated watches has no last-watched day; Home's Continue
   watching then falls back on `updated_at`.
+- **Edit mode** (`backend/src/bulk.rs`, `POST /api/library/bulk`) is one request
+  per action. Remove, status and favourite answer with the entries as they were
+  (`store::EntryRecord`); undo sends those back, and `restore_entries` writes
+  them into the signed-in account whatever they say. A title page's remove goes
+  the same way. Marking a show here is `bulk::tick_aired`, the same code as Mark
+  all watched.
+- **Someone else's library** is `LibraryBrowser` with `owner`, reading 60 titles
+  at a time from `/api/profiles/{name}/library`. Its items are
+  `store::SharedItem`, which has no notes field: do not hand that route
+  `LibraryItem`. Having the profile on is the only switch.
+- **Keyed lists throw in production.** A repeated key in a Svelte `{#each}` takes
+  the whole page down, not just a warning. Anything a provider or a saved setting
+  feeds goes through `uniqueBy`, and `models` narrows TMDB's lists as well.
+- **Episodes are always listed for a tracked show.** An import ensures them even
+  with nothing to tick, a title page does behind the page, and the worker fills
+  any left (`fill_missing_episodes`, 25 a tick). Without them a show has no next
+  episode, and its total is only TMDB's count.
 - **Lists of titles are built from one reading** (`store::ItemFacts`): five
   queries for the whole account, then `item` per title. Library and shelves go
   through `build_items`; Home loads it once and shares it across its rows. On
@@ -307,7 +333,14 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 ## Shipped
 
-**1.0.1 Bullfrog, waiting for its release** — Library filters kept in the
+**1.0.2 Bullfrog** — Edit mode in Library, someone's whole library from
+their profile, portrait cards for people, and the fixes from a walk through the
+site: title pages that open whatever a provider repeats, a show with nothing
+watched that no longer reads Finished, exact undo on a title page, and a page
+that says so when it cannot load. `202610311000_nothing_watched_is_not_watching`
+moves shows an import left Watching with nothing listed to the watchlist.
+
+**1.0.1 Bullfrog** — Library filters kept in the
 address, status counts that say what a status shows, Back to a search, a Netflix
 import of what was really watched, one layout for every release on What's new,
 and the fixes from a walk through every page.

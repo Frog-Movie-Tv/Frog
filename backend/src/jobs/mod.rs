@@ -76,6 +76,7 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
     }
 
     crate::ratings::refresh_due(state).await;
+    fill_missing_episodes(state).await;
     refresh_airing_shows(state).await;
     if let Err(e) = announce_new_episodes(state, chrono::Local::now().naive_local()).await {
         tracing::warn!(error = %e, "new-episode notifications failed");
@@ -443,20 +444,51 @@ async fn refresh_airing_shows(state: &AppState) {
                 }
                 // New episodes out, or a season ended: everyone with the show
                 // gets the status that now fits.
-                let people: Vec<(i64,)> =
-                    sqlx::query_as("SELECT user_id FROM library_entry WHERE title_id = ?")
-                        .bind(title_id)
-                        .fetch_all(&state.pool)
-                        .await
-                        .unwrap_or_default();
-                for (user_id,) in people {
-                    if let Err(e) = crate::release::reconcile(&state.pool, user_id, title_id).await
-                    {
-                        tracing::warn!(title_id, error = %e, "status refresh failed");
-                    }
-                }
+                reconcile_everyone(state, title_id).await;
             }
             Err(e) => tracing::warn!(title_id, error = %e, "show refresh failed"),
+        }
+    }
+}
+
+async fn reconcile_everyone(state: &AppState, title_id: i64) {
+    let people: Vec<(i64,)> =
+        sqlx::query_as("SELECT user_id FROM library_entry WHERE title_id = ?")
+            .bind(title_id)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
+    for (user_id,) in people {
+        if let Err(e) = crate::release::reconcile(&state.pool, user_id, title_id).await {
+            tracing::warn!(title_id, error = %e, "status refresh failed");
+        }
+    }
+}
+
+/// Shows somebody tracks with no episodes listed, whatever TMDB says of them:
+/// a show that has ended is left out of the refresh above, and an older import
+/// could leave one like this. Random, so one with nothing on TMDB holds up no
+/// other.
+async fn fill_missing_episodes(state: &AppState) {
+    if !state.tmdb.is_configured() {
+        return;
+    }
+    let rows: Vec<(i64,)> = sqlx::query_as(
+        "SELECT DISTINCT t.id FROM library_entry l JOIN title t ON t.id = l.title_id
+           JOIN title_external x ON x.title_id = t.id AND x.provider = 'tmdb'
+                                AND x.is_primary = 1
+          WHERE t.kind = 'tv'
+            AND NOT EXISTS (SELECT 1 FROM episode e WHERE e.title_id = t.id)
+          ORDER BY RANDOM()
+          LIMIT 25",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+    for (title_id,) in rows {
+        match catalog::ensure_episodes(state, title_id, None).await {
+            Ok(()) => reconcile_everyone(state, title_id).await,
+            Err(e) => tracing::warn!(title_id, error = %e, "episodes not listed"),
         }
     }
 }

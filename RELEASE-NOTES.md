@@ -11,7 +11,44 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Spring Peeper —
 
-In progress.
+Edit your library in one go, and see someone else's from their profile.
+
+### Highlights
+
+- **Edit your library.** Press Edit, tick as many titles as you like and remove
+  them, mark them watched, change their status, favourite them or put them on a
+  shelf, all at once. It works in every view and on a phone, and a removal can
+  be undone in full.
+- **See someone's whole library.** A profile that is on opens its library, with
+  the same filters and views as your own. Notes stay private.
+
+### Improvements
+
+- Cast, people and characters show the whole photo, as a small portrait card.
+- Phones and tablets show no keyboard hints, and the command palette has a close
+  button there. A Mac shows ⌘K.
+- A title card's labels sit together in one corner, so they stay readable on the
+  narrowest phone.
+
+### Fixes
+
+- Continue watching says what is next for every show. A show imported with
+  nothing watched waits on your watchlist.
+- A Netflix title with no episode name lands on the film, however TMDB
+  punctuates its name.
+- Undo after removing a title brings back everything about it, down to the day
+  you added it.
+- A page that cannot load says so and offers to try again.
+- The calendar opens on the month of the next thing on it, and says Film release
+  for a film that is still to come.
+- Administration and People fit a narrow phone.
+- The command palette finds a title you added a moment ago.
+- Today is your own today just after midnight, when marking something watched.
+- A letter avatar stands clear of the banner behind it, in every theme.
+- Every title page opens, however a person is listed in its cast. Someone with
+  two parts has one card, with both parts on it.
+- The diary opens a day with the same episode watched twice, and shelves show
+  titles that share a poster.
 
 ## [1.0.1] — Bullfrog — 2026-10-30
 

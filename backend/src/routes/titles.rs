@@ -137,6 +137,16 @@ async fn detail_of(state: &AppState, user_id: i64, title_id: i64) -> AppResult<J
         .await?;
 
     let next_up = if kind == "tv" {
+        // A show kept with no episodes listed gets them behind the page, which
+        // never waits for TMDB. The worker does the same for those not opened.
+        if item.entry.is_some() {
+            let (state, detail) = (state.clone(), raw.clone());
+            tokio::spawn(async move {
+                if let Err(e) = catalog::ensure_episodes(&state, title_id, Some(&detail)).await {
+                    tracing::debug!(title_id, error = %e, "episodes not listed");
+                }
+            });
+        }
         store::next_episode(&state.pool, user_id, title_id).await?
     } else {
         None
@@ -225,7 +235,7 @@ async fn collection_parts(state: &AppState, user_id: i64, collection_id: i64) ->
         )
         .await?;
 
-    let mut parts: Vec<SearchItem> = raw
+    let parts: Vec<SearchItem> = raw
         .get("parts")
         .and_then(Value::as_array)
         .map(|a| {
@@ -235,6 +245,7 @@ async fn collection_parts(state: &AppState, user_id: i64, collection_id: i64) ->
         })
         .unwrap_or_default();
 
+    let mut parts = models::unique_items(parts);
     parts.sort_by_key(|p| p.year.unwrap_or(9999));
     crate::routes::search::annotate_library(state, user_id, &mut parts).await?;
 

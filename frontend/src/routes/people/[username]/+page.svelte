@@ -4,9 +4,11 @@
 	import Avatar from '#lib/components/Avatar.svelte';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
+	import LoadFailed from '#lib/components/LoadFailed.svelte';
 	import Poster from '#lib/components/Poster.svelte';
 	import Rail from '#lib/components/Rail.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
+	import { failure, type Failure } from '#lib/failure';
 	import { formatScore, longRuntime, plural, prettyDate } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
@@ -16,21 +18,28 @@
 
 	let profile = $state<Profile | null>(null);
 	let loading = $state(true);
-	let missing = $state(false);
+	let failed = $state<Failure | null>(null);
+	const missing = $derived(!!failed?.missing);
 
 	$effect(() => {
-		if (!session.authenticated || !username) return;
+		if (session.authenticated && username) load();
+	});
+
+	function load() {
 		loading = true;
-		missing = false;
+		failed = null;
 		void api
 			.profile(username)
 			.then((p) => (profile = p))
-			.catch(() => {
+			.catch((e) => {
 				profile = null;
-				missing = true;
+				failed = failure(e, {
+					title: 'No profile here',
+					hint: 'It may be private, or there is no such account on this Frog.'
+				});
 			})
 			.finally(() => (loading = false));
-	});
+	}
 
 	const banner = $derived(
 		profile?.banner ?? (profile?.banner_backdrop ? img(profile.banner_backdrop, 'w1280') : null)
@@ -63,7 +72,9 @@
 
 	{#if loading}
 		<Spinner label="Loading profile" />
-	{:else if missing || !profile}
+	{:else if failed && !failed.missing}
+		<LoadFailed {failed} onretry={load} />
+	{:else if failed || !profile}
 		<Empty
 			art="search"
 			title="No profile here"
@@ -90,11 +101,21 @@
 						@{profile.username} · joined {prettyDate(profile.joined)}
 					</p>
 				</div>
-				{#if profile.me}
-					<a class="btn ghost edit" href="/settings#account">
-						<Icon name="pencil" size={15} /> Edit profile
+				<div class="tools">
+					<a
+						class="btn ghost"
+						href={profile.me
+							? '/library'
+							: `/people/${encodeURIComponent(profile.username)}/library`}
+					>
+						<Icon name="grid" size={15} /> Library
 					</a>
-				{/if}
+					{#if profile.me}
+						<a class="btn ghost" href="/settings#account">
+							<Icon name="pencil" size={15} /> Edit profile
+						</a>
+					{/if}
+				</div>
 			</div>
 			{#if profile.bio}
 				<p class="bio">{profile.bio}</p>
@@ -228,7 +249,7 @@
 	   as readable as the picture lets it be. */
 	.names {
 		flex: 1;
-		min-width: 180px;
+		min-width: 140px;
 		padding-top: 52px;
 	}
 
@@ -242,7 +263,10 @@
 		font-size: 0.88rem;
 	}
 
-	.edit {
+	.tools {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
 		margin-bottom: 4px;
 	}
 

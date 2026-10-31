@@ -12,6 +12,7 @@
 	import UpdateBanner from '#lib/components/UpdateBanner.svelte';
 	import WhenWatched from '#lib/components/WhenWatched.svelte';
 	import { offline } from '#lib/offline.svelte';
+	import { paletteKey } from '#lib/platform';
 	import { session } from '#lib/session.svelte';
 	import { MAX_TABS, NAV_PAGES, settings } from '#lib/settings.svelte';
 	import type { IconName } from '#lib/components/Icon.svelte';
@@ -23,6 +24,7 @@
 	const PUBLIC = ['/login', '/join'];
 
 	let checked = $state(false);
+	const shortcut = paletteKey(navigator.platform);
 	let palette: CommandPalette | undefined = $state();
 
 	$effect(() => {
@@ -169,7 +171,7 @@
 				<button class="find" onclick={() => palette?.show()} aria-label="Search and commands">
 					<Icon name="search" size={17} />
 					<span>Search</span>
-					<kbd>Ctrl K</kbd>
+					<kbd>{shortcut}</kbd>
 				</button>
 				<AccountMenu />
 			</div>
@@ -375,6 +377,13 @@
 		background: var(--bg-elev-2);
 		font-family: var(--font-mono);
 		font-size: 0.68rem;
+	}
+
+	/* A keyboard hint is no use without a keyboard, whatever the screen's size. */
+	@media (hover: none) and (pointer: coarse) {
+		kbd {
+			display: none;
+		}
 	}
 
 	.pill.warn {

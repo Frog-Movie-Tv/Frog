@@ -187,7 +187,8 @@ Frog assumes everyone on it wants to be left alone, including from each other.
 - **Nothing is public.** Every page needs an account. Frog asks search engines
   not to index it and serves a `robots.txt` that refuses everything.
 - **Sharing is something you switch on.** A profile lets others _on your Frog_
-  see what you are watching. It starts off, and it is never visible outside.
+  see your library, but not your notes. It starts off, and it is never visible
+  outside.
 - Everything sits behind a password, with two-factor sign-in if you want it.
 - Nothing leaves the machine except requests for details, artwork and
   scores: to TMDB, to AniList, and to MDBList and fanart.tv if you gave them
@@ -237,8 +238,8 @@ on.
 <br>
 
 Only if you let them, and only people who already have an account on the same
-Frog. Turn on your profile and they can see your picture, what you are
-watching, your pinned titles, your favourites and your totals. It starts switched off, and nothing is ever
+Frog. Turn on your profile and they can see your picture, your whole library
+and ratings, your pinned titles and your totals, but not your notes. It starts switched off, and nothing is ever
 visible to anyone without an account.
 
 </details>

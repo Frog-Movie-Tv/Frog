@@ -3979,3 +3979,751 @@ async fn the_banner_position_is_kept_and_checked() {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Library's edit mode: one request per action.
+// ---------------------------------------------------------------------------
+
+/// A library of a film not out yet, a film, a show with an aired episode and a
+/// future one, and a show with nothing out, with `h`'s owner keeping all four.
+async fn library_to_edit(h: &Harness, cookie: &str) {
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, release_date) VALUES
+            (1, 'movie', 11, 'Out', '1995-12-15'),
+            (2, 'movie', 12, 'Not Out', '2099-01-01'),
+            (3, 'tv', 13, 'Airing', '2020-01-01'),
+            (4, 'tv', 14, 'Coming', '2099-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO episode (title_id, season_number, episode_number, name, air_date) VALUES
+            (3, 1, 1, 'Aired', '2020-01-01'),
+            (3, 1, 2, 'Aired too', '2020-01-08'),
+            (3, 1, 3, 'Future', '2099-01-01'),
+            (3, 0, 1, 'Special', '2019-01-01'),
+            (4, 1, 1, 'Later', '2099-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    for id in 1..=4 {
+        let (code, body, _) = h
+            .put(
+                &format!("/api/t/{id}/library"),
+                json!({ "status": "planned", "sync_seasons": false }),
+                Some(cookie),
+            )
+            .await;
+        assert_eq!(code, StatusCode::OK, "{body}");
+    }
+}
+
+async fn shelf_named(h: &Harness, cookie: &str, name: &str) -> i64 {
+    let (_, made, _) = h
+        .post(
+            "/api/shelves",
+            json!({ "name": name, "kind": "manual" }),
+            Some(cookie),
+        )
+        .await;
+    made["shelf"]["id"].as_i64().expect("a shelf")
+}
+
+async fn bulk(h: &Harness, body: Value, cookie: &str) -> Value {
+    let (code, answer, _) = h.post("/api/library/bulk", body, Some(cookie)).await;
+    assert_eq!(code, StatusCode::OK, "{answer}");
+    answer
+}
+
+async fn watches_of(h: &Harness, title: i64) -> Vec<(Option<i64>, String, bool)> {
+    sqlx::query_as(
+        "SELECT episode_id, watched_at, undated FROM watch_event
+          WHERE title_id = ? ORDER BY id",
+    )
+    .bind(title)
+    .fetch_all(&h.state.pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn marking_watched_ticks_aired_episodes_and_never_what_is_not_out() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    library_to_edit(&h, &owner).await;
+
+    let answer = bulk(
+        &h,
+        json!({ "action": "watched", "title_ids": [1, 2, 3, 4], "when": "date",
+                "date": "2021-03-04" }),
+        &owner,
+    )
+    .await;
+    assert_eq!(answer, json!({ "marked": 2, "skipped": 2 }));
+
+    let film = watches_of(&h, 1).await;
+    assert_eq!(film.len(), 1);
+    assert_eq!(film[0].1, "2021-03-04T20:00:00Z");
+    assert!(watches_of(&h, 2).await.is_empty(), "not out yet");
+    let show = watches_of(&h, 3).await;
+    assert_eq!(
+        show.len(),
+        2,
+        "the two aired; no future episode, no special"
+    );
+    assert!(show.iter().all(|w| w.1 == "2021-03-04T20:00:00Z"));
+    assert!(watches_of(&h, 4).await.is_empty(), "nothing out");
+
+    let (_, library) = h
+        .get("/api/library?sort=name&order=asc", Some(&owner))
+        .await;
+    let statuses: Vec<(&str, &str)> = library["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| {
+            (
+                i["name"].as_str().unwrap(),
+                i["entry"]["status"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        statuses,
+        [
+            ("Airing", "completed"),
+            ("Coming", "planned"),
+            ("Not Out", "planned"),
+            ("Out", "completed")
+        ]
+    );
+
+    // Again: no second watch of anything.
+    bulk(
+        &h,
+        json!({ "action": "watched", "title_ids": [1, 3], "when": "today" }),
+        &owner,
+    )
+    .await;
+    assert_eq!(watches_of(&h, 1).await.len(), 1);
+    assert_eq!(watches_of(&h, 3).await.len(), 2);
+}
+
+#[tokio::test]
+async fn a_bad_date_changes_nothing() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    library_to_edit(&h, &owner).await;
+    let (code, _, _) = h
+        .post(
+            "/api/library/bulk",
+            json!({ "action": "watched", "title_ids": [1, 3], "when": "date",
+                    "date": "3000-01-01" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    assert!(watches_of(&h, 1).await.is_empty());
+    assert!(watches_of(&h, 3).await.is_empty());
+    let entry = frog::store::get_entry(&h.state.pool, 1, 1)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(entry.status, "planned");
+}
+
+#[tokio::test]
+async fn undoing_a_remove_puts_back_every_field() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    library_to_edit(&h, &owner).await;
+    sqlx::query(
+        "UPDATE library_entry
+            SET status = 'paused', rating = 87, favourite = 1, notes = 'Line one',
+                started_at = '2001-01-01', finished_at = '2002-02-02', rewatch_count = 3,
+                added_at = '2000-01-01', updated_at = '2003-03-03', notify = 0, progress = 5
+          WHERE user_id = 1 AND title_id = 3",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    let held = "SELECT status, rating, favourite, notes, started_at, finished_at, rewatch_count,
+                       added_at, updated_at, notify, progress
+                  FROM library_entry WHERE user_id = 1 AND title_id = 3";
+    type Held = (
+        String,
+        Option<f64>,
+        bool,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        i64,
+        String,
+        String,
+        bool,
+        Option<i64>,
+    );
+    let before: Held = sqlx::query_as(held).fetch_one(&h.state.pool).await.unwrap();
+
+    let removed = bulk(
+        &h,
+        json!({ "action": "remove", "title_ids": [1, 3] }),
+        &owner,
+    )
+    .await;
+    let (_, library) = h.get("/api/library", Some(&owner)).await;
+    assert_eq!(library["items"].as_array().unwrap().len(), 2);
+
+    let answer = bulk(
+        &h,
+        json!({ "action": "restore", "entries": removed["before"] }),
+        &owner,
+    )
+    .await;
+    assert_eq!(answer["restored"], json!(2));
+    let after: Held = sqlx::query_as(held).fetch_one(&h.state.pool).await.unwrap();
+    assert_eq!(before, after);
+    let (_, library) = h.get("/api/library", Some(&owner)).await;
+    assert_eq!(library["items"].as_array().unwrap().len(), 4);
+}
+
+#[tokio::test]
+async fn editing_one_library_cannot_reach_another() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    library_to_edit(&h, &owner).await;
+
+    // The guest names the owner's titles: they are simply not in that library.
+    let answer = bulk(
+        &h,
+        json!({ "action": "remove", "title_ids": [1, 2, 3, 4] }),
+        &guest,
+    )
+    .await;
+    assert_eq!(answer["before"], json!([]));
+    bulk(
+        &h,
+        json!({ "action": "favourite", "title_ids": [1], "favourite": true }),
+        &guest,
+    )
+    .await;
+    bulk(
+        &h,
+        json!({ "action": "watched", "title_ids": [1, 3], "when": "today" }),
+        &guest,
+    )
+    .await;
+    let (_, library) = h.get("/api/library", Some(&owner)).await;
+    assert_eq!(library["items"].as_array().unwrap().len(), 4);
+    assert!(watches_of(&h, 1).await.is_empty());
+    let shelf = shelf_named(&h, &owner, "Mine").await;
+    let (code, _, _) = h
+        .post(
+            "/api/library/bulk",
+            json!({ "action": "shelf", "title_ids": [1], "shelf_id": shelf }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::NOT_FOUND, "another account's shelf");
+
+    // An undo made up by the guest lands in the guest's own library at most.
+    let forged = json!({ "action": "restore", "entries": [{
+        "title_id": 1, "status": "dropped", "rating": null, "favourite": false, "notes": null,
+        "started_at": null, "finished_at": null, "rewatch_count": 0,
+        "added_at": "2000-01-01", "updated_at": "2000-01-01", "notify": true, "progress": null
+    }] });
+    bulk(&h, forged, &guest).await;
+    let mine = frog::store::get_entry(&h.state.pool, 1, 1)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(mine.status, "planned");
+}
+
+#[tokio::test]
+async fn status_favourite_and_shelf_go_in_one_request() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    library_to_edit(&h, &owner).await;
+
+    let moved = bulk(
+        &h,
+        json!({ "action": "status", "title_ids": [1, 3], "status": "dropped" }),
+        &owner,
+    )
+    .await;
+    assert_eq!(moved["before"].as_array().unwrap().len(), 2);
+    let (_, dropped) = h.get("/api/library?status=dropped", Some(&owner)).await;
+    assert_eq!(dropped["items"].as_array().unwrap().len(), 2);
+
+    // Completed means seen: a film gets its watch, a show its aired episodes,
+    // on the day the person says.
+    let done = bulk(
+        &h,
+        json!({ "action": "status", "title_ids": [1, 3], "status": "completed",
+                "when": "unknown" }),
+        &owner,
+    )
+    .await;
+    assert_eq!(done, json!({ "marked": 2, "skipped": 0 }));
+    assert_eq!(watches_of(&h, 1).await.len(), 1);
+    assert!(watches_of(&h, 3).await.iter().all(|w| w.2), "undated");
+
+    let (code, body, _) = h
+        .post(
+            "/api/library/bulk",
+            json!({ "action": "status", "title_ids": [1], "status": "nonsense" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{body}");
+
+    bulk(
+        &h,
+        json!({ "action": "favourite", "title_ids": [1, 2], "favourite": true }),
+        &owner,
+    )
+    .await;
+    let (_, faves) = h.get("/api/library?favourite=true", Some(&owner)).await;
+    assert_eq!(faves["items"].as_array().unwrap().len(), 2);
+
+    let shelf = shelf_named(&h, &owner, "Picked").await;
+    for expected in [2, 0] {
+        let answer = bulk(
+            &h,
+            json!({ "action": "shelf", "title_ids": [1, 3], "shelf_id": shelf }),
+            &owner,
+        )
+        .await;
+        assert_eq!(answer["added"], json!(expected), "only what is new there");
+    }
+    let (_, full) = h.get(&format!("/api/shelves/{shelf}"), Some(&owner)).await;
+    assert_eq!(full["items"].as_array().unwrap().len(), 2);
+
+    let (_, smart, _) = h
+        .post(
+            "/api/shelves",
+            json!({ "name": "Rules", "kind": "smart", "rules": {} }),
+            Some(&owner),
+        )
+        .await;
+    let (code, _, _) = h
+        .post(
+            "/api/library/bulk",
+            json!({ "action": "shelf", "title_ids": [1], "shelf_id": smart["shelf"]["id"] }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "a smart shelf has no hands");
+
+    let (code, _, _) = h
+        .post(
+            "/api/library/bulk",
+            json!({ "action": "remove", "title_ids": [] }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn the_bulk_action_is_behind_the_wall() {
+    let h = Harness::new().await;
+    let (code, _, _) = h
+        .post(
+            "/api/library/bulk",
+            json!({ "action": "remove", "title_ids": [1] }),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::UNAUTHORIZED);
+}
+
+// ---------------------------------------------------------------------------
+// Someone's whole library, from their profile.
+// ---------------------------------------------------------------------------
+
+/// The owner's library of four titles, with a note on every one, and their
+/// profile on or off.
+async fn a_shared_library(h: &Harness, owner: &str, public: bool) {
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, genres_json) VALUES
+            (1, 'movie', 21, 'Alpha', '[\"Drama\"]'),
+            (2, 'movie', 22, 'Beta', '[\"Comedy\"]'),
+            (3, 'tv', 23, 'Gamma', '[\"Drama\"]'),
+            (4, 'tv', 24, 'Delta', '[\"Drama\"]')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    for (id, status) in [
+        (1, "completed"),
+        (2, "planned"),
+        (3, "watching"),
+        (4, "paused"),
+    ] {
+        let (code, body, _) = h
+            .put(
+                &format!("/api/t/{id}/library"),
+                json!({ "status": status, "rating": 70 + id, "notes": "private note",
+                        "favourite": id == 1, "sync_seasons": false }),
+                Some(owner),
+            )
+            .await;
+        assert_eq!(code, StatusCode::OK, "{body}");
+    }
+    let (code, body, _) = h
+        .put(
+            "/api/account/profile",
+            json!({ "public": public }),
+            Some(owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+}
+
+#[tokio::test]
+async fn a_shared_library_never_carries_notes() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    a_shared_library(&h, &owner, true).await;
+
+    // My own page keeps them, so the note really is there to leak.
+    let (_, mine) = h.get("/api/library", Some(&owner)).await;
+    assert!(mine.to_string().contains("private note"));
+
+    let (code, theirs) = h.get("/api/profiles/mihai/library", Some(&guest)).await;
+    assert_eq!(code, StatusCode::OK, "{theirs}");
+    assert_eq!(theirs["total"], json!(4));
+    let text = theirs.to_string();
+    assert!(!text.contains("private note"), "{text}");
+    assert!(!text.contains("\"notes\""), "not even empty: {text}");
+
+    // The fields it does carry, and nothing about how the entry came about.
+    let entry = &theirs["items"][0]["entry"];
+    let mut fields: Vec<&str> = entry
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    fields.sort_unstable();
+    assert_eq!(fields, ["favourite", "rating", "status"]);
+
+    // Nor anywhere else a profile answers from.
+    let (_, profile) = h.get("/api/profiles/mihai", Some(&guest)).await;
+    assert!(!profile.to_string().contains("private note"));
+}
+
+#[tokio::test]
+async fn a_shared_library_goes_by_the_same_rule_as_the_profile() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    a_shared_library(&h, &owner, false).await;
+
+    let (private, off) = h.get("/api/profiles/mihai/library", Some(&guest)).await;
+    let (missing, none) = h.get("/api/profiles/nobody/library", Some(&guest)).await;
+    assert_eq!(private, StatusCode::NOT_FOUND);
+    assert_eq!(missing, StatusCode::NOT_FOUND);
+    assert_eq!(off, none, "a private library answers like a missing one");
+
+    // You always see your own.
+    let (code, _) = h.get("/api/profiles/mihai/library", Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK);
+
+    let (code, _) = h.get("/api/profiles/mihai/library", None).await;
+    assert_eq!(code, StatusCode::UNAUTHORIZED);
+
+    // Switched on: nothing else to turn on.
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&owner),
+    )
+    .await;
+    let (code, _) = h.get("/api/profiles/mihai/library", Some(&guest)).await;
+    assert_eq!(code, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn a_shared_library_filters_sorts_and_comes_in_pages() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    a_shared_library(&h, &owner, true).await;
+    let names = |v: &Value| -> Vec<String> {
+        v["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["name"].as_str().unwrap().to_string())
+            .collect()
+    };
+
+    let (_, first) = h
+        .get(
+            "/api/profiles/mihai/library?sort=name&order=asc&limit=3",
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(names(&first), ["Alpha", "Beta", "Delta"]);
+    assert_eq!(first["total"], json!(4), "more than one page holds");
+    let (_, second) = h
+        .get(
+            "/api/profiles/mihai/library?sort=name&order=asc&limit=3&offset=3",
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(names(&second), ["Gamma"]);
+
+    let (_, shows) = h
+        .get(
+            "/api/profiles/mihai/library?kind=tv&status=paused",
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(names(&shows), ["Delta"]);
+    assert_eq!(shows["total"], json!(1));
+    assert_eq!(shows["counts"]["watching"], json!(1));
+
+    let (_, liked) = h
+        .get("/api/profiles/mihai/library?favourite=true", Some(&guest))
+        .await;
+    assert_eq!(names(&liked), ["Alpha"]);
+
+    let (_, rated) = h
+        .get(
+            "/api/profiles/mihai/library?sort=rating&order=desc&limit=1",
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(names(&rated), ["Delta"], "by their ratings");
+
+    let (code, _) = h
+        .get("/api/profiles/mihai/library?status=nonsense", Some(&guest))
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+}
+
+// ---------------------------------------------------------------------------
+// A show with nothing watched, on Home.
+// ---------------------------------------------------------------------------
+
+/// A show TMDB's cache can answer for, with `episodes` episodes in one season.
+async fn a_show_on_tmdb(h: &Harness, tmdb_id: i64, episodes: i64) {
+    let detail = json!({
+        "id": tmdb_id, "name": "Monsters vs. Aliens", "first_air_date": "2013-03-23",
+        "number_of_episodes": episodes, "number_of_seasons": 1, "status": "Ended",
+        "seasons": [{ "season_number": 1, "episode_count": episodes, "name": "Season 1" }],
+        "credits": { "cast": [{ "id": 5727, "name": "Diedrich Bader" }] }
+    });
+    let season = json!({
+        "season_number": 1,
+        "episodes": (1..=episodes).map(|n| json!({
+            "episode_number": n, "name": format!("Episode {n}"), "air_date": "2013-03-23"
+        })).collect::<Vec<_>>()
+    });
+    let keys = [
+        format!("/tv/{tmdb_id}?lang=en-US&append_to_response=credits,videos,images,watch/providers,recommendations,similar,external_ids,content_ratings&include_image_language=en,null,ja"),
+        format!("/tv/{tmdb_id}/season/1?lang=en-US"),
+    ];
+    for (key, body) in keys.iter().zip([&detail, &season]) {
+        sqlx::query(
+            "INSERT OR REPLACE INTO tmdb_cache (cache_key, body, fetched_at, expires_at)
+             VALUES (?, ?, '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')",
+        )
+        .bind(key)
+        .bind(body.to_string())
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn a_show_imported_with_nothing_to_tick_still_has_its_episodes() {
+    let h = Harness::with_tmdb_key("test-key").await;
+    let (owner, _) = two_accounts(&h).await;
+    a_show_on_tmdb(&h, 60789, 3).await;
+
+    // What Netflix's row for a show's own name sends: no season, no episodes.
+    let (code, body, _) = h
+        .post(
+            "/api/import/apply",
+            json!({ "items": [{ "kind": "tv", "tmdb_id": 60789, "status": "watching",
+                                "progress": 0 }], "on_conflict": "skip" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["added"], json!(1), "{body}");
+
+    let id = h.tid("tv", 60789).await;
+    let (listed,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM episode WHERE title_id = ?")
+        .bind(id)
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(listed, 3);
+
+    // A tracker's Watching stands, and the show says where to start.
+    let (_, home) = h.get("/api/home", Some(&owner)).await;
+    assert_eq!(home["hero"]["next"]["episode_number"], json!(1));
+    assert_eq!(home["hero"]["next"]["aired"], json!(true));
+}
+
+#[tokio::test]
+async fn a_planned_import_that_ticks_episodes_is_under_way() {
+    let h = Harness::with_tmdb_key("test-key").await;
+    let (owner, _) = two_accounts(&h).await;
+    a_show_on_tmdb(&h, 60789, 3).await;
+
+    // Netflix sent it as planned, and the review gave it a season.
+    let (code, body, _) = h
+        .post(
+            "/api/import/apply",
+            json!({ "items": [{ "kind": "tv", "tmdb_id": 60789, "status": "planned",
+                                "season": 1, "progress": 2 }], "on_conflict": "skip" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    let (_, library) = h.get("/api/library", Some(&owner)).await;
+    assert_eq!(library["items"][0]["entry"]["status"], json!("watching"));
+    assert_eq!(library["items"][0]["watched_episodes"], json!(2));
+}
+
+#[tokio::test]
+async fn nothing_watched_and_no_next_episode_stays_off_continue_watching() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    // As an older import left it: no episodes listed, and only TMDB's count.
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, episode_count, season_count)
+         VALUES (1, 'tv', 60789, 'Monsters vs. Aliens', 50, 1),
+                (2, 'tv', 70000, 'Caught Up', NULL, 1)",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, 1, 'watching', '2026-01-01', '2026-01-01'),
+                (1, 2, 'watching', '2026-01-01', '2026-01-02')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO episode (id, title_id, season_number, episode_number, air_date)
+         VALUES (1, 2, 1, 1, '2020-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, source)
+         VALUES (1, 2, 1, '2020-01-02T20:00:00Z', 'manual')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let (_, home) = h.get("/api/home", Some(&owner)).await;
+    let shown = [&home["hero"]]
+        .into_iter()
+        .map(|e| e["item"]["name"].clone())
+        .chain(
+            home["continue"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .chain(home["waiting"].as_array().unwrap())
+                .map(|e| e["item"]["name"].clone()),
+        )
+        .collect::<Vec<_>>();
+    assert_eq!(shown, [json!("Caught Up")], "{home}");
+}
+
+#[tokio::test]
+async fn the_repair_moves_only_a_show_that_cannot_have_been_watched() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES
+            (1, 'tv', 1, 'Never listed'),
+            (2, 'tv', 2, 'Listed'),
+            (3, 'tv', 3, 'Paused'),
+            (4, 'tv', -4, 'From AniList'),
+            (5, 'movie', 5, 'A film'),
+            (6, 'tv', 6, 'On AniList')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO episode (title_id, season_number, episode_number, air_date)
+         VALUES (2, 1, 1, '2020-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, rating, notes, added_at, updated_at)
+         VALUES (1, 1, 'watching', 80, 'kept', '2026-01-01', '2026-01-01'),
+                (1, 2, 'watching', NULL, NULL, '2026-01-01', '2026-01-01'),
+                (1, 3, 'paused', NULL, NULL, '2026-01-01', '2026-01-01'),
+                (1, 4, 'watching', NULL, NULL, '2026-01-01', '2026-01-01'),
+                (1, 5, 'watching', NULL, NULL, '2026-01-01', '2026-01-01'),
+                (1, 6, 'watching', NULL, NULL, '2026-01-01', '2026-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO anilist_entry (user_id, media_id, title_id, state, name, updated_at)
+         VALUES (1, 9, 6, 'placed', 'On AniList', '2026-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    sqlx::raw_sql(include_str!(
+        "../migrations/202610311000_nothing_watched_is_not_watching.sql"
+    ))
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let (_, library) = h
+        .get("/api/library?sort=name&order=asc", Some(&owner))
+        .await;
+    let status = |name: &str| {
+        library["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["name"] == name)
+            .unwrap()["entry"]["status"]
+            .clone()
+    };
+    assert_eq!(status("Never listed"), json!("planned"));
+    assert_eq!(
+        status("Listed"),
+        json!("watching"),
+        "somebody could tick it"
+    );
+    assert_eq!(status("Paused"), json!("paused"));
+    assert_eq!(status("From AniList"), json!("watching"));
+    assert_eq!(status("A film"), json!("watching"));
+    assert_eq!(status("On AniList"), json!("watching"));
+    let kept = frog::store::get_entry(&h.state.pool, 1, 1)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (kept.rating, kept.notes.as_deref()),
+        (Some(80.0), Some("kept"))
+    );
+}

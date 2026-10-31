@@ -187,7 +187,8 @@ test('the command palette input sits on one line with its icon and esc badge', a
 
 	const row = dialog.locator('.query');
 	const icon = row.locator('svg').first();
-	const esc = row.locator('kbd');
+	// A phone has a close button where a keyboard has its esc badge.
+	const esc = row.locator('kbd:visible, button:visible');
 
 	const [inputBox, iconBox, escBox, rowBox] = await Promise.all([
 		input.boundingBox(),
@@ -205,6 +206,30 @@ test('the command palette input sits on one line with its icon and esc badge', a
 	expect(rowBox!.height).toBeLessThan(64);
 
 	await page.screenshot({ path: testInfo.outputPath('palette.png') });
+});
+
+test('keyboard hints only show where there is a keyboard', async ({ page, isMobile }) => {
+	await signIn(page);
+	await page.goto('/');
+	const palette = page.getByRole('dialog', { name: 'Command palette' });
+	await page.getByRole('button', { name: 'Search and commands' }).click();
+	await expect(palette).toBeVisible();
+
+	const hints = palette.locator('kbd:visible');
+	const close = palette.getByRole('button', { name: 'Close' });
+	if (isMobile) {
+		await expect(page.locator('.bar kbd')).toBeHidden();
+		await expect(hints).toHaveCount(0);
+		await close.click();
+		await expect(palette).toBeHidden();
+	} else {
+		await expect(page.locator('.bar kbd')).toHaveText('Ctrl K');
+		await expect(palette.getByText('esc')).toBeVisible();
+		await expect(palette.locator('footer')).toBeVisible();
+		await expect(close).toBeHidden();
+		await page.keyboard.press('Escape');
+		await expect(palette).toBeHidden();
+	}
 });
 
 test("the what's new page lists the current release", async ({ page }) => {
@@ -550,6 +575,369 @@ test('a name sorts from A, and Back from a title keeps the filters', async ({
 	clearLibrary(testInfo.project.name);
 });
 
+/** A title page's answer as the server would give it, with `extra` on top. */
+function titleAnswer(id: number, kind: 'movie' | 'tv', name: string, extra: object) {
+	return {
+		item: {
+			id,
+			kind,
+			name,
+			overview: null,
+			poster_path: null,
+			backdrop_path: null,
+			logo_path: null,
+			release_date: '2013-01-01',
+			last_air_date: null,
+			tmdb_status: null,
+			runtime: null,
+			episode_count: null,
+			season_count: null,
+			tmdb_vote: null,
+			collection_id: null,
+			genres: [],
+			accent: { accent: '#6cc46b', shade: '#102018', tint: '#081008' },
+			entry: null,
+			watched_episodes: 0,
+			total_episodes: 0,
+			last_watched_at: null
+		},
+		tagline: null,
+		homepage: null,
+		cast: [],
+		crew: [],
+		trailers: [],
+		providers: { flatrate: [], rent: [], buy: [], link: null },
+		provider_region: 'BE',
+		seasons: [],
+		recommendations: [],
+		similar: [],
+		collection: null,
+		next_up: null,
+		ratings: [],
+		...extra
+	};
+}
+
+test('a title whose provider repeats itself still opens', async ({ page }) => {
+	// This suite runs the production build, where a repeated key in a list
+	// throws and takes the page with it. Monsters vs. Aliens did exactly that.
+	await signIn(page);
+	const person = { id: 5727, name: 'Diedrich Bader', character: 'Coverton', profile_path: null };
+	const film = (name: string) => ({
+		kind: 'movie',
+		tmdb_id: 7,
+		id: null,
+		name,
+		poster_path: null,
+		backdrop_path: null,
+		year: 2001,
+		overview: null,
+		vote: null,
+		in_library: null
+	});
+	const trailer = { key: 't', name: 'Trailer', site: 'YouTube', kind: 'Trailer', official: true };
+	const provider = { id: 8, name: 'Netflix', logo_path: null };
+	const season = { season_number: 1, name: 'Season 1', episode_count: 1 };
+	const answer = titleAnswer(9199, 'tv', 'Repeats', {
+		cast: [person, { ...person, character: 'The Missing Link' }],
+		crew: [{ id: 1, name: 'Maker', job: 'Creator', profile_path: null }],
+		trailers: [trailer, trailer],
+		providers: { flatrate: [provider, provider], rent: [], buy: [], link: null },
+		seasons: [season, season],
+		recommendations: [film('One'), film('One')],
+		collection: { id: 1, name: 'Set', parts: [film('Part'), film('Part')] }
+	});
+	await page.route('**/api/t/9199', (route) => route.fulfill({ json: answer }));
+	await page.route('**/api/t/9199/scores', (route) =>
+		route.fulfill({ json: { ratings: [], age_rating: null } })
+	);
+	await page.route('**/api/t/9199/seasons/1', (route) =>
+		route.fulfill({
+			json: {
+				season_number: 1,
+				episodes: [1, 1].map(() => ({
+					season_number: 1,
+					episode_number: 1,
+					name: 'Pilot',
+					watched: false,
+					watch_count: 0,
+					undated: false
+				}))
+			}
+		})
+	);
+
+	const crashes: string[] = [];
+	page.on('pageerror', (e) => crashes.push(e.message));
+	await page.goto('/t/9199');
+	await expect(page.getByRole('heading', { name: 'Repeats' })).toBeVisible();
+	await expect(page.locator('a.person')).toHaveCount(1);
+	await expect(page.locator('.plogo')).toHaveCount(1);
+	await expect(page.locator('.trailer')).toHaveCount(1);
+	await expect(page.locator('.episode')).toHaveCount(1);
+	expect(crashes).toEqual([]);
+});
+
+test('edit mode ticks titles in every view instead of opening them', async ({
+	page,
+	isMobile
+}, testInfo) => {
+	await signIn(page);
+	seedLibrary(testInfo.project.name);
+	const saved = await (await page.request.get('/api/settings')).json();
+	const views = [
+		{ card: 'poster', first: '.grid a.poster' },
+		{ card: 'landscape', first: 'a.land' },
+		{ card: 'list', first: '.list a' },
+		{ card: 'compact', first: 'tbody a' }
+	];
+	for (const { card, first } of views) {
+		await page.request.put('/api/settings', { data: { ...saved, cardStyle: card } });
+		await page.goto('/library');
+		await page.getByRole('button', { name: 'Edit', exact: true }).click();
+		await page.locator(first).first().click();
+		await expect(page, `${card} stays on the list`).toHaveURL('/library');
+		await expect(page.getByText('1 selected')).toBeVisible();
+		await page.getByRole('button', { name: 'Select all' }).click();
+		await expect(page.getByText('5 selected')).toBeVisible();
+		await page.getByRole('button', { name: 'Select none' }).click();
+		await expect(page.getByText('0 selected')).toBeVisible();
+		await page.getByRole('button', { name: 'Done', exact: true }).click();
+		await page.locator(first).first().click();
+		await expect(page, `${card} opens again once done`).toHaveURL(/\/t\/\d+/);
+	}
+	await page.request.put('/api/settings', { data: saved });
+
+	// Select all covers what the filters show, not the whole library.
+	await page.goto('/library?kind=movie');
+	await page.getByRole('button', { name: 'Edit', exact: true }).click();
+	await page.getByRole('button', { name: 'Select all' }).click();
+	await expect(page.getByText('2 selected')).toBeVisible();
+
+	if (isMobile) {
+		const bar = page.getByRole('toolbar', { name: 'Edit your library' });
+		const fits = await bar.evaluate((el) => el.getBoundingClientRect().right <= innerWidth);
+		expect(fits, 'the bar fits a phone').toBe(true);
+	}
+	clearLibrary(testInfo.project.name);
+});
+
+test('removing many titles is one request, and undo brings back every field', async ({
+	page
+}, testInfo) => {
+	await signIn(page);
+	seedLibrary(testInfo.project.name);
+	await page.request.put('/api/t/9102/library', {
+		data: { rating: 91, notes: 'Saw it twice', status: 'paused', favourite: true }
+	});
+	const before = await (await page.request.get('/api/library?sort=name&order=asc')).json();
+	const held = (answer: { items: { id: number; entry: unknown }[] }) =>
+		answer.items.find((i) => i.id === 9102)?.entry;
+
+	await page.goto('/library');
+	await page.getByRole('button', { name: 'Edit', exact: true }).click();
+	await page.getByRole('button', { name: 'Select all' }).click();
+
+	const sent: string[] = [];
+	page.on('request', (r) => {
+		if (r.method() !== 'GET' && r.url().includes('/api/')) sent.push(r.url());
+	});
+	await page.getByRole('button', { name: 'Remove' }).click();
+	await expect(page.getByText('Removed 5 titles')).toBeVisible();
+	await expect(titles(page)).toHaveCount(0);
+	expect(sent.map((u) => new URL(u).pathname)).toEqual(['/api/library/bulk']);
+
+	await page.getByRole('button', { name: 'Undo' }).click();
+	await expect(titles(page)).toHaveCount(5);
+	const after = await (await page.request.get('/api/library?sort=name&order=asc')).json();
+	expect(held(after)).toEqual(held(before));
+	clearLibrary(testInfo.project.name);
+});
+
+test('marking many titles watched asks once', async ({ page }, testInfo) => {
+	await signIn(page);
+	seedLibrary(testInfo.project.name);
+	await page.goto('/library?kind=movie');
+	await page.getByRole('button', { name: 'Edit', exact: true }).click();
+	await page.getByRole('button', { name: 'Select all' }).click();
+	await page.getByRole('button', { name: 'Watched', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByText('When did you watch this?')).toBeVisible();
+	await dialog.getByRole('radio', { name: /I don't know/ }).click();
+	await dialog.getByRole('button', { name: 'Mark watched' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.getByText('Marked 2 titles watched')).toBeVisible();
+	const diary = await (await page.request.get('/api/diary')).json();
+	expect(diary.undated).toBeGreaterThanOrEqual(2);
+
+	const db = new DatabaseSync(join('.e2e-data', testInfo.project.name, 'e2e.db'));
+	db.exec('PRAGMA busy_timeout = 5000');
+	db.exec('DELETE FROM watch_event WHERE title_id BETWEEN 9101 AND 9105');
+	db.close();
+	clearLibrary(testInfo.project.name);
+});
+
+test('labels on a title card never overlap, on the narrowest phone', async ({ page }) => {
+	await signIn(page);
+	await page.setViewportSize({ width: 320, height: 640 });
+	const item = (n: number, kind: string, in_library: string | null) => ({
+		kind,
+		tmdb_id: n,
+		id: null,
+		name: `Title ${n}`,
+		poster_path: null,
+		backdrop_path: null,
+		year: 2020,
+		overview: null,
+		vote: null,
+		popularity: 1,
+		vote_count: 1,
+		genre_ids: [],
+		in_library
+	});
+	const statuses = ['watching', 'completed', 'planned', 'paused', 'dropped', null];
+	const titles = statuses.flatMap((status, i) => [
+		item(i * 2 + 1, 'movie', status),
+		item(i * 2 + 2, 'tv', status)
+	]);
+	await page.route('**/api/studios/7', (route) =>
+		route.fulfill({ json: { id: 7, name: 'A Studio', titles } })
+	);
+	await page.route('**/api/search?*', (route) =>
+		route.fulfill({ json: { results: titles, next_page: null } })
+	);
+	await page.route('**/api/search/more?*', (route) =>
+		route.fulfill({ json: { people: [], characters: [], studios: [] } })
+	);
+
+	const overlapping = () =>
+		page.evaluate(() => {
+			const clash = (a: DOMRect, b: DOMRect) =>
+				a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+			const found: string[] = [];
+			for (const card of document.querySelectorAll('.art')) {
+				const host = card.closest('.result') ?? card;
+				const labels = [...host.querySelectorAll('.badge, .quick .q')].filter(
+					(el) => (el as HTMLElement).offsetWidth > 0
+				);
+				if (labels.length < 2) continue;
+				labels.forEach((a, i) =>
+					labels.slice(i + 1).forEach((b) => {
+						if (clash(a.getBoundingClientRect(), b.getBoundingClientRect())) {
+							found.push(`${a.textContent?.trim()} and ${b.textContent?.trim() || 'the button'}`);
+						}
+					})
+				);
+			}
+			return { cards: document.querySelectorAll('.art').length, found };
+		});
+
+	await page.goto('/studio/7');
+	await expect(page.getByText('Title 12').first()).toBeVisible();
+	const onStudio = await overlapping();
+	expect(onStudio.cards).toBe(12);
+	expect(onStudio.found).toEqual([]);
+
+	await page.goto('/search?q=title&type=movies');
+	await expect(page.getByText('Title 11').first()).toBeVisible();
+	const onSearch = await overlapping();
+	expect(onSearch.cards).toBeGreaterThan(0);
+	expect(onSearch.found).toEqual([]);
+});
+
+test("someone's whole library opens from their profile, without their notes", async ({
+	page,
+	playwright,
+	baseURL
+}, testInfo) => {
+	await signIn(page);
+	const name = `friend${Date.now() % 100000}`;
+	const invite = await (await page.request.post('/api/invites', { data: { role: 'user' } })).json();
+	const friend = await playwright.request.newContext({ baseURL });
+	await friend.post('/api/auth/register', {
+		data: { username: name, password: 'another-long-pass', invite: invite.code, remember: true }
+	});
+	await friend.put('/api/account/profile', { data: { public: true } });
+
+	const secret = 'Only for me to read';
+	const db = new DatabaseSync(join('.e2e-data', testInfo.project.name, 'e2e.db'));
+	db.exec('PRAGMA busy_timeout = 5000');
+	const now = '2026-01-01T00:00:00Z';
+	const { id: user } = db.prepare('SELECT id FROM app_user WHERE username = ?').get(name) as {
+		id: number;
+	};
+	for (let id = 9300; id < 9370; id++) {
+		db.prepare(
+			`INSERT OR IGNORE INTO title (id, kind, name, genres_json, refreshed_at) VALUES (?, 'movie', ?, '[]', ?)`
+		).run(id, `Shared ${id}`, now);
+		db.prepare(
+			`INSERT OR IGNORE INTO title_external (title_id, provider, external_id, is_primary, added_at)
+			 VALUES (?, 'tmdb', ?, 1, ?)`
+		).run(id, `movie/${id}`, now);
+		db.prepare(
+			`INSERT OR REPLACE INTO library_entry (user_id, title_id, status, notes, added_at, updated_at)
+			 VALUES (?, ?, 'completed', ?, ?, ?)`
+		).run(user, id, secret, now, now);
+	}
+	db.close();
+
+	const answers: string[] = [];
+	page.on('response', async (r) => {
+		if (r.url().includes('/library')) answers.push(await r.text().catch(() => ''));
+	});
+
+	await page.goto(`/people/${name}`);
+	await page.locator('.identity').getByRole('link', { name: 'Library' }).click();
+	await expect(page).toHaveURL(new RegExp(`/people/${name}/library`));
+	await expect(titles(page)).toHaveCount(60);
+	await expect(page.getByText('70 titles')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
+
+	// Further down, the next page. Reading on is not a button to find.
+	await page.locator('.more').scrollIntoViewIfNeeded();
+	await expect(titles(page)).toHaveCount(70);
+	expect(answers.join('')).not.toContain(secret);
+
+	// The viewer's own page for the title, not theirs.
+	await titles(page).first().click();
+	await expect(page).toHaveURL(/\/t\/93\d\d/);
+
+	// Turned off, it reads as if it was never there.
+	await friend.put('/api/account/profile', { data: { public: false } });
+	await page.goto(`/people/${name}/library`);
+	await expect(page.getByRole('heading', { name: 'No profile here' })).toBeVisible();
+	const [off, none] = await Promise.all([
+		page.request.get(`/api/profiles/${name}/library`),
+		page.request.get('/api/profiles/nobody-at-all/library')
+	]);
+	expect(off.status()).toBe(404);
+	expect(await off.text()).toBe(await none.text());
+	await friend.dispose();
+});
+
+test('a page that cannot load says so, and can try again', async ({ page }) => {
+	await signIn(page);
+	for (const [path, api] of [
+		['/', '**/api/home'],
+		['/diary', '**/api/diary?*'],
+		['/calendar', '**/api/calendar'],
+		['/stats', '**/api/stats'],
+		['/shelves', '**/api/shelves'],
+		['/people', '**/api/profiles']
+	]) {
+		await page.route(api, (route) =>
+			route.fulfill({ status: 500, json: { error: 'database is locked' } })
+		);
+		await page.goto(path);
+		const again = page.getByRole('button', { name: 'Try again' });
+		await expect(again, `${path} offers another go`).toBeVisible();
+		await expect(page.locator('main')).not.toContainText('database');
+		await page.unroute(api);
+		await again.click();
+		await expect(again, `${path} recovers`).toBeHidden();
+	}
+});
+
 test('renaming a shelf starts in the name field', async ({ page }) => {
 	await signIn(page);
 	const created = await page.request.post('/api/shelves', {
@@ -712,6 +1100,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/admin/server',
 		'/api/profiles',
 		'/api/profiles/someone',
+		'/api/profiles/someone/library',
 		'/api/profiles/someone/images/avatar',
 		'/api/anilist',
 		'/api/anilist/entries',
@@ -726,6 +1115,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		expect(res.status(), `${path} should be 401`).toBe(401);
 	}
 	for (const path of [
+		'/api/library/bulk',
 		'/api/auth/two-factor/start',
 		'/api/auth/two-factor/confirm',
 		'/api/auth/two-factor/disable',

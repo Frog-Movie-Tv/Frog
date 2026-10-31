@@ -45,7 +45,8 @@ a new source is a new reader and nothing else.
   it only means something to the Frog that wrote the file.
 - **Matching:** a TMDB id, then an IMDb id, then an AniList id, win outright. Then names in
   order (title, then alternatives); animation first for anime rows; the
-  preferred kind first; a show with the row's season beats a namesake; then
+  preferred kind first, and it wins whenever it has the same letters, however
+  the name is punctuated; a show with the row's season beats a namesake; then
   the same name in the same year, the same casing, the same letters. A year
   more than one off (and not a later season), a near name, or a namesake of
   the other kind is said in `note`.
@@ -66,6 +67,13 @@ a new source is a new reader and nothing else.
   for an episode makes the show `watching`, never `completed`, and its rating
   is not the show's.
 - **Shows never get a title-level watch.**
+- **Every show imported has its episodes listed**, whether or not anything is
+  ticked. Without them it has no next episode and only TMDB's count to go by.
+- **A Netflix show with nothing to tick arrives as planned.** A show's own name
+  with no episode, or episodes with no season to place them in, say it was
+  opened, not how far anyone got. Giving it a season in the review ticks those
+  episodes, and `apply` then moves it to `watching`. A tracker that says
+  `watching` itself is taken at its word, as above.
 - **A planned later season** does not send a show you are part-way through
   back to planned.
 - **Dates:** readers keep the day of a timestamp and set it to 20:00 UTC; the

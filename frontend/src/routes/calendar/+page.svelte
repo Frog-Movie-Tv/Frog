@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { titleHref } from '#lib/titles';
-	import { img } from '#lib/api';
+	import { ApiError, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
+	import LoadFailed from '#lib/components/LoadFailed.svelte';
+	import { failure, type Failure } from '#lib/failure';
+	import { localDay } from '#lib/day';
 	import { episodeCode, plural, prettyDate, relativeDate } from '#lib/format';
 	import { session } from '#lib/session.svelte';
-	import { toasts } from '#lib/toast.svelte';
 
 	interface Entry {
 		/** Frog's id for the title. */
@@ -27,7 +29,9 @@
 	let view = $state<'month' | 'agenda'>('month');
 	let cursor = $state(new Date());
 
-	const today = new Date().toISOString().slice(0, 10);
+	const today = localDay();
+	let failed = $state<Failure | null>(null);
+	const CANNOT_LOAD = { title: 'Could not load the calendar', hint: 'Try again in a minute.' };
 	let selected = $state<string>(today);
 
 	$effect(() => {
@@ -36,17 +40,23 @@
 	});
 
 	async function load() {
+		loading = true;
+		failed = null;
 		try {
 			const res = await fetch('/api/calendar', { credentials: 'same-origin' });
-			if (!res.ok) throw new Error('Could not load the calendar');
+			if (!res.ok) throw new ApiError('', res.status);
 			entries = (await res.json()).entries;
 			// Open on the next day that has something, if today has nothing.
 			if (!entries.some((e) => e.date === today)) {
 				const next = entries.find((e) => e.date >= today);
-				if (next) selected = next.date;
+				if (next) {
+					selected = next.date;
+					// The month it is in, so the day chosen is a day on the page.
+					cursor = new Date(`${next.date}T12:00:00`);
+				}
 			}
 		} catch (e) {
-			toasts.error(e);
+			failed = failure(e, CANNOT_LOAD);
 		} finally {
 			loading = false;
 		}
@@ -130,6 +140,8 @@
 
 	{#if loading}
 		<Spinner label="Loading the calendar" />
+	{:else if failed}
+		<LoadFailed {failed} onretry={load} />
 	{:else if !entries.length}
 		<Empty
 			art="rest"
@@ -217,7 +229,9 @@
 
 			<aside class="day" aria-live="polite">
 				<h2>{prettyDate(selected)}</h2>
-				<p class="faint when">{relativeDate(selected)}</p>
+				{#if relativeDate(selected) !== prettyDate(selected)}
+					<p class="faint when">{relativeDate(selected)}</p>
+				{/if}
 				{#if selectedEntries.length}
 					<ul class="agenda">
 						{#each selectedEntries as entry (`${entry.id}-${entry.season_number}-${entry.episode_number}`)}
@@ -253,7 +267,7 @@
 						{episodeCode(entry.season_number, entry.episode_number)}
 						{#if entry.episode_name}· {entry.episode_name}{/if}
 					{:else}
-						Released
+						Film release
 					{/if}
 				</span>
 			</span>

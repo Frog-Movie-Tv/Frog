@@ -5,6 +5,9 @@
 //! screen actually draws. Keeping the mapping in one place also means a change
 //! in TMDB's shape breaks here, loudly, instead of silently in a component.
 
+use std::collections::HashSet;
+use std::hash::Hash;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -25,6 +28,16 @@ pub fn f64_at(v: &Value, key: &str) -> Option<f64> {
 
 fn year_of(date: Option<&str>) -> Option<i32> {
     date.and_then(|d| d.get(0..4)).and_then(|y| y.parse().ok())
+}
+
+/// The first of each, by `key`, in order. Providers repeat themselves, and a
+/// page keyed on one of these ids cannot draw a repeat.
+pub fn unique_by<T, K: Eq + Hash>(items: Vec<T>, key: impl Fn(&T) -> K) -> Vec<T> {
+    let mut seen = HashSet::new();
+    items
+        .into_iter()
+        .filter(|item| seen.insert(key(item)))
+        .collect()
 }
 
 /// A film or show as a provider lists it: a search result, a credit, a
@@ -404,25 +417,46 @@ pub struct EpisodeInfo {
     pub tmdb_vote: Option<f64>,
 }
 
+/// A title's cast, one card per person. TMDB lists someone once per part, and
+/// reads this from the stored payload, so what was cached before needs nothing
+/// done to it. Their parts are joined, as a person's credits are.
 pub fn cast(v: &Value, limit: usize) -> Vec<CastMember> {
-    v.get("credits")
-        .and_then(|c| c.get("cast"))
+    let mut out: Vec<CastMember> = Vec::new();
+    let list = v
+        .pointer("/credits/cast")
         .and_then(Value::as_array)
-        .map(|a| {
-            a.iter()
-                .filter_map(|c| {
-                    Some(CastMember {
-                        id: i64_at(c, "id")?,
-                        name: str_at(c, "name")?,
-                        character: str_at(c, "character"),
-                        profile_path: str_at(c, "profile_path"),
-                        order: i64_at(c, "order").unwrap_or(999),
-                    })
-                })
-                .take(limit)
-                .collect()
-        })
-        .unwrap_or_default()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    for c in list {
+        let (Some(id), Some(name)) = (i64_at(c, "id"), str_at(c, "name")) else {
+            continue;
+        };
+        let character = str_at(c, "character");
+        if let Some(known) = out.iter_mut().find(|m| m.id == id) {
+            known.character = joined(known.character.take(), character);
+            known.order = known.order.min(i64_at(c, "order").unwrap_or(999));
+            continue;
+        }
+        if out.len() < limit {
+            out.push(CastMember {
+                id,
+                name,
+                character,
+                profile_path: str_at(c, "profile_path"),
+                order: i64_at(c, "order").unwrap_or(999),
+            });
+        }
+    }
+    out
+}
+
+/// Two parts of one person, unless they are the same part.
+fn joined(parts: Option<String>, more: Option<String>) -> Option<String> {
+    match (parts, more) {
+        (Some(parts), Some(more)) if parts.split(" / ").any(|p| p == more) => Some(parts),
+        (Some(parts), Some(more)) => Some(format!("{parts} / {more}")),
+        (parts, more) => parts.or(more),
+    }
 }
 
 /// Directors and writers for films; creators for shows.
@@ -443,6 +477,7 @@ pub fn key_crew(v: &Value) -> Vec<CrewMember> {
                 .collect()
         })
         .unwrap_or_default();
+    out = unique_by(out, |c| c.id);
 
     const WANTED: [&str; 4] = ["Director", "Screenplay", "Writer", "Story"];
     if let Some(crew) = v
@@ -570,6 +605,7 @@ pub fn trailers(v: &Value) -> Vec<Trailer> {
 
     // Official trailers first, teasers last.
     out.sort_by_key(|t| (!t.official, t.kind != "Trailer"));
+    let mut out = unique_by(out, |t| t.key.clone());
     out.truncate(6);
     out
 }
@@ -581,7 +617,8 @@ pub fn providers(v: &Value, region: &str) -> ProviderGroup {
         .and_then(|r| r.get(region));
 
     let list = |key: &str| -> Vec<Provider> {
-        node.and_then(|n| n.get(key))
+        let found: Vec<Provider> = node
+            .and_then(|n| n.get(key))
             .and_then(Value::as_array)
             .map(|a| {
                 a.iter()
@@ -595,7 +632,8 @@ pub fn providers(v: &Value, region: &str) -> ProviderGroup {
                     })
                     .collect()
             })
-            .unwrap_or_default()
+            .unwrap_or_default();
+        unique_by(found, |p| p.id)
     };
 
     ProviderGroup {
@@ -607,7 +645,8 @@ pub fn providers(v: &Value, region: &str) -> ProviderGroup {
 }
 
 pub fn seasons(v: &Value) -> Vec<SeasonSummary> {
-    v.get("seasons")
+    let found: Vec<SeasonSummary> = v
+        .get("seasons")
         .and_then(Value::as_array)
         .map(|a| {
             a.iter()
@@ -624,12 +663,14 @@ pub fn seasons(v: &Value) -> Vec<SeasonSummary> {
                 .filter(|s| s.episode_count > 0)
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    unique_by(found, |s| s.season_number)
 }
 
 pub fn episodes_of_season(v: &Value) -> Vec<EpisodeInfo> {
     let season_number = i64_at(v, "season_number").unwrap_or(0);
-    v.get("episodes")
+    let found: Vec<EpisodeInfo> = v
+        .get("episodes")
         .and_then(Value::as_array)
         .map(|a| {
             a.iter()
@@ -648,11 +689,13 @@ pub fn episodes_of_season(v: &Value) -> Vec<EpisodeInfo> {
                 })
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    unique_by(found, |e| (e.season_number, e.episode_number))
 }
 
 pub fn related(v: &Value, key: &str, limit: usize) -> Vec<SearchItem> {
-    v.get(key)
+    let found: Vec<SearchItem> = v
+        .get(key)
         .and_then(|r| r.get("results"))
         .and_then(Value::as_array)
         .map(|a| {
@@ -665,10 +708,17 @@ pub fn related(v: &Value, key: &str, limit: usize) -> Vec<SearchItem> {
                     };
                     SearchItem::from_value(item, Some(forced))
                 })
-                .take(limit)
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    let mut found = unique_items(found);
+    found.truncate(limit);
+    found
+}
+
+/// One entry per title, as its provider names it.
+pub fn unique_items(items: Vec<SearchItem>) -> Vec<SearchItem> {
+    unique_by(items, |i| (i.kind.clone(), i.tmdb_id, i.anilist_id))
 }
 
 #[cfg(test)]
@@ -743,6 +793,81 @@ mod tests {
         assert_eq!(character_name("Narrator (voice)"), None);
         assert_eq!(character_name(""), None);
         assert_eq!(character_name("Selfridge").as_deref(), Some("Selfridge"));
+    }
+
+    #[test]
+    fn a_repeated_cast_member_is_one_card_with_every_part() {
+        // TMDB's shape for Monsters vs. Aliens (tv/60789): one person, twice.
+        let v = json!({ "credits": { "cast": [
+            { "id": 5727, "name": "Diedrich Bader", "character": "The Missing Link", "order": 3 },
+            { "id": 1, "name": "Other", "character": "Ginormica", "order": 0 },
+            { "id": 5727, "name": "Diedrich Bader", "character": "Coverton", "order": 1 },
+            { "id": 5727, "name": "Diedrich Bader", "character": "Coverton", "order": 7 }
+        ] } });
+        let c = cast(&v, 24);
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0].id, 5727);
+        assert_eq!(
+            c[0].character.as_deref(),
+            Some("The Missing Link / Coverton")
+        );
+        assert_eq!(c[0].order, 1);
+        assert_eq!(c[1].character.as_deref(), Some("Ginormica"));
+    }
+
+    #[test]
+    fn the_cast_limit_counts_people_not_lines() {
+        let v = json!({ "credits": { "cast": [
+            { "id": 1, "name": "A", "character": "One" },
+            { "id": 1, "name": "A", "character": "Two" },
+            { "id": 2, "name": "B" },
+            { "id": 3, "name": "C" },
+            { "id": 2, "name": "B", "character": "Three" }
+        ] } });
+        let c = cast(&v, 2);
+        assert_eq!(c.iter().map(|m| m.id).collect::<Vec<_>>(), [1, 2]);
+        assert_eq!(c[0].character.as_deref(), Some("One / Two"));
+        assert_eq!(
+            c[1].character.as_deref(),
+            Some("Three"),
+            "a part after the limit"
+        );
+    }
+
+    #[test]
+    fn nothing_a_page_keys_on_comes_back_twice() {
+        let v = json!({
+            "created_by": [{ "id": 9, "name": "Maker" }, { "id": 9, "name": "Maker" }],
+            "videos": { "results": [
+                { "site": "YouTube", "type": "Trailer", "key": "t", "name": "One" },
+                { "site": "YouTube", "type": "Trailer", "key": "t", "name": "Two" }
+            ] },
+            "watch/providers": { "results": { "BE": { "flatrate": [
+                { "provider_id": 8, "provider_name": "Netflix" },
+                { "provider_id": 8, "provider_name": "Netflix" }
+            ] } } },
+            "seasons": [
+                { "season_number": 1, "episode_count": 2 },
+                { "season_number": 1, "episode_count": 2 }
+            ],
+            "recommendations": { "results": [
+                { "id": 5, "title": "Film" }, { "id": 5, "title": "Film" }, { "id": 5, "name": "Show" }
+            ] },
+            "episodes": [
+                { "episode_number": 1, "season_number": 1 },
+                { "episode_number": 1, "season_number": 1 }
+            ]
+        });
+        assert_eq!(key_crew(&v).len(), 1);
+        assert_eq!(trailers(&v).len(), 1);
+        assert_eq!(providers(&v, "BE").flatrate.len(), 1);
+        assert_eq!(seasons(&v).len(), 1);
+        assert_eq!(episodes_of_season(&v).len(), 1);
+        assert_eq!(
+            related(&v, "recommendations", 18).len(),
+            2,
+            "a film and a show may share an id"
+        );
     }
 
     #[test]

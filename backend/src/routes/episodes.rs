@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use sqlx::SqlitePool;
 
 use crate::auth::Auth;
+use crate::bulk::{tick_aired, Marking, When};
 use crate::catalog;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
@@ -95,25 +96,6 @@ pub async fn set_watched(
     after_change(&state, auth.user_id(), title_id).await
 }
 
-/// When a batch of episodes was watched.
-///
-/// Marking a whole back catalogue as watched is a statement about the past,
-/// and stamping every episode with today's date flooded the diary with
-/// hundreds of entries that never happened. So bulk marking asks.
-#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum When {
-    /// Just now.
-    #[default]
-    Today,
-    /// Each episode on the day it aired; undated if the air date is unknown.
-    Release,
-    /// One chosen day for all of them.
-    Date,
-    /// Watched, but no idea when: counted everywhere, kept out of the diary.
-    Unknown,
-}
-
 #[derive(Deserialize)]
 pub struct BulkWatchBody {
     #[serde(default = "yes")]
@@ -128,19 +110,8 @@ pub struct BulkWatchBody {
     pub specials: Vec<i64>,
 }
 
-/// Turn a yyyy-mm-dd into the timestamp watches are stored with, refusing
-/// anything that is not a real calendar date or lies in the future.
-pub fn evening_of(date: &str) -> AppResult<String> {
-    let day = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .map_err(|_| AppError::BadRequest("pick a valid date".into()))?;
-    if day > Utc::now().date_naive() {
-        return Err(AppError::BadRequest("that date is in the future".into()));
-    }
-    Ok(format!("{date}T20:00:00Z"))
-}
-
-/// Tick or clear every aired episode of one season, or of the whole show when
-/// `season` is `None` (specials excluded).
+/// Tick every aired episode of one season, or of the whole show when `season`
+/// is `None` (specials excluded), or clear them.
 async fn bulk(
     state: &AppState,
     user_id: i64,
@@ -165,85 +136,19 @@ async fn bulk(
         .await?;
         return Ok(());
     }
-
-    let mode = match body.when {
-        When::Today => "today",
-        When::Release => "release",
-        When::Date => "date",
-        When::Unknown => "unknown",
+    let marking = Marking {
+        when: body.when,
+        date: body.date.clone(),
     };
-    let chosen = match body.when {
-        When::Date => Some(evening_of(body.date.as_deref().unwrap_or(""))?),
-        _ => None,
-    };
-
-    // Only episodes with no watch yet, so this never inflates rewatches, and
-    // only ones that have aired.
-    sqlx::query(concat!(
-        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
-                                  source, undated)
-         SELECT ?6, ?1, e.id,
-                CASE ?2 WHEN 'release' THEN COALESCE(e.air_date || 'T20:00:00Z', ?3)
-                        WHEN 'date' THEN ?4
-                        ELSE ?3 END,
-                0, 'manual',
-                CASE ?2 WHEN 'unknown' THEN 1
-                        WHEN 'release' THEN e.air_date IS NULL
-                        ELSE 0 END
-           FROM episode e
-          WHERE e.title_id = ?1
-            AND (?5 IS NOT NULL OR e.season_number > 0)
-            AND (?5 IS NULL OR e.season_number = ?5)
-            AND ",
-        crate::released!(),
-        "
-            AND NOT EXISTS (
-                  SELECT 1 FROM watch_event w
-                   WHERE w.user_id = ?6 AND w.episode_id = e.id)"
-    ))
-    .bind(title_id)
-    .bind(mode)
-    .bind(Utc::now().to_rfc3339())
-    .bind(chosen.as_deref())
-    .bind(season)
-    .bind(user_id)
-    .execute(&state.pool)
-    .await?;
-
-    if season.is_none() {
-        for special in &body.specials {
-            sqlx::query(concat!(
-                "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
-                                          source, undated)
-                 SELECT ?6, ?1, e.id,
-                        CASE ?2 WHEN 'release' THEN COALESCE(e.air_date || 'T20:00:00Z', ?3)
-                                WHEN 'date' THEN ?4
-                                ELSE ?3 END,
-                        0, 'manual',
-                        CASE ?2 WHEN 'unknown' THEN 1
-                                WHEN 'release' THEN e.air_date IS NULL
-                                ELSE 0 END
-                   FROM episode e
-                  WHERE e.title_id = ?1 AND e.season_number = 0 AND e.episode_number = ?5
-                    AND ",
-                crate::released!(),
-                "
-                    AND NOT EXISTS (
-                          SELECT 1 FROM watch_event w
-                           WHERE w.user_id = ?6 AND w.episode_id = e.id)"
-            ))
-            .bind(title_id)
-            .bind(mode)
-            .bind(Utc::now().to_rfc3339())
-            .bind(chosen.as_deref())
-            .bind(special)
-            .bind(user_id)
-            .execute(&state.pool)
-            .await?;
-        }
-    }
-
-    Ok(())
+    tick_aired(
+        &state.pool,
+        user_id,
+        title_id,
+        season,
+        &marking,
+        &body.specials,
+    )
+    .await
 }
 
 /// Tick or clear a whole season in one go.

@@ -196,7 +196,7 @@ function introduceRows(s: Settings): Settings {
 	const all = HOME_ROWS.map((r) => r.id);
 	const fresh = all.filter((id) => !seen.includes(id));
 	// Shelves have the one row at the top; a layout may still name single ones.
-	const rows = s.homeRows.filter((id) => !id.startsWith('shelf:'));
+	const rows = [...new Set(s.homeRows)].filter((id) => !id.startsWith('shelf:'));
 	if (!fresh.length && s.homeRowsSeen) return { ...s, homeRows: rows };
 	for (const id of fresh) {
 		if (rows.includes(id)) continue;

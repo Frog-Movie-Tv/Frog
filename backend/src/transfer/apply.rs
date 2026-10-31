@@ -233,6 +233,25 @@ async fn apply_one(
         film_watches(state, user_id, title_id, &item, completed).await?;
     }
 
+    if kind == "tv" {
+        // A row with nothing to tick still has a show behind it. Without its
+        // episodes it has no next one, and only TMDB's count to go by.
+        if let Err(e) = catalog::ensure_episodes(state, title_id, Some(&detail)).await {
+            tracing::warn!(title_id, error = %e, "could not list its episodes");
+        }
+        // Episodes ticked on a season the review chose: under way, not planned.
+        let planned = store::get_entry(pool, user_id, title_id)
+            .await?
+            .is_some_and(|e| e.status == "planned");
+        if planned && store::progress(pool, user_id, title_id).await?.watched > 0 {
+            let patch = LibraryPatch {
+                status: Some("watching".into()),
+                ..Default::default()
+            };
+            store::apply_patch(pool, user_id, title_id, &patch).await?;
+        }
+    }
+
     if let Some((have, watched_before)) = before {
         let now = store::get_entry(pool, user_id, title_id).await?;
         let watched_now = store::progress(pool, user_id, title_id).await?.watched;

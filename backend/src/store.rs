@@ -41,6 +41,47 @@ pub struct LibraryItem {
     pub last_watched_at: Option<String>,
 }
 
+/// What another account may see of a library entry. Named field by field on
+/// purpose: notes are private, and so is anything added to `LibraryEntry`
+/// until someone decides otherwise here.
+#[derive(Debug, Clone, Serialize)]
+pub struct SharedEntry {
+    pub status: String,
+    pub rating: Option<f64>,
+    pub favourite: bool,
+}
+
+/// A title of someone else's library, as their profile shows it.
+#[derive(Debug, Clone, Serialize)]
+pub struct SharedItem {
+    #[serde(flatten)]
+    pub title: TitleRow,
+    pub genres: Vec<String>,
+    pub accent: Palette,
+    pub entry: Option<SharedEntry>,
+    pub watched_episodes: i64,
+    pub total_episodes: i64,
+    pub last_watched_at: Option<String>,
+}
+
+impl From<LibraryItem> for SharedItem {
+    fn from(item: LibraryItem) -> Self {
+        Self {
+            title: item.title,
+            genres: item.genres,
+            accent: item.accent,
+            entry: item.entry.map(|e| SharedEntry {
+                status: e.status,
+                rating: e.rating,
+                favourite: e.favourite,
+            }),
+            watched_episodes: item.watched_episodes,
+            total_episodes: item.total_episodes,
+            last_watched_at: item.last_watched_at,
+        }
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct LibraryPatch {
     pub status: Option<String>,
@@ -50,6 +91,34 @@ pub struct LibraryPatch {
     pub notes: Option<Option<String>>,
     pub notify: Option<bool>,
 }
+
+/// A library entry whole, as a row: what it takes to put one back exactly.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct EntryRecord {
+    pub title_id: i64,
+    pub status: String,
+    pub rating: Option<f64>,
+    pub favourite: bool,
+    pub notes: Option<String>,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub rewatch_count: i64,
+    pub added_at: String,
+    pub updated_at: String,
+    pub notify: bool,
+    pub progress: Option<i64>,
+}
+
+/// A title of a library, as much as a bulk action needs of it.
+#[derive(Debug, Clone, FromRow)]
+pub struct TrackedTitle {
+    pub id: i64,
+    pub kind: String,
+    pub release_date: Option<String>,
+}
+
+/// How many ids go in one `IN (…)`. SQLite takes a limited number of variables.
+const IDS_AT_ONCE: usize = 500;
 
 /// (status, rating, favourite, notes, started, finished, rewatches, added, notify, progress)
 type MergeEntryRow = (
@@ -431,6 +500,151 @@ pub async fn remove_entry(pool: &SqlitePool, user_id: i64, title_id: i64) -> App
         .bind(title_id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+/// Which of these titles are in this account's library. An id it does not
+/// hold, or another account's, is simply not among them.
+pub async fn tracked_titles(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_ids: &[i64],
+) -> AppResult<Vec<TrackedTitle>> {
+    let mut out = Vec::with_capacity(title_ids.len());
+    for ids in title_ids.chunks(IDS_AT_ONCE) {
+        let mut q: QueryBuilder<Sqlite> = QueryBuilder::new(
+            "SELECT t.id, t.kind, t.release_date
+               FROM library_entry l JOIN title t ON t.id = l.title_id
+              WHERE l.user_id = ",
+        );
+        q.push_bind(user_id).push(" AND l.title_id IN (");
+        let mut list = q.separated(", ");
+        for id in ids {
+            list.push_bind(*id);
+        }
+        q.push(")");
+        out.extend(q.build_query_as::<TrackedTitle>().fetch_all(pool).await?);
+    }
+    Ok(out)
+}
+
+/// This account's entries for these titles, whole.
+pub async fn entry_records(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_ids: &[i64],
+) -> AppResult<Vec<EntryRecord>> {
+    let mut out = Vec::with_capacity(title_ids.len());
+    for ids in title_ids.chunks(IDS_AT_ONCE) {
+        let mut q: QueryBuilder<Sqlite> = QueryBuilder::new(
+            "SELECT title_id, status, rating, favourite, notes, started_at, finished_at,
+                    rewatch_count, added_at, updated_at, notify, progress
+               FROM library_entry WHERE user_id = ",
+        );
+        q.push_bind(user_id).push(" AND title_id IN (");
+        let mut list = q.separated(", ");
+        for id in ids {
+            list.push_bind(*id);
+        }
+        q.push(")");
+        out.extend(q.build_query_as::<EntryRecord>().fetch_all(pool).await?);
+    }
+    Ok(out)
+}
+
+/// Remove these titles from this account's library, all or none.
+pub async fn remove_entries(pool: &SqlitePool, user_id: i64, title_ids: &[i64]) -> AppResult<()> {
+    let mut tx = pool.begin().await?;
+    for ids in title_ids.chunks(IDS_AT_ONCE) {
+        let mut q: QueryBuilder<Sqlite> =
+            QueryBuilder::new("DELETE FROM library_entry WHERE user_id = ");
+        q.push_bind(user_id).push(" AND title_id IN (");
+        let mut list = q.separated(", ");
+        for id in ids {
+            list.push_bind(*id);
+        }
+        q.push(")");
+        q.build().execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Put entries back exactly as `entry_records` read them, all or none. They
+/// come back from the browser, so each is checked, it lands in this account
+/// whatever it says, and a title that has gone from the catalog is passed over.
+pub async fn restore_entries(
+    pool: &SqlitePool,
+    user_id: i64,
+    entries: &[EntryRecord],
+) -> AppResult<u64> {
+    for e in entries {
+        if !STATUSES.contains(&e.status.as_str()) {
+            return Err(AppError::BadRequest(format!("unknown status {}", e.status)));
+        }
+        if e.rating.is_some_and(|r| !(0.0..=100.0).contains(&r)) {
+            return Err(AppError::BadRequest(
+                "rating must be between 0 and 100".into(),
+            ));
+        }
+    }
+    let mut restored = 0;
+    let mut tx = pool.begin().await?;
+    for e in entries {
+        restored += sqlx::query(
+            "INSERT INTO library_entry (user_id, title_id, status, rating, favourite, notes,
+                                        started_at, finished_at, rewatch_count, added_at,
+                                        updated_at, notify, progress)
+             SELECT ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM title WHERE id = ?
+             ON CONFLICT (user_id, title_id) DO UPDATE SET
+                status = excluded.status, rating = excluded.rating,
+                favourite = excluded.favourite, notes = excluded.notes,
+                started_at = excluded.started_at, finished_at = excluded.finished_at,
+                rewatch_count = excluded.rewatch_count, added_at = excluded.added_at,
+                updated_at = excluded.updated_at, notify = excluded.notify,
+                progress = excluded.progress",
+        )
+        .bind(user_id)
+        .bind(&e.status)
+        .bind(e.rating)
+        .bind(e.favourite)
+        .bind(&e.notes)
+        .bind(&e.started_at)
+        .bind(&e.finished_at)
+        .bind(e.rewatch_count)
+        .bind(&e.added_at)
+        .bind(&e.updated_at)
+        .bind(e.notify)
+        .bind(e.progress)
+        .bind(e.title_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    }
+    tx.commit().await?;
+    Ok(restored)
+}
+
+/// A film's first watch, unless it has one: finishing it again adds nothing.
+pub async fn add_first_film_watch(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    watched_at: &str,
+    undated: bool,
+) -> AppResult<()> {
+    sqlx::query(
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                  source, undated)
+         SELECT ?1, ?2, NULL, ?3, 0, 'manual', ?4
+          WHERE NOT EXISTS (SELECT 1 FROM watch_event WHERE user_id = ?1 AND title_id = ?2)",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .bind(watched_at)
+    .bind(undated)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

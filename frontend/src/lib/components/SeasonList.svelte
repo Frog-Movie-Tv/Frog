@@ -1,9 +1,11 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 	import { api, img } from '#lib/api';
+	import { localDay } from '#lib/day';
 	import { episodeCode, prettyDate, relativeDate, runtime } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
+	import { uniqueBy } from '#lib/unique';
 	import { whenWatched, type WhenAnswer } from '#lib/when.svelte';
 	import type {
 		EpisodeView,
@@ -43,10 +45,15 @@
 	// the props without freezing their first value.
 	let chosen = $state<number | undefined>(undefined);
 	/** Seasons in order, specials last: they are rarely where you start. */
-	const ordered = $derived([
-		...seasons.filter((s) => s.season_number !== 0),
-		...seasons.filter((s) => s.season_number === 0)
-	]);
+	const ordered = $derived(
+		uniqueBy(
+			[
+				...seasons.filter((s) => s.season_number !== 0),
+				...seasons.filter((s) => s.season_number === 0)
+			],
+			(s) => s.season_number
+		)
+	);
 	const open = $derived(chosen ?? initialSeason ?? ordered[0]?.season_number ?? null);
 	const current = $derived(ordered.find((s) => s.season_number === open) ?? null);
 	let loaded = $state<Record<number, SeasonDetail>>({});
@@ -209,7 +216,7 @@
 		}
 	}
 
-	const today = new Date().toISOString().slice(0, 10);
+	const today = localDay();
 
 	/** TMDB gives an air date; anything later than today has not happened. */
 	function unaired(ep: EpisodeView): boolean {
@@ -315,7 +322,7 @@
 				</ul>
 			{:else}
 				<ul class="episodes">
-					{#each detail.episodes as ep (ep.episode_number)}
+					{#each uniqueBy(detail.episodes, (e) => e.episode_number) as ep (ep.episode_number)}
 						{@const key = `${ep.season_number}-${ep.episode_number}`}
 						{@const code = episodeCode(ep.season_number, ep.episode_number)}
 						<li class="episode" class:watched={ep.watched} class:future={unaired(ep)}>
