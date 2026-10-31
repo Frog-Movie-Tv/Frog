@@ -7,7 +7,7 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 1.0.0 "Bullfrog" |
+| **Release** | 1.0.2 "Bullfrog" |
 | **Next codenames** | Spring Peeper, Glass Frog, Horned Frog |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
@@ -333,14 +333,14 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 ## Shipped
 
-**Waiting for its release** — Edit mode in Library, someone's whole library from
+**1.0.2 Bullfrog** — Edit mode in Library, someone's whole library from
 their profile, portrait cards for people, and the fixes from a walk through the
 site: title pages that open whatever a provider repeats, a show with nothing
 watched that no longer reads Finished, exact undo on a title page, and a page
 that says so when it cannot load. `202610311000_nothing_watched_is_not_watching`
 moves shows an import left Watching with nothing listed to the watchlist.
 
-**1.0.1 Bullfrog, waiting for its release** — Library filters kept in the
+**1.0.1 Bullfrog** — Library filters kept in the
 address, status counts that say what a status shows, Back to a search, a Netflix
 import of what was really watched, one layout for every release on What's new,
 and the fixes from a walk through every page.
