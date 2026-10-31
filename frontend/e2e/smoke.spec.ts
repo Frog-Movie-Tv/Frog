@@ -915,6 +915,29 @@ test("someone's whole library opens from their profile, without their notes", as
 	await friend.dispose();
 });
 
+test('a page that cannot load says so, and can try again', async ({ page }) => {
+	await signIn(page);
+	for (const [path, api] of [
+		['/', '**/api/home'],
+		['/diary', '**/api/diary?*'],
+		['/calendar', '**/api/calendar'],
+		['/stats', '**/api/stats'],
+		['/shelves', '**/api/shelves'],
+		['/people', '**/api/profiles']
+	]) {
+		await page.route(api, (route) =>
+			route.fulfill({ status: 500, json: { error: 'database is locked' } })
+		);
+		await page.goto(path);
+		const again = page.getByRole('button', { name: 'Try again' });
+		await expect(again, `${path} offers another go`).toBeVisible();
+		await expect(page.locator('main')).not.toContainText('database');
+		await page.unroute(api);
+		await again.click();
+		await expect(again, `${path} recovers`).toBeHidden();
+	}
+});
+
 test('renaming a shelf starts in the name field', async ({ page }) => {
 	await signIn(page);
 	const created = await page.request.post('/api/shelves', {

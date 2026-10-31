@@ -5,10 +5,12 @@
 	import { api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
+	import LoadFailed from '#lib/components/LoadFailed.svelte';
 	import Select from '#lib/components/Select.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import YearInReview from '#lib/components/YearInReview.svelte';
 	import { session } from '#lib/session.svelte';
+	import { failure, type Failure } from '#lib/failure';
 	import { formatScore, longRuntime, plural, runtime } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import type { FullStats, Stats, StatsPerson, StatsTitle, Status } from '#lib/types';
@@ -19,22 +21,26 @@
 	let stats = $state<FullStats | null>(null);
 	let library = $state<Stats | null>(null);
 	let loading = $state(true);
-	let error = $state<string | null>(null);
+	let failed = $state<Failure | null>(null);
+	/** Pressing Try again asks for the same year again. */
+	let tries = $state(0);
 	let reviewYear = $state<number | null>(null);
 
 	$effect(() => {
 		if (!session.authenticated) return;
 		const year = yearParam;
+		void tries;
 		let stale = false;
 		loading = true;
-		error = null;
+		failed = null;
 		void api
 			.fullStats(year ?? undefined)
 			.then((s) => {
 				if (!stale) stats = s;
 			})
 			.catch((e) => {
-				if (!stale) error = e instanceof Error ? e.message : 'Could not load stats';
+				if (stale) return;
+				failed = failure(e, { title: 'Could not load stats', hint: 'Try again in a minute.' });
 			})
 			.finally(() => {
 				if (!stale) loading = false;
@@ -185,8 +191,8 @@
 
 	{#if loading && !stats}
 		<Spinner label="Counting" />
-	{:else if error || !stats}
-		<Empty title="Could not load stats" hint={error ?? undefined} />
+	{:else if failed || !stats}
+		{#if failed}<LoadFailed {failed} onretry={() => tries++} />{/if}
 	{:else if stats.totals.titles === 0}
 		<Empty title="Nothing watched yet" hint="Mark something watched and it shows up here.">
 			<a class="btn primary" href="/search">Find something</a>

@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { titleHref } from '#lib/titles';
-	import { api, img } from '#lib/api';
+	import { api, ApiError, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
+	import LoadFailed from '#lib/components/LoadFailed.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
+	import { failure, type Failure } from '#lib/failure';
 	import { episodeCode, formatScore, plural, prettyDate } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
@@ -38,6 +40,7 @@
 	let total = $state(0);
 	let undated = $state(0);
 	let loading = $state(true);
+	let failed = $state<Failure | null>(null);
 	let loadingMore = $state(false);
 	let open = $state<string | null>(null);
 
@@ -48,17 +51,20 @@
 
 	async function load(offset: number) {
 		if (offset > 0) loadingMore = true;
+		else failed = null;
 		try {
 			const res = await fetch(`/api/diary?limit=60&offset=${offset}`, {
 				credentials: 'same-origin'
 			});
-			if (!res.ok) throw new Error('Could not load your diary');
+			if (!res.ok) throw new ApiError('Could not load your diary', res.status);
 			const data = await res.json();
 			entries = offset === 0 ? data.entries : [...entries, ...data.entries];
 			total = data.total;
 			undated = data.undated;
 		} catch (e) {
-			toasts.error(e);
+			if (offset > 0) toasts.error(e);
+			else
+				failed = failure(e, { title: 'Could not load your diary', hint: 'Try again in a minute.' });
 		} finally {
 			loading = false;
 			loadingMore = false;
@@ -173,6 +179,8 @@
 
 		{#if loading}
 			<Spinner label="Reading your diary" />
+		{:else if failed}
+			<LoadFailed {failed} onretry={() => load(0)} />
 		{:else if !entries.length}
 			<Empty
 				art="rest"

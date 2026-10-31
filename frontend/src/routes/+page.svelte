@@ -7,18 +7,20 @@
 	import ContinueCard from '#lib/components/ContinueCard.svelte';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
+	import LoadFailed from '#lib/components/LoadFailed.svelte';
 	import Poster from '#lib/components/Poster.svelte';
 	import Rail from '#lib/components/Rail.svelte';
 	import RailSkeleton from '#lib/components/RailSkeleton.svelte';
 	import ShelfCard from '#lib/components/ShelfCard.svelte';
+	import { failure, type Failure } from '#lib/failure';
 	import { episodeCode, prettyDate, relativeDate, runtime, year } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
-	import { toasts } from '#lib/toast.svelte';
 	import type { AiringEntry, BecauseRow, HomeData } from '#lib/types';
 
 	let data = $state<HomeData | null>(null);
 	let loading = $state(true);
+	let failed = $state<Failure | null>(null);
 	let because = $state<BecauseRow[]>([]);
 
 	$effect(() => {
@@ -35,10 +37,12 @@
 	});
 
 	async function load() {
+		loading = true;
+		failed = null;
 		try {
 			data = await api.home();
 		} catch (e) {
-			toasts.error(e);
+			failed = failure(e, { title: 'Could not load Home', hint: 'Try again in a minute.' });
 		} finally {
 			loading = false;
 		}
@@ -120,6 +124,8 @@
 		<RailSkeleton wide />
 		<RailSkeleton />
 	</div>
+{:else if failed && !data}
+	<div class="page"><LoadFailed {failed} onretry={load} /></div>
 {:else if isEmpty}
 	<div class="page">
 		<Empty

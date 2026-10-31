@@ -4,9 +4,11 @@
 	import { api } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
+	import LoadFailed from '#lib/components/LoadFailed.svelte';
 	import NewShelf from '#lib/components/NewShelf.svelte';
 	import ShelfCard from '#lib/components/ShelfCard.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
+	import { failure, type Failure } from '#lib/failure';
 	import { session } from '#lib/session.svelte';
 	import { moved, sortable } from '#lib/sortable';
 	import { toasts } from '#lib/toast.svelte';
@@ -14,19 +16,26 @@
 
 	let shelves = $state<Shelf[]>([]);
 	let loading = $state(true);
-	let error = $state<string | null>(null);
+	let failed = $state<Failure | null>(null);
 	// Home's "New shelf" tile lands here with ?new=1.
 	let creating = $state(page.url.searchParams.has('new'));
 	let arranging = $state(false);
 
 	$effect(() => {
-		if (!session.authenticated) return;
+		if (session.authenticated) load();
+	});
+
+	function load() {
+		loading = true;
+		failed = null;
 		void api
 			.shelves()
 			.then((r) => (shelves = r.shelves))
-			.catch((e) => (error = e instanceof Error ? e.message : 'Could not load shelves'))
+			.catch((e) => {
+				failed = failure(e, { title: 'Could not load shelves', hint: 'Try again in a minute.' });
+			})
 			.finally(() => (loading = false));
-	});
+	}
 
 	async function saveOrder() {
 		try {
@@ -68,8 +77,8 @@
 
 	{#if loading}
 		<Spinner label="Loading shelves" />
-	{:else if error}
-		<Empty title="Could not load shelves" hint={error} />
+	{:else if failed}
+		<LoadFailed {failed} onretry={load} />
 	{:else if shelves.length === 0}
 		<Empty title="No shelves yet" hint="Group titles your way, by hand or by rules.">
 			<button class="btn primary" onclick={() => (creating = true)}>New shelf</button>
