@@ -371,11 +371,19 @@ fn choose(
         };
     }
 
+    // A row that prefers a kind means that kind whenever it has this name, even
+    // written differently: TMDB's film is "Monsters vs Aliens", and the show is
+    // the one with the full stop Netflix happens to use.
+    let letters = episode_key(searched);
+    let preferred = row.prefer.as_deref().and_then(|kind| {
+        found
+            .iter()
+            .position(|f| f.kind == kind && episode_key(&f.name) == letters)
+    });
     // Netflix writes the 2023 series "ONE PIECE" and the anime "One Piece":
     // the same letters in the same case win over the same letters.
-    let exact = found
-        .iter()
-        .position(|f| f.name == searched.trim())
+    let exact = preferred
+        .or_else(|| found.iter().position(|f| f.name == searched.trim()))
         .or_else(|| found.iter().position(|f| f.name.to_lowercase() == wanted));
     let best = found.remove(exact.unwrap_or(0));
 
@@ -392,7 +400,7 @@ fn choose(
         _ if row.prefer.is_some()
             && found
                 .iter()
-                .any(|f| f.kind != best.kind && f.name.to_lowercase() == wanted) =>
+                .any(|f| f.kind != best.kind && episode_key(&f.name) == letters) =>
         {
             Some(if best.kind == "movie" {
                 "There is also a show by this name".into()
@@ -713,6 +721,34 @@ mod tests {
             picked(&r),
             (Some(9), Some("There is also a show by this name"))
         );
+    }
+
+    #[test]
+    fn a_preferred_kind_wins_however_the_name_is_punctuated() {
+        // Netflix's row for the film. TMDB writes the film without the full
+        // stop and the show with it.
+        let mut found = vec![
+            item("tv", 60789, "Monsters vs. Aliens", 2013, &[]),
+            item("movie", 15512, "Monsters vs Aliens", 2009, &[]),
+        ];
+        let r = row(json!({ "title": "Monsters vs. Aliens", "prefer": "movie" }));
+        order(&mut found, &r);
+        let r = choose(found, &r, "Monsters vs. Aliens", None);
+        assert_eq!(
+            picked(&r),
+            (Some(15512), Some("There is also a show by this name"))
+        );
+
+        // A different name of the preferred kind is no reason to leave the
+        // one spelled as asked.
+        let mut found = vec![
+            item("tv", 1, "Arcane", 2021, &[]),
+            item("movie", 2, "Arcane Sally", 2022, &[]),
+        ];
+        let r = row(json!({ "title": "Arcane", "prefer": "movie" }));
+        order(&mut found, &r);
+        let r = choose(found, &r, "Arcane", None);
+        assert_eq!(picked(&r).0, Some(1));
     }
 
     #[test]

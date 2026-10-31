@@ -34,6 +34,16 @@ Edit your library in one go, and see someone else's from their profile.
 
 - Continue watching says what is next for every show. A show imported with
   nothing watched waits on your watchlist.
+- A Netflix title with no episode name lands on the film, however TMDB
+  punctuates its name.
+- Undo after removing a title brings back everything about it, down to the day
+  you added it.
+- A page that cannot load says so and offers to try again.
+- The calendar opens on the month of the next thing on it, and says Film release
+  for a film that is still to come.
+- Administration and People fit a narrow phone.
+- The command palette finds a title you added a moment ago.
+- Today is your own today just after midnight, when marking something watched.
 - A letter avatar stands clear of the banner behind it, in every theme.
 - Every title page opens, however a person is listed in its cast. Someone with
   two parts has one card, with both parts on it.

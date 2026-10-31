@@ -45,7 +45,8 @@ a new source is a new reader and nothing else.
   it only means something to the Frog that wrote the file.
 - **Matching:** a TMDB id, then an IMDb id, then an AniList id, win outright. Then names in
   order (title, then alternatives); animation first for anime rows; the
-  preferred kind first; a show with the row's season beats a namesake; then
+  preferred kind first, and it wins whenever it has the same letters, however
+  the name is punctuated; a show with the row's season beats a namesake; then
   the same name in the same year, the same casing, the same letters. A year
   more than one off (and not a later season), a near name, or a namesake of
   the other kind is said in `note`.
