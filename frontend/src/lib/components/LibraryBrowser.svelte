@@ -23,7 +23,7 @@
 	import { titleHref } from '#lib/titles';
 	import { SvelteSet } from 'svelte/reactivity';
 	import Icon from '#lib/components/Icon.svelte';
-	import { api, img, type LibraryQuery } from '#lib/api';
+	import { api, ApiError, img, type LibraryQuery } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Grid from '#lib/components/Grid.svelte';
 	import LibraryEditBar from '#lib/components/LibraryEditBar.svelte';
@@ -35,7 +35,6 @@
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import { uniqueBy } from '#lib/unique';
-	import { ApiError } from '#lib/api';
 	import type { Kind, SharedItem, Status } from '#lib/types';
 	import { STATUS_LABEL, STATUSES } from '#lib/types';
 
