@@ -13,6 +13,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Improvements
+
+- Cast, people and characters show the whole photo, as a small portrait card.
+
 ### Fixes
 
 - Every title page opens, however a person is listed in its cast. Someone with

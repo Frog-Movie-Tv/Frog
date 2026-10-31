@@ -687,8 +687,8 @@
 
 	.avatar {
 		width: 38px;
-		height: 38px;
-		border-radius: 50%;
+		aspect-ratio: 2 / 3;
+		border-radius: 7px;
 		overflow: hidden;
 		display: grid;
 		place-items: center;
@@ -701,11 +701,13 @@
 	.avatar img {
 		width: 100%;
 		height: 100%;
-		object-fit: cover;
+		object-fit: contain;
 	}
 
 	/* Studio logos are mostly dark marks on transparent, so give them paper. */
 	.avatar.logo {
+		height: 38px;
+		aspect-ratio: auto;
 		border-radius: 9px;
 		background: #f4f2ea;
 		color: #3a3a3a;

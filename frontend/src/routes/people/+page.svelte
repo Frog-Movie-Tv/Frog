@@ -227,9 +227,9 @@
 		place-items: center;
 		flex: none;
 		width: 48px;
-		height: 48px;
+		aspect-ratio: 2 / 3;
 		overflow: hidden;
-		border-radius: 50%;
+		border-radius: var(--radius-sm);
 		background: var(--bg-elev-2);
 		color: var(--text-dim);
 	}
@@ -237,7 +237,7 @@
 	.face img {
 		width: 100%;
 		height: 100%;
-		object-fit: cover;
+		object-fit: contain;
 	}
 
 	.who {

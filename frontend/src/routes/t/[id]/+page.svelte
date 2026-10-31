@@ -471,7 +471,7 @@
 
 			{#if cast.length}
 				<section class="block">
-					<Rail title="Cast">
+					<Rail title="Cast" width="108px">
 						{#each cast as person (person.id)}
 							<a class="person" href="/person/{person.id}">
 								<div class="face">
@@ -917,9 +917,10 @@
 		min-width: 0;
 	}
 
+	/* The whole photograph: portraits are 2:3, and a circle cut through faces. */
 	.face {
-		aspect-ratio: 1;
-		border-radius: 50%;
+		aspect-ratio: 2 / 3;
+		border-radius: var(--radius-sm);
 		overflow: hidden;
 		background: var(--bg-elev-2);
 		display: grid;
@@ -936,7 +937,7 @@
 	.face img {
 		width: 100%;
 		height: 100%;
-		object-fit: cover;
+		object-fit: contain;
 	}
 
 	.pname {

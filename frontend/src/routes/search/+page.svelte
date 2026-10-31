@@ -449,7 +449,7 @@
 {#snippet characterCard(c: CharacterResult)}
 	{@const src = characterImage(c)}
 	<a class="face-card" href={characterHref(c)}>
-		<span class="face portrait">
+		<span class="face">
 			{#if src}<img {src} alt="" loading="lazy" />{:else}<span>{c.name.slice(0, 1)}</span>{/if}
 		</span>
 		<strong>{c.name}</strong>
@@ -1109,12 +1109,13 @@
 		text-overflow: ellipsis;
 	}
 
+	/* People and characters alike, the whole picture: they are 2:3. */
 	.face {
 		display: grid;
 		place-items: center;
 		width: 100%;
-		aspect-ratio: 1;
-		border-radius: 50%;
+		aspect-ratio: 2 / 3;
+		border-radius: var(--radius-sm);
 		overflow: hidden;
 		background: var(--bg-elev-2);
 		color: var(--text-dim);
@@ -1123,16 +1124,10 @@
 		transition: transform var(--fast) var(--ease);
 	}
 
-	/* Characters are pictures of people drawn or played, taller than wide. */
-	.face.portrait {
-		aspect-ratio: 3 / 4;
-		border-radius: var(--radius);
-	}
-
 	.face img {
 		width: 100%;
 		height: 100%;
-		object-fit: cover;
+		object-fit: contain;
 	}
 
 	.face-card:hover .face,
