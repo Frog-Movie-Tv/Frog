@@ -23,9 +23,14 @@ In progress.
 ### Improvements
 
 - Cast, people and characters show the whole photo, as a small portrait card.
+- Phones and tablets show no keyboard hints, and the command palette has a close
+  button there. A Mac shows ⌘K.
+- A title card's labels sit together in one corner, so they stay readable on the
+  narrowest phone.
 
 ### Fixes
 
+- A letter avatar stands clear of the banner behind it, in every theme.
 - Every title page opens, however a person is listed in its cast. Someone with
   two parts has one card, with both parts on it.
 - The diary opens a day with the same episode watched twice, and shelves show

@@ -302,7 +302,8 @@
 				spellcheck="false"
 			/>
 			{#if searching}<span class="faint small">searching…</span>{/if}
-			<kbd>esc</kbd>
+			<kbd class="esc">esc</kbd>
+			<button class="close" aria-label="Close" onclick={hide}><Icon name="x" size={18} /></button>
 		</div>
 
 		{#if results.length}
@@ -394,6 +395,19 @@
 		line-height: 1.4;
 	}
 
+	.close {
+		display: none;
+		place-items: center;
+		flex: none;
+		width: 44px;
+		height: 44px;
+		margin: -10px -12px -10px 0;
+		border: none;
+		background: none;
+		color: var(--text-dim);
+		cursor: pointer;
+	}
+
 	.group-label {
 		padding: 10px 10px 4px;
 		font-size: 0.68rem;
@@ -466,7 +480,8 @@
 
 	footer {
 		display: flex;
-		gap: 16px;
+		flex-wrap: wrap;
+		gap: 4px 16px;
 		padding: 9px 16px;
 		border-top: 1px solid var(--line);
 		font-size: 0.72rem;
@@ -484,9 +499,15 @@
 		font-size: 0.9em;
 	}
 
-	@media (max-width: 720px) {
-		footer {
+	/* No keyboard to speak of: its hints go, and esc becomes a real button. */
+	@media (hover: none) and (pointer: coarse) {
+		footer,
+		.esc {
 			display: none;
+		}
+
+		.close {
+			display: grid;
 		}
 	}
 </style>
