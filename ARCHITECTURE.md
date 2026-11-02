@@ -85,7 +85,7 @@ the ones above.
 | Domain | `catalog`, `transfer`, `anilist`, `release`, `bulk`, `push`, `jobs` | Decisions and workflows: which title a provider id names, what an import means, who wins a sync, when an episode is out, what a show's status is. |
 | Persistence | `catalog`, `store`, `anilist::records`, `images`, `db` | Reads and writes. `catalog` owns the shared titles, episodes and provider ids; `store` owns one account's library; each domain may own its own tables (`anilist::records` owns `anilist_*`, `images` owns `image_cache`). |
 | Providers | `tmdb`, `anilist::client`, `anilist::media` | Talking to other services, cached; nothing else calls them directly. `catalog::ensure` is how a provider's answer becomes a title. |
-| Shared | `auth`, `config`, `error`, `state`, `text`, `palette`, `totp`, `ops` | Small and specific; no catch-all helpers module. |
+| Shared | `auth`, `config`, `error`, `state`, `text`, `palette`, `throttle`, `totp`, `ops` | Small and specific; no catch-all helpers module. |
 
 Simple, single-area reads still live in their route module (most of
 `routes/stats.rs`, `routes/timeline.rs`, `routes/shelves.rs`,
@@ -111,6 +111,7 @@ left. See CLAUDE.md for the rule.
 | `ops` | Reads what the deploy scripts recorded in `ops.jsonl`. |
 | `palette` | Pulls an accent colour out of a poster. |
 | `text` | Case and accent folding for search. |
+| `throttle` | Counts failed attempts in memory. Keys are fixed-size hashes, a refused request stores nothing, the worker sweeps what has expired, and the map has a ceiling. |
 | `routes` | One module per area. |
 
 ### Sessions and accounts
@@ -124,6 +125,13 @@ The first account is the owner, made from `FROG_ADMIN_USERNAME` /
 `FROG_ADMIN_PASSWORD` at boot or from the setup screen, which refuses once
 any account exists. Everyone after that joins through a single-use, expiring
 invitation an administrator makes. There is no open sign-up.
+
+A new username takes 2 to 20 characters, counted as characters. Sign-in never
+applies that limit, because accounts older than it may have longer names; it
+only refuses names past 256 characters, which it answers like a wrong password
+without storing anything. An unknown name does the same password work as a real
+one (`auth::spend_password_work`), so the time an answer takes does not say
+which names exist, and it counts towards the same throttle for the same reason.
 
 ### The TMDB cache is the offline story
 

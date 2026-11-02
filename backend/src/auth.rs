@@ -8,11 +8,23 @@ use chrono::{Duration, Utc};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
+use std::sync::LazyLock;
 
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
 pub const COOKIE_NAME: &str = "frog_session";
+
+/// What a new name may be, in characters. Accounts from before the maximum
+/// keep their names: this is checked when a name is chosen, never at sign-in.
+pub const USERNAME_MIN: usize = 2;
+pub const USERNAME_MAX: usize = 20;
+pub const PASSWORD_MIN: usize = 8;
+
+/// Past this, sign-in does not look a name up. Far beyond `USERNAME_MAX`, since
+/// names older than it have no limit of their own, and short enough that
+/// nothing a caller sends is held on to.
+const SIGN_IN_NAME_MAX: usize = 256;
 
 /// What an account is allowed to do. Ordered, so a check reads
 /// `role >= Role::Admin` rather than listing every role that qualifies.
@@ -60,6 +72,50 @@ pub fn verify_password(password: &str, stored: &str) -> bool {
             .is_ok(),
         Err(_) => false,
     }
+}
+
+/// Something to check a password against when a name has no account, made
+/// with the same settings as every real hash. Its answer is never read.
+static DECOY_HASH: LazyLock<Option<String>> = LazyLock::new(|| hash_password("decoy").ok());
+
+/// Make the decoy now, at start-up, so the first unknown name to sign in does
+/// not pay for making it and stand out.
+pub fn prepare_decoy() {
+    LazyLock::force(&DECOY_HASH);
+}
+
+/// The work of checking a password, for a name with no account behind it.
+pub fn spend_password_work(password: &str) {
+    if let Some(hash) = DECOY_HASH.as_deref() {
+        verify_password(password, hash);
+    }
+}
+
+/// A name a new account or a rename may take: characters, not bytes, so one
+/// emoji is one. Surrounding spaces do not count; `create_account` drops them.
+pub fn check_username(name: &str) -> AppResult<()> {
+    let length = name.trim().chars().count();
+    if length < USERNAME_MIN {
+        return Err(AppError::BadRequest(format!(
+            "username needs at least {USERNAME_MIN} characters"
+        )));
+    }
+    if length > USERNAME_MAX {
+        return Err(AppError::BadRequest(format!(
+            "username can be at most {USERNAME_MAX} characters"
+        )));
+    }
+    Ok(())
+}
+
+pub fn password_long_enough(password: &str) -> bool {
+    password.chars().count() >= PASSWORD_MIN
+}
+
+/// True for a name too long to be anyone's. It stops at the limit, so a
+/// megabyte of name is not walked to the end.
+pub fn sign_in_name_too_long(name: &str) -> bool {
+    name.trim().chars().nth(SIGN_IN_NAME_MAX).is_some()
 }
 
 fn hash_token(token: &str) -> String {
@@ -317,6 +373,45 @@ mod tests {
         let hash = hash_password("correct horse battery staple").unwrap();
         assert!(verify_password("correct horse battery staple", &hash));
         assert!(!verify_password("wrong", &hash));
+    }
+
+    #[test]
+    fn a_name_is_measured_in_characters() {
+        assert!(check_username("ab").is_ok());
+        assert!(check_username(&"x".repeat(USERNAME_MAX)).is_ok());
+        assert!(check_username(&"é".repeat(USERNAME_MAX)).is_ok());
+        assert!(check_username(&"😀".repeat(USERNAME_MAX)).is_ok());
+        assert!(check_username("😀").is_err(), "one emoji is one character");
+        assert!(check_username("é").is_err());
+        assert!(check_username(&"x".repeat(USERNAME_MAX + 1)).is_err());
+        assert!(check_username(&"😀".repeat(USERNAME_MAX + 1)).is_err());
+        assert!(check_username(&format!("  {}  ", "x".repeat(USERNAME_MAX))).is_ok());
+        assert!(check_username("   ").is_err());
+    }
+
+    #[test]
+    fn a_password_is_measured_in_characters() {
+        assert!(password_long_enough("12345678"));
+        assert!(!password_long_enough("1234567"));
+        assert!(!password_long_enough("😀😀😀"));
+    }
+
+    #[test]
+    fn sign_in_only_refuses_names_past_any_account() {
+        assert!(!sign_in_name_too_long(&"x".repeat(SIGN_IN_NAME_MAX)));
+        assert!(!sign_in_name_too_long(&format!(
+            "  {}  ",
+            "x".repeat(SIGN_IN_NAME_MAX)
+        )));
+        assert!(sign_in_name_too_long(&"x".repeat(SIGN_IN_NAME_MAX + 1)));
+        assert!(sign_in_name_too_long(&"x".repeat(1024 * 1024)));
+    }
+
+    #[test]
+    fn the_decoy_is_a_real_hash() {
+        assert!(DECOY_HASH
+            .as_deref()
+            .is_some_and(|h| h.starts_with("$argon2")));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use frog::{config::Config, db, jobs, routes, state::AppState};
+use frog::{auth, config::Config, db, jobs, routes, state::AppState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -29,6 +29,7 @@ async fn main() -> anyhow::Result<()> {
     let bind = config.bind;
     let state = AppState::new(pool, config);
 
+    auth::prepare_decoy();
     routes::auth::bootstrap_from_env(&state).await?;
     let worker = jobs::spawn(state.clone());
 

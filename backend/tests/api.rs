@@ -2929,6 +2929,234 @@ async fn a_disabled_account_cannot_sign_in_or_keep_using_its_session() {
 }
 
 #[tokio::test]
+async fn an_oversized_name_is_refused_like_a_wrong_password_and_nothing_is_kept() {
+    let h = Harness::new().await;
+    two_accounts(&h).await;
+
+    let (wrong, body_wrong, _) = h
+        .post_from(
+            "/api/auth/login",
+            json!({ "username": "nobody-here", "password": "wrong-password" }),
+            "203.0.113.2",
+        )
+        .await;
+    let before = h.state.login_failures.len();
+
+    for n in 0..20 {
+        let name = format!("{n}{}", "x".repeat(1024 * 1024));
+        let (code, body, _) = h
+            .post_from(
+                "/api/auth/login",
+                json!({ "username": name, "password": "wrong-password" }),
+                "203.0.113.3",
+            )
+            .await;
+        assert_eq!(code, wrong);
+        assert_eq!(body, body_wrong);
+    }
+    assert_eq!(h.state.login_failures.len(), before);
+}
+
+#[tokio::test]
+async fn a_refused_sign_in_leaves_nothing_behind() {
+    let h = Harness::new().await;
+    two_accounts(&h).await;
+
+    // Shut the door on one address.
+    for _ in 0..8 {
+        h.post_from(
+            "/api/auth/login",
+            json!({ "username": "zjef", "password": "wrong-password" }),
+            "203.0.113.4",
+        )
+        .await;
+    }
+    let held = h.state.login_failures.len();
+
+    for n in 0..50 {
+        let (code, _, _) = h
+            .post_from(
+                "/api/auth/login",
+                json!({ "username": format!("name-{n}"), "password": "wrong-password" }),
+                "203.0.113.4",
+            )
+            .await;
+        assert_eq!(code, StatusCode::TOO_MANY_REQUESTS);
+    }
+    assert_eq!(h.state.login_failures.len(), held);
+}
+
+#[tokio::test]
+async fn a_right_password_waiting_for_its_code_is_not_a_failure() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    sqlx::query("UPDATE app_user SET totp_secret = 'JBSWY3DPEHPK3PXP' WHERE username = 'zjef'")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    assert!(!owner.is_empty());
+
+    for _ in 0..20 {
+        let (code, _, _) = h
+            .post_from(
+                "/api/auth/login",
+                json!({ "username": "zjef", "password": "another-long-pass" }),
+                "203.0.113.6",
+            )
+            .await;
+        assert_eq!(code, StatusCode::UNAUTHORIZED);
+    }
+}
+
+#[tokio::test]
+async fn an_unknown_name_counts_towards_the_door_like_a_real_one() {
+    let h = Harness::new().await;
+    two_accounts(&h).await;
+
+    // Were only real names counted, the 429 would say which names are real.
+    let mut answers = Vec::new();
+    for _ in 0..9 {
+        let (code, _, _) = h
+            .post_from(
+                "/api/auth/login",
+                json!({ "username": "nobody-here", "password": "wrong-password" }),
+                "203.0.113.5",
+            )
+            .await;
+        answers.push(code);
+    }
+    assert_eq!(answers[7], StatusCode::UNAUTHORIZED);
+    assert_eq!(answers[8], StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn a_name_from_before_the_limit_still_signs_in() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+
+    let (_, status) = h.get("/api/auth/status", Some(&owner)).await;
+    assert_eq!(status["username"], json!("mihai"));
+
+    let long = "an-account-from-before-there-was-a-limit-of-any-kind";
+    sqlx::query("UPDATE app_user SET username = ? WHERE username = 'zjef'")
+        .bind(long)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+
+    let (code, body, cookie) = h
+        .post(
+            "/api/auth/login",
+            json!({ "username": long.to_uppercase(), "password": "another-long-pass" }),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body:?}");
+    let (_, status) = h.get("/api/auth/status", cookie.as_deref()).await;
+    assert_eq!(status["username"], json!(long), "and is not renamed");
+}
+
+#[tokio::test]
+async fn setup_holds_a_new_name_to_the_limit_in_characters() {
+    let h = Harness::new().await;
+    for name in ["😀", "é", "x", "a-name-of-twenty-one-"] {
+        let (code, body, _) = h
+            .post(
+                "/api/auth/setup",
+                json!({ "username": name, "password": "a-long-enough-pass" }),
+                None,
+            )
+            .await;
+        assert_eq!(code, StatusCode::BAD_REQUEST, "{name}");
+        assert!(body["error"].as_str().unwrap().contains("username"));
+    }
+    let (code, body, _) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "😀".repeat(20), "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body:?}");
+}
+
+#[tokio::test]
+async fn joining_holds_a_new_name_to_the_limit_and_keeps_the_invite() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    let (_, invite, _) = h
+        .post("/api/invites", json!({ "role": "user" }), Some(&owner))
+        .await;
+    let code = invite["code"].as_str().unwrap();
+
+    let (status, body, _) = h
+        .post(
+            "/api/auth/register",
+            json!({
+                "username": "x".repeat(21),
+                "password": "a-long-enough-pass",
+                "invite": code,
+            }),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body:?}");
+
+    let (status, body, _) = h
+        .post(
+            "/api/auth/register",
+            json!({
+                "username": "x".repeat(20),
+                "password": "a-long-enough-pass",
+                "invite": code,
+            }),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+}
+
+#[tokio::test]
+async fn a_password_is_counted_in_characters_too() {
+    let h = Harness::new().await;
+    let (code, body, _) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "😀😀😀" }),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{body:?}");
+    assert!(body["error"].as_str().unwrap().contains("password"));
+}
+
+#[tokio::test]
+async fn an_owner_from_the_environment_follows_the_same_rules() {
+    async fn accounts_after(user: &str, pass: &str) -> i64 {
+        let mut h = Harness::new().await;
+        let config = std::sync::Arc::get_mut(&mut h.state.config).expect("only reference");
+        config.admin_username = Some(user.into());
+        config.admin_password = Some(pass.into());
+        frog::routes::auth::bootstrap_from_env(&h.state)
+            .await
+            .expect("bootstrap");
+        let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM app_user")
+            .fetch_one(&h.state.pool)
+            .await
+            .unwrap();
+        count
+    }
+    assert_eq!(accounts_after("mihai", "a-long-enough-pass").await, 1);
+    assert_eq!(
+        accounts_after(&"x".repeat(21), "a-long-enough-pass").await,
+        0,
+        "the setup screen stays open instead"
+    );
+    assert_eq!(accounts_after("😀", "a-long-enough-pass").await, 0);
+    assert_eq!(accounts_after("mihai", "😀😀😀").await, 0);
+}
+
+#[tokio::test]
 async fn signing_in_is_throttled_per_account_and_per_address() {
     let h = Harness::new().await;
     let (_, _) = two_accounts(&h).await;

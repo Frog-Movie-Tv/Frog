@@ -137,9 +137,10 @@ test('nothing written means nothing to promote', () => {
 });
 
 test('promoting works on the real file, line endings and all', () => {
+	// The whole of Upcoming: pull requests leave their own notes in it.
 	const real = notes.replace(
-		'In progress.',
-		'A real sentence.\r\n\r\n### Fixes\r\n\r\n- A real fix.'
+		/(## Upcoming.*\r?\n)[\s\S]*?(?=## \[)/,
+		'$1\r\nA real sentence.\r\n\r\n### Fixes\r\n\r\n- A real fix.\r\n\r\n'
 	);
 	const after = promoteUpcoming(real, '1.0.2', '2026-11-02');
 	assert.deepEqual(layoutProblems(after), []);

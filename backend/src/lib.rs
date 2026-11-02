@@ -17,6 +17,7 @@ pub mod routes;
 pub mod state;
 pub mod store;
 pub mod text;
+pub mod throttle;
 pub mod tmdb;
 pub mod totp;
 pub mod transfer;

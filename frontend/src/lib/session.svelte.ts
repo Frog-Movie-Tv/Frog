@@ -5,6 +5,9 @@ import type { AuthStatus } from './types';
 
 const REMEMBERED = 'frog.session.v1';
 
+/** The server holds a new name to this too. Never applied when signing in. */
+export const USERNAME_MAX = 20;
+
 /**
  * One source of truth for "who am I and is this instance set up yet". The
  * layout blocks rendering on the first load of this, which is what keeps a

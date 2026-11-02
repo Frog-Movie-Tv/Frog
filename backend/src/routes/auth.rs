@@ -7,12 +7,12 @@ use chrono::Utc;
 use serde::Deserialize;
 use serde_json::json;
 use std::net::SocketAddr;
-use std::time::{Duration, Instant};
 
 use crate::auth::{self as session, ClientAddr, Role};
 use crate::error::{AppError, AppResult};
 use crate::routes::{invites, two_factor};
 use crate::state::AppState;
+use crate::throttle;
 
 #[derive(Deserialize)]
 pub struct Credentials {
@@ -35,20 +35,6 @@ pub struct Registration {
     pub invite: String,
 }
 
-/// Failed sign-ins allowed before the door shuts for a while.
-const MAX_FAILURES: usize = 8;
-const FAILURE_WINDOW: Duration = Duration::from_secs(10 * 60);
-
-/// Who to throttle. Both buckets are checked: the account stops someone
-/// guessing one password from everywhere, and the address stops one caller
-/// working through every account.
-fn buckets(username: &str, client: &str) -> [String; 2] {
-    [
-        format!("user:{}", username.trim().to_lowercase()),
-        format!("ip:{client}"),
-    ]
-}
-
 /// The caller's address. `X-Forwarded-For` is trusted because the only
 /// supported deployment puts Caddy directly in front of Frog; without a proxy
 /// the socket address is used. A spoofed header can only dodge the per-address
@@ -66,46 +52,6 @@ fn client_key(headers: &HeaderMap, peer: Option<SocketAddr>) -> String {
     }
     peer.map(|p| p.ip().to_string())
         .unwrap_or_else(|| "unknown".into())
-}
-
-/// Returns the seconds to wait when either bucket has failed too often.
-fn throttled_for(state: &AppState, keys: &[String; 2]) -> Option<u64> {
-    let mut failures = state.login_failures.lock().ok()?;
-    let now = Instant::now();
-    let mut wait = None;
-
-    for key in keys {
-        let times = failures.entry(key.clone()).or_default();
-        times.retain(|t| now.duration_since(*t) < FAILURE_WINDOW);
-        if times.len() >= MAX_FAILURES {
-            if let Some(oldest) = times.first().copied() {
-                let left = (FAILURE_WINDOW - now.duration_since(oldest))
-                    .as_secs()
-                    .max(1);
-                wait = Some(wait.map_or(left, |w: u64| w.max(left)));
-            }
-        }
-    }
-    wait
-}
-
-fn record_failure(state: &AppState, keys: &[String; 2]) {
-    if let Ok(mut failures) = state.login_failures.lock() {
-        for key in keys {
-            failures
-                .entry(key.clone())
-                .or_default()
-                .push(Instant::now());
-        }
-    }
-}
-
-fn clear_failures(state: &AppState, keys: &[String; 2]) {
-    if let Ok(mut failures) = state.login_failures.lock() {
-        for key in keys {
-            failures.remove(key);
-        }
-    }
 }
 
 /// True while the instance has no accounts at all, which is the only time the
@@ -221,10 +167,15 @@ pub async fn login(
     ClientAddr(peer): ClientAddr,
     Json(body): Json<Credentials>,
 ) -> AppResult<impl IntoResponse> {
-    let client = client_key(&headers, peer);
-    let keys = buckets(&body.username, &client);
+    // Nothing about a name this long is worth keeping, and no account has one.
+    if session::sign_in_name_too_long(&body.username) {
+        return Err(AppError::WrongCredentials);
+    }
 
-    if let Some(seconds) = throttled_for(&state, &keys) {
+    let client = client_key(&headers, peer);
+    let keys = throttle::sign_in_keys(&body.username, &client);
+
+    if let Err(seconds) = state.login_failures.admit(&keys) {
         let minutes = seconds.div_ceil(60);
         return Err(AppError::TooManyRequests(format!(
             "Too many tries. Try again in {minutes} {}.",
@@ -242,15 +193,17 @@ pub async fn login(
     .await?;
 
     // Same message whichever part was wrong: never leak which usernames exist.
+    // The password work happens either way, so the answer takes as long for a
+    // name nobody has as for a real one.
     let Some((user_id, _, hash, totp_secret, disabled)) = row else {
-        record_failure(&state, &keys);
+        session::spend_password_work(&body.password);
         return Err(AppError::WrongCredentials);
     };
     if !session::verify_password(&body.password, &hash) {
-        record_failure(&state, &keys);
         return Err(AppError::WrongCredentials);
     }
     if disabled != 0 {
+        state.login_failures.release(&keys);
         return Err(AppError::Forbidden(
             "This account has been turned off. Ask an administrator.".into(),
         ));
@@ -260,17 +213,17 @@ pub async fn login(
         let code = body.code.as_deref().map(str::trim).unwrap_or("");
         if code.is_empty() {
             // Not a failure: the password was right and the app asks next.
+            state.login_failures.release(&keys);
             return Err(AppError::TwoFactor(
                 "Enter the code from your authenticator app.".into(),
             ));
         }
         if !second_factor_ok(&state, user_id, &secret, code).await? {
-            record_failure(&state, &keys);
             return Err(AppError::TwoFactor("That code didn't work.".into()));
         }
     }
 
-    clear_failures(&state, &keys);
+    state.login_failures.clear(&keys);
     issue(state, jar, headers, user_id, body.remember).await
 }
 
@@ -343,12 +296,8 @@ async fn issue(
 }
 
 fn validate(c: &Credentials) -> AppResult<()> {
-    if c.username.trim().len() < 2 {
-        return Err(AppError::BadRequest(
-            "username needs at least 2 characters".into(),
-        ));
-    }
-    if c.password.len() < 8 {
+    session::check_username(&c.username)?;
+    if !session::password_long_enough(&c.password) {
         return Err(AppError::BadRequest(
             "password needs at least 8 characters".into(),
         ));
@@ -402,7 +351,14 @@ pub async fn bootstrap_from_env(state: &AppState) -> AppResult<()> {
     if !needs_setup(state).await? {
         return Ok(());
     }
-    if pass.len() < 8 {
+    // Refused the way a short password is, so an owner made here obeys the same
+    // rules as one made on the setup screen, which stays open for it. Only a
+    // database with no accounts gets this far, so nobody is ever renamed.
+    if let Err(e) = session::check_username(&user) {
+        tracing::warn!(error = %e, "FROG_ADMIN_USERNAME cannot be used; skipping bootstrap");
+        return Ok(());
+    }
+    if !session::password_long_enough(&pass) {
         tracing::warn!("FROG_ADMIN_PASSWORD is shorter than 8 characters; skipping bootstrap");
         return Ok(());
     }
@@ -415,16 +371,6 @@ pub async fn bootstrap_from_env(state: &AppState) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn each_account_and_address_gets_its_own_bucket() {
-        let a = buckets("Zjef", "10.0.0.1");
-        let b = buckets("zjef", "10.0.0.2");
-        // Case does not make a second account bucket...
-        assert_eq!(a[0], b[0]);
-        // ...but a different address is throttled separately.
-        assert_ne!(a[1], b[1]);
-    }
 
     #[test]
     fn a_proxy_header_names_the_caller_and_the_socket_is_the_fallback() {

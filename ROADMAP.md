@@ -328,6 +328,10 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   in the database (the diary keeps them) but leave every total.
 - **Stats credits** live in `title_person`, filled by `store::ensure_title`
   and backfilled by the worker, 25 titles every 2 minutes.
+- **Sign-in's limit is not a username limit.** `USERNAME_MAX` (20) is for a name
+  being chosen. Sign-in only refuses names past `SIGN_IN_NAME_MAX` (256), so an
+  account older than the limit always gets in. Raise that one if an instance
+  ever has a longer name.
 - **New Home rows** reach saved layouts once, through `homeRowsSeen` in
   `lib/settings.svelte.ts`. Add the id to `HOME_ROWS` and to the default list.
 

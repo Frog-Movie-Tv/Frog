@@ -13,6 +13,16 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Improvements
+
+- New usernames can be up to 20 characters, counted as characters, so an emoji
+  is one. Existing accounts keep their names.
+
+### Fixes
+
+- Signing in stays steady under a flood of attempts, and answers in the same
+  time whichever username is tried.
+
 ## [1.0.2] — Bullfrog — 2026-10-31
 
 Edit your library in one go, and see someone else's from their profile.

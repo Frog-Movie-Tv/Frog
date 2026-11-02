@@ -95,7 +95,7 @@ pub async fn change_password(
     Json(body): Json<PasswordBody>,
 ) -> AppResult<Json<Value>> {
     check_password(&state, auth.user_id(), &body.current).await?;
-    if body.password.len() < 8 {
+    if !auth::password_long_enough(&body.password) {
         return Err(AppError::BadRequest(
             "A new password needs at least 8 characters.".into(),
         ));

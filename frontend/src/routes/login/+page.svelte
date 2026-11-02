@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { api, ApiError } from '#lib/api';
 	import Logo from '#lib/components/Logo.svelte';
-	import { session } from '#lib/session.svelte';
+	import { session, USERNAME_MAX } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
 
 	let username = $state('');
@@ -105,6 +105,7 @@
 					required
 					autocapitalize="off"
 					spellcheck="false"
+					maxlength={setup ? USERNAME_MAX : undefined}
 				/>
 			</label>
 
