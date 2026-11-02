@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.1.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.0.2...v1.1.0) (2026-11-02)
+
+
+### Features
+
+* **accounts:** reset links, a new username and smaller pictures ([7ff2b27](https://github.com/Frog-Movie-Tv/Frog/commit/7ff2b2770ef3d7baaf5d4f885fd69ed0a9ee7358))
+* **people:** what your people watched on Home, and a taste match ([6dcf35a](https://github.com/Frog-Movie-Tv/Frog/commit/6dcf35a692d24081ca54ba6235960d34f145cf1d))
+* **release:** Spring Peeper, and what the pass left unfinished ([5b425f5](https://github.com/Frog-Movie-Tv/Frog/commit/5b425f5c03c477e8d1c3b16f3e5d2675782cb521))
+
+
+### Fixes
+
+* **auth:** keep sign-in attempts bounded and answer every name alike ([15d9977](https://github.com/Frog-Movie-Tv/Frog/commit/15d99776b61c469fa2f2f755116838c1dd01da33))
+* **layout:** keep one long word from widening a page ([61d8339](https://github.com/Frog-Movie-Tv/Frog/commit/61d8339f68dcd4f1045335dcbd59587f2cf96185))
+
+
+### Documentation
+
+* **roadmap:** what the accounts and people pass left ([8c72a30](https://github.com/Frog-Movie-Tv/Frog/commit/8c72a301c68eb5e466fb3f50adeee0896482905c))
+
 ## [1.0.2](https://github.com/Frog-Movie-Tv/Frog/compare/v1.0.1...v1.0.2) (2026-10-31)
 
 
