@@ -9,6 +9,7 @@ use rand::RngCore;
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 use std::sync::LazyLock;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
@@ -91,16 +92,25 @@ pub fn spend_password_work(password: &str) {
     }
 }
 
-/// A name a new account or a rename may take: characters, not bytes, so one
-/// emoji is one. Surrounding spaces do not count; `create_account` drops them.
+/// Characters as a person counts them: a flag or a family emoji is one, though
+/// each is several code points.
+fn characters(text: &str) -> usize {
+    text.graphemes(true).count()
+}
+
+/// A name a new account or a rename may take. Surrounding spaces do not count;
+/// `create_account` drops them.
 pub fn check_username(name: &str) -> AppResult<()> {
-    let length = name.trim().chars().count();
+    let name = name.trim();
+    let length = characters(name);
     if length < USERNAME_MIN {
         return Err(AppError::BadRequest(format!(
             "username needs at least {USERNAME_MIN} characters"
         )));
     }
-    if length > USERNAME_MAX {
+    // Twenty characters can hide any number of combining marks, and a name sign-in
+    // would refuse must never be taken.
+    if length > USERNAME_MAX || sign_in_name_too_long(name) {
         return Err(AppError::BadRequest(format!(
             "username can be at most {USERNAME_MAX} characters"
         )));
@@ -109,7 +119,7 @@ pub fn check_username(name: &str) -> AppResult<()> {
 }
 
 pub fn password_long_enough(password: &str) -> bool {
-    password.chars().count() >= PASSWORD_MIN
+    characters(password) >= PASSWORD_MIN
 }
 
 /// True for a name too long to be anyone's. It stops at the limit, so a
@@ -415,11 +425,40 @@ mod tests {
         assert!(check_username("   ").is_err());
     }
 
+    const FLAG: &str = "\u{1F1E7}\u{1F1EA}";
+    const FAMILY: &str = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}";
+
+    #[test]
+    fn a_flag_and_a_family_are_one_character_each() {
+        assert!(check_username(FLAG).is_err(), "one is too few");
+        assert!(check_username(FAMILY).is_err());
+        assert!(
+            check_username("e\u{301}").is_err(),
+            "a letter and its accent"
+        );
+        assert!(check_username(&FAMILY.repeat(2)).is_ok());
+        assert!(check_username(&FAMILY.repeat(USERNAME_MAX)).is_ok());
+        assert!(check_username(&FLAG.repeat(USERNAME_MAX)).is_ok());
+        assert!(check_username(&FAMILY.repeat(USERNAME_MAX + 1)).is_err());
+        assert!(check_username(&FLAG.repeat(USERNAME_MAX + 1)).is_err());
+    }
+
+    #[test]
+    fn a_name_sign_in_would_refuse_cannot_be_taken() {
+        let piled_up = format!("a{}", "\u{301}".repeat(SIGN_IN_NAME_MAX));
+        assert_eq!(characters(&piled_up), 1);
+        assert!(check_username(&format!("{piled_up}{piled_up}")).is_err());
+    }
+
     #[test]
     fn a_password_is_measured_in_characters() {
         assert!(password_long_enough("12345678"));
         assert!(!password_long_enough("1234567"));
         assert!(!password_long_enough("😀😀😀"));
+        assert!(
+            !password_long_enough(FAMILY),
+            "seven code points, one character"
+        );
     }
 
     #[test]

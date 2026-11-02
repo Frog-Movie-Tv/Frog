@@ -7,8 +7,8 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 1.0.2 "Bullfrog" |
-| **Next codenames** | Spring Peeper, Glass Frog, Horned Frog |
+| **Release** | 1.1.0 "Spring Peeper" |
+| **Next codenames** | Glass Frog, Horned Frog |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
 | **Updates** | by itself: a timer pulls the newest release every 15 minutes, backs up first, rolls back on an unhealthy `/healthz` |
@@ -134,19 +134,12 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
      there. Only Watching was moved to the watchlist.
    - The Status menu of edit mode covers Done while it is open on a phone.
 
-20. **Left from the accounts and people pass.** Each small, none broken:
-   - WebP pictures have only been written in Chromium. Safari has no WebP writer
-     and hands back PNG; `lib/picture.ts` falls back to JPEG past the size limit,
-     but no Safari has run it.
-   - An animated WebP or APNG keeps its first frame. Only GIFs go up as they are.
-   - Two people joining at the same instant with names that differ only in case
-     can both pass the check. It needs two live invites, and a case-insensitive
-     index could fail on what a database already holds.
-   - "and N other titles" on Your people is a lower bound past 400 watches a
-     person in the fortnight.
-   - Characters are counted as Unicode scalar values, so a flag or a family emoji
-     counts as more than one, and `maxlength` in the browser counts UTF-16 units,
-     which stops at 10 emoji though the server takes 20.
+20. **Upload a picture from a real iPhone or Mac.** Safari has no WebP writer, so
+   pictures reach the server as PNG, and past 3 MB as JPEG, which turns a clear
+   background black. `verify-pictures` runs that path in Chromium with the writer
+   taken away, and WebKit as far as the upload. Playwright's WebKit on Windows
+   hangs and closes once the page draws the new picture, so nothing here has seen
+   Safari draw it.
 
 ## Known issues
 
@@ -258,6 +251,7 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   it writes a small library straight into the database with `node:sqlite`),
   `verify-2fa`, `verify-diary`, `verify-import`, `verify-polish`,
   `verify-long-names` (real titles, ordinary and very long names, phones),
+  `verify-pictures` (uploads in Chromium, as Safari with no WebP writer, and in WebKit; needs `npx playwright install webkit`),
   `verify-accounts` (invites,
   isolation, devices, switching off), `verify-pull` (pull to refresh with
   real touch input), plus `npm run pwa-check` and
@@ -322,7 +316,7 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 - **Your people** (`backend/src/activity.rs`, `/api/home/activity`) is its own
   request, so nobody who switched the row off reads other accounts. Fourteen
   days, three titles a person with the rest as a number on their last card,
-  twelve cards in all. A show is Finished only when it stands completed and its
+  twelve cards in all. It reads the whole fortnight, so that number is exact. A show is Finished only when it stands completed and its
   last regular episode is in the run. `backend/tests/scoping.rs` also holds that
   `activity.rs` and `taste.rs` name no notes and go through `store::shown_to`.
 - **Taste match** (`backend/src/taste.rs`) is `100 - 2 × the average difference`,
@@ -364,8 +358,16 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 - **Pictures are made ready in the browser** (`lib/picture.ts`): avatars at 512
   pixels, banners at 1800 on the long side. JPEG stays JPEG and anything else
   becomes WebP, so transparency lasts; a browser with no WebP writer hands back
-  PNG. GIFs go up untouched, because a canvas would stop them; an animated WebP
-  or APNG keeps its first frame. The server only checks size and first bytes.
+  PNG. Anything that moves goes up untouched, because a canvas would keep only
+  the first frame: GIFs by their type, APNG and animated WebP by reading their
+  bytes (`isAnimated`). The server only checks size and first bytes.
+- **Characters are grapheme clusters** (`auth::characters`, `lib/names.ts`), so a
+  flag or a family emoji is one. The browser's `maxlength` counts UTF-16 units,
+  so `nameLimit` moves it with what is typed. A name past 256 code points is
+  refused even under 20 characters, because sign-in would refuse it afterwards.
+- **A name is checked and written under `state.names`.** The column is only
+  unique as typed, and a case-insensitive index could fail on a database that
+  already holds such a pair. One process makes one lock enough.
 - **Sign-in's limit is not a username limit.** `USERNAME_MAX` (20) is for a name
   being chosen. Sign-in only refuses names past `SIGN_IN_NAME_MAX` (256), so an
   account older than the limit always gets in. Raise that one if an instance
@@ -374,6 +376,11 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   `lib/settings.svelte.ts`. Add the id to `HOME_ROWS` and to the default list.
 
 ## Shipped
+
+**1.1.0 Spring Peeper** — Your people on Home, a taste match on profiles, reset
+links and `frog owner-reset-link`, renaming, and pictures that stay small, clear
+and moving. Sign-in is bounded (`crate::throttle`) and answers alike for every
+name, and one long word can no longer widen a page.
 
 **1.0.2 Bullfrog** — Edit mode in Library, someone's whole library from
 their profile, portrait cards for people, and the fixes from a walk through the

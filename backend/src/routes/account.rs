@@ -129,6 +129,7 @@ pub async fn change_username(
     check_password(&state, auth.user_id(), &body.password).await?;
     auth::check_username(&body.username)?;
     let name = body.username.trim();
+    let _one_at_a_time = state.names.lock().await;
     if auth::username_taken(&state.pool, name, Some(auth.user_id())).await? {
         return Err(AppError::Conflict("that username is taken".into()));
     }
@@ -136,14 +137,7 @@ pub async fn change_username(
         .bind(name)
         .bind(auth.user_id())
         .execute(&state.pool)
-        .await
-        // The column is unique, so someone taking it this instant lands here.
-        .map_err(|e| match e.as_database_error() {
-            Some(db) if db.is_unique_violation() => {
-                AppError::Conflict("that username is taken".into())
-            }
-            _ => e.into(),
-        })?;
+        .await?;
     Ok(Json(json!({ "username": name })))
 }
 

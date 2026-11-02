@@ -3,7 +3,8 @@
 	import { api } from '#lib/api';
 	import Icon from '#lib/components/Icon.svelte';
 	import { relativeDate } from '#lib/format';
-	import { session, USERNAME_MAX } from '#lib/session.svelte';
+	import { characters, nameLimit, USERNAME_MAX } from '#lib/names';
+	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import type { Account, DeviceSession } from '#lib/types';
 
@@ -43,7 +44,7 @@
 	function startRename() {
 		// A name from before the limit could not be saved as it stands.
 		const name = account?.username ?? '';
-		newName = [...name].length <= USERNAME_MAX ? name : '';
+		newName = characters(name) <= USERNAME_MAX ? name : '';
 		renaming = true;
 	}
 
@@ -168,7 +169,7 @@
 						autocapitalize="none"
 						spellcheck="false"
 						minlength="2"
-						maxlength={USERNAME_MAX}
+						maxlength={nameLimit(newName)}
 						bind:value={newName}
 						required
 					/>

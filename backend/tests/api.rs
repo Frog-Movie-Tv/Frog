@@ -3858,6 +3858,76 @@ async fn a_binge_and_a_large_import_cannot_flood_the_activity_row() {
 }
 
 #[tokio::test]
+async fn the_number_on_the_last_card_counts_the_whole_fortnight() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    let id = someone_to_see(&h, &member).await;
+    for title in 9700..10200 {
+        track(&h, id, title, None).await;
+        watch(&h, id, title, false).await;
+    }
+    let items = activity(&h, &owner).await;
+    assert_eq!(items.len(), 3, "{items:?}");
+    assert_eq!(
+        items[2]["also"],
+        json!(498),
+        "501 titles, three with a card"
+    );
+}
+
+#[tokio::test]
+async fn names_differing_only_in_case_cannot_both_join_at_once() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    for round in 0..4 {
+        let mut joins = Vec::new();
+        for spelling in [
+            format!("Same{round}"),
+            format!("same{round}"),
+            format!("SAME{round}"),
+        ] {
+            let (_, invite, _) = h
+                .post("/api/invites", json!({ "role": "user" }), Some(&owner))
+                .await;
+            let router = h.router();
+            let req = Request::builder()
+                .uri("/api/auth/register")
+                .method("POST")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    json!({
+                        "username": spelling,
+                        "password": "a-long-enough-pass",
+                        "invite": invite["code"],
+                    })
+                    .to_string(),
+                ))
+                .unwrap();
+            joins.push(tokio::spawn(async move {
+                router.oneshot(req).await.expect("response").status()
+            }));
+        }
+        let mut ok = 0;
+        for join in joins {
+            let status = join.await.unwrap();
+            if status == StatusCode::OK {
+                ok += 1;
+            } else {
+                assert_eq!(status, StatusCode::CONFLICT);
+            }
+        }
+        assert_eq!(ok, 1, "exactly one of them gets the name");
+        let (accounts,): (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM app_user WHERE username = ? COLLATE NOCASE")
+                .bind(format!("same{round}"))
+                .fetch_one(&h.state.pool)
+                .await
+                .unwrap();
+        assert_eq!(accounts, 1);
+    }
+}
+
+#[tokio::test]
 async fn the_activity_row_is_behind_a_session() {
     let h = Harness::new().await;
     let (status, _) = h.get("/api/home/activity", None).await;

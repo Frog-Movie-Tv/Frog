@@ -16,6 +16,11 @@ pub struct AppState {
     pub login_failures: Arc<Throttle>,
     /// Tries of a reset link, one key per caller address.
     pub reset_failures: Arc<Throttle>,
+    /// Held while a name is checked and written. The column is only unique as
+    /// typed, so "Mihai" and "mihai" arriving together would both pass the
+    /// check; one process means this one lock is enough, with no migration that
+    /// could refuse a database already holding such a pair.
+    pub names: Arc<tokio::sync::Mutex<()>>,
     /// For everything that is not TMDB: push services, for now.
     pub http: reqwest::Client,
 }
@@ -34,6 +39,7 @@ impl AppState {
             config: Arc::new(config),
             login_failures: Arc::new(Throttle::for_sign_in()),
             reset_failures: Arc::new(Throttle::for_resets()),
+            names: Arc::new(tokio::sync::Mutex::new(())),
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(15))
                 .user_agent(concat!("Frog/", env!("CARGO_PKG_VERSION")))

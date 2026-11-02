@@ -9,24 +9,34 @@ people working on Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Spring Peeper —
+## Upcoming — Glass Frog —
 
 In progress.
 
+## [1.1.0] — Spring Peeper — 2026-11-02
+
+See what your people are watching, how close your taste is, and get back in after forgetting a password.
+
+### Highlights
+
+- **Your people.** A new row on Home shows what others on this Frog have been
+  watching. A binge is one card and a big import stays short. Only people with
+  their profile on appear there, and your notes are never shown. Turn the row
+  off in Settings → Home and menus.
+- **Taste match.** Someone else's profile shows how close your taste is, once
+  you have both rated five of the same titles.
+- **Reset links.** An administrator can make a single-use link that sets a new
+  password and signs out every device. Two-factor stays on.
+
 ### Improvements
 
-- Home can show what your people have been watching, in a row of its own. Turn
-  it off in Settings → Home and menus. Only people with their profile on appear
-  there, and turning yours off takes you out of it.
-- See how close your taste is to someone else's on their profile, once you have
-  both rated five of the same titles.
-- Forgot a password? An administrator can make a single-use link that sets a new
-  one and signs out every device.
 - Change your username in Settings → Account.
-- Pictures are smaller before they leave your device, and a transparent picture
-  stays transparent.
-- New usernames can be up to 20 characters, counted as characters, so an emoji
-  is one. Existing accounts keep their names.
+- Pictures are smaller before they leave your device. Transparency stays, and
+  animated GIF, WebP and PNG pictures keep moving.
+- New usernames can be up to 20 characters. A flag or a family emoji counts as
+  one. Existing accounts keep their names.
+- Show my profile now says that your recent watching appears on other people's
+  Home.
 
 ### Fixes
 
@@ -620,6 +630,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.1.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.1.0
 [1.0.2]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.0.2
 [1.0.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.0.1
 [1.0.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.0.0

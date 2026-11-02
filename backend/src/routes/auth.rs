@@ -358,11 +358,14 @@ pub async fn create_account(
     role: Role,
 ) -> AppResult<i64> {
     let name = username.trim();
+    // Before the lock: the slow part need not make anyone else wait.
+    let hash = session::hash_password(password)?;
+
+    let _one_at_a_time = state.names.lock().await;
     if session::username_taken(&state.pool, name, None).await? {
         return Err(AppError::Conflict("that username is taken".into()));
     }
 
-    let hash = session::hash_password(password)?;
     let row: (i64,) = sqlx::query_as(
         "INSERT INTO app_user (username, password_hash, role, created_at)
          VALUES (?, ?, ?, ?) RETURNING id",

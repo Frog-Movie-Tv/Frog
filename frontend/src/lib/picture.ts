@@ -19,8 +19,46 @@ const UNREADABLE = 'That picture could not be read. Try a JPEG or PNG.';
 /** JPEG has no transparency, so only a JPEG stays one. */
 export const outputType = (source: string) => (source === 'image/jpeg' ? source : 'image/webp');
 
-/** A moving GIF cannot go through a canvas without stopping. */
-export const staysAsItIs = (source: string) => source === 'image/gif';
+const text = (bytes: Uint8Array, from: number, to: number) =>
+	String.fromCharCode(...bytes.subarray(from, to));
+
+/** An APNG says so before its first frame's data. */
+function pngMoves(bytes: Uint8Array): boolean {
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	for (let at = 8; at + 8 <= bytes.length; at += 12 + view.getUint32(at)) {
+		const chunk = text(bytes, at + 4, at + 8);
+		if (chunk === 'acTL') return true;
+		if (chunk === 'IDAT') return false;
+	}
+	return false;
+}
+
+/** An animated WebP has a flag in its header, and chunks of its own. */
+function webpMoves(bytes: Uint8Array): boolean {
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	for (let at = 12; at + 8 <= bytes.length;) {
+		const chunk = text(bytes, at, at + 4);
+		if (chunk === 'ANIM' || chunk === 'ANMF') return true;
+		if (chunk === 'VP8X' && at + 8 < bytes.length) return (bytes[at + 8] & 0x02) !== 0;
+		const size = view.getUint32(at + 4, true);
+		at += 8 + size + (size % 2);
+	}
+	return false;
+}
+
+/** Whether a PNG or WebP moves. Its type cannot say; its bytes can. */
+export function isAnimated(bytes: Uint8Array): boolean {
+	if (text(bytes, 1, 4) === 'PNG') return pngMoves(bytes);
+	if (text(bytes, 0, 4) === 'RIFF' && text(bytes, 8, 12) === 'WEBP') return webpMoves(bytes);
+	return false;
+}
+
+/** Anything that moves, because a canvas keeps only its first frame. */
+export async function staysAsItIs(file: Blob): Promise<boolean> {
+	if (file.type === 'image/gif') return true;
+	if (file.type !== 'image/png' && file.type !== 'image/webp') return false;
+	return isAnimated(new Uint8Array(await file.arrayBuffer()));
+}
 
 const toBlob = (canvas: HTMLCanvasElement, type: string) =>
 	new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, QUALITY));
@@ -48,7 +86,7 @@ export async function decode(file: Blob): Promise<ImageBitmap> {
 
 /** Scale a picture so its longest side is at most `longest` pixels. */
 export async function shrink(file: File, longest: number): Promise<Blob> {
-	if (staysAsItIs(file.type)) {
+	if (await staysAsItIs(file)) {
 		if (file.size > MAX_BYTES) throw new Error(TOO_LARGE);
 		return file;
 	}

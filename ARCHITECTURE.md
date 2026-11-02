@@ -138,7 +138,8 @@ above them, so `frog owner-reset-link`, run on the server, makes theirs.
 A rename goes through `Auth` and the current password; nothing is keyed by a
 name, so only the addresses built from it change.
 
-A new username takes 2 to 20 characters, counted as characters. Sign-in never
+A new username takes 2 to 20 characters, counted as a person counts them, so a
+flag or a family emoji is one. Sign-in never
 applies that limit, because accounts older than it may have longer names; it
 only refuses names past 256 characters, which it answers like a wrong password
 without storing anything. An unknown name does the same password work as a real

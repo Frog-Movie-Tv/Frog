@@ -19,9 +19,6 @@ use crate::store;
 
 /// How far back the row looks.
 const WINDOW_DAYS: i64 = 14;
-/// Watches read per person. Plenty for a fortnight of ordinary watching, and a
-/// ceiling for someone who has just imported years of it.
-const WATCHES_READ: i64 = 400;
 /// Titles one person gets in the row. Anything past it is a number on their
 /// last card, so one binge or one import cannot fill the row.
 const TITLES_EACH: usize = 3;
@@ -175,13 +172,11 @@ async fn recent_watches(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Watch>
            JOIN library_entry l ON l.title_id = w.title_id AND l.user_id = w.user_id
            LEFT JOIN episode e ON e.id = w.episode_id
           WHERE w.user_id = ? AND w.undated = 0 AND w.watched_at >= ? AND w.watched_at <= ?
-          ORDER BY w.watched_at DESC
-          LIMIT ?",
+          ORDER BY w.watched_at DESC",
     )
     .bind(user_id)
     .bind((now - Duration::days(WINDOW_DAYS)).to_rfc3339())
     .bind(now.to_rfc3339())
-    .bind(WATCHES_READ)
     .fetch_all(pool)
     .await?;
     Ok(rows

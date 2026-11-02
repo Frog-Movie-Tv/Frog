@@ -287,7 +287,7 @@ test('the about page credits its sources', async ({ page }) => {
 	await page.goto('/about');
 
 	await expect(page.getByRole('heading', { name: 'Frog', level: 1 })).toBeVisible();
-	await expect(page.getByText('Bullfrog')).toBeVisible();
+	await expect(page.getByText('Spring Peeper')).toBeVisible();
 	await expect(page.getByRole('link', { name: /TMDB/ }).first()).toBeVisible();
 	await expect(page.getByRole('link', { name: /Lucide/ })).toBeVisible();
 });
@@ -1353,6 +1353,30 @@ test('pictures are made small before they leave the browser', async ({ page }) =
 		.toBe('image/gif');
 	const stored = await (await page.request.get(`${avatar}?v=gif2`)).body();
 	expect(stored.equals(gif), 'an animated GIF is stored as it was sent').toBe(true);
+
+	// A moving PNG reads the same as a still one until its bytes are looked at.
+	const chunk = (type: string, length: number) =>
+		Buffer.concat([
+			Buffer.from([0, 0, 0, length]),
+			Buffer.from(type),
+			Buffer.alloc(length),
+			Buffer.alloc(4)
+		]);
+	const moving = Buffer.concat([
+		Buffer.from('89504e470d0a1a0a', 'hex'),
+		chunk('IHDR', 13),
+		chunk('acTL', 8),
+		chunk('IDAT', 1)
+	]);
+	await page
+		.locator('.file', { hasText: 'Picture' })
+		.locator('input')
+		.setInputFiles({ name: 'moving.png', mimeType: 'image/png', buffer: moving });
+	await expect
+		.poll(async () => (await (await page.request.get(`${avatar}?v=png`)).body()).length)
+		.toBe(moving.length);
+	const kept = await (await page.request.get(`${avatar}?v=png2`)).body();
+	expect(kept.equals(moving), 'an APNG is stored as it was sent').toBe(true);
 
 	await page
 		.locator('.file', { hasText: 'Picture' })

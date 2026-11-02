@@ -83,6 +83,19 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: node scripts/check-release-notes.mjs "$BASE" "$HEAD"
 
+      # A squash makes the title the only commit on main. release-please reads
+      # nothing else, and with no commit it can read it stops without a word and
+      # the workflow stays green, which is how 1.0.2 sat unpublished.
+      - name: Pull request title is a Conventional Commit
+        if: github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if ! grep -qE '^(feat|fix|perf|refactor|docs|test|build|ci|chore|style)(\([^)]+\))?!?: ' <<< "$TITLE"; then
+            echo "Title is not a Conventional Commit: $TITLE"
+            exit 1
+          fi
+
       - name: Release notes cover this version
         run: |
           version="$(cat version.txt)"

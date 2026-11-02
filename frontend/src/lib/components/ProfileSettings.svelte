@@ -83,7 +83,7 @@
 
 	async function frame(file: File | undefined) {
 		if (!file) return;
-		if (staysAsItIs(file.type)) return upload('avatar', file);
+		if (await staysAsItIs(file)) return upload('avatar', file);
 		try {
 			const bitmap = await decode(file);
 			framing = {

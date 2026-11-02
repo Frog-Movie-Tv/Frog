@@ -66,6 +66,11 @@ test tooling only. What ships is the image CI builds.
 Types that reach the changelog: `feat`, `fix`, `perf`, `refactor`, `docs`.
 Types that do not: `test`, `build`, `ci`, `chore`, `style`.
 
+**A pull request's title follows the same form.** A squash makes the title the
+only commit on `main`, and release-please reads nothing else: with a title it
+cannot read it stops without a word, the workflow stays green and no release pull
+request appears. CI refuses such a title.
+
 Since 1.0, `fix` bumps the patch and `feat` the minor, so `feat` on 1.0.1
 produces 1.1.0. A breaking change (`!` or a `BREAKING CHANGE:` footer) bumps
 the major. Do not add one lightly.
@@ -91,7 +96,8 @@ people editing a changelog is a merge conflict every time.
   and `docs` need nothing.
 - **The release takes it from there.** When release-please opens its pull
   request, `scripts/draft-release-notes.mjs` turns Upcoming into that version's
-  section, with the newest codename and the date. Only with nothing under
+  section, with the newest codename and the date. A section already written for
+  that version is left alone, which is how a new codename reaches a release. Only with nothing under
   Upcoming does it draft from the commit messages, marked as a draft to rewrite.
   The bot rebuilds its pull request from `main` whenever something merges, so
   notes from several pull requests add up, and an edit made on the release
