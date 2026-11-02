@@ -337,6 +337,11 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   in the database (the diary keeps them) but leave every total.
 - **Stats credits** live in `title_person`, filled by `store::ensure_title`
   and backfilled by the worker, 25 titles every 2 minutes.
+- **Pictures are made ready in the browser** (`lib/picture.ts`): avatars at 512
+  pixels, banners at 1800 on the long side. JPEG stays JPEG and anything else
+  becomes WebP, so transparency lasts; a browser with no WebP writer hands back
+  PNG. GIFs go up untouched, because a canvas would stop them; an animated WebP
+  or APNG keeps its first frame. The server only checks size and first bytes.
 - **Sign-in's limit is not a username limit.** `USERNAME_MAX` (20) is for a name
   being chosen. Sign-in only refuses names past `SIGN_IN_NAME_MAX` (256), so an
   account older than the limit always gets in. Raise that one if an instance

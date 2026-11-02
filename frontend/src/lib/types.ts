@@ -653,6 +653,12 @@ export interface Profile {
 	recent: ProfileCard[];
 }
 
+export interface ResetLink {
+	code: string;
+	path: string;
+	expires_at: string;
+}
+
 export interface NewInvite {
 	code: string;
 	path: string;

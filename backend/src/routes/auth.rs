@@ -10,6 +10,7 @@ use std::net::SocketAddr;
 
 use crate::auth::{self as session, ClientAddr, Role};
 use crate::error::{AppError, AppResult};
+use crate::reset;
 use crate::routes::{invites, two_factor};
 use crate::state::AppState;
 use crate::throttle;
@@ -52,6 +53,15 @@ fn client_key(headers: &HeaderMap, peer: Option<SocketAddr>) -> String {
     }
     peer.map(|p| p.ip().to_string())
         .unwrap_or_else(|| "unknown".into())
+}
+
+/// The wait a throttle asked for, as a person reads it.
+fn too_many_tries(seconds: u64) -> AppError {
+    let minutes = seconds.div_ceil(60);
+    AppError::TooManyRequests(format!(
+        "Too many tries. Try again in {minutes} {}.",
+        if minutes == 1 { "minute" } else { "minutes" }
+    ))
 }
 
 /// True while the instance has no accounts at all, which is the only time the
@@ -175,13 +185,7 @@ pub async fn login(
     let client = client_key(&headers, peer);
     let keys = throttle::sign_in_keys(&body.username, &client);
 
-    if let Err(seconds) = state.login_failures.admit(&keys) {
-        let minutes = seconds.div_ceil(60);
-        return Err(AppError::TooManyRequests(format!(
-            "Too many tries. Try again in {minutes} {}.",
-            if minutes == 1 { "minute" } else { "minutes" }
-        )));
-    }
+    state.login_failures.admit(&keys).map_err(too_many_tries)?;
 
     // NOCASE so signing in is not a spelling test, and one row per username.
     let row: Option<LoginRow> = sqlx::query_as(
@@ -225,6 +229,52 @@ pub async fn login(
 
     state.login_failures.clear(&keys);
     issue(state, jar, headers, user_id, body.remember).await
+}
+
+#[derive(Deserialize)]
+pub struct ResetBody {
+    pub code: String,
+    pub password: String,
+}
+
+/// Set a new password with a reset link.
+///
+/// Public, because the person using it cannot sign in. What keeps that safe:
+/// the code is 128 random bits, only its hash is stored, it works once and
+/// expires, and attempts are throttled by address. Every way a code can be wrong
+/// gets one answer, after the same password work, so this says nothing about
+/// which codes exist or who they are for. Nothing is signed in here: the person
+/// signs in with the new password, which is also where two-factor asks.
+pub async fn reset_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ClientAddr(peer): ClientAddr,
+    Json(body): Json<ResetBody>,
+) -> AppResult<impl IntoResponse> {
+    let client = client_key(&headers, peer);
+    let keys = throttle::reset_keys(&client);
+    state.reset_failures.admit(&keys).map_err(too_many_tries)?;
+
+    // Says nothing about the code, so it can come first and costs no try.
+    if !session::password_long_enough(&body.password) {
+        state.reset_failures.release(&keys);
+        return Err(AppError::BadRequest(
+            "password needs at least 8 characters".into(),
+        ));
+    }
+
+    let Some(username) = reset::redeem(&state.pool, &body.code, &body.password).await? else {
+        return Err(AppError::Forbidden(
+            "That link has been used already, or it has expired.".into(),
+        ));
+    };
+    state.reset_failures.release(&keys);
+    // Whoever forgot a password has usually just used up their tries.
+    state
+        .login_failures
+        .clear(&throttle::sign_in_keys(&username, &client));
+    tracing::info!("a password was changed with a reset link");
+    Ok(Json(json!({ "ok": true })))
 }
 
 /// Checks an authenticator code, or else spends one of this account's
@@ -305,8 +355,7 @@ fn validate(c: &Credentials) -> AppResult<()> {
     Ok(())
 }
 
-/// Create an account and return its id. The username is unique regardless of
-/// case, so two people cannot pick names that only a reader can tell apart.
+/// Create an account and return its id.
 pub async fn create_account(
     state: &AppState,
     username: &str,
@@ -314,12 +363,7 @@ pub async fn create_account(
     role: Role,
 ) -> AppResult<i64> {
     let name = username.trim();
-    let (taken,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM app_user WHERE username = ? COLLATE NOCASE")
-            .bind(name)
-            .fetch_one(&state.pool)
-            .await?;
-    if taken > 0 {
+    if session::username_taken(&state.pool, name, None).await? {
         return Err(AppError::Conflict("that username is taken".into()));
     }
 

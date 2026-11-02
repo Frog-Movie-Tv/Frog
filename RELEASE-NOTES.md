@@ -15,6 +15,11 @@ In progress.
 
 ### Improvements
 
+- Forgot a password? An administrator can make a single-use link that sets a new
+  one and signs out every device.
+- Change your username in Settings → Account.
+- Pictures are smaller before they leave your device, and a transparent picture
+  stays transparent.
 - New usernames can be up to 20 characters, counted as characters, so an emoji
   is one. Existing accounts keep their names.
 

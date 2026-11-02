@@ -39,6 +39,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/setup", post(auth::setup))
         .route("/auth/login", post(auth::login))
         .route("/auth/register", post(auth::register))
+        .route("/auth/reset", post(auth::reset_password))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/two-factor", get(two_factor::status))
         .route("/auth/two-factor/start", post(two_factor::start))
@@ -88,6 +89,7 @@ pub fn router(state: AppState) -> Router {
         .route("/settings", put(settings::put))
         .route("/account", get(account::get).delete(account::delete))
         .route("/account/password", put(account::change_password))
+        .route("/account/username", put(account::change_username))
         .route("/account/profile", put(account::set_profile))
         .route(
             "/account/images/{kind}",
@@ -108,6 +110,7 @@ pub fn router(state: AppState) -> Router {
             "/admin/users/{id}",
             put(admin::update_user).delete(admin::delete_user),
         )
+        .route("/admin/users/{id}/reset", post(admin::reset_link))
         .route("/admin/instance", get(admin::instance))
         .route("/admin/server", get(admin::server))
         .route("/anilist", get(anilist::status).delete(anilist::disconnect))

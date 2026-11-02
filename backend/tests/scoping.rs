@@ -16,7 +16,8 @@ use std::path::{Path, PathBuf};
 
 /// Tables that gained a `user_id` in migration 0008, and personal tables
 /// added since.
-const PERSONAL: [&str; 15] = [
+const PERSONAL: [&str; 16] = [
+    "password_reset",
     "season_rating",
     "title_merge",
     "user_image",
@@ -46,7 +47,11 @@ const SCOPED_FRAGMENTS: [&str; 6] = [
 ];
 
 /// Statements that are global on purpose, each with its reason.
-const ALLOWED: [(&str, &str); 7] = [
+const ALLOWED: [(&str, &str); 8] = [
+    (
+        "DELETE FROM password_reset WHERE expires_at",
+        "housekeeping: links past their expiry go at once, whoever they were for",
+    ),
     (
         "SELECT t.id FROM title t LEFT JOIN title_logo_check",
         "decides which shared titles anyone tracks still lack a logo; writes only          title.logo_path and title_logo_check",

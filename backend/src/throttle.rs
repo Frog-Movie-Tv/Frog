@@ -29,6 +29,11 @@ const MAX_KEYS: usize = 10_000;
 const SIGN_IN_ATTEMPTS: usize = 8;
 const SIGN_IN_WINDOW: Duration = Duration::from_secs(10 * 60);
 
+/// Tries of a reset link, per caller address. The code cannot be guessed, so
+/// this only has to stop anyone trying.
+const RESET_ATTEMPTS: usize = 8;
+const RESET_WINDOW: Duration = Duration::from_secs(10 * 60);
+
 fn key(kind: &str, value: &str) -> Key {
     Sha256::new()
         .chain_update(kind)
@@ -48,6 +53,12 @@ pub fn sign_in_keys(username: &str, client: &str) -> [Key; 2] {
     ]
 }
 
+/// Who to throttle at a reset link: a code names nobody until it is right, so
+/// the address is all there is to count.
+pub fn reset_keys(client: &str) -> [Key; 1] {
+    [key("reset", client)]
+}
+
 pub struct Throttle {
     limit: usize,
     window: Duration,
@@ -62,6 +73,10 @@ impl Throttle {
 
     pub fn for_sign_in() -> Self {
         Self::new(SIGN_IN_ATTEMPTS, SIGN_IN_WINDOW)
+    }
+
+    pub fn for_resets() -> Self {
+        Self::new(RESET_ATTEMPTS, RESET_WINDOW)
     }
 
     fn with_cap(limit: usize, window: Duration, cap: usize) -> Self {

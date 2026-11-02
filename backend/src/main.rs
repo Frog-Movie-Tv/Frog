@@ -1,6 +1,6 @@
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use frog::{auth, config::Config, db, jobs, routes, state::AppState};
+use frog::{auth, config::Config, db, jobs, reset, routes, state::AppState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -25,6 +25,19 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = db::connect(&config.database_url).await?;
     tracing::info!(database = %config.database_url, "database ready");
+
+    // `frog owner-reset-link`: nobody ranks above the owner, so the way back in
+    // for them is a shell on the server. docs/INSTALL.md has it.
+    if std::env::args().nth(1).as_deref() == Some("owner-reset-link") {
+        match reset::issue_for_owner(&pool).await? {
+            Some((code, expires)) => println!(
+                "Open this on your Frog within a day, it works once:\n/reset?code={code}\n(until {})",
+                expires.to_rfc3339()
+            ),
+            None => println!("This Frog has no owner yet. Open it and set one up."),
+        }
+        return Ok(());
+    }
 
     let bind = config.bind;
     let state = AppState::new(pool, config);

@@ -48,6 +48,8 @@ pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
 
 async fn tick(state: &AppState) -> anyhow::Result<()> {
     state.login_failures.sweep();
+    state.reset_failures.sweep();
+    crate::reset::purge_expired(&state.pool).await?;
 
     let expired = crate::auth::purge_expired_sessions(&state.pool).await?;
     if expired > 0 {

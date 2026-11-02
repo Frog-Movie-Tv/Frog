@@ -8,28 +8,16 @@
 use axum::extract::{Path, State};
 use axum::Json;
 use chrono::{Duration, Utc};
-use rand::RngCore;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
-use crate::auth::{AdminAuth, Role};
+use crate::auth::{hash_code, new_code, AdminAuth, Role};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
 /// How long an invite lasts unless asked otherwise, and the most it may last.
 const DEFAULT_DAYS: i64 = 7;
 const MAX_DAYS: i64 = 90;
-
-pub fn hash_code(code: &str) -> String {
-    hex::encode(Sha256::digest(code.trim().as_bytes()))
-}
-
-fn new_code() -> String {
-    let mut raw = [0u8; 16];
-    rand::rngs::OsRng.fill_bytes(&mut raw);
-    hex::encode(raw)
-}
 
 #[derive(Deserialize)]
 pub struct NewInvite {
@@ -207,23 +195,4 @@ pub async fn mark_used(state: &AppState, code: &str, user_id: i64) -> AppResult<
         .execute(&state.pool)
         .await?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_code_is_hashed_and_whitespace_does_not_change_it() {
-        let h = hash_code("abc123");
-        assert_eq!(h, hash_code("  abc123  "));
-        assert_ne!(h, "abc123");
-        assert_eq!(h.len(), 64);
-    }
-
-    #[test]
-    fn codes_do_not_repeat() {
-        assert_ne!(new_code(), new_code());
-        assert_eq!(new_code().len(), 32);
-    }
 }

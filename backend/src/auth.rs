@@ -118,6 +118,32 @@ pub fn sign_in_name_too_long(name: &str) -> bool {
     name.trim().chars().nth(SIGN_IN_NAME_MAX).is_some()
 }
 
+/// A single-use code for a link. Random enough that guessing is not a plan.
+pub fn new_code() -> String {
+    let mut raw = [0u8; 16];
+    rand::rngs::OsRng.fill_bytes(&mut raw);
+    hex::encode(raw)
+}
+
+/// What a link's code is stored as, so the database never holds a working one.
+pub fn hash_code(code: &str) -> String {
+    hex::encode(Sha256::digest(code.trim().as_bytes()))
+}
+
+/// Whether a name belongs to another account, regardless of case, so two people
+/// cannot pick names that only a reader can tell apart. Compared here rather
+/// than in SQL, whose NOCASE only knows ASCII. `except` lets an account change
+/// the case of its own name.
+pub async fn username_taken(pool: &SqlitePool, name: &str, except: Option<i64>) -> AppResult<bool> {
+    let wanted = name.trim().to_lowercase();
+    let accounts: Vec<(i64, String)> = sqlx::query_as("SELECT id, username FROM app_user")
+        .fetch_all(pool)
+        .await?;
+    Ok(accounts
+        .iter()
+        .any(|(id, username)| Some(*id) != except && username.to_lowercase() == wanted))
+}
+
 fn hash_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
@@ -405,6 +431,20 @@ mod tests {
         )));
         assert!(sign_in_name_too_long(&"x".repeat(SIGN_IN_NAME_MAX + 1)));
         assert!(sign_in_name_too_long(&"x".repeat(1024 * 1024)));
+    }
+
+    #[test]
+    fn a_code_is_hashed_and_whitespace_does_not_change_it() {
+        let h = hash_code("abc123");
+        assert_eq!(h, hash_code("  abc123  "));
+        assert_ne!(h, "abc123");
+        assert_eq!(h.len(), 64);
+    }
+
+    #[test]
+    fn codes_do_not_repeat() {
+        assert_ne!(new_code(), new_code());
+        assert_eq!(new_code().len(), 32);
     }
 
     #[test]

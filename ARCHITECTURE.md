@@ -82,7 +82,7 @@ the ones above.
 | Layer | Modules | Does |
 | --- | --- | --- |
 | HTTP | `routes/*` | Parse and check the request, name the account (`Auth`, `AdminAuth`), call the layer below, shape the answer. |
-| Domain | `catalog`, `transfer`, `anilist`, `release`, `bulk`, `push`, `jobs` | Decisions and workflows: which title a provider id names, what an import means, who wins a sync, when an episode is out, what a show's status is. |
+| Domain | `catalog`, `transfer`, `anilist`, `release`, `reset`, `bulk`, `push`, `jobs` | Decisions and workflows: which title a provider id names, what an import means, who wins a sync, when an episode is out, what a show's status is. |
 | Persistence | `catalog`, `store`, `anilist::records`, `images`, `db` | Reads and writes. `catalog` owns the shared titles, episodes and provider ids; `store` owns one account's library; each domain may own its own tables (`anilist::records` owns `anilist_*`, `images` owns `image_cache`). |
 | Providers | `tmdb`, `anilist::client`, `anilist::media` | Talking to other services, cached; nothing else calls them directly. `catalog::ensure` is how a provider's answer becomes a title. |
 | Shared | `auth`, `config`, `error`, `state`, `text`, `palette`, `throttle`, `totp`, `ops` | Small and specific; no catch-all helpers module. |
@@ -111,6 +111,7 @@ left. See CLAUDE.md for the rule.
 | `ops` | Reads what the deploy scripts recorded in `ops.jsonl`. |
 | `palette` | Pulls an accent colour out of a poster. |
 | `text` | Case and accent folding for search. |
+| `reset` | Password reset links: single-use, a day long, one per account, stored as a hash. A change to the account's password or role withdraws its link. |
 | `throttle` | Counts failed attempts in memory. Keys are fixed-size hashes, a refused request stores nothing, the worker sweeps what has expired, and the map has a ceiling. |
 | `routes` | One module per area. |
 
@@ -125,6 +126,15 @@ The first account is the owner, made from `FROG_ADMIN_USERNAME` /
 `FROG_ADMIN_PASSWORD` at boot or from the setup screen, which refuses once
 any account exists. Everyone after that joins through a single-use, expiring
 invitation an administrator makes. There is no open sign-up.
+
+Someone who forgets a password gets a single-use link from an administrator
+(`/reset?code=…`), under the same rules as changing an account. `POST
+/api/auth/reset` is public on purpose, since its user cannot sign in: the code is
+128 random bits, only its hash is stored, attempts are throttled by address, and
+every bad code gets one answer after the same password work. The owner has nobody
+above them, so `frog owner-reset-link`, run on the server, makes theirs.
+A rename goes through `Auth` and the current password; nothing is keyed by a
+name, so only the addresses built from it change.
 
 A new username takes 2 to 20 characters, counted as characters. Sign-in never
 applies that limit, because accounts older than it may have longer names; it
@@ -180,8 +190,8 @@ flash and no client-side work.
 ### Data model
 
 ```
-app_user ── session, recovery_code, invite, app_setting, user_image,
-            push_subscription, push_sent
+app_user ── session, recovery_code, invite, password_reset, app_setting,
+            user_image, push_subscription, push_sent
 
 title (shared catalog; id is Frog's own) ──┬── episode ──┬── episode_state  (notes, per account)
   kind, metadata, merged_into              │             └── watch_event    (the diary, per account)

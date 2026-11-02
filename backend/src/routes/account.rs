@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 
 use crate::auth::{self, Auth, Role};
 use crate::error::{AppError, AppResult};
+use crate::reset;
 use crate::state::AppState;
 use crate::store;
 
@@ -107,7 +108,43 @@ pub async fn change_password(
         .await?;
     let signed_out =
         auth::destroy_sessions_for(&state.pool, auth.user_id(), Some(&auth.token)).await?;
+    reset::withdraw(&state.pool, auth.user_id()).await?;
     Ok(Json(json!({ "ok": true, "signed_out": signed_out })))
+}
+
+#[derive(Deserialize)]
+pub struct UsernameBody {
+    pub username: String,
+    pub password: String,
+}
+
+/// Take another name, under the same rules as a new account. Nothing is keyed by
+/// a name: an account's rows go by its id, and the addresses that do use one
+/// (a profile, its pictures) are built from the current name on each request.
+pub async fn change_username(
+    auth: Auth,
+    State(state): State<AppState>,
+    Json(body): Json<UsernameBody>,
+) -> AppResult<Json<Value>> {
+    check_password(&state, auth.user_id(), &body.password).await?;
+    auth::check_username(&body.username)?;
+    let name = body.username.trim();
+    if auth::username_taken(&state.pool, name, Some(auth.user_id())).await? {
+        return Err(AppError::Conflict("that username is taken".into()));
+    }
+    sqlx::query("UPDATE app_user SET username = ? WHERE id = ?")
+        .bind(name)
+        .bind(auth.user_id())
+        .execute(&state.pool)
+        .await
+        // The column is unique, so someone taking it this instant lands here.
+        .map_err(|e| match e.as_database_error() {
+            Some(db) if db.is_unique_violation() => {
+                AppError::Conflict("that username is taken".into())
+            }
+            _ => e.into(),
+        })?;
+    Ok(Json(json!({ "username": name })))
 }
 
 /// (token hash, created_at, expires_at, user agent)

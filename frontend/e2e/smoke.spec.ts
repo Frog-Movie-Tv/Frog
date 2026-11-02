@@ -1147,6 +1147,13 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		const res = await request.put(path, { data: { rating: 80 } });
 		expect(res.status(), `PUT ${path} should be 401`).toBe(401);
 	}
+	const reset = await request.post('/api/admin/users/1/reset', { data: {} });
+	expect(reset.status(), 'POST a reset link should be 401').toBe(401);
+	const rename = await request.put('/api/account/username', {
+		data: { username: 'nobody', password: 'a-long-enough-pass' }
+	});
+	expect(rename.status(), 'PUT a username should be 401').toBe(401);
+
 	for (const path of ['/api/account', '/api/account/library', '/api/t/1/library']) {
 		const res = await request.delete(path, { data: {} });
 		expect(res.status(), `DELETE ${path} should be 401`).toBe(401);
@@ -1158,6 +1165,206 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		data: { username: 'nobody', password: 'a-long-enough-pass', invite: 'made-up' }
 	});
 	expect(join.status(), 'registering without a real invite is refused').toBe(403);
+
+	// The same for a reset link: the person using one cannot sign in, so the
+	// route stays open and a code is what it asks for.
+	const madeUp = await request.post('/api/auth/reset', {
+		data: { code: 'made-up', password: 'a-long-enough-pass' }
+	});
+	expect(madeUp.status(), 'resetting without a real link is refused').toBe(403);
+});
+
+test('a reset link sets a new password, once', async ({ page, browser, playwright, baseURL }) => {
+	await signIn(page);
+	const name = `forgot${Date.now() % 100000}`;
+	const invite = await (await page.request.post('/api/invites', { data: { role: 'user' } })).json();
+	const them = await playwright.request.newContext({ baseURL });
+	await them.post('/api/auth/register', {
+		data: { username: name, password: 'another-long-pass', invite: invite.code, remember: true }
+	});
+
+	await page.goto('/admin');
+	await page.getByRole('button', { name: `Reset link for ${name}` }).click();
+	const link = await page.locator('.fresh.reset code').textContent();
+	expect(link).toContain('/reset?code=');
+
+	const stranger = await browser.newContext({ baseURL });
+	const seen = await enforceDeployedCsp(stranger, baseURL ?? '');
+	const tab = await stranger.newPage();
+	await tab.goto(link ?? '');
+	await expect(tab).toHaveTitle('Reset password · Frog');
+	await tab.getByLabel('New password').fill('a-brand-new-pass');
+	await tab.getByRole('button', { name: 'Save password' }).click();
+	await expect(tab.getByRole('heading', { name: 'Password changed' })).toBeVisible();
+
+	// Their device is signed out, and the same link does not work twice.
+	expect((await them.get('/api/account')).status()).toBe(401);
+	await tab.goto(link ?? '');
+	await tab.getByLabel('New password').fill('yet-another-pass');
+	await tab.getByRole('button', { name: 'Save password' }).click();
+	await expect(tab.getByRole('alert')).toContainText('used already');
+
+	await tab.goto('/reset');
+	await expect(tab.getByText('This page needs a reset link.')).toBeVisible();
+
+	await tab.goto('/login');
+	await tab.getByLabel('Username').fill(name);
+	await tab.getByLabel('Password').fill('a-brand-new-pass');
+	await tab.getByRole('button', { name: 'Sign in' }).click();
+	await expect(tab).toHaveURL(/\/(welcome)?$/);
+	expect(seen, 'blocked by the deployed Content-Security-Policy').toEqual([]);
+	await stranger.close();
+	await them.dispose();
+});
+
+test('renaming yourself shows at once, everywhere', async ({
+	browser,
+	playwright,
+	baseURL,
+	page
+}) => {
+	await signIn(page);
+	const stamp = Date.now() % 100000;
+	const invite = await (await page.request.post('/api/invites', { data: { role: 'user' } })).json();
+	const them = await playwright.request.newContext({ baseURL });
+	await them.post('/api/auth/register', {
+		data: {
+			username: `before${stamp}`,
+			password: 'another-long-pass',
+			invite: invite.code,
+			remember: true
+		}
+	});
+	await them.put('/api/settings', { data: { onboarded: true } });
+	const context = await browser.newContext({ baseURL, storageState: await them.storageState() });
+	const tab = await context.newPage();
+
+	await tab.goto('/settings#account');
+	const row = tab.locator('.row', { hasText: 'It is how you sign in' });
+	await row.getByRole('button', { name: 'Change' }).click();
+	await expect(row.getByLabel('New username')).toHaveAttribute('maxlength', '20');
+	await row.getByLabel('New username').fill(`after${stamp}`);
+	await row.getByLabel('Current password').fill('another-long-pass');
+	await row.getByRole('button', { name: 'Save username' }).click();
+
+	await expect(tab.getByRole('button', { name: `Account: after${stamp}` })).toBeVisible();
+	await expect(tab.getByText(`after${stamp}`, { exact: true }).first()).toBeVisible();
+	await tab.getByRole('button', { name: `Account: after${stamp}` }).click();
+	await tab.getByRole('menuitem', { name: 'Your profile' }).click();
+	await expect(tab).toHaveURL(`/people/after${stamp}`);
+	await context.close();
+	await them.dispose();
+});
+
+/** Picture bytes made in the page, since nothing here ships a large photo. */
+async function pictureFile(page: Page, width: number, height: number, type: string) {
+	const base64 = await page.evaluate(
+		async ({ width, height, type }) => {
+			const canvas = document.createElement('canvas');
+			canvas.width = width;
+			canvas.height = height;
+			const context = canvas.getContext('2d')!;
+			// Half left clear, so transparency has something to survive on.
+			for (let n = 0; n < 4000; n++) {
+				context.fillStyle = `hsl(${n % 360} 80% 50%)`;
+				context.fillRect((n * 7919) % (width / 2), (n * 104729) % height, 40, 40);
+			}
+			const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, type));
+			const bytes = new Uint8Array(await blob!.arrayBuffer());
+			let out = '';
+			for (let i = 0; i < bytes.length; i += 8192) {
+				out += String.fromCharCode(...bytes.subarray(i, i + 8192));
+			}
+			return btoa(out);
+		},
+		{ width, height, type }
+	);
+	return Buffer.from(base64, 'base64');
+}
+
+/** The picture the server now holds, as the browser reads it. */
+function readPicture(page: Page, address: string) {
+	return page.evaluate(async (address) => {
+		const blob = await (await fetch(address)).blob();
+		const bitmap = await createImageBitmap(blob);
+		const canvas = document.createElement('canvas');
+		canvas.width = bitmap.width;
+		canvas.height = bitmap.height;
+		const context = canvas.getContext('2d')!;
+		context.drawImage(bitmap, 0, 0);
+		const corner = context.getImageData(bitmap.width - 1, 0, 1, 1).data[3];
+		return {
+			width: bitmap.width,
+			height: bitmap.height,
+			bytes: blob.size,
+			corner,
+			type: blob.type
+		};
+	}, address);
+}
+
+test('pictures are made small before they leave the browser', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/settings#account');
+	const avatar = `/api/profiles/${USER}/images/avatar`;
+	const banner = `/api/profiles/${USER}/images/banner`;
+	const sent: number[] = [];
+	page.on('request', (r) => {
+		if (r.method() === 'PUT' && r.url().includes('/account/images/')) {
+			sent.push(r.postDataBuffer()?.length ?? 0);
+		}
+	});
+
+	const photo = await pictureFile(page, 4000, 3000, 'image/png');
+	await page
+		.locator('.file', { hasText: 'Upload banner' })
+		.locator('input')
+		.setInputFiles({ name: 'huge.png', mimeType: 'image/png', buffer: photo });
+	await expect(page.getByText('Banner updated')).toBeVisible();
+	const onServer = await readPicture(page, banner);
+	expect(onServer.width).toBe(1800);
+	expect(onServer.height).toBe(1350);
+	expect(sent[0]).toBeLessThan(photo.length);
+	expect(onServer.corner, 'a clear corner stays clear').toBe(0);
+
+	await page
+		.locator('.file', { hasText: 'Picture' })
+		.locator('input')
+		.setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: photo });
+	await page.getByRole('button', { name: 'Use this picture' }).click();
+	await expect(page.getByText('Profile picture updated')).toBeVisible();
+	const framed = await readPicture(page, avatar);
+	expect([framed.width, framed.height]).toEqual([512, 512]);
+	expect(framed.corner, 'a clear corner stays clear').toBe(0);
+
+	// One frame is enough to see the bytes arrive untouched.
+	const gif = Buffer.from(
+		'R0lGODlhAQABAIAAAAAAAP///yH/C05FVFNDQVBFMi4wAwEAAAAh+QQJCgAAACwAAAAAAQABAAACAkQBACH5BAkKAAAALAAAAAABAAEAAAICRAEAOw==',
+		'base64'
+	);
+	await page
+		.locator('.file', { hasText: 'Picture' })
+		.locator('input')
+		.setInputFiles({ name: 'moving.gif', mimeType: 'image/gif', buffer: gif });
+	await expect(page.getByText('Profile picture updated').last()).toBeVisible();
+	await expect
+		.poll(async () => (await page.request.get(`${avatar}?v=gif`)).headers()['content-type'])
+		.toBe('image/gif');
+	const stored = await (await page.request.get(`${avatar}?v=gif2`)).body();
+	expect(stored.equals(gif), 'an animated GIF is stored as it was sent').toBe(true);
+
+	await page
+		.locator('.file', { hasText: 'Picture' })
+		.locator('input')
+		.setInputFiles({
+			name: 'broken.png',
+			mimeType: 'image/png',
+			buffer: Buffer.from('not a picture')
+		});
+	await expect(page.getByText('That picture could not be read.')).toBeVisible();
+
+	await page.request.delete('/api/account/images/avatar');
+	await page.request.delete('/api/account/images/banner');
 });
 
 /** Long names with nowhere to break, the worst a person can type or a provider can send. */

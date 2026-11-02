@@ -3,12 +3,16 @@
 	import { api } from '#lib/api';
 	import Icon from '#lib/components/Icon.svelte';
 	import { relativeDate } from '#lib/format';
-	import { session } from '#lib/session.svelte';
+	import { session, USERNAME_MAX } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import type { Account, DeviceSession } from '#lib/types';
 
 	let account = $state<Account | null>(null);
 	let devices = $state<DeviceSession[]>([]);
+
+	let renaming = $state(false);
+	let newName = $state('');
+	let renamePassword = $state('');
 
 	let changing = $state(false);
 	let current = $state('');
@@ -35,6 +39,31 @@
 		}
 	}
 	load();
+
+	function startRename() {
+		// A name from before the limit could not be saved as it stands.
+		const name = account?.username ?? '';
+		newName = [...name].length <= USERNAME_MAX ? name : '';
+		renaming = true;
+	}
+
+	async function rename(event: SubmitEvent) {
+		event.preventDefault();
+		busy = true;
+		try {
+			await api.changeUsername(newName, renamePassword);
+			renamePassword = '';
+			renaming = false;
+			// Both: the session names the account everywhere, this row included.
+			await session.refresh();
+			account = await api.account();
+			toasts.push('Username changed');
+		} catch (e) {
+			toasts.error(e);
+		} finally {
+			busy = false;
+		}
+	}
 
 	async function changePassword(event: SubmitEvent) {
 		event.preventDefault();
@@ -117,6 +146,51 @@
 		<button class="btn ghost" onclick={switchAccount}>
 			<Icon name="refresh" size={15} /> Switch account
 		</button>
+	</div>
+
+	<div class="row card column">
+		<div class="top">
+			<span class="label">
+				<strong>Username</strong>
+				<span class="faint">It is how you sign in, and the address of your profile.</span>
+			</span>
+			{#if !renaming}
+				<button class="btn" onclick={startRename}>Change</button>
+			{/if}
+		</div>
+		{#if renaming}
+			<form class="password" onsubmit={rename}>
+				<label class="field">
+					<span>New username</span>
+					<input
+						class="input"
+						autocomplete="username"
+						autocapitalize="none"
+						spellcheck="false"
+						minlength="2"
+						maxlength={USERNAME_MAX}
+						bind:value={newName}
+						required
+					/>
+				</label>
+				<label class="field">
+					<span>Current password</span>
+					<input
+						class="input"
+						type="password"
+						autocomplete="current-password"
+						bind:value={renamePassword}
+						required
+					/>
+				</label>
+				<div class="actions">
+					<button type="button" class="btn ghost" onclick={() => (renaming = false)}>Cancel</button>
+					<button class="btn primary" disabled={busy || !newName.trim() || !renamePassword}
+						>Save username</button
+					>
+				</div>
+			</form>
+		{/if}
 	</div>
 
 	<div class="row card column">

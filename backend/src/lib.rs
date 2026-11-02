@@ -13,6 +13,7 @@ pub mod palette;
 pub mod push;
 pub mod ratings;
 pub mod release;
+pub mod reset;
 pub mod routes;
 pub mod state;
 pub mod store;

@@ -24,6 +24,7 @@ import type {
 	Profile,
 	ProfileEdit,
 	NewInvite,
+	ResetLink,
 	MatchResult,
 	Kind,
 	LibraryItem,
@@ -211,7 +212,13 @@ export const api = {
 	register: (username: string, password: string, invite: string, remember = true) =>
 		send<{ ok: true }>('POST', '/api/auth/register', { username, password, invite, remember }),
 
+	/** A new password from a reset link. Signs nobody in. */
+	resetPassword: (code: string, password: string) =>
+		send<{ ok: true }>('POST', '/api/auth/reset', { code, password }),
+
 	account: () => get<Account>('/api/account'),
+	changeUsername: (username: string, password: string) =>
+		send<{ username: string }>('PUT', '/api/account/username', { username, password }),
 	changePassword: (current: string, password: string) =>
 		send<{ ok: true; signed_out: number }>('PUT', '/api/account/password', { current, password }),
 	sessions: () => get<{ sessions: DeviceSession[] }>('/api/account/sessions'),
@@ -258,6 +265,7 @@ export const api = {
 		),
 
 	invites: () => get<{ invites: Invite[] }>('/api/invites'),
+	createResetLink: (id: number) => send<ResetLink>('POST', `/api/admin/users/${id}/reset`, {}),
 	createInvite: (role: Invite['role'], days?: number) =>
 		send<NewInvite>('POST', '/api/invites', { role, days }),
 	revokeInvite: (id: string) => send<{ ok: true }>('DELETE', `/api/invites/${id}`),

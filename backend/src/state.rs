@@ -14,6 +14,8 @@ pub struct AppState {
     /// so hammering one account cannot lock out the others and a single address
     /// cannot hammer them all.
     pub login_failures: Arc<Throttle>,
+    /// Tries of a reset link, one key per caller address.
+    pub reset_failures: Arc<Throttle>,
     /// For everything that is not TMDB: push services, for now.
     pub http: reqwest::Client,
 }
@@ -31,6 +33,7 @@ impl AppState {
             tmdb,
             config: Arc::new(config),
             login_failures: Arc::new(Throttle::for_sign_in()),
+            reset_failures: Arc::new(Throttle::for_resets()),
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(15))
                 .user_agent(concat!("Frog/", env!("CARGO_PKG_VERSION")))
