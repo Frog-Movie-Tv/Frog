@@ -190,10 +190,7 @@ impl<'a> Api<'a> {
             };
             if let Some(err) = body["errors"].as_array().and_then(|a| a.first()) {
                 let message = err["message"].as_str().unwrap_or("unknown error");
-                if message.to_lowercase().contains("invalid token") {
-                    return Err(AppError::Forbidden(SIGNED_OUT.into()));
-                }
-                return Err(AppError::AniList(format!("{status}: {message}")));
+                return Err(answer_error(status, message));
             }
             if !status.is_success() {
                 return Err(AppError::AniList(status.to_string()));
@@ -218,6 +215,20 @@ impl<'a> Api<'a> {
         let name = data["Viewer"]["name"].as_str().unwrap_or("").to_string();
         Ok((id, name))
     }
+}
+
+/// What an error AniList answered with means for Frog. A title AniList does
+/// not have, because it was removed or is kept from view, comes back as 404
+/// "Not Found": that is about the one title, and must not read as AniList
+/// being down, which would hold up a whole sync for one entry, every time.
+fn answer_error(status: reqwest::StatusCode, message: &str) -> AppError {
+    if message.to_lowercase().contains("invalid token") {
+        return AppError::Forbidden(SIGNED_OUT.into());
+    }
+    if status == reqwest::StatusCode::NOT_FOUND {
+        return AppError::NotFound(format!("AniList has no such entry: {message}"));
+    }
+    AppError::AniList(format!("{status}: {message}"))
 }
 
 const LIST_QUERY: &str = "query ($userId: Int, $chunk: Int, $perChunk: Int) {
@@ -467,5 +478,22 @@ mod tests {
         assert_eq!(list[0].view.status, "CURRENT");
         assert_eq!(list[0].name, "Kimi");
         assert_eq!(list[0].view.score, 85);
+    }
+
+    #[test]
+    fn a_title_anilist_does_not_have_is_not_an_outage() {
+        use reqwest::StatusCode;
+        assert!(matches!(
+            answer_error(StatusCode::NOT_FOUND, "Not Found."),
+            AppError::NotFound(_)
+        ));
+        assert!(matches!(
+            answer_error(StatusCode::BAD_REQUEST, "Invalid token"),
+            AppError::Forbidden(_)
+        ));
+        assert!(matches!(
+            answer_error(StatusCode::BAD_REQUEST, "Validation"),
+            AppError::AniList(_)
+        ));
     }
 }

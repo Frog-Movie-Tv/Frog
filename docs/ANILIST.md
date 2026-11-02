@@ -91,6 +91,16 @@ failed for it, and it is tried again with backoff.
   the last sync; whichever side differs from its snapshot changed and wins.
   A Frog title never on AniList is not added there, and removing one in Frog
   never removes it on AniList — both on purpose.
+- **Dates and rewatches** (`store::set_known_dates`). Each entry's
+  `startedAt`, `completedAt` and `repeat` reach the title's library entry on
+  every sync, changed or not, so a list synced before Frog read them gets them
+  too. Known days are stored as plain `yyyy-mm-dd`, which tells them from the
+  moment Frog stamps on a status change: a known day replaces a stamp, and
+  across a show's several entries the earliest start and the latest finish win.
+- **A title AniList does not have** (removed, or kept from view) answers 404
+  "Not Found". `client::answer_error` makes that `NotFound`, so the one entry
+  fails and the rest of the list syncs; read as an outage, it stopped a whole
+  account's sync on every try.
 - **AniList, kept running** (`anilist/sync.rs`, `anilist/client.rs`). The worker looks every
   30 s and syncs an account `ANILIST_SYNC_MINUTES` (default 3) after its last
   finished sync, or 45 s after a change in Frog. The list is read in chunks

@@ -355,6 +355,10 @@ test('MyAnimeList: a finished season, in full', async () => {
 			label: 'Bungo Stray Dogs 2nd Season',
 			anime: true,
 			episode_total: 12,
+			// The day it was finished goes to the title; MyAnimeList's 0000 is none.
+			started_at: null,
+			finished_at: '2023-04-05T20:00:00Z',
+			rewatches: 0,
 			alt_titles: [],
 			season: 2,
 			progress: null

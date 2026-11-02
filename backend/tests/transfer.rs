@@ -810,6 +810,10 @@ async fn both_exports_keep_their_shape() {
     for t in body["titles"].as_array_mut().unwrap() {
         assert!(t["added_at"].is_string());
         t["added_at"] = Value::Null;
+        // Stamped when the status was set: today, whatever today is.
+        assert!(t["started_at"].is_string(), "{t}");
+        t["started_at"] = Value::Null;
+        t["finished_at"] = Value::Null;
     }
     assert_eq!(
         body["titles"],
@@ -819,10 +823,12 @@ async fn both_exports_keep_their_shape() {
                 "ids": { "tmdb": { "kind": "tv", "id": 70523 }, "anilist": [], "imdb": [] },
                 "kind": "tv", "tmdb_id": 70523, "name": "Dark", "release_date": "2015-01-01",
                 "status": "watching", "rating": null, "favourite": false, "notes": null,
-                "added_at": null,
+                "added_at": null, "started_at": null, "finished_at": null, "rewatch_count": 0,
                 "episodes": [
-                    { "season": 1, "episode": 1, "rating": null, "notes": null, "watched": true },
-                    { "season": 1, "episode": 2, "rating": null, "notes": null, "watched": true }
+                    { "season": 1, "episode": 1, "rating": null, "notes": null, "watched": true,
+                      "watched_at": null },
+                    { "season": 1, "episode": 2, "rating": null, "notes": null, "watched": true,
+                      "watched_at": null }
                 ],
                 "watches": []
             },
@@ -831,7 +837,7 @@ async fn both_exports_keep_their_shape() {
                 "ids": { "tmdb": { "kind": "movie", "id": 949 }, "anilist": [], "imdb": [] },
                 "kind": "movie", "tmdb_id": 949, "name": "Heat, the film", "release_date": "1995-05-01",
                 "status": "completed", "rating": 85.0, "favourite": true, "notes": "Diner scene",
-                "added_at": null,
+                "added_at": null, "started_at": null, "finished_at": null, "rewatch_count": 0,
                 "episodes": [],
                 "watches": [{ "watched_at": "2023-03-03T20:00:00Z", "rewatch": false, "source": "import" }]
             }

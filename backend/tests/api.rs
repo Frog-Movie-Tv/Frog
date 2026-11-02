@@ -2107,23 +2107,21 @@ async fn because_you_watched_skips_your_library_and_never_repeats() {
     let (status, body) = h.get("/api/home/because", Some(&cookie)).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let rows = body["rows"].as_array().unwrap();
+    // Either seed may lead, by the time of day; whichever does, the other's
+    // leftovers are too few for a row of their own.
     assert_eq!(rows.len(), 1, "{body}");
-    assert_eq!(
-        rows[0]["seed"]["name"],
-        json!("Seed 10"),
-        "the best rated leads"
-    );
     let ids: Vec<i64> = rows[0]["items"]
         .as_array()
         .unwrap()
         .iter()
         .map(|i| i["tmdb_id"].as_i64().unwrap())
         .collect();
-    assert_eq!(
-        ids,
-        [103, 104, 105, 106],
-        "not what you track, not what has no poster"
-    );
+    let expected: &[i64] = match rows[0]["seed"]["name"].as_str() {
+        Some("Seed 10") => &[103, 104, 105, 106],
+        Some("Seed 20") => &[103, 104, 105, 201],
+        other => panic!("a seed rated low led: {other:?}"),
+    };
+    assert_eq!(ids, expected, "not what you track, not what has no poster");
 
     let plain = Harness::new().await;
     let (_, _, c) = plain

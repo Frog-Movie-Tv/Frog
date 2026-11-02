@@ -82,7 +82,7 @@ the ones above.
 | Layer | Modules | Does |
 | --- | --- | --- |
 | HTTP | `routes/*` | Parse and check the request, name the account (`Auth`, `AdminAuth`), call the layer below, shape the answer. |
-| Domain | `catalog`, `transfer`, `anilist`, `release`, `reset`, `activity`, `taste`, `bulk`, `push`, `jobs` | Decisions and workflows: which title a provider id names, what an import means, who wins a sync, when an episode is out, what a show's status is. |
+| Domain | `catalog`, `transfer`, `anilist`, `release`, `reset`, `activity`, `taste`, `franchise`, `bulk`, `push`, `jobs` | Decisions and workflows: which title a provider id names, what an import means, who wins a sync, when an episode is out, what a show's status is. |
 | Persistence | `catalog`, `store`, `anilist::records`, `images`, `db` | Reads and writes. `catalog` owns the shared titles, episodes and provider ids; `store` owns one account's library; each domain may own its own tables (`anilist::records` owns `anilist_*`, `images` owns `image_cache`). |
 | Providers | `tmdb`, `anilist::client`, `anilist::media` | Talking to other services, cached; nothing else calls them directly. `catalog::ensure` is how a provider's answer becomes a title. |
 | Shared | `auth`, `config`, `error`, `state`, `text`, `palette`, `throttle`, `totp`, `ops` | Small and specific; no catch-all helpers module. |
@@ -100,11 +100,12 @@ left. See CLAUDE.md for the rule.
 | `auth` | Argon2 password hashing, session tokens, roles, the `Auth` and `AdminAuth` extractors. |
 | `tmdb` | HTTP client, response cache, the curated mapping from TMDB's JSON to what a screen draws. |
 | `catalog` | Frog's titles and their provider ids (`title_external`): finding a title by any provider's id, making or refreshing one from a provider, episodes, credits, poster colour. |
-| `store` | One account's library: entries, the filtered list and what its filters offer (`LibraryFilter`), progress, "up next", emptying it, and moving one account's data between titles (`move_title_data`). |
+| `store` | One account's library: entries, the filtered list and what its filters offer (`LibraryFilter`), progress, "up next", a title's history (`history`: started, finished, rewatches), the days another place knows (`set_known_dates`), who else has a title (`others_with`), emptying it, and moving one account's data between titles (`move_title_data`). Removing a title takes its watches and episode notes with it, held in `EntryRecord` so undo puts them back. |
 | `images` | The picture cache in SQLite, and its budget. |
 | `bulk` | One action on many titles of a library, one request each, and the marking of aired episodes it shares with "Mark all watched" (`tick_aired`, `When`). Removing, changing a status or favouriting answers with what the titles held (`store::EntryRecord`), which is what undo sends back. |
-| `activity` | What others have been watching, for a row on Home. `summarise` adds up one person's watches on plain values; only accounts `store::shown_to` names, only dated watches of titles still in that library, and never notes. |
-| `taste` | How alike two people rate things. `score` is the calculation; `between` is the one query, and only its two figures leave. |
+| `activity` | What others have been watching, for Home's Activity row and the Activity page. `summarise` adds up one person's watches on plain values; `everything` pages through all of it, a title a day per card. Only accounts `store::shown_to` names, only dated watches of titles still in that library, and never notes. |
+| `taste` | How alike two people rate things, and two libraries side by side. `score` and `compare` are the decisions on plain values; `between` and `library_of` are the reads. |
+| `franchise` | A franchise across films and shows: TMDB collections hold only films, so a show joins one by name (`franchise_of`, `belongs`), and a show page finds the collection named after it. |
 | `release` | When an episode counts as out, the status a show should have (`reconcile`), and whether Continue watching has anything to say about it (`continues`). |
 | `transfer` | Imports (matching, applying) and exports. |
 | `anilist` | AniList sign-in, and reading each account's list into its library. Read only. |
@@ -268,6 +269,17 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
 - **View Transitions.** Cross-route fades plus a real shared-element morph: a
   poster in the library grid carries `view-transition-name`, and the same name
   lands on the hero poster of the title page.
+- **Back closes what is on top.** Menus, sheets, dialogs and the command
+  palette call `backCloses` (`lib/layers.svelte.ts`): opening one adds a
+  shallow history step, Back takes it away and closes the top layer, and
+  closing it any other way takes the step back out. Shallow address updates
+  pass `page.state` along so they never wipe a layer's step.
+- **Menus stay on screen.** `use:onScreen` (`lib/onscreen.ts`) nudges a
+  dropdown back inside the window on a computer; on a phone `Select` and
+  `Rating` draw as a sheet from the bottom over a scrim.
+- **Profiles are tabs.** `ProfileShell` loads a profile once and draws
+  `ProfileHeader` over each tab: Overview, Library (`LibraryBrowser` with
+  `embedded`), Ratings and Compare.
 - **Optimistic episode ticks.** The checkmark is the most-used control in the
   app, so it updates immediately and rolls back if the request fails.
 - **Service worker.** App shell and hashed assets cache-first; posters
@@ -315,9 +327,15 @@ AniList's through `title_external` or `anime_map`, and MyAnimeList's through
 AniList. MDBList carries IMDb, Rotten Tomatoes, Metacritic and the rest; its
 key stays on the server. The worker refreshes what somebody tracks, a few
 titles at a time, and `/api/t/{id}/scores` gives a title page its first look.
-A title page shows four of them as percentages: AniList, IMDb, Rotten
-Tomatoes and Metacritic. While MDBList has nothing for a title (its daily
-limit, or no match yet), TMDB's own score stands in beside AniList's.
+A title page shows AniList, IMDb, Rotten Tomatoes, Metacritic, Letterboxd
+and MyAnimeList as percentages, each with its own mark (Simple Icons, CC0,
+inlined in `Scores.svelte`). While MDBList has nothing for a title (its daily
+limit, or no match yet), TMDB's own score stands in.
+
+A title with no AniList id of its own gets AniList's score through the
+MyAnimeList id MDBList gives. MDBList is asked by MyAnimeList id as `movie` or
+`show`, never `any`, which it refuses. A title checked while no MDBList key
+was set is asked again within two days, not a month.
 
 ## Logos
 
