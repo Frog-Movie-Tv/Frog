@@ -134,6 +134,20 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
      there. Only Watching was moved to the watchlist.
    - The Status menu of edit mode covers Done while it is open on a phone.
 
+20. **Left from the accounts and people pass.** Each small, none broken:
+   - WebP pictures have only been written in Chromium. Safari has no WebP writer
+     and hands back PNG; `lib/picture.ts` falls back to JPEG past the size limit,
+     but no Safari has run it.
+   - An animated WebP or APNG keeps its first frame. Only GIFs go up as they are.
+   - Two people joining at the same instant with names that differ only in case
+     can both pass the check. It needs two live invites, and a case-insensitive
+     index could fail on what a database already holds.
+   - "and N other titles" on Your people is a lower bound past 400 watches a
+     person in the fortnight.
+   - Characters are counted as Unicode scalar values, so a flag or a family emoji
+     counts as more than one, and `maxlength` in the browser counts UTF-16 units,
+     which stops at 10 emoji though the server takes 20.
+
 ## Known issues
 
 | | |
@@ -149,7 +163,7 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 | **Imports keep the day, not the time** | Every reader sets a watch to 20:00 UTC on its day, so Trakt's exact time is not kept. Recorded in `docs/IMPORTS.md` and pinned by `tests/parsers.test.mjs`; keeping exact times needs its own requirements and tests. |
 | **The database file does not shrink** | The picture cache is held to `FROG_IMAGE_CACHE_MB`, but SQLite only reuses freed pages. A one-off `VACUUM` (with the instance stopped) gives the space back if it ever matters. |
 | **Screenshots still weigh 13 MB** | Down from 20 MB by shooting at 1.5×. A lossless optimiser in the release step would take more off; none is part of the build. |
-| **One AniList test is flaky** | `a_tmdb_outage_is_retried_not_left_for_the_person` failed once in a full `cargo test` on 2026-10-29 and passed alone and on the rerun. It races the other tests over account 1's sync flag. |
+| **One AniList test is flaky** | `a_tmdb_outage_is_retried_not_left_for_the_person` failed once in a full `cargo test` on 2026-10-29 and passed alone and on the rerun. It races the other tests over account 1's sync flag. `cargo test --test anilist` failed once more on 2026-11-02 and passed straight after, its name not captured. |
 
 ## Not doing
 

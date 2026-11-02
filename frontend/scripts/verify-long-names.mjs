@@ -162,6 +162,7 @@ const routes = (me, pal) => [
 	'/import',
 	'/about',
 	'/whats-new',
+	'/reset?code=made-up',
 	'/admin',
 	...titles.map((t) => `/t/${t}`)
 ];
