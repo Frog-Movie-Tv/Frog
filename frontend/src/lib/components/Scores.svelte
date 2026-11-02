@@ -154,7 +154,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 7px;
-		animation: score-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+		animation: score-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 		animation-delay: calc(var(--i) * 60ms);
 	}
 

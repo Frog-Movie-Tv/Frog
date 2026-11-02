@@ -76,6 +76,14 @@ pub struct ApplyItem {
     /// Takes the place of `season` and `progress`.
     #[serde(default)]
     pub episodes: Vec<EpisodeWatch>,
+    /// When the tracker says it was started and finished.
+    #[serde(default)]
+    pub started_at: Option<String>,
+    #[serde(default)]
+    pub finished_at: Option<String>,
+    /// How many times the tracker says it was watched again.
+    #[serde(default)]
+    pub rewatches: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -200,6 +208,15 @@ async fn apply_one(
     let completed = status == "completed";
     let patch = patch_for(before.as_ref().map(|(e, _)| e), status, &item);
     store::apply_patch(pool, user_id, title_id, &patch).await?;
+    store::set_known_dates(
+        pool,
+        user_id,
+        title_id,
+        item.started_at.as_deref(),
+        item.finished_at.as_deref(),
+        item.rewatches,
+    )
+    .await?;
 
     if kind == "tv" && !item.episodes.is_empty() {
         tick_episodes(state, user_id, title_id, &detail, &item.episodes).await?;

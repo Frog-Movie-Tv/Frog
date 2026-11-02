@@ -158,7 +158,7 @@
 		flex-direction: column;
 		gap: 5px;
 		min-width: 0;
-		animation: tile-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+		animation: tile-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 		animation-delay: calc(var(--i) * 45ms);
 	}
 

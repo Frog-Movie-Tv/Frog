@@ -255,7 +255,7 @@
 			inset: 0;
 			z-index: 199;
 			background: rgb(0 0 0 / 0.45);
-			animation: scrim-in 160ms ease both;
+			animation: scrim-in 160ms ease backwards;
 		}
 
 		.menu {
@@ -269,7 +269,7 @@
 			max-height: 70dvh;
 			overflow-y: auto;
 			border-radius: 18px;
-			animation: sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+			animation: sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 		}
 	}
 

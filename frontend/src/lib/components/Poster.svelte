@@ -61,6 +61,9 @@
 	// only a step on the way there.
 	const key = $derived(ref.id ? `t${ref.id}` : `${kind}-${ref.tmdb_id ?? ref.anilist_id}`);
 	const named = $derived(morph && opened.key === key);
+
+	/** The picture fades in once it is there, instead of popping in. */
+	let loaded = $state(false);
 </script>
 
 <a
@@ -78,7 +81,15 @@
 >
 	<div class="art" class:picked={selected}>
 		{#if src}
-			<img {src} alt="" loading="lazy" decoding="async" />
+			<img
+				{src}
+				alt=""
+				loading="lazy"
+				decoding="async"
+				class="art-img"
+				class:loaded
+				onload={() => (loaded = true)}
+			/>
 		{:else}
 			{#if fallback}
 				<img class="cropped" src={fallback} alt="" loading="lazy" decoding="async" />
@@ -150,6 +161,36 @@
 	.poster:focus-visible .art {
 		transform: translateY(-4px) scale(1.015);
 		box-shadow: var(--shadow-2);
+	}
+
+	.art-img {
+		opacity: 0;
+		transition: opacity 360ms var(--ease);
+	}
+
+	.art-img.loaded {
+		opacity: 1;
+	}
+
+	/* A soft light passing over the card on hover: the poster as an object. */
+	.art::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		background: linear-gradient(
+			115deg,
+			transparent 35%,
+			rgb(255 255 255 / 0.16) 50%,
+			transparent 65%
+		);
+		transform: translateX(-120%);
+		transition: transform 0s;
+	}
+
+	.poster:hover .art::after {
+		transform: translateX(120%);
+		transition: transform 700ms var(--ease);
 	}
 
 	img {

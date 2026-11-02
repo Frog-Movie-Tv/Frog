@@ -509,6 +509,38 @@ async fn a_dated_import_fills_in_an_undated_one() {
 }
 
 #[tokio::test]
+async fn the_days_a_tracker_knows_land_on_the_title() {
+    let h = Harness::new().await;
+    let owner = h.owner().await;
+    h.cache_show(70523, "Dark", &[(1, "Season 1", 2), (2, "Season 2", 2)])
+        .await;
+
+    // Two seasons, as a tracker lists them: the show began with the first
+    // and ended with the second.
+    let (_, body) = h
+        .post(
+            "/api/import/apply",
+            json!({ "on_conflict": "overwrite", "items": [
+                { "kind": "tv", "tmdb_id": 70523, "status": "completed", "season": 1,
+                  "started_at": "2019-01-05T20:00:00Z", "finished_at": "2019-02-01T20:00:00Z" },
+                { "kind": "tv", "tmdb_id": 70523, "status": "completed", "season": 2,
+                  "started_at": "2020-06-01T20:00:00Z", "finished_at": "2020-06-20T20:00:00Z",
+                  "rewatches": 2 }
+            ]}),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(body["failed"], json!([]), "{body}");
+    let (started, finished, rewatches): (Option<String>, Option<String>, i64) = h
+        .one("SELECT started_at, finished_at, rewatch_count FROM library_entry")
+        .await;
+    // Plain days, not the moment the import ran.
+    assert_eq!(started.as_deref(), Some("2019-01-05"));
+    assert_eq!(finished.as_deref(), Some("2020-06-20"));
+    assert_eq!(rewatches, 2);
+}
+
+#[tokio::test]
 async fn a_match_or_import_batch_is_capped() {
     let h = Harness::new().await;
     let owner = h.owner().await;

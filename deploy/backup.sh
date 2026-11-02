@@ -78,7 +78,11 @@ fi
 # and a month of copies of them would outgrow the backup repository; without
 # them that library backs up in 3 MB. A restored Frog refills both on demand.
 # Only this copy changes, never the live database.
-sqlite3 "$TMP/$NAME" "DELETE FROM tmdb_cache; DELETE FROM image_cache; VACUUM;"
+# The copy is thrown away if anything fails, so it needs no journal: without
+# one, emptying the caches and compacting take a fraction of the time and of
+# the disk writes on a small server (minutes, with a large picture cache).
+sqlite3 "$TMP/$NAME" "PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF;
+	DELETE FROM tmdb_cache; DELETE FROM image_cache; VACUUM;"
 
 gzip -9 "$TMP/$NAME"
 age --encrypt --recipient "$AGE_RECIPIENT" \

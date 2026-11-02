@@ -24,6 +24,11 @@ export interface Incoming {
 	rating: number | null;
 	status: Status | null;
 	watched_at: string | null;
+	/** When the tracker says it was started and finished, yyyy-mm-dd. */
+	started_at?: string | null;
+	finished_at?: string | null;
+	/** How many times the tracker says it was watched again. */
+	rewatches?: number;
 	favourite: boolean;
 	rewatch: boolean;
 	/** Which file inside the export this came from, shown in the preview. */

@@ -85,7 +85,7 @@
 		/* Out to the page's edges and up to the bar, so the banner is the top
 		   of the page rather than a picture on it. */
 		margin: -24px calc(var(--page-pad) * -1) 28px;
-		animation: rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+		animation: rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 	}
 
 	@keyframes rise {
@@ -112,7 +112,7 @@
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
-		animation: settle 900ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+		animation: settle 900ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 	}
 
 	@keyframes settle {
@@ -265,7 +265,7 @@
 		height: 2px;
 		border-radius: 2px;
 		background: var(--accent);
-		animation: grow 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+		animation: grow 260ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 	}
 
 	@keyframes grow {

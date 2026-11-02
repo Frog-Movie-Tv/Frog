@@ -108,7 +108,7 @@
 
 <style>
 	.tab-body {
-		animation: tab-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+		animation: tab-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 	}
 
 	@keyframes tab-in {

@@ -913,6 +913,10 @@ fn as_remote(id: i64, link: &Link, like: &Remote) -> Remote {
         country: like.country.clone(),
         next_airing: None,
         view: like.view.clone(),
+        // Placing a relative, not reporting on it: no dates of its own.
+        started: None,
+        completed: None,
+        repeat: 0,
     }
 }
 

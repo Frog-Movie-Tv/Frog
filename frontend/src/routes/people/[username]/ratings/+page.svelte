@@ -90,7 +90,7 @@
 	}
 
 	.rated li {
-		animation: row-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+		animation: row-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 		animation-delay: calc(var(--i) * 25ms);
 	}
 

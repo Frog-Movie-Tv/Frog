@@ -560,6 +560,19 @@ impl Run<'_> {
             }
         }
 
+        // The days AniList knows, every sync, changed or not: a list synced
+        // before Frog read them gets them now, and an entry not in the
+        // library is left alone (the update finds nothing).
+        crate::store::set_known_dates(
+            pool,
+            user_id,
+            title_id,
+            remote.started.as_deref(),
+            remote.completed.as_deref(),
+            remote.repeat,
+        )
+        .await?;
+
         let f_now = frog_view(
             pool,
             user_id,

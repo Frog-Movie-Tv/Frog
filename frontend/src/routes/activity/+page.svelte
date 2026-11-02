@@ -90,7 +90,7 @@
 <style>
 	.day {
 		margin-bottom: 28px;
-		animation: day-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+		animation: day-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 	}
 
 	@keyframes day-in {

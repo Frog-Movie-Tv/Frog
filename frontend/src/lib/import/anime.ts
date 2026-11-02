@@ -79,7 +79,10 @@ interface AnimeRow {
 	score100: number | null;
 	status: Status;
 	rewatching: boolean;
+	started?: string | null;
 	finished: string | null;
+	/** Times watched again, when the tracker counts them. */
+	rewatches?: number;
 	year: number | null;
 	source: string;
 }
@@ -98,6 +101,9 @@ function fromAnime(a: AnimeRow): Incoming {
 	row.rating = a.score100;
 	row.rewatch = a.rewatching;
 	row.episode_total = a.episodes;
+	row.started_at = a.started ? toDate(a.started) : null;
+	row.finished_at = a.finished && a.status === 'completed' ? toDate(a.finished) : null;
+	row.rewatches = a.rewatches ?? 0;
 	row.alt_titles = [
 		...new Set(
 			parsed
@@ -176,6 +182,7 @@ export function readMalXml(text: string): Incoming[] {
 	const rows = anime.map((el) => {
 		const score = Number(get(el, 'my_score'));
 		const finished = get(el, 'my_finish_date');
+		const started = get(el, 'my_start_date');
 		const episodes = Number(get(el, 'series_episodes'));
 		return fromAnime({
 			titles: [get(el, 'series_title')],
@@ -186,6 +193,8 @@ export function readMalXml(text: string): Incoming[] {
 			status: animeStatus(get(el, 'my_status')),
 			rewatching: get(el, 'my_rewatching') === '1',
 			finished: finished && !finished.startsWith('0000') ? finished : null,
+			started: started && !started.startsWith('0000') ? started : null,
+			rewatches: Number(get(el, 'my_times_watched')) || 0,
 			year: null,
 			source: 'MyAnimeList'
 		});

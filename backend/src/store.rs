@@ -934,6 +934,53 @@ pub async fn history(
     )))
 }
 
+/// Start and finish days another place knows (AniList, an import), and how
+/// often it was watched again. They are kept as plain days, which is what
+/// tells them from the moment Frog stamps when a status changes: a known day
+/// always replaces a stamp, and between known days the earliest start and the
+/// latest finish win, so a show AniList keeps as several entries starts with
+/// its first and finishes with its last. Nothing given changes nothing.
+pub async fn set_known_dates(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    started: Option<&str>,
+    finished: Option<&str>,
+    rewatches: i64,
+) -> AppResult<()> {
+    let day = |d: Option<&str>| {
+        d.filter(|d| {
+            d.len() >= 10 && chrono::NaiveDate::parse_from_str(&d[..10], "%Y-%m-%d").is_ok()
+        })
+        .map(|d| d[..10].to_string())
+    };
+    let (started, finished) = (day(started), day(finished));
+    if started.is_none() && finished.is_none() && rewatches <= 0 {
+        return Ok(());
+    }
+    sqlx::query(
+        "UPDATE library_entry
+            SET started_at = CASE
+                    WHEN ?1 IS NULL THEN started_at
+                    WHEN started_at IS NULL OR length(started_at) <> 10 OR ?1 < started_at THEN ?1
+                    ELSE started_at END,
+                finished_at = CASE
+                    WHEN ?2 IS NULL THEN finished_at
+                    WHEN finished_at IS NULL OR length(finished_at) <> 10 OR ?2 > finished_at THEN ?2
+                    ELSE finished_at END,
+                rewatch_count = MAX(rewatch_count, ?3)
+          WHERE user_id = ?4 AND title_id = ?5",
+    )
+    .bind(started)
+    .bind(finished)
+    .bind(rewatches.max(0))
+    .bind(user_id)
+    .bind(title_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Watched it again. A film gets another watch on that day; a show, whose
 /// rewatch is not one episode, is counted on its entry, with the day as when
 /// it was last finished.

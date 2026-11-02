@@ -55,6 +55,13 @@
 	const seenCount = $derived(
 		(person?.credits ?? []).filter((c) => c.item.in_library !== null).length
 	);
+
+	/** Two parts and a count: one voice actor can have dozens in one show. */
+	function roleLine(role: string): string {
+		const parts = role.split(' / ');
+		if (parts.length <= 2) return role;
+		return `${parts.slice(0, 2).join(' / ')} +${parts.length - 2} more`;
+	}
 </script>
 
 <svelte:head>
@@ -136,7 +143,7 @@
 							status={credit.item.in_library}
 						/>
 						{#if credit.role}
-							<span class="role faint">{credit.role}</span>
+							<span class="role faint" title={credit.role}>{roleLine(credit.role)}</span>
 						{/if}
 					</div>
 				{/each}
@@ -256,6 +263,11 @@
 	.role {
 		font-size: 0.72rem;
 		line-height: 1.3;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
 	}
 
 	@media (max-width: 720px) {

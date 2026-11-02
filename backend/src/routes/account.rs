@@ -338,6 +338,14 @@ pub async fn set_profile(
             .bind(me)
             .execute(pool)
             .await?;
+        // One banner at a time: a backdrop chosen replaces a picture uploaded,
+        // which would otherwise go on being drawn over it.
+        if !path.is_empty() {
+            sqlx::query("DELETE FROM user_image WHERE user_id = ? AND kind = 'banner'")
+                .bind(me)
+                .execute(pool)
+                .await?;
+        }
     }
     if let Some(pins) = &body.pins {
         if pins.len() > PINS_MAX {
@@ -412,6 +420,13 @@ pub async fn set_image(
     .bind(Utc::now().to_rfc3339())
     .execute(&state.pool)
     .await?;
+    // And the other way round: a banner uploaded replaces a backdrop chosen.
+    if kind == "banner" {
+        sqlx::query("UPDATE app_user SET banner_backdrop = NULL WHERE id = ?")
+            .bind(auth.user_id())
+            .execute(&state.pool)
+            .await?;
+    }
     Ok(Json(json!({ "ok": true })))
 }
 

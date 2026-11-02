@@ -803,6 +803,42 @@
 		/* The picture fades out itself, so its edge never shows as a line where
 		   the page begins. */
 		mask-image: linear-gradient(to top, transparent, #000 30%);
+		animation: backdrop-in 1100ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+	}
+
+	@keyframes backdrop-in {
+		from {
+			opacity: 0;
+			transform: scale(1.05);
+		}
+	}
+
+	/* The poster, then the words, rise in after the picture. */
+	.poster-slot {
+		animation: rise-in 520ms cubic-bezier(0.2, 0.8, 0.2, 1) 80ms backwards;
+	}
+
+	.hero-text > :global(*) {
+		animation: rise-in 520ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+	}
+
+	.hero-text > :global(*:nth-child(2)) {
+		animation-delay: 60ms;
+	}
+
+	.hero-text > :global(*:nth-child(3)) {
+		animation-delay: 110ms;
+	}
+
+	.hero-text > :global(*:nth-child(n + 4)) {
+		animation-delay: 160ms;
+	}
+
+	@keyframes rise-in {
+		from {
+			opacity: 0;
+			transform: translateY(12px);
+		}
 	}
 
 	.veil {
