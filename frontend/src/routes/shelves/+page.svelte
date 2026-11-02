@@ -121,6 +121,11 @@
 		gap: 28px 20px;
 	}
 
+	/* A name that stays on one line must not set the width of its column. */
+	.shelves li {
+		min-width: 0;
+	}
+
 	.handle {
 		position: absolute;
 		right: 10px;
@@ -156,7 +161,7 @@
 
 	@media (max-width: 520px) {
 		.shelves {
-			grid-template-columns: 1fr 1fr;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 			gap: 22px 14px;
 		}
 	}

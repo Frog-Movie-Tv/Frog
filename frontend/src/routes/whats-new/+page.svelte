@@ -149,6 +149,7 @@
 	}
 
 	.version {
+		overflow-wrap: normal;
 		display: flex;
 		flex-direction: column;
 		gap: 7px;

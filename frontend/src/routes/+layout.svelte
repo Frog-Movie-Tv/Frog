@@ -21,7 +21,9 @@
 	let { children }: { children: Snippet } = $props();
 
 	// Reachable signed out: signing in, and joining with an invite link.
-	const PUBLIC = ['/login', '/join'];
+	const PUBLIC = ['/login', '/join', '/reset'];
+	/** A reset link may be for someone else, so being signed in does not skip it. */
+	const isReset = (path: string) => path.startsWith('/reset');
 
 	let checked = $state(false);
 	const shortcut = paletteKey(navigator.platform);
@@ -55,7 +57,7 @@
 		// is aborted, which is expected and not an error.
 		if (!session.authenticated && !isPublic) {
 			goto(`/login?next=${encodeURIComponent(path)}`, { replaceState: true }).catch(() => {});
-		} else if (session.authenticated && isPublic) {
+		} else if (session.authenticated && isPublic && !isReset(path)) {
 			const next = page.url.searchParams.get('next') ?? '';
 			// Only a path on this site; never somewhere a link chose for you.
 			const local = next.startsWith('/') && !next.startsWith('//') ? next : '';
@@ -132,7 +134,9 @@
 	function closeMore(event: KeyboardEvent) {
 		if (event.key === 'Escape' && moreOpen) moreOpen = false;
 	}
-	const showChrome = $derived(session.authenticated && !current.startsWith('/login'));
+	const showChrome = $derived(
+		session.authenticated && !current.startsWith('/login') && !isReset(current)
+	);
 
 	const version = $derived(session.status?.version ?? '');
 	const updated = $derived(
@@ -334,8 +338,9 @@
 	}
 
 	.right {
+		min-width: 0;
 		margin-left: auto;
-		flex: none;
+		flex: 0 1 auto;
 		display: flex;
 		align-items: center;
 		gap: 12px;
@@ -343,6 +348,7 @@
 
 	/* Search looks like a field, because that is what it is. */
 	.find {
+		flex: none;
 		display: flex;
 		align-items: center;
 		gap: 9px;
@@ -386,7 +392,13 @@
 		}
 	}
 
+	/* Search and the account never give way, so a phone can always reach them. */
 	.pill.warn {
+		display: block;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 		border-color: color-mix(in srgb, var(--warn) 45%, transparent);
 		color: var(--warn);
 	}
@@ -523,6 +535,7 @@
 		}
 
 		.more-sheet {
+			overflow-wrap: normal;
 			position: fixed;
 			z-index: 39;
 			left: 10px;

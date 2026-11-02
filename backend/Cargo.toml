@@ -8,6 +8,7 @@ license = "MIT"
 publish = false
 
 [dependencies]
+unicode-segmentation = "1"
 axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["cookie"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }

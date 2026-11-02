@@ -2,6 +2,7 @@
 	import { api, img } from '#lib/api';
 	import Avatar from '#lib/components/Avatar.svelte';
 	import Icon from '#lib/components/Icon.svelte';
+	import { AVATAR_PIXELS, BANNER_PIXELS, decode, encode, shrink, staysAsItIs } from '#lib/picture';
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import type { Account, LibraryItem, ProfileEdit } from '#lib/types';
@@ -59,7 +60,7 @@
 
 	// --- framing a new profile picture ------------------------------------
 	const FRAME = 200;
-	let framing = $state<{ url: string; width: number; height: number } | null>(null);
+	let framing = $state<{ url: string; type: string; width: number; height: number } | null>(null);
 	let zoom = $state(1);
 	let offset = $state({ x: 0, y: 0 });
 	let pan: { x: number; y: number; from: { x: number; y: number } } | null = null;
@@ -82,12 +83,21 @@
 
 	async function frame(file: File | undefined) {
 		if (!file) return;
-		// A moving GIF cannot be cropped on a canvas without stopping it.
-		if (file.type === 'image/gif') return upload('avatar', file);
-		const bitmap = await createImageBitmap(file);
-		framing = { url: URL.createObjectURL(file), width: bitmap.width, height: bitmap.height };
-		zoom = 1;
-		offset = { x: 0, y: 0 };
+		if (await staysAsItIs(file)) return upload('avatar', file);
+		try {
+			const bitmap = await decode(file);
+			framing = {
+				url: URL.createObjectURL(file),
+				type: file.type,
+				width: bitmap.width,
+				height: bitmap.height
+			};
+			bitmap.close();
+			zoom = 1;
+			offset = { x: 0, y: 0 };
+		} catch (e) {
+			toasts.error(e);
+		}
 	}
 
 	function closeFrame() {
@@ -100,7 +110,7 @@
 		const image = new Image();
 		image.src = framing.url;
 		await image.decode();
-		const size = 512;
+		const size = AVATAR_PIXELS;
 		const k = size / FRAME;
 		const canvas = document.createElement('canvas');
 		canvas.width = canvas.height = size;
@@ -113,13 +123,14 @@
 				drawn.w * k,
 				drawn.h * k
 			);
-		const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.9));
+		const source = framing.type;
 		closeFrame();
-		if (blob) await upload('avatar', new File([blob], 'avatar.jpg', { type: 'image/jpeg' }));
+		await send('avatar', () => encode(canvas, source));
 	}
 	let choosingPins = $state(false);
 
-	const username = $derived(account?.username ?? session.status?.username ?? '');
+	// The session first: it is what a rename on this same page updates.
+	const username = $derived(session.status?.username ?? account?.username ?? '');
 	const imageUrl = (kind: 'avatar' | 'banner') =>
 		`/api/profiles/${encodeURIComponent(username)}/images/${kind}?v=${version}`;
 	const pinned = $derived(
@@ -153,33 +164,11 @@
 		}
 	}
 
-	/**
-	 * Phone photos are far bigger than a profile needs, so pictures are scaled
-	 * down here first: quicker to send, and well under the size limit.
-	 */
-	async function shrink(file: File, longest: number): Promise<Blob> {
-		if (file.type === 'image/gif') return file;
-		const bitmap = await createImageBitmap(file);
-		const scale = Math.min(1, longest / Math.max(bitmap.width, bitmap.height));
-		const canvas = document.createElement('canvas');
-		canvas.width = Math.round(bitmap.width * scale);
-		canvas.height = Math.round(bitmap.height * scale);
-		canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-		return new Promise((resolve, reject) =>
-			canvas.toBlob(
-				(blob) => (blob ? resolve(blob) : reject(new Error('Could not read that picture'))),
-				'image/jpeg',
-				0.86
-			)
-		);
-	}
-
-	async function upload(kind: 'avatar' | 'banner', file: File | undefined) {
-		if (!file) return;
+	/** Pictures are made ready here, so the server never has to decode one. */
+	async function send(kind: 'avatar' | 'banner', ready: () => Promise<Blob>) {
 		busy = true;
 		try {
-			const blob = await shrink(file, kind === 'avatar' ? 512 : 1800);
-			await api.uploadProfileImage(kind, blob);
+			await api.uploadProfileImage(kind, await ready());
 			version = Date.now();
 			account = await api.account();
 			await session.refresh();
@@ -189,6 +178,11 @@
 		} finally {
 			busy = false;
 		}
+	}
+
+	async function upload(kind: 'avatar' | 'banner', file: File | undefined) {
+		if (file)
+			await send(kind, () => shrink(file, kind === 'avatar' ? AVATAR_PIXELS : BANNER_PIXELS));
 	}
 
 	async function removeImage(kind: 'avatar' | 'banner') {
@@ -262,7 +256,10 @@
 					type="file"
 					accept="image/jpeg,image/png,image/webp,image/gif"
 					disabled={busy}
-					onchange={(e) => upload('banner', e.currentTarget.files?.[0])}
+					onchange={(e) => {
+						void upload('banner', e.currentTarget.files?.[0]);
+						e.currentTarget.value = '';
+					}}
 				/>
 			</label>
 			<button class="btn small" onclick={() => (choosingBanner = !choosingBanner)}>
@@ -391,8 +388,8 @@
 		<span class="label">
 			<strong>Show my profile</strong>
 			<span class="faint">
-				Others on this Frog can see your profile, your whole library and your ratings, but not your
-				notes. Off, only you can.
+				Others on this Frog can see your profile, your whole library, your ratings and what you
+				watched lately on their Home, but not your notes. Off, only you can.
 				{#if username}<a href="/people/{encodeURIComponent(username)}">See your profile</a>{/if}
 			</span>
 		</span>

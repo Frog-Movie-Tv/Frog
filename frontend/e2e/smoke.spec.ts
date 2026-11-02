@@ -287,7 +287,7 @@ test('the about page credits its sources', async ({ page }) => {
 	await page.goto('/about');
 
 	await expect(page.getByRole('heading', { name: 'Frog', level: 1 })).toBeVisible();
-	await expect(page.getByText('Bullfrog')).toBeVisible();
+	await expect(page.getByText('Spring Peeper')).toBeVisible();
 	await expect(page.getByRole('link', { name: /TMDB/ }).first()).toBeVisible();
 	await expect(page.getByRole('link', { name: /Lucide/ })).toBeVisible();
 });
@@ -1093,6 +1093,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/t/1/seasons/1',
 		'/api/t/1/shelves',
 		'/api/home/because',
+		'/api/home/activity',
 		'/api/account',
 		'/api/account/sessions',
 		'/api/admin/users',
@@ -1147,6 +1148,13 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		const res = await request.put(path, { data: { rating: 80 } });
 		expect(res.status(), `PUT ${path} should be 401`).toBe(401);
 	}
+	const reset = await request.post('/api/admin/users/1/reset', { data: {} });
+	expect(reset.status(), 'POST a reset link should be 401').toBe(401);
+	const rename = await request.put('/api/account/username', {
+		data: { username: 'nobody', password: 'a-long-enough-pass' }
+	});
+	expect(rename.status(), 'PUT a username should be 401').toBe(401);
+
 	for (const path of ['/api/account', '/api/account/library', '/api/t/1/library']) {
 		const res = await request.delete(path, { data: {} });
 		expect(res.status(), `DELETE ${path} should be 401`).toBe(401);
@@ -1158,6 +1166,571 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		data: { username: 'nobody', password: 'a-long-enough-pass', invite: 'made-up' }
 	});
 	expect(join.status(), 'registering without a real invite is refused').toBe(403);
+
+	// The same for a reset link: the person using one cannot sign in, so the
+	// route stays open and a code is what it asks for.
+	const madeUp = await request.post('/api/auth/reset', {
+		data: { code: 'made-up', password: 'a-long-enough-pass' }
+	});
+	expect(madeUp.status(), 'resetting without a real link is refused').toBe(403);
+});
+
+test('a reset link sets a new password, once', async ({ page, browser, playwright, baseURL }) => {
+	await signIn(page);
+	const name = `forgot${Date.now() % 100000}`;
+	const invite = await (await page.request.post('/api/invites', { data: { role: 'user' } })).json();
+	const them = await playwright.request.newContext({ baseURL });
+	await them.post('/api/auth/register', {
+		data: { username: name, password: 'another-long-pass', invite: invite.code, remember: true }
+	});
+
+	await page.goto('/admin');
+	await page.getByRole('button', { name: `Reset link for ${name}` }).click();
+	const link = await page.locator('.fresh.reset code').textContent();
+	expect(link).toContain('/reset?code=');
+
+	const stranger = await browser.newContext({ baseURL });
+	const seen = await enforceDeployedCsp(stranger, baseURL ?? '');
+	const tab = await stranger.newPage();
+	await tab.goto(link ?? '');
+	await expect(tab).toHaveTitle('Reset password · Frog');
+	await tab.getByLabel('New password').fill('a-brand-new-pass');
+	await tab.getByRole('button', { name: 'Save password' }).click();
+	await expect(tab.getByRole('heading', { name: 'Password changed' })).toBeVisible();
+
+	// Their device is signed out, and the same link does not work twice.
+	expect((await them.get('/api/account')).status()).toBe(401);
+	await tab.goto(link ?? '');
+	await tab.getByLabel('New password').fill('yet-another-pass');
+	await tab.getByRole('button', { name: 'Save password' }).click();
+	await expect(tab.getByRole('alert')).toContainText('used already');
+
+	await tab.goto('/reset');
+	await expect(tab.getByText('This page needs a reset link.')).toBeVisible();
+
+	await tab.goto('/login');
+	await tab.getByLabel('Username').fill(name);
+	await tab.getByLabel('Password').fill('a-brand-new-pass');
+	await tab.getByRole('button', { name: 'Sign in' }).click();
+	await expect(tab).toHaveURL(/\/(welcome)?$/);
+	expect(seen, 'blocked by the deployed Content-Security-Policy').toEqual([]);
+	await stranger.close();
+	await them.dispose();
+});
+
+test('renaming yourself shows at once, everywhere', async ({
+	browser,
+	playwright,
+	baseURL,
+	page
+}) => {
+	await signIn(page);
+	const stamp = Date.now() % 100000;
+	const invite = await (await page.request.post('/api/invites', { data: { role: 'user' } })).json();
+	const them = await playwright.request.newContext({ baseURL });
+	await them.post('/api/auth/register', {
+		data: {
+			username: `before${stamp}`,
+			password: 'another-long-pass',
+			invite: invite.code,
+			remember: true
+		}
+	});
+	await them.put('/api/settings', { data: { onboarded: true } });
+	const context = await browser.newContext({ baseURL, storageState: await them.storageState() });
+	const tab = await context.newPage();
+
+	await tab.goto('/settings#account');
+	const row = tab.locator('.row', { hasText: 'It is how you sign in' });
+	await row.getByRole('button', { name: 'Change' }).click();
+	await expect(row.getByLabel('New username')).toHaveAttribute('maxlength', '20');
+	await row.getByLabel('New username').fill(`after${stamp}`);
+	await row.getByLabel('Current password').fill('another-long-pass');
+	await row.getByRole('button', { name: 'Save username' }).click();
+
+	await expect(tab.getByRole('button', { name: `Account: after${stamp}` })).toBeVisible();
+	await expect(tab.getByText(`after${stamp}`, { exact: true }).first()).toBeVisible();
+	await tab.getByRole('button', { name: `Account: after${stamp}` }).click();
+	await tab.getByRole('menuitem', { name: 'Your profile' }).click();
+	await expect(tab).toHaveURL(`/people/after${stamp}`);
+	await context.close();
+	await them.dispose();
+});
+
+/** Picture bytes made in the page, since nothing here ships a large photo. */
+async function pictureFile(page: Page, width: number, height: number, type: string) {
+	const base64 = await page.evaluate(
+		async ({ width, height, type }) => {
+			const canvas = document.createElement('canvas');
+			canvas.width = width;
+			canvas.height = height;
+			const context = canvas.getContext('2d')!;
+			// Half left clear, so transparency has something to survive on.
+			for (let n = 0; n < 4000; n++) {
+				context.fillStyle = `hsl(${n % 360} 80% 50%)`;
+				context.fillRect((n * 7919) % (width / 2), (n * 104729) % height, 40, 40);
+			}
+			const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, type));
+			const bytes = new Uint8Array(await blob!.arrayBuffer());
+			let out = '';
+			for (let i = 0; i < bytes.length; i += 8192) {
+				out += String.fromCharCode(...bytes.subarray(i, i + 8192));
+			}
+			return btoa(out);
+		},
+		{ width, height, type }
+	);
+	return Buffer.from(base64, 'base64');
+}
+
+/** The picture the server now holds, as the browser reads it. */
+function readPicture(page: Page, address: string) {
+	return page.evaluate(async (address) => {
+		const blob = await (await fetch(address)).blob();
+		const bitmap = await createImageBitmap(blob);
+		const canvas = document.createElement('canvas');
+		canvas.width = bitmap.width;
+		canvas.height = bitmap.height;
+		const context = canvas.getContext('2d')!;
+		context.drawImage(bitmap, 0, 0);
+		const corner = context.getImageData(bitmap.width - 1, 0, 1, 1).data[3];
+		return {
+			width: bitmap.width,
+			height: bitmap.height,
+			bytes: blob.size,
+			corner,
+			type: blob.type
+		};
+	}, address);
+}
+
+test('pictures are made small before they leave the browser', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/settings#account');
+	const avatar = `/api/profiles/${USER}/images/avatar`;
+	const banner = `/api/profiles/${USER}/images/banner`;
+	const sent: number[] = [];
+	page.on('request', (r) => {
+		if (r.method() === 'PUT' && r.url().includes('/account/images/')) {
+			sent.push(r.postDataBuffer()?.length ?? 0);
+		}
+	});
+
+	const photo = await pictureFile(page, 4000, 3000, 'image/png');
+	await page
+		.locator('.file', { hasText: 'Upload banner' })
+		.locator('input')
+		.setInputFiles({ name: 'huge.png', mimeType: 'image/png', buffer: photo });
+	await expect(page.getByText('Banner updated')).toBeVisible();
+	const onServer = await readPicture(page, banner);
+	expect(onServer.width).toBe(1800);
+	expect(onServer.height).toBe(1350);
+	expect(sent[0]).toBeLessThan(photo.length);
+	expect(onServer.corner, 'a clear corner stays clear').toBe(0);
+
+	await page
+		.locator('.file', { hasText: 'Picture' })
+		.locator('input')
+		.setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: photo });
+	await page.getByRole('button', { name: 'Use this picture' }).click();
+	await expect(page.getByText('Profile picture updated')).toBeVisible();
+	const framed = await readPicture(page, avatar);
+	expect([framed.width, framed.height]).toEqual([512, 512]);
+	expect(framed.corner, 'a clear corner stays clear').toBe(0);
+
+	// One frame is enough to see the bytes arrive untouched.
+	const gif = Buffer.from(
+		'R0lGODlhAQABAIAAAAAAAP///yH/C05FVFNDQVBFMi4wAwEAAAAh+QQJCgAAACwAAAAAAQABAAACAkQBACH5BAkKAAAALAAAAAABAAEAAAICRAEAOw==',
+		'base64'
+	);
+	await page
+		.locator('.file', { hasText: 'Picture' })
+		.locator('input')
+		.setInputFiles({ name: 'moving.gif', mimeType: 'image/gif', buffer: gif });
+	await expect(page.getByText('Profile picture updated').last()).toBeVisible();
+	await expect
+		.poll(async () => (await page.request.get(`${avatar}?v=gif`)).headers()['content-type'])
+		.toBe('image/gif');
+	const stored = await (await page.request.get(`${avatar}?v=gif2`)).body();
+	expect(stored.equals(gif), 'an animated GIF is stored as it was sent').toBe(true);
+
+	// A moving PNG reads the same as a still one until its bytes are looked at.
+	const chunk = (type: string, length: number) =>
+		Buffer.concat([
+			Buffer.from([0, 0, 0, length]),
+			Buffer.from(type),
+			Buffer.alloc(length),
+			Buffer.alloc(4)
+		]);
+	const moving = Buffer.concat([
+		Buffer.from('89504e470d0a1a0a', 'hex'),
+		chunk('IHDR', 13),
+		chunk('acTL', 8),
+		chunk('IDAT', 1)
+	]);
+	await page
+		.locator('.file', { hasText: 'Picture' })
+		.locator('input')
+		.setInputFiles({ name: 'moving.png', mimeType: 'image/png', buffer: moving });
+	await expect
+		.poll(async () => (await (await page.request.get(`${avatar}?v=png`)).body()).length)
+		.toBe(moving.length);
+	const kept = await (await page.request.get(`${avatar}?v=png2`)).body();
+	expect(kept.equals(moving), 'an APNG is stored as it was sent').toBe(true);
+
+	await page
+		.locator('.file', { hasText: 'Picture' })
+		.locator('input')
+		.setInputFiles({
+			name: 'broken.png',
+			mimeType: 'image/png',
+			buffer: Buffer.from('not a picture')
+		});
+	await expect(page.getByText('That picture could not be read.')).toBeVisible();
+
+	await page.request.delete('/api/account/images/avatar');
+	await page.request.delete('/api/account/images/banner');
+});
+
+test('Home shows what your people watched, and a profile how alike you rate', async ({
+	page,
+	playwright,
+	baseURL
+}, testInfo) => {
+	await signIn(page);
+	const name = `pal${Date.now() % 100000}`;
+	const invite = await (await page.request.post('/api/invites', { data: { role: 'user' } })).json();
+	const friend = await playwright.request.newContext({ baseURL });
+	await friend.post('/api/auth/register', {
+		data: { username: name, password: 'another-long-pass', invite: invite.code, remember: true }
+	});
+	await friend.put('/api/account/profile', { data: { public: true, display_name: 'Mira' } });
+
+	const db = new DatabaseSync(join('.e2e-data', testInfo.project.name, 'e2e.db'));
+	db.exec('PRAGMA busy_timeout = 5000');
+	const id = (username: string) =>
+		(db.prepare('SELECT id FROM app_user WHERE username = ?').get(username) as { id: number }).id;
+	const [me, them] = [id(USER), id(name)];
+	const now = '2026-01-01T00:00:00Z';
+	const secret = 'Only for my own eyes';
+	for (const title of [9130, 9131, 9132, 9133, 9134]) {
+		db.prepare(
+			`INSERT OR IGNORE INTO title (id, kind, name, genres_json, refreshed_at) VALUES (?, 'movie', ?, '[]', ?)`
+		).run(title, `Seen ${title}`, now);
+		db.prepare(
+			`INSERT OR IGNORE INTO title_external (title_id, provider, external_id, is_primary, added_at)
+			 VALUES (?, 'tmdb', ?, 1, ?)`
+		).run(title, `movie/${title}`, now);
+		for (const [account, rating] of [
+			[me, 80],
+			[them, 70]
+		]) {
+			db.prepare(
+				`INSERT OR REPLACE INTO library_entry (user_id, title_id, status, rating, notes, added_at, updated_at)
+				 VALUES (?, ?, 'completed', ?, ?, ?, ?)`
+			).run(account, title, rating, secret, now, now);
+		}
+	}
+	db.prepare(`INSERT INTO watch_event (user_id, title_id, watched_at) VALUES (?, 9130, ?)`).run(
+		them,
+		new Date(Date.now() - 3_600_000).toISOString()
+	);
+	db.close();
+
+	const seen = ['shelves', 'continue', 'thisweek', 'activity', 'because', 'recent', 'favourites'];
+	const saved = await (await page.request.get('/api/settings')).json();
+	await page.request.put('/api/settings', {
+		data: { ...saved, homeRows: ['activity', 'continue'], homeRowsSeen: seen }
+	});
+
+	await page.goto('/');
+	const row = page.locator('.rail', { has: page.getByRole('heading', { name: 'Your people' }) });
+	await expect(row.getByText('watched Seen 9130')).toBeVisible();
+	await expect(row.getByText('Mira')).toBeVisible();
+	await expect(page.getByText(secret)).toHaveCount(0);
+
+	await page.goto(`/people/${name}`);
+	await expect(page.getByText('80% taste match')).toBeVisible();
+	await expect(page.getByText(secret)).toHaveCount(0);
+	await page.goto(`/people/${USER}`);
+	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+	await expect(page.getByText('taste match')).toHaveCount(0);
+
+	// A row with its profile off is gone, and takes the row with it.
+	await friend.put('/api/account/profile', { data: { public: false } });
+	await page.goto('/');
+	await expect(page.getByRole('heading', { name: 'Your people' })).toHaveCount(0);
+	await friend.put('/api/account/profile', { data: { public: true } });
+
+	// Switched off in Settings, and nothing is asked for.
+	await page.request.put('/api/settings', {
+		data: { ...saved, homeRows: ['continue'], homeRowsSeen: seen }
+	});
+	const asked: string[] = [];
+	page.on('request', (r) => asked.push(new URL(r.url()).pathname));
+	await page.goto('/');
+	await expect(page.getByRole('heading', { name: 'Your people' })).toHaveCount(0);
+	await page.waitForTimeout(300);
+	expect(asked).not.toContain('/api/home/activity');
+	await page.request.put('/api/settings', { data: saved });
+	await friend.dispose();
+});
+
+/** Long names with nowhere to break, the worst a person can type or a provider can send. */
+const LONG = {
+	username: 'w'.repeat(50),
+	friend: 'q'.repeat(50),
+	display: 'D'.repeat(40),
+	shelf: 'S'.repeat(60),
+	title: 'T'.repeat(90)
+};
+
+/** An administrator with long names everywhere, written where the API would refuse them. */
+async function longAccount(
+	project: string,
+	playwright: import('@playwright/test').PlaywrightWorkerArgs['playwright'],
+	baseURL: string,
+	owner: Page
+) {
+	const db = new DatabaseSync(join('.e2e-data', project, 'e2e.db'));
+	db.exec('PRAGMA busy_timeout = 5000');
+	// A retry starts on the same database.
+	for (const name of [LONG.username, LONG.friend]) {
+		db.prepare('DELETE FROM app_user WHERE username = ?').run(name);
+	}
+	const member = async (role: string, temporary: string, name: string) => {
+		const made = await (await owner.request.post('/api/invites', { data: { role } })).json();
+		const context = await playwright.request.newContext({ baseURL });
+		await context.post('/api/auth/register', {
+			data: {
+				username: temporary,
+				password: 'another-long-pass',
+				invite: made.code,
+				remember: true
+			}
+		});
+		await context.put('/api/account/profile', {
+			data: { public: true, display_name: LONG.display, bio: 'B'.repeat(600) }
+		});
+		db.prepare('UPDATE app_user SET username = ? WHERE username = ?').run(name, temporary);
+		return context;
+	};
+	const stamp = Date.now() % 100000;
+	const me = await member('admin', `long${stamp}`, LONG.username);
+	const friend = await member('user', `pal${stamp}`, LONG.friend);
+	await friend.dispose();
+
+	const made = await me.post('/api/shelves', { data: { name: LONG.shelf, kind: 'manual' } });
+	const { shelf } = await made.json();
+
+	const now = '2026-01-01T00:00:00Z';
+	const { id: user } = db
+		.prepare('SELECT id FROM app_user WHERE username = ?')
+		.get(LONG.username) as { id: number };
+	const { id: pal } = db.prepare('SELECT id FROM app_user WHERE username = ?').get(LONG.friend) as {
+		id: number;
+	};
+	db.prepare(
+		`INSERT OR IGNORE INTO title (id, kind, name, genres_json, refreshed_at) VALUES (9120, 'tv', ?, '["Drama"]', ?)`
+	).run(LONG.title, now);
+	db.prepare(
+		`INSERT OR IGNORE INTO title_external (title_id, provider, external_id, is_primary, added_at)
+		 VALUES (9120, 'tmdb', 'tv/9120', 1, ?)`
+	).run(now);
+	const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString();
+	const episode = (number: number, airs: string) =>
+		db
+			.prepare(
+				`INSERT OR REPLACE INTO episode (title_id, season_number, episode_number, name, air_date)
+				 VALUES (9120, 1, ?, ?, ?) RETURNING id`
+			)
+			.get(number, 'E'.repeat(90), airs.slice(0, 10)) as { id: number };
+	const { id: watched } = episode(1, day(-3));
+	episode(2, day(-1));
+	episode(3, day(2));
+	for (const [account, status] of [
+		[user, 'watching'],
+		[pal, 'completed']
+	]) {
+		db.prepare(
+			`INSERT OR REPLACE INTO library_entry (user_id, title_id, status, favourite, added_at, updated_at)
+			 VALUES (?, 9120, ?, 1, ?, ?)`
+		).run(account, status, now, now);
+		db.prepare(
+			`INSERT INTO watch_event (user_id, title_id, episode_id, watched_at) VALUES (?, 9120, ?, ?)`
+		).run(account, watched, day(-1));
+	}
+	db.prepare('INSERT OR IGNORE INTO shelf_item (shelf_id, title_id) VALUES (?, 9120)').run(
+		shelf.id
+	);
+	db.close();
+
+	const state = await me.storageState();
+	await me.dispose();
+	return { state, shelf: shelf.id as number };
+}
+
+/** A page has drawn what it fetched once its skeletons are gone. */
+async function settled(page: Page) {
+	await page.waitForSelector('main > *');
+	await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
+	await page.waitForTimeout(350);
+}
+
+/** What on this page has gone past the edge of the screen. */
+function pastTheEdge(page: Page, selector?: string) {
+	return page.evaluate((selector) => {
+		const width = document.documentElement.clientWidth;
+		const out: string[] = [];
+		const widest = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
+		if (widest > width) {
+			const clipped = (element: Element) => {
+				for (let at = element.parentElement; at; at = at.parentElement) {
+					if (/auto|scroll|hidden|clip/.test(getComputedStyle(at).overflowX)) return true;
+				}
+				return false;
+			};
+			const culprits = [...document.querySelectorAll('body *')]
+				.filter((e) => e.getBoundingClientRect().right > width + 1 && !clipped(e))
+				.slice(-3)
+				.map((e) => `${e.tagName.toLowerCase()}.${String(e.className).split(' ')[0]}`);
+			out.push(`scrolls sideways: ${widest} in ${width} (${culprits.join(', ')})`);
+		}
+		for (const name of ['Search and commands', 'Account']) {
+			const button = document.querySelector(`[aria-label^="${name}"]`);
+			if (!button) continue;
+			const box = button.getBoundingClientRect();
+			if (box.right > width || box.left < 0) out.push(`${name} is off the screen`);
+		}
+		if (selector) {
+			const element = document.querySelector(selector);
+			if (!element) out.push(`${selector} is not there`);
+			else {
+				const box = element.getBoundingClientRect();
+				if (box.right > width + 0.5 || box.left < -0.5) {
+					out.push(`${selector} runs ${Math.round(box.left)} to ${Math.round(box.right)}`);
+				}
+				for (const child of element.querySelectorAll('*')) {
+					const inner = child.getBoundingClientRect();
+					if (inner.width && (inner.right > width + 0.5 || inner.left < -0.5)) {
+						out.push(`${selector} ${child.tagName}.${child.className} past the edge`);
+						break;
+					}
+				}
+			}
+		}
+		return out;
+	}, selector);
+}
+
+test('a very long name never widens a page on a phone', async ({
+	page,
+	browser,
+	playwright,
+	baseURL
+}, testInfo) => {
+	test.setTimeout(240_000);
+	await signIn(page);
+	const { state, shelf } = await longAccount(
+		testInfo.project.name,
+		playwright,
+		baseURL ?? '',
+		page
+	);
+
+	const paths = [
+		'/',
+		'/welcome',
+		'/people',
+		`/people/${LONG.username}`,
+		`/people/${LONG.username}/library`,
+		`/people/${LONG.friend}`,
+		`/people/${LONG.friend}/library`,
+		'/settings#account',
+		'/settings#appearance',
+		'/settings#home',
+		'/settings#watching',
+		'/settings#connections',
+		'/settings#data',
+		'/admin',
+		'/about',
+		'/shelves',
+		`/shelves/${shelf}`,
+		'/library',
+		'/t/9120',
+		`/search?q=${LONG.title}`,
+		`/search?q=${LONG.username}`,
+		'/stats',
+		'/diary',
+		'/calendar',
+		'/import',
+		'/whats-new'
+	];
+
+	const problems: string[] = [];
+	for (const width of [360, 320]) {
+		const context = await browser.newContext({
+			storageState: state,
+			baseURL,
+			viewport: { width, height: 740 }
+		});
+		const seen = await enforceDeployedCsp(context, baseURL ?? '');
+		const tab = await context.newPage();
+		tab.setDefaultTimeout(5000);
+		const note = (at: string, found: string[]) =>
+			problems.push(...found.map((f) => `${width}px ${at}: ${f}`));
+
+		for (const path of paths) {
+			await tab.goto(path);
+			await settled(tab);
+			note(path, await pastTheEdge(tab));
+		}
+
+		await tab.goto('/about');
+		await settled(tab);
+		await tab.getByRole('button', { name: 'Account' }).click();
+		note('account menu', await pastTheEdge(tab, '[role="menu"]'));
+		await tab.keyboard.press('Escape');
+		await tab.goto('/whats-new');
+		await settled(tab);
+
+		await tab.getByRole('button', { name: 'More' }).click();
+		note('More sheet', await pastTheEdge(tab, '.more-sheet'));
+		await tab.getByRole('button', { name: 'More' }).click();
+
+		await tab.goto(`/shelves/${shelf}`);
+		await settled(tab);
+		await tab.getByRole('button', { name: 'Edit' }).click();
+		await tab.getByRole('button', { name: `Remove ${LONG.title}` }).click();
+		await tab.getByRole('button', { name: 'Undo' }).waitFor();
+		note('undo toast', await pastTheEdge(tab, '.stack'));
+		await tab.getByRole('button', { name: 'Undo' }).click();
+		await tab.getByRole('button', { name: `Remove ${LONG.title}` }).waitFor();
+
+		await tab.goto('/shelves');
+		await settled(tab);
+		await tab.getByRole('button', { name: 'New shelf' }).click();
+		await tab.getByRole('dialog').getByRole('textbox').first().fill(LONG.shelf);
+		note('new shelf dialog', await pastTheEdge(tab, '[role="dialog"]'));
+		await tab.keyboard.press('Escape');
+
+		await tab.goto('/library');
+		await settled(tab);
+		await tab.getByRole('button', { name: 'Filters', exact: false }).first().click();
+		note('library filters', await pastTheEdge(tab, '[role="dialog"]'));
+		await tab.keyboard.press('Escape');
+
+		await tab.goto('/');
+		await settled(tab);
+		await tab.getByRole('button', { name: 'Search and commands' }).click();
+		await tab.keyboard.type(LONG.title.slice(0, 30));
+		await tab.waitForTimeout(600);
+		note('search palette', await pastTheEdge(tab, '.palette'));
+
+		expect(seen, 'blocked by the deployed Content-Security-Policy').toEqual([]);
+		await context.close();
+	}
+	expect(problems).toEqual([]);
 });
 
 async function signIn(page: import('@playwright/test').Page) {

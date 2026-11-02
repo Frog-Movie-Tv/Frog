@@ -237,6 +237,10 @@ body {
 
 body {
 	min-height: 100dvh;
+	/* A name with no spaces is a person's to choose, and a word that cannot break
+	   sets the least a flex or grid track can shrink to, which is how one name
+	   used to widen a whole page. Inherited, so it covers every page at once. */
+	overflow-wrap: anywhere;
 	font-feature-settings:
 		'cv05' 1,
 		'ss03' 1;
@@ -276,6 +280,14 @@ select,
 textarea {
 	font: inherit;
 	color: inherit;
+}
+
+/* Frog's own short labels: these never hold a name, and the rule on body would
+   let a tight row stand them on end. */
+kbd,
+.btn,
+.pill {
+	overflow-wrap: normal;
 }
 
 :focus-visible {

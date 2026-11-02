@@ -1,6 +1,6 @@
 //! Background worker.
 //!
-//! Deliberately small: expire sessions, drop stale TMDB cache
+//! Deliberately small: expire sessions and sign-in failures, drop stale TMDB cache
 //! rows, and re-pull episodes for shows that are still airing so new episodes
 //! appear without anyone opening the page. Phases 2 and 4 hang the calendar,
 //! notification and scrobble-pull jobs off the same loop.
@@ -47,6 +47,10 @@ pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
 }
 
 async fn tick(state: &AppState) -> anyhow::Result<()> {
+    state.login_failures.sweep();
+    state.reset_failures.sweep();
+    crate::reset::purge_expired(&state.pool).await?;
+
     let expired = crate::auth::purge_expired_sessions(&state.pool).await?;
     if expired > 0 {
         tracing::info!(expired, "purged expired sessions");

@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { api, ApiError } from '#lib/api';
 	import Logo from '#lib/components/Logo.svelte';
+	import { nameLimit } from '#lib/names';
 	import { session } from '#lib/session.svelte';
 
 	let username = $state('');
@@ -59,6 +60,7 @@
 					spellcheck="false"
 					required
 					minlength="2"
+					maxlength={nameLimit(username)}
 				/>
 			</label>
 

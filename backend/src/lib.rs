@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod anilist;
 pub mod auth;
 pub mod bulk;
@@ -13,10 +14,13 @@ pub mod palette;
 pub mod push;
 pub mod ratings;
 pub mod release;
+pub mod reset;
 pub mod routes;
 pub mod state;
 pub mod store;
+pub mod taste;
 pub mod text;
+pub mod throttle;
 pub mod tmdb;
 pub mod totp;
 pub mod transfer;

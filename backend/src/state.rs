@@ -1,9 +1,8 @@
 use sqlx::SqlitePool;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::sync::Arc;
 
 use crate::config::Config;
+use crate::throttle::Throttle;
 use crate::tmdb::Tmdb;
 
 #[derive(Clone)]
@@ -11,12 +10,17 @@ pub struct AppState {
     pub pool: SqlitePool,
     pub tmdb: Tmdb,
     pub config: Arc<Config>,
-    /// Recent failed sign-ins, keyed by what is being throttled: one bucket
-    /// per account and one per caller address, so hammering one account cannot
-    /// lock out the others and a single address cannot hammer them all. In
-    /// memory is the right place for this — one process, and a restart
-    /// clearing it is harmless.
-    pub login_failures: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
+    /// Recent failed sign-ins: one key per account and one per caller address,
+    /// so hammering one account cannot lock out the others and a single address
+    /// cannot hammer them all.
+    pub login_failures: Arc<Throttle>,
+    /// Tries of a reset link, one key per caller address.
+    pub reset_failures: Arc<Throttle>,
+    /// Held while a name is checked and written. The column is only unique as
+    /// typed, so "Mihai" and "mihai" arriving together would both pass the
+    /// check; one process means this one lock is enough, with no migration that
+    /// could refuse a database already holding such a pair.
+    pub names: Arc<tokio::sync::Mutex<()>>,
     /// For everything that is not TMDB: push services, for now.
     pub http: reqwest::Client,
 }
@@ -33,7 +37,9 @@ impl AppState {
             pool,
             tmdb,
             config: Arc::new(config),
-            login_failures: Arc::new(Mutex::new(HashMap::new())),
+            login_failures: Arc::new(Throttle::for_sign_in()),
+            reset_failures: Arc::new(Throttle::for_resets()),
+            names: Arc::new(tokio::sync::Mutex::new(())),
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(15))
                 .user_agent(concat!("Frog/", env!("CARGO_PKG_VERSION")))

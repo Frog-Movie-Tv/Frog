@@ -7,8 +7,8 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 1.0.2 "Bullfrog" |
-| **Next codenames** | Spring Peeper, Glass Frog, Horned Frog |
+| **Release** | 1.1.0 "Spring Peeper" |
+| **Next codenames** | Glass Frog, Horned Frog |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
 | **Updates** | by itself: a timer pulls the newest release every 15 minutes, backs up first, rolls back on an unhealthy `/healthz` |
@@ -134,6 +134,13 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
      there. Only Watching was moved to the watchlist.
    - The Status menu of edit mode covers Done while it is open on a phone.
 
+20. **Upload a picture from a real iPhone or Mac.** Safari has no WebP writer, so
+   pictures reach the server as PNG, and past 3 MB as JPEG, which turns a clear
+   background black. `verify-pictures` runs that path in Chromium with the writer
+   taken away, and WebKit as far as the upload. Playwright's WebKit on Windows
+   hangs and closes once the page draws the new picture, so nothing here has seen
+   Safari draw it.
+
 ## Known issues
 
 | | |
@@ -149,7 +156,7 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 | **Imports keep the day, not the time** | Every reader sets a watch to 20:00 UTC on its day, so Trakt's exact time is not kept. Recorded in `docs/IMPORTS.md` and pinned by `tests/parsers.test.mjs`; keeping exact times needs its own requirements and tests. |
 | **The database file does not shrink** | The picture cache is held to `FROG_IMAGE_CACHE_MB`, but SQLite only reuses freed pages. A one-off `VACUUM` (with the instance stopped) gives the space back if it ever matters. |
 | **Screenshots still weigh 13 MB** | Down from 20 MB by shooting at 1.5×. A lossless optimiser in the release step would take more off; none is part of the build. |
-| **One AniList test is flaky** | `a_tmdb_outage_is_retried_not_left_for_the_person` failed once in a full `cargo test` on 2026-10-29 and passed alone and on the rerun. It races the other tests over account 1's sync flag. |
+| **One AniList test is flaky** | `a_tmdb_outage_is_retried_not_left_for_the_person` failed once in a full `cargo test` on 2026-10-29 and passed alone and on the rerun. It races the other tests over account 1's sync flag. `cargo test --test anilist` failed once more on 2026-11-02 and passed straight after, its name not captured. |
 
 ## Not doing
 
@@ -229,12 +236,22 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   script.
 - **Rebuild `--release` before Playwright.** The e2e server picks whichever
   binary is newer, and a stale release build silently tests old code.
+- **One long word cannot widen a page.** `body` sets `overflow-wrap: anywhere`,
+  which every page inherits and which also lowers the least a flex or grid track
+  shrinks to. The cost is that tight rows of Frog's own words can stack letter by
+  letter, so those set `overflow-wrap: normal` (Settings → Home, What's new's
+  version column). `verify-long-names` compares every page with the rule on and
+  off, and text kept on one line with `nowrap` still needs `min-width: 0` on its
+  column. The Playwright test `a very long name never widens a page on a phone`
+  is the guard for anything new.
 - **Verify scripts** live in `frontend/scripts/`, each starting its own server
   against a throwaway database: `verify-stats`, `verify-push`,
   `verify-shelves`, `verify-because`, `verify-anime`, `verify-leapfrog`
   (AniList is a stand-in server inside it), `verify-profile-stats` (no TMDB:
   it writes a small library straight into the database with `node:sqlite`),
   `verify-2fa`, `verify-diary`, `verify-import`, `verify-polish`,
+  `verify-long-names` (real titles, ordinary and very long names, phones),
+  `verify-pictures` (uploads in Chromium, as Safari with no WebP writer, and in WebKit; needs `npx playwright install webkit`),
   `verify-accounts` (invites,
   isolation, devices, switching off), `verify-pull` (pull to refresh with
   real touch input), plus `npm run pwa-check` and
@@ -296,6 +313,16 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   them into the signed-in account whatever they say. A title page's remove goes
   the same way. Marking a show here is `bulk::tick_aired`, the same code as Mark
   all watched.
+- **Your people** (`backend/src/activity.rs`, `/api/home/activity`) is its own
+  request, so nobody who switched the row off reads other accounts. Fourteen
+  days, three titles a person with the rest as a number on their last card,
+  twelve cards in all. It reads the whole fortnight, so that number is exact. A show is Finished only when it stands completed and its
+  last regular episode is in the run. `backend/tests/scoping.rs` also holds that
+  `activity.rs` and `taste.rs` name no notes and go through `store::shown_to`.
+- **Taste match** (`backend/src/taste.rs`) is `100 - 2 × the average difference`,
+  from 5 shared titles up. The doubling is on purpose: people rate near the top,
+  so the plain average reads high for anybody. A show rated by season counts at
+  the average of its seasons.
 - **Someone else's library** is `LibraryBrowser` with `owner`, reading 60 titles
   at a time from `/api/profiles/{name}/library`. Its items are
   `store::SharedItem`, which has no notes field: do not hand that route
@@ -328,10 +355,32 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   in the database (the diary keeps them) but leave every total.
 - **Stats credits** live in `title_person`, filled by `store::ensure_title`
   and backfilled by the worker, 25 titles every 2 minutes.
+- **Pictures are made ready in the browser** (`lib/picture.ts`): avatars at 512
+  pixels, banners at 1800 on the long side. JPEG stays JPEG and anything else
+  becomes WebP, so transparency lasts; a browser with no WebP writer hands back
+  PNG. Anything that moves goes up untouched, because a canvas would keep only
+  the first frame: GIFs by their type, APNG and animated WebP by reading their
+  bytes (`isAnimated`). The server only checks size and first bytes.
+- **Characters are grapheme clusters** (`auth::characters`, `lib/names.ts`), so a
+  flag or a family emoji is one. The browser's `maxlength` counts UTF-16 units,
+  so `nameLimit` moves it with what is typed. A name past 256 code points is
+  refused even under 20 characters, because sign-in would refuse it afterwards.
+- **A name is checked and written under `state.names`.** The column is only
+  unique as typed, and a case-insensitive index could fail on a database that
+  already holds such a pair. One process makes one lock enough.
+- **Sign-in's limit is not a username limit.** `USERNAME_MAX` (20) is for a name
+  being chosen. Sign-in only refuses names past `SIGN_IN_NAME_MAX` (256), so an
+  account older than the limit always gets in. Raise that one if an instance
+  ever has a longer name.
 - **New Home rows** reach saved layouts once, through `homeRowsSeen` in
   `lib/settings.svelte.ts`. Add the id to `HOME_ROWS` and to the default list.
 
 ## Shipped
+
+**1.1.0 Spring Peeper** — Your people on Home, a taste match on profiles, reset
+links and `frog owner-reset-link`, renaming, and pictures that stay small, clear
+and moving. Sign-in is bounded (`crate::throttle`) and answers alike for every
+name, and one long word can no longer widen a page.
 
 **1.0.2 Bullfrog** — Edit mode in Library, someone's whole library from
 their profile, portrait cards for people, and the fixes from a walk through the

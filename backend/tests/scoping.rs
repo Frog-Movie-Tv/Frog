@@ -16,7 +16,8 @@ use std::path::{Path, PathBuf};
 
 /// Tables that gained a `user_id` in migration 0008, and personal tables
 /// added since.
-const PERSONAL: [&str; 15] = [
+const PERSONAL: [&str; 16] = [
+    "password_reset",
     "season_rating",
     "title_merge",
     "user_image",
@@ -46,7 +47,11 @@ const SCOPED_FRAGMENTS: [&str; 6] = [
 ];
 
 /// Statements that are global on purpose, each with its reason.
-const ALLOWED: [(&str, &str); 7] = [
+const ALLOWED: [(&str, &str); 8] = [
+    (
+        "DELETE FROM password_reset WHERE expires_at",
+        "housekeeping: links past their expiry go at once, whoever they were for",
+    ),
     (
         "SELECT t.id FROM title t LEFT JOIN title_logo_check",
         "decides which shared titles anyone tracks still lack a logo; writes only          title.logo_path and title_logo_check",
@@ -148,6 +153,44 @@ fn personal_tables(sql: &str) -> Vec<&'static str> {
         }
     }
     hit
+}
+
+/// These read one account's data for another. Notes never leave their owner, so
+/// the word has no business in their code, comments and tests aside.
+#[test]
+fn what_reads_across_accounts_never_touches_notes() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    for file in ["activity.rs", "taste.rs"] {
+        let source = fs::read_to_string(src.join(file)).expect("read source");
+        let code = source.split("#[cfg(test)]").next().unwrap_or(&source);
+        for (line, text) in literals(code) {
+            assert!(
+                !text.to_lowercase().contains("notes"),
+                "{file}:{line} names notes in a literal: {text}"
+            );
+        }
+    }
+}
+
+/// Everything shown to another account goes through the one test of who may be
+/// seen, so a new reader cannot forget a private profile or a switched-off one.
+#[test]
+fn the_activity_row_only_reads_who_may_be_seen() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let store = fs::read_to_string(src.join("store.rs"))
+        .expect("read source")
+        .replace("\r", "");
+    let shown = store
+        .split("pub async fn shown_to")
+        .nth(1)
+        .and_then(|rest| rest.split("\n}\n").next())
+        .expect("shown_to");
+    for rule in ["u.disabled = 0", "u.profile_public = 1", "u.id <> ?"] {
+        assert!(shown.contains(rule), "shown_to no longer says {rule}");
+    }
+    let activity = fs::read_to_string(src.join("activity.rs")).expect("read source");
+    assert!(activity.contains("store::shown_to(pool, viewer)"));
+    assert!(activity.contains("w.undated = 0"));
 }
 
 #[test]

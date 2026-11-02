@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 
 use crate::auth::{self, AdminAuth, Role};
 use crate::error::{AppError, AppResult};
+use crate::reset;
 use crate::state::AppState;
 
 /// (id, username, role, disabled, created_at, titles tracked, last sign-in)
@@ -119,6 +120,12 @@ pub async fn update_user(
         }
     }
 
+    // A link made for one role must not outlive it, and one for a switched-off
+    // account has nothing left to open.
+    if patch.role.is_some() || patch.disabled.is_some() {
+        reset::withdraw(&state.pool, id).await?;
+    }
+
     let (role, disabled): (String, bool) =
         sqlx::query_as("SELECT role, disabled FROM app_user WHERE id = ?")
             .bind(id)
@@ -127,6 +134,52 @@ pub async fn update_user(
     Ok(Json(
         json!({ "id": id, "role": role, "disabled": disabled }),
     ))
+}
+
+/// Make a single-use link that sets a new password for someone who forgot
+/// theirs. The same rules as changing an account: never yourself (Settings has
+/// that), never the owner, and only the owner acts on an administrator. The code
+/// comes back once.
+pub async fn reset_link(
+    AdminAuth(me): AdminAuth,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<Value>> {
+    if id == me.user_id() {
+        return Err(AppError::BadRequest(
+            "Change your own password from Settings.".into(),
+        ));
+    }
+    let target: Option<(String, bool)> =
+        sqlx::query_as("SELECT role, disabled FROM app_user WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
+    let Some((target_role, disabled)) = target else {
+        return Err(AppError::NotFound("no such account".into()));
+    };
+    let target_role = Role::from_db(&target_role);
+    if target_role == Role::Owner {
+        return Err(AppError::Forbidden(
+            "The owner's account cannot be changed.".into(),
+        ));
+    }
+    if target_role == Role::Admin && me.role() < Role::Owner {
+        return Err(AppError::Forbidden(
+            "Only the owner can change an administrator.".into(),
+        ));
+    }
+    if disabled {
+        return Err(AppError::BadRequest("Switch this account on first.".into()));
+    }
+
+    let (code, expires) = reset::issue(&state.pool, id, me.user_id()).await?;
+    tracing::info!(account = id, by = me.user_id(), "password reset link made");
+    Ok(Json(json!({
+        "code": code,
+        "path": format!("/reset?code={code}"),
+        "expires_at": expires.to_rfc3339(),
+    })))
 }
 
 /// Remove someone from this Frog for good: their library, diary, shelves,

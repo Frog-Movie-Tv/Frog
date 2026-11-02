@@ -65,7 +65,7 @@
 		<Logo size={56} />
 		<div>
 			<h1>Frog</h1>
-			<p class="muted">Version {session.status?.version ?? '—'} · Bullfrog</p>
+			<p class="muted">Version {session.status?.version ?? '—'} · Spring Peeper</p>
 		</div>
 	</header>
 

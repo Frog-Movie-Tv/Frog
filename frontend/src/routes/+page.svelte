@@ -4,6 +4,7 @@
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { api, img } from '#lib/api';
+	import ActivityCard from '#lib/components/ActivityCard.svelte';
 	import ContinueCard from '#lib/components/ContinueCard.svelte';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
@@ -16,12 +17,13 @@
 	import { episodeCode, prettyDate, relativeDate, runtime, year } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
-	import type { AiringEntry, BecauseRow, HomeData } from '#lib/types';
+	import type { ActivityItem, AiringEntry, BecauseRow, HomeData } from '#lib/types';
 
 	let data = $state<HomeData | null>(null);
 	let loading = $state(true);
 	let failed = $state<Failure | null>(null);
 	let because = $state<BecauseRow[]>([]);
+	let activity = $state<ActivityItem[]>([]);
 
 	$effect(() => {
 		if (!session.authenticated) return;
@@ -34,6 +36,17 @@
 				.then((r) => (because = r.rows))
 				.catch(() => undefined);
 		}
+	});
+
+	// Only those who show the row ask for other people's watching, and that is
+	// the account's own say: this browser's copy may be from before it changed.
+	const showsActivity = $derived(settings.loaded && settings.current.homeRows.includes('activity'));
+	$effect(() => {
+		if (!session.authenticated || !showsActivity) return;
+		void api
+			.activity()
+			.then((r) => (activity = r.items))
+			.catch(() => undefined);
 	});
 
 	async function load() {
@@ -95,7 +108,8 @@
 			thisweek: data.this_week.length > 0,
 			recent: data.recent.length > 0,
 			favourites: data.favourites.length > 0,
-			because: because.length > 0
+			because: because.length > 0,
+			activity: activity.length > 0
 		};
 		return settings.current.homeRows.filter((id) => available[id]);
 	});
@@ -217,6 +231,12 @@
 					<Rail title="Continue watching" wide>
 						{#each following as entry (entry.item.id)}
 							<ContinueCard {entry} />
+						{/each}
+					</Rail>
+				{:else if row === 'activity'}
+					<Rail title="Your people" width="264px">
+						{#each activity as item (`${item.who.username}:${item.title.id}`)}
+							<ActivityCard {item} />
 						{/each}
 					</Rail>
 				{:else if row === 'thisweek'}

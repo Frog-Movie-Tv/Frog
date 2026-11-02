@@ -297,6 +297,26 @@ export from inside the app, which is the backup you can actually read.
 
 ---
 
+## Forgotten passwords
+
+An administrator opens Administration, presses **Reset link** beside the account
+and sends that link to its owner. It works once, for a day, and signs out every
+device. Two-factor stays on. Only the owner can make one for an administrator.
+
+Nobody ranks above the owner, so the owner makes their own, from a shell on the
+machine that runs Frog:
+
+```bash
+docker exec frog frog owner-reset-link
+```
+
+On a server set up with `deploy/install.sh` the container is `frog-production`.
+Without Docker, run the binary with the same environment as the server:
+`frog owner-reset-link`. It prints an address that starts with `/reset`: put your
+Frog's own address in front of it and open it.
+
+---
+
 ## Developing
 
 `scripts/run-local.ps1` serves the built app, which is what you want for

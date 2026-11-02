@@ -8,11 +8,24 @@ use chrono::{Duration, Utc};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
+use std::sync::LazyLock;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
 pub const COOKIE_NAME: &str = "frog_session";
+
+/// What a new name may be, in characters. Accounts from before the maximum
+/// keep their names: this is checked when a name is chosen, never at sign-in.
+pub const USERNAME_MIN: usize = 2;
+pub const USERNAME_MAX: usize = 20;
+pub const PASSWORD_MIN: usize = 8;
+
+/// Past this, sign-in does not look a name up. Far beyond `USERNAME_MAX`, since
+/// names older than it have no limit of their own, and short enough that
+/// nothing a caller sends is held on to.
+const SIGN_IN_NAME_MAX: usize = 256;
 
 /// What an account is allowed to do. Ordered, so a check reads
 /// `role >= Role::Admin` rather than listing every role that qualifies.
@@ -60,6 +73,85 @@ pub fn verify_password(password: &str, stored: &str) -> bool {
             .is_ok(),
         Err(_) => false,
     }
+}
+
+/// Something to check a password against when a name has no account, made
+/// with the same settings as every real hash. Its answer is never read.
+static DECOY_HASH: LazyLock<Option<String>> = LazyLock::new(|| hash_password("decoy").ok());
+
+/// Make the decoy now, at start-up, so the first unknown name to sign in does
+/// not pay for making it and stand out.
+pub fn prepare_decoy() {
+    LazyLock::force(&DECOY_HASH);
+}
+
+/// The work of checking a password, for a name with no account behind it.
+pub fn spend_password_work(password: &str) {
+    if let Some(hash) = DECOY_HASH.as_deref() {
+        verify_password(password, hash);
+    }
+}
+
+/// Characters as a person counts them: a flag or a family emoji is one, though
+/// each is several code points.
+fn characters(text: &str) -> usize {
+    text.graphemes(true).count()
+}
+
+/// A name a new account or a rename may take. Surrounding spaces do not count;
+/// `create_account` drops them.
+pub fn check_username(name: &str) -> AppResult<()> {
+    let name = name.trim();
+    let length = characters(name);
+    if length < USERNAME_MIN {
+        return Err(AppError::BadRequest(format!(
+            "username needs at least {USERNAME_MIN} characters"
+        )));
+    }
+    // Twenty characters can hide any number of combining marks, and a name sign-in
+    // would refuse must never be taken.
+    if length > USERNAME_MAX || sign_in_name_too_long(name) {
+        return Err(AppError::BadRequest(format!(
+            "username can be at most {USERNAME_MAX} characters"
+        )));
+    }
+    Ok(())
+}
+
+pub fn password_long_enough(password: &str) -> bool {
+    characters(password) >= PASSWORD_MIN
+}
+
+/// True for a name too long to be anyone's. It stops at the limit, so a
+/// megabyte of name is not walked to the end.
+pub fn sign_in_name_too_long(name: &str) -> bool {
+    name.trim().chars().nth(SIGN_IN_NAME_MAX).is_some()
+}
+
+/// A single-use code for a link. Random enough that guessing is not a plan.
+pub fn new_code() -> String {
+    let mut raw = [0u8; 16];
+    rand::rngs::OsRng.fill_bytes(&mut raw);
+    hex::encode(raw)
+}
+
+/// What a link's code is stored as, so the database never holds a working one.
+pub fn hash_code(code: &str) -> String {
+    hex::encode(Sha256::digest(code.trim().as_bytes()))
+}
+
+/// Whether a name belongs to another account, regardless of case, so two people
+/// cannot pick names that only a reader can tell apart. Compared here rather
+/// than in SQL, whose NOCASE only knows ASCII. `except` lets an account change
+/// the case of its own name.
+pub async fn username_taken(pool: &SqlitePool, name: &str, except: Option<i64>) -> AppResult<bool> {
+    let wanted = name.trim().to_lowercase();
+    let accounts: Vec<(i64, String)> = sqlx::query_as("SELECT id, username FROM app_user")
+        .fetch_all(pool)
+        .await?;
+    Ok(accounts
+        .iter()
+        .any(|(id, username)| Some(*id) != except && username.to_lowercase() == wanted))
 }
 
 fn hash_token(token: &str) -> String {
@@ -317,6 +409,88 @@ mod tests {
         let hash = hash_password("correct horse battery staple").unwrap();
         assert!(verify_password("correct horse battery staple", &hash));
         assert!(!verify_password("wrong", &hash));
+    }
+
+    #[test]
+    fn a_name_is_measured_in_characters() {
+        assert!(check_username("ab").is_ok());
+        assert!(check_username(&"x".repeat(USERNAME_MAX)).is_ok());
+        assert!(check_username(&"é".repeat(USERNAME_MAX)).is_ok());
+        assert!(check_username(&"😀".repeat(USERNAME_MAX)).is_ok());
+        assert!(check_username("😀").is_err(), "one emoji is one character");
+        assert!(check_username("é").is_err());
+        assert!(check_username(&"x".repeat(USERNAME_MAX + 1)).is_err());
+        assert!(check_username(&"😀".repeat(USERNAME_MAX + 1)).is_err());
+        assert!(check_username(&format!("  {}  ", "x".repeat(USERNAME_MAX))).is_ok());
+        assert!(check_username("   ").is_err());
+    }
+
+    const FLAG: &str = "\u{1F1E7}\u{1F1EA}";
+    const FAMILY: &str = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}";
+
+    #[test]
+    fn a_flag_and_a_family_are_one_character_each() {
+        assert!(check_username(FLAG).is_err(), "one is too few");
+        assert!(check_username(FAMILY).is_err());
+        assert!(
+            check_username("e\u{301}").is_err(),
+            "a letter and its accent"
+        );
+        assert!(check_username(&FAMILY.repeat(2)).is_ok());
+        assert!(check_username(&FAMILY.repeat(USERNAME_MAX)).is_ok());
+        assert!(check_username(&FLAG.repeat(USERNAME_MAX)).is_ok());
+        assert!(check_username(&FAMILY.repeat(USERNAME_MAX + 1)).is_err());
+        assert!(check_username(&FLAG.repeat(USERNAME_MAX + 1)).is_err());
+    }
+
+    #[test]
+    fn a_name_sign_in_would_refuse_cannot_be_taken() {
+        let piled_up = format!("a{}", "\u{301}".repeat(SIGN_IN_NAME_MAX));
+        assert_eq!(characters(&piled_up), 1);
+        assert!(check_username(&format!("{piled_up}{piled_up}")).is_err());
+    }
+
+    #[test]
+    fn a_password_is_measured_in_characters() {
+        assert!(password_long_enough("12345678"));
+        assert!(!password_long_enough("1234567"));
+        assert!(!password_long_enough("😀😀😀"));
+        assert!(
+            !password_long_enough(FAMILY),
+            "seven code points, one character"
+        );
+    }
+
+    #[test]
+    fn sign_in_only_refuses_names_past_any_account() {
+        assert!(!sign_in_name_too_long(&"x".repeat(SIGN_IN_NAME_MAX)));
+        assert!(!sign_in_name_too_long(&format!(
+            "  {}  ",
+            "x".repeat(SIGN_IN_NAME_MAX)
+        )));
+        assert!(sign_in_name_too_long(&"x".repeat(SIGN_IN_NAME_MAX + 1)));
+        assert!(sign_in_name_too_long(&"x".repeat(1024 * 1024)));
+    }
+
+    #[test]
+    fn a_code_is_hashed_and_whitespace_does_not_change_it() {
+        let h = hash_code("abc123");
+        assert_eq!(h, hash_code("  abc123  "));
+        assert_ne!(h, "abc123");
+        assert_eq!(h.len(), 64);
+    }
+
+    #[test]
+    fn codes_do_not_repeat() {
+        assert_ne!(new_code(), new_code());
+        assert_eq!(new_code().len(), 32);
+    }
+
+    #[test]
+    fn the_decoy_is_a_real_hash() {
+        assert!(DECOY_HASH
+            .as_deref()
+            .is_some_and(|h| h.starts_with("$argon2")));
     }
 
     #[test]

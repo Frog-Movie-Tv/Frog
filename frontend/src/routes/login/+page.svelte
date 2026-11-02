@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { api, ApiError } from '#lib/api';
 	import Logo from '#lib/components/Logo.svelte';
+	import { nameLimit } from '#lib/names';
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
 
@@ -105,6 +106,7 @@
 					required
 					autocapitalize="off"
 					spellcheck="false"
+					maxlength={setup ? nameLimit(username) : undefined}
 				/>
 			</label>
 

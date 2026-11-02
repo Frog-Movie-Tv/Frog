@@ -15,7 +15,7 @@ Deeper guides: [the catalog](docs/CATALOG-IDENTITY.md),
 | Question | Answer | Why |
 | --- | --- | --- |
 | Users | Several, invitation only | Every personal table carries a `user_id` with a foreign key, and `backend/tests/scoping.rs` fails the build if a query forgets it. Isolation is enforced per request, not hidden in the interface. |
-| Profiles | Opt in, instance only | Off until an account turns it on, and visible only to other accounts on the same instance. On, others see the whole library and its ratings, never its notes (`store::SharedItem`). Every route except `/healthz` and the auth endpoints sits behind a session. |
+| Profiles | Opt in, instance only | Off until an account turns it on, and visible only to other accounts on the same instance. On, others see the whole library and its ratings, their dated watching on Home and a taste match, never its notes (`store::SharedItem`, `activity::Summary`). Every route except `/healthz` and the auth endpoints sits behind a session. |
 | Imports | Letterboxd, Trakt, IMDb, TV Time, MyAnimeList, Netflix, Frog backups | All of them reduce to one intermediate shape, so a new source is a parser rather than a redesign. AniList is read on its own and never written to. |
 | Scrobbling | Not built | It only sees what plays through a media server the owners do not use. Anime arrives through the AniList sync; the rest is ticked by hand, on purpose. Plex is out regardless: its webhooks need Plex Pass. |
 | Hosting | Oracle Cloud Always Free, Docker, Caddy | A public site on a free instance, HTTPS issued automatically, updating itself from the newest release image. See [docs/DEPLOY-ORACLE.md](docs/DEPLOY-ORACLE.md). It still runs on a laptop for development. |
@@ -82,10 +82,10 @@ the ones above.
 | Layer | Modules | Does |
 | --- | --- | --- |
 | HTTP | `routes/*` | Parse and check the request, name the account (`Auth`, `AdminAuth`), call the layer below, shape the answer. |
-| Domain | `catalog`, `transfer`, `anilist`, `release`, `bulk`, `push`, `jobs` | Decisions and workflows: which title a provider id names, what an import means, who wins a sync, when an episode is out, what a show's status is. |
+| Domain | `catalog`, `transfer`, `anilist`, `release`, `reset`, `activity`, `taste`, `bulk`, `push`, `jobs` | Decisions and workflows: which title a provider id names, what an import means, who wins a sync, when an episode is out, what a show's status is. |
 | Persistence | `catalog`, `store`, `anilist::records`, `images`, `db` | Reads and writes. `catalog` owns the shared titles, episodes and provider ids; `store` owns one account's library; each domain may own its own tables (`anilist::records` owns `anilist_*`, `images` owns `image_cache`). |
 | Providers | `tmdb`, `anilist::client`, `anilist::media` | Talking to other services, cached; nothing else calls them directly. `catalog::ensure` is how a provider's answer becomes a title. |
-| Shared | `auth`, `config`, `error`, `state`, `text`, `palette`, `totp`, `ops` | Small and specific; no catch-all helpers module. |
+| Shared | `auth`, `config`, `error`, `state`, `text`, `palette`, `throttle`, `totp`, `ops` | Small and specific; no catch-all helpers module. |
 
 Simple, single-area reads still live in their route module (most of
 `routes/stats.rs`, `routes/timeline.rs`, `routes/shelves.rs`,
@@ -103,6 +103,8 @@ left. See CLAUDE.md for the rule.
 | `store` | One account's library: entries, the filtered list and what its filters offer (`LibraryFilter`), progress, "up next", emptying it, and moving one account's data between titles (`move_title_data`). |
 | `images` | The picture cache in SQLite, and its budget. |
 | `bulk` | One action on many titles of a library, one request each, and the marking of aired episodes it shares with "Mark all watched" (`tick_aired`, `When`). Removing, changing a status or favouriting answers with what the titles held (`store::EntryRecord`), which is what undo sends back. |
+| `activity` | What others have been watching, for a row on Home. `summarise` adds up one person's watches on plain values; only accounts `store::shown_to` names, only dated watches of titles still in that library, and never notes. |
+| `taste` | How alike two people rate things. `score` is the calculation; `between` is the one query, and only its two figures leave. |
 | `release` | When an episode counts as out, the status a show should have (`reconcile`), and whether Continue watching has anything to say about it (`continues`). |
 | `transfer` | Imports (matching, applying) and exports. |
 | `anilist` | AniList sign-in, and reading each account's list into its library. Read only. |
@@ -111,6 +113,8 @@ left. See CLAUDE.md for the rule.
 | `ops` | Reads what the deploy scripts recorded in `ops.jsonl`. |
 | `palette` | Pulls an accent colour out of a poster. |
 | `text` | Case and accent folding for search. |
+| `reset` | Password reset links: single-use, a day long, one per account, stored as a hash. A change to the account's password or role withdraws its link. |
+| `throttle` | Counts failed attempts in memory. Keys are fixed-size hashes, a refused request stores nothing, the worker sweeps what has expired, and the map has a ceiling. |
 | `routes` | One module per area. |
 
 ### Sessions and accounts
@@ -124,6 +128,23 @@ The first account is the owner, made from `FROG_ADMIN_USERNAME` /
 `FROG_ADMIN_PASSWORD` at boot or from the setup screen, which refuses once
 any account exists. Everyone after that joins through a single-use, expiring
 invitation an administrator makes. There is no open sign-up.
+
+Someone who forgets a password gets a single-use link from an administrator
+(`/reset?code=…`), under the same rules as changing an account. `POST
+/api/auth/reset` is public on purpose, since its user cannot sign in: the code is
+128 random bits, only its hash is stored, attempts are throttled by address, and
+every bad code gets one answer after the same password work. The owner has nobody
+above them, so `frog owner-reset-link`, run on the server, makes theirs.
+A rename goes through `Auth` and the current password; nothing is keyed by a
+name, so only the addresses built from it change.
+
+A new username takes 2 to 20 characters, counted as a person counts them, so a
+flag or a family emoji is one. Sign-in never
+applies that limit, because accounts older than it may have longer names; it
+only refuses names past 256 characters, which it answers like a wrong password
+without storing anything. An unknown name does the same password work as a real
+one (`auth::spend_password_work`), so the time an answer takes does not say
+which names exist, and it counts towards the same throttle for the same reason.
 
 ### The TMDB cache is the offline story
 
@@ -172,8 +193,8 @@ flash and no client-side work.
 ### Data model
 
 ```
-app_user ── session, recovery_code, invite, app_setting, user_image,
-            push_subscription, push_sent
+app_user ── session, recovery_code, invite, password_reset, app_setting,
+            user_image, push_subscription, push_sent
 
 title (shared catalog; id is Frog's own) ──┬── episode ──┬── episode_state  (notes, per account)
   kind, metadata, merged_into              │             └── watch_event    (the diary, per account)
@@ -239,6 +260,9 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
   custom property. Light, dark and AMOLED are three token sets. A title page
   overrides `--accent` locally from its poster, and the theme editor writes
   custom properties at runtime with no component changes.
+- **A long word cannot widen a page.** `app.css` sets `overflow-wrap: anywhere`
+  on `body`, so a name with no spaces wraps wherever it lands, in flex and grid
+  rows too. Rows of Frog's own words opt out where they would stack letters.
 - **Fonts and icons are bundled.** Fontsource packages and Lucide paths
   inlined in `Icon.svelte`; nothing is fetched from a CDN at runtime.
 - **View Transitions.** Cross-route fades plus a real shared-element morph: a

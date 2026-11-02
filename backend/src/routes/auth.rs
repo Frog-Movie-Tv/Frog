@@ -7,12 +7,14 @@ use chrono::Utc;
 use serde::Deserialize;
 use serde_json::json;
 use std::net::SocketAddr;
-use std::time::{Duration, Instant};
 
 use crate::auth::{self as session, ClientAddr, Role};
 use crate::error::{AppError, AppResult};
+use crate::reset;
 use crate::routes::{invites, two_factor};
 use crate::state::AppState;
+use crate::store;
+use crate::throttle;
 
 #[derive(Deserialize)]
 pub struct Credentials {
@@ -35,20 +37,6 @@ pub struct Registration {
     pub invite: String,
 }
 
-/// Failed sign-ins allowed before the door shuts for a while.
-const MAX_FAILURES: usize = 8;
-const FAILURE_WINDOW: Duration = Duration::from_secs(10 * 60);
-
-/// Who to throttle. Both buckets are checked: the account stops someone
-/// guessing one password from everywhere, and the address stops one caller
-/// working through every account.
-fn buckets(username: &str, client: &str) -> [String; 2] {
-    [
-        format!("user:{}", username.trim().to_lowercase()),
-        format!("ip:{client}"),
-    ]
-}
-
 /// The caller's address. `X-Forwarded-For` is trusted because the only
 /// supported deployment puts Caddy directly in front of Frog; without a proxy
 /// the socket address is used. A spoofed header can only dodge the per-address
@@ -68,44 +56,13 @@ fn client_key(headers: &HeaderMap, peer: Option<SocketAddr>) -> String {
         .unwrap_or_else(|| "unknown".into())
 }
 
-/// Returns the seconds to wait when either bucket has failed too often.
-fn throttled_for(state: &AppState, keys: &[String; 2]) -> Option<u64> {
-    let mut failures = state.login_failures.lock().ok()?;
-    let now = Instant::now();
-    let mut wait = None;
-
-    for key in keys {
-        let times = failures.entry(key.clone()).or_default();
-        times.retain(|t| now.duration_since(*t) < FAILURE_WINDOW);
-        if times.len() >= MAX_FAILURES {
-            if let Some(oldest) = times.first().copied() {
-                let left = (FAILURE_WINDOW - now.duration_since(oldest))
-                    .as_secs()
-                    .max(1);
-                wait = Some(wait.map_or(left, |w: u64| w.max(left)));
-            }
-        }
-    }
-    wait
-}
-
-fn record_failure(state: &AppState, keys: &[String; 2]) {
-    if let Ok(mut failures) = state.login_failures.lock() {
-        for key in keys {
-            failures
-                .entry(key.clone())
-                .or_default()
-                .push(Instant::now());
-        }
-    }
-}
-
-fn clear_failures(state: &AppState, keys: &[String; 2]) {
-    if let Ok(mut failures) = state.login_failures.lock() {
-        for key in keys {
-            failures.remove(key);
-        }
-    }
+/// The wait a throttle asked for, as a person reads it.
+fn too_many_tries(seconds: u64) -> AppError {
+    let minutes = seconds.div_ceil(60);
+    AppError::TooManyRequests(format!(
+        "Too many tries. Try again in {minutes} {}.",
+        if minutes == 1 { "minute" } else { "minutes" }
+    ))
 }
 
 /// True while the instance has no accounts at all, which is the only time the
@@ -137,13 +94,7 @@ pub async fn status(
         .bind(i.user_id)
         .fetch_optional(&state.pool)
         .await?
-        .map(|(at,)| {
-            format!(
-                "/api/profiles/{}/images/avatar?v={}",
-                urlencoding::encode(&i.username),
-                urlencoding::encode(&at)
-            )
-        }),
+        .map(|(at,)| store::picture_address(&i.username, "avatar", &at)),
         None => None,
     };
 
@@ -221,16 +172,15 @@ pub async fn login(
     ClientAddr(peer): ClientAddr,
     Json(body): Json<Credentials>,
 ) -> AppResult<impl IntoResponse> {
-    let client = client_key(&headers, peer);
-    let keys = buckets(&body.username, &client);
-
-    if let Some(seconds) = throttled_for(&state, &keys) {
-        let minutes = seconds.div_ceil(60);
-        return Err(AppError::TooManyRequests(format!(
-            "Too many tries. Try again in {minutes} {}.",
-            if minutes == 1 { "minute" } else { "minutes" }
-        )));
+    // Nothing about a name this long is worth keeping, and no account has one.
+    if session::sign_in_name_too_long(&body.username) {
+        return Err(AppError::WrongCredentials);
     }
+
+    let client = client_key(&headers, peer);
+    let keys = throttle::sign_in_keys(&body.username, &client);
+
+    state.login_failures.admit(&keys).map_err(too_many_tries)?;
 
     // NOCASE so signing in is not a spelling test, and one row per username.
     let row: Option<LoginRow> = sqlx::query_as(
@@ -242,15 +192,17 @@ pub async fn login(
     .await?;
 
     // Same message whichever part was wrong: never leak which usernames exist.
+    // The password work happens either way, so the answer takes as long for a
+    // name nobody has as for a real one.
     let Some((user_id, _, hash, totp_secret, disabled)) = row else {
-        record_failure(&state, &keys);
+        session::spend_password_work(&body.password);
         return Err(AppError::WrongCredentials);
     };
     if !session::verify_password(&body.password, &hash) {
-        record_failure(&state, &keys);
         return Err(AppError::WrongCredentials);
     }
     if disabled != 0 {
+        state.login_failures.release(&keys);
         return Err(AppError::Forbidden(
             "This account has been turned off. Ask an administrator.".into(),
         ));
@@ -260,18 +212,64 @@ pub async fn login(
         let code = body.code.as_deref().map(str::trim).unwrap_or("");
         if code.is_empty() {
             // Not a failure: the password was right and the app asks next.
+            state.login_failures.release(&keys);
             return Err(AppError::TwoFactor(
                 "Enter the code from your authenticator app.".into(),
             ));
         }
         if !second_factor_ok(&state, user_id, &secret, code).await? {
-            record_failure(&state, &keys);
             return Err(AppError::TwoFactor("That code didn't work.".into()));
         }
     }
 
-    clear_failures(&state, &keys);
+    state.login_failures.clear(&keys);
     issue(state, jar, headers, user_id, body.remember).await
+}
+
+#[derive(Deserialize)]
+pub struct ResetBody {
+    pub code: String,
+    pub password: String,
+}
+
+/// Set a new password with a reset link.
+///
+/// Public, because the person using it cannot sign in. What keeps that safe:
+/// the code is 128 random bits, only its hash is stored, it works once and
+/// expires, and attempts are throttled by address. Every way a code can be wrong
+/// gets one answer, after the same password work, so this says nothing about
+/// which codes exist or who they are for. Nothing is signed in here: the person
+/// signs in with the new password, which is also where two-factor asks.
+pub async fn reset_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ClientAddr(peer): ClientAddr,
+    Json(body): Json<ResetBody>,
+) -> AppResult<impl IntoResponse> {
+    let client = client_key(&headers, peer);
+    let keys = throttle::reset_keys(&client);
+    state.reset_failures.admit(&keys).map_err(too_many_tries)?;
+
+    // Says nothing about the code, so it can come first and costs no try.
+    if !session::password_long_enough(&body.password) {
+        state.reset_failures.release(&keys);
+        return Err(AppError::BadRequest(
+            "password needs at least 8 characters".into(),
+        ));
+    }
+
+    let Some(username) = reset::redeem(&state.pool, &body.code, &body.password).await? else {
+        return Err(AppError::Forbidden(
+            "That link has been used already, or it has expired.".into(),
+        ));
+    };
+    state.reset_failures.release(&keys);
+    // Whoever forgot a password has usually just used up their tries.
+    state
+        .login_failures
+        .clear(&throttle::sign_in_keys(&username, &client));
+    tracing::info!("a password was changed with a reset link");
+    Ok(Json(json!({ "ok": true })))
 }
 
 /// Checks an authenticator code, or else spends one of this account's
@@ -343,12 +341,8 @@ async fn issue(
 }
 
 fn validate(c: &Credentials) -> AppResult<()> {
-    if c.username.trim().len() < 2 {
-        return Err(AppError::BadRequest(
-            "username needs at least 2 characters".into(),
-        ));
-    }
-    if c.password.len() < 8 {
+    session::check_username(&c.username)?;
+    if !session::password_long_enough(&c.password) {
         return Err(AppError::BadRequest(
             "password needs at least 8 characters".into(),
         ));
@@ -356,8 +350,7 @@ fn validate(c: &Credentials) -> AppResult<()> {
     Ok(())
 }
 
-/// Create an account and return its id. The username is unique regardless of
-/// case, so two people cannot pick names that only a reader can tell apart.
+/// Create an account and return its id.
 pub async fn create_account(
     state: &AppState,
     username: &str,
@@ -365,16 +358,14 @@ pub async fn create_account(
     role: Role,
 ) -> AppResult<i64> {
     let name = username.trim();
-    let (taken,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM app_user WHERE username = ? COLLATE NOCASE")
-            .bind(name)
-            .fetch_one(&state.pool)
-            .await?;
-    if taken > 0 {
+    // Before the lock: the slow part need not make anyone else wait.
+    let hash = session::hash_password(password)?;
+
+    let _one_at_a_time = state.names.lock().await;
+    if session::username_taken(&state.pool, name, None).await? {
         return Err(AppError::Conflict("that username is taken".into()));
     }
 
-    let hash = session::hash_password(password)?;
     let row: (i64,) = sqlx::query_as(
         "INSERT INTO app_user (username, password_hash, role, created_at)
          VALUES (?, ?, ?, ?) RETURNING id",
@@ -402,7 +393,14 @@ pub async fn bootstrap_from_env(state: &AppState) -> AppResult<()> {
     if !needs_setup(state).await? {
         return Ok(());
     }
-    if pass.len() < 8 {
+    // Refused the way a short password is, so an owner made here obeys the same
+    // rules as one made on the setup screen, which stays open for it. Only a
+    // database with no accounts gets this far, so nobody is ever renamed.
+    if let Err(e) = session::check_username(&user) {
+        tracing::warn!(error = %e, "FROG_ADMIN_USERNAME cannot be used; skipping bootstrap");
+        return Ok(());
+    }
+    if !session::password_long_enough(&pass) {
         tracing::warn!("FROG_ADMIN_PASSWORD is shorter than 8 characters; skipping bootstrap");
         return Ok(());
     }
@@ -415,16 +413,6 @@ pub async fn bootstrap_from_env(state: &AppState) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn each_account_and_address_gets_its_own_bucket() {
-        let a = buckets("Zjef", "10.0.0.1");
-        let b = buckets("zjef", "10.0.0.2");
-        // Case does not make a second account bucket...
-        assert_eq!(a[0], b[0]);
-        // ...but a different address is throttled separately.
-        assert_ne!(a[1], b[1]);
-    }
 
     #[test]
     fn a_proxy_header_names_the_caller_and_the_socket_is_the_fallback() {

@@ -400,6 +400,20 @@ export interface AiringEntry {
 	air_date: string | null;
 }
 
+/** Someone else's watching, as a card on Home. */
+export interface ActivityItem {
+	who: { username: string; display_name: string | null; avatar: string | null };
+	title: { id: number; kind: Kind; name: string; poster_path: string | null };
+	did: 'finished' | 'watched' | 'rewatched';
+	/** Zero for a film. */
+	episodes: number;
+	season: number | null;
+	episode: number | null;
+	at: string;
+	/** Other titles this person watched that have no card of their own. */
+	also: number;
+}
+
 export interface HomeData {
 	hero: UpNextEntry | null;
 	/** Part-way through, with an episode already out. */
@@ -630,6 +644,8 @@ export interface Profile {
 	joined: string;
 	public: boolean;
 	me: boolean;
+	/** Absent on your own profile, and until five rated titles are shared. */
+	taste: { percent: number; shared: number } | null;
 	avatar: string | null;
 	banner: string | null;
 	banner_backdrop: string | null;
@@ -651,6 +667,12 @@ export interface Profile {
 	watching: ProfileCard[];
 	favourites: ProfileCard[];
 	recent: ProfileCard[];
+}
+
+export interface ResetLink {
+	code: string;
+	path: string;
+	expires_at: string;
 }
 
 export interface NewInvite {

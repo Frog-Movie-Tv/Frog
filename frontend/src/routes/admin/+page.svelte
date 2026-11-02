@@ -11,6 +11,7 @@
 		InstanceInfo,
 		Invite,
 		NewInvite,
+		ResetLink,
 		ServerEvent,
 		ServerStatus
 	} from '#lib/types';
@@ -24,6 +25,9 @@
 	let days = $state('7');
 	/** Shown once, right after it is made: the server keeps only a hash. */
 	let fresh = $state<NewInvite | null>(null);
+
+	/** The same: a reset link is shown once, with who it is for. */
+	let reset = $state<{ username: string; link: ResetLink } | null>(null);
 
 	const owner = $derived(session.status?.role === 'owner');
 
@@ -55,10 +59,16 @@
 		return owner || user.role === 'user';
 	}
 
+	/** A change to an account withdraws its link, so stop offering it. */
+	function dropReset(user: AdminUser) {
+		if (reset?.username === user.username) reset = null;
+	}
+
 	async function setRole(user: AdminUser, role: 'admin' | 'user') {
 		try {
 			const r = await api.updateUser(user.id, { role });
 			user.role = r.role;
+			dropReset(user);
 			toasts.push(
 				role === 'admin' ? `${user.username} is an administrator` : `${user.username} is a member`
 			);
@@ -71,6 +81,7 @@
 		try {
 			const r = await api.updateUser(user.id, { disabled });
 			user.disabled = r.disabled;
+			dropReset(user);
 			if (disabled) {
 				toasts.undoable(`${user.username} is switched off`, async () => {
 					const back = await api.updateUser(user.id, { disabled: false });
@@ -98,6 +109,7 @@
 			return;
 		}
 		users = users.filter((u) => u.id !== user.id);
+		dropReset(user);
 		const timer = setTimeout(async () => {
 			try {
 				await api.deleteUser(user.id);
@@ -160,8 +172,16 @@
 		}
 	}
 
-	function linkFor(invite: NewInvite): string {
+	function linkFor(invite: { path: string }): string {
 		return `${location.origin}${invite.path}`;
+	}
+
+	async function makeReset(user: AdminUser) {
+		try {
+			reset = { username: user.username, link: await api.createResetLink(user.id) };
+		} catch (e) {
+			toasts.error(e);
+		}
 	}
 
 	async function copy(text: string) {
@@ -237,6 +257,15 @@
 											onchange={(v) => setRole(user, v as 'admin' | 'user')}
 										/>
 									{/if}
+									{#if !user.disabled}
+										<button
+											class="btn ghost"
+											aria-label="Reset link for {user.username}"
+											onclick={() => makeReset(user)}
+										>
+											Reset link
+										</button>
+									{/if}
 									<button class="btn ghost" onclick={() => setDisabled(user, !user.disabled)}>
 										{user.disabled ? 'Switch on' : 'Switch off'}
 									</button>
@@ -252,6 +281,20 @@
 						</li>
 					{/each}
 				</ul>
+
+				{#if reset}
+					<div class="fresh card reset">
+						<p>
+							<strong>Copy this now.</strong> Give it to {reset.username}. It sets a new password
+							once, works for a day, and is shown only here.
+						</p>
+						<code>{linkFor(reset.link)}</code>
+						<button class="btn" onclick={() => reset && copy(linkFor(reset.link))}>
+							<Icon name="copy" size={15} />
+							Copy link
+						</button>
+					</div>
+				{/if}
 			</section>
 
 			<div class="col">
@@ -487,6 +530,10 @@
 		display: grid;
 		gap: 10px;
 		padding: 16px;
+	}
+
+	.fresh.reset {
+		margin-top: 12px;
 	}
 
 	.fresh p {

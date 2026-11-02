@@ -2929,6 +2929,1117 @@ async fn a_disabled_account_cannot_sign_in_or_keep_using_its_session() {
 }
 
 #[tokio::test]
+async fn an_oversized_name_is_refused_like_a_wrong_password_and_nothing_is_kept() {
+    let h = Harness::new().await;
+    two_accounts(&h).await;
+
+    let (wrong, body_wrong, _) = h
+        .post_from(
+            "/api/auth/login",
+            json!({ "username": "nobody-here", "password": "wrong-password" }),
+            "203.0.113.2",
+        )
+        .await;
+    let before = h.state.login_failures.len();
+
+    for n in 0..20 {
+        let name = format!("{n}{}", "x".repeat(1024 * 1024));
+        let (code, body, _) = h
+            .post_from(
+                "/api/auth/login",
+                json!({ "username": name, "password": "wrong-password" }),
+                "203.0.113.3",
+            )
+            .await;
+        assert_eq!(code, wrong);
+        assert_eq!(body, body_wrong);
+    }
+    assert_eq!(h.state.login_failures.len(), before);
+}
+
+#[tokio::test]
+async fn a_refused_sign_in_leaves_nothing_behind() {
+    let h = Harness::new().await;
+    two_accounts(&h).await;
+
+    // Shut the door on one address.
+    for _ in 0..8 {
+        h.post_from(
+            "/api/auth/login",
+            json!({ "username": "zjef", "password": "wrong-password" }),
+            "203.0.113.4",
+        )
+        .await;
+    }
+    let held = h.state.login_failures.len();
+
+    for n in 0..50 {
+        let (code, _, _) = h
+            .post_from(
+                "/api/auth/login",
+                json!({ "username": format!("name-{n}"), "password": "wrong-password" }),
+                "203.0.113.4",
+            )
+            .await;
+        assert_eq!(code, StatusCode::TOO_MANY_REQUESTS);
+    }
+    assert_eq!(h.state.login_failures.len(), held);
+}
+
+#[tokio::test]
+async fn a_right_password_waiting_for_its_code_is_not_a_failure() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    sqlx::query("UPDATE app_user SET totp_secret = 'JBSWY3DPEHPK3PXP' WHERE username = 'zjef'")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    assert!(!owner.is_empty());
+
+    for _ in 0..20 {
+        let (code, _, _) = h
+            .post_from(
+                "/api/auth/login",
+                json!({ "username": "zjef", "password": "another-long-pass" }),
+                "203.0.113.6",
+            )
+            .await;
+        assert_eq!(code, StatusCode::UNAUTHORIZED);
+    }
+}
+
+#[tokio::test]
+async fn an_unknown_name_counts_towards_the_door_like_a_real_one() {
+    let h = Harness::new().await;
+    two_accounts(&h).await;
+
+    // Were only real names counted, the 429 would say which names are real.
+    let mut answers = Vec::new();
+    for _ in 0..9 {
+        let (code, _, _) = h
+            .post_from(
+                "/api/auth/login",
+                json!({ "username": "nobody-here", "password": "wrong-password" }),
+                "203.0.113.5",
+            )
+            .await;
+        answers.push(code);
+    }
+    assert_eq!(answers[7], StatusCode::UNAUTHORIZED);
+    assert_eq!(answers[8], StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn a_name_from_before_the_limit_still_signs_in() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+
+    let (_, status) = h.get("/api/auth/status", Some(&owner)).await;
+    assert_eq!(status["username"], json!("mihai"));
+
+    let long = "an-account-from-before-there-was-a-limit-of-any-kind";
+    sqlx::query("UPDATE app_user SET username = ? WHERE username = 'zjef'")
+        .bind(long)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+
+    let (code, body, cookie) = h
+        .post(
+            "/api/auth/login",
+            json!({ "username": long.to_uppercase(), "password": "another-long-pass" }),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body:?}");
+    let (_, status) = h.get("/api/auth/status", cookie.as_deref()).await;
+    assert_eq!(status["username"], json!(long), "and is not renamed");
+}
+
+#[tokio::test]
+async fn setup_holds_a_new_name_to_the_limit_in_characters() {
+    let h = Harness::new().await;
+    for name in ["😀", "é", "x", "a-name-of-twenty-one-"] {
+        let (code, body, _) = h
+            .post(
+                "/api/auth/setup",
+                json!({ "username": name, "password": "a-long-enough-pass" }),
+                None,
+            )
+            .await;
+        assert_eq!(code, StatusCode::BAD_REQUEST, "{name}");
+        assert!(body["error"].as_str().unwrap().contains("username"));
+    }
+    let (code, body, _) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "😀".repeat(20), "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body:?}");
+}
+
+#[tokio::test]
+async fn joining_holds_a_new_name_to_the_limit_and_keeps_the_invite() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    let (_, invite, _) = h
+        .post("/api/invites", json!({ "role": "user" }), Some(&owner))
+        .await;
+    let code = invite["code"].as_str().unwrap();
+
+    let (status, body, _) = h
+        .post(
+            "/api/auth/register",
+            json!({
+                "username": "x".repeat(21),
+                "password": "a-long-enough-pass",
+                "invite": code,
+            }),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body:?}");
+
+    let (status, body, _) = h
+        .post(
+            "/api/auth/register",
+            json!({
+                "username": "x".repeat(20),
+                "password": "a-long-enough-pass",
+                "invite": code,
+            }),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+}
+
+#[tokio::test]
+async fn a_password_is_counted_in_characters_too() {
+    let h = Harness::new().await;
+    let (code, body, _) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "😀😀😀" }),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST, "{body:?}");
+    assert!(body["error"].as_str().unwrap().contains("password"));
+}
+
+#[tokio::test]
+async fn an_owner_from_the_environment_follows_the_same_rules() {
+    async fn accounts_after(user: &str, pass: &str) -> i64 {
+        let mut h = Harness::new().await;
+        let config = std::sync::Arc::get_mut(&mut h.state.config).expect("only reference");
+        config.admin_username = Some(user.into());
+        config.admin_password = Some(pass.into());
+        frog::routes::auth::bootstrap_from_env(&h.state)
+            .await
+            .expect("bootstrap");
+        let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM app_user")
+            .fetch_one(&h.state.pool)
+            .await
+            .unwrap();
+        count
+    }
+    assert_eq!(accounts_after("mihai", "a-long-enough-pass").await, 1);
+    assert_eq!(
+        accounts_after(&"x".repeat(21), "a-long-enough-pass").await,
+        0,
+        "the setup screen stays open instead"
+    );
+    assert_eq!(accounts_after("😀", "a-long-enough-pass").await, 0);
+    assert_eq!(accounts_after("mihai", "😀😀😀").await, 0);
+}
+
+async fn user_id(h: &Harness, username: &str) -> i64 {
+    let (id,): (i64,) = sqlx::query_as("SELECT id FROM app_user WHERE username = ?")
+        .bind(username)
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    id
+}
+
+/// A third account, an administrator, invited by the owner.
+async fn an_admin(h: &Harness, owner: &str) -> String {
+    let (_, invite, _) = h
+        .post("/api/invites", json!({ "role": "admin" }), Some(owner))
+        .await;
+    let (code, body, cookie) = h
+        .post(
+            "/api/auth/register",
+            json!({
+                "username": "boss",
+                "password": "a-third-long-pass",
+                "remember": true,
+                "invite": invite["code"],
+            }),
+            None,
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body:?}");
+    cookie.expect("joining signs you in")
+}
+
+async fn reset_link(h: &Harness, cookie: &str, id: i64) -> (StatusCode, Value) {
+    let (code, body, _) = h
+        .post(
+            &format!("/api/admin/users/{id}/reset"),
+            json!({}),
+            Some(cookie),
+        )
+        .await;
+    (code, body)
+}
+
+#[tokio::test]
+async fn a_reset_link_follows_the_rules_of_changing_an_account() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    let admin = an_admin(&h, &owner).await;
+    let (owner_id, member_id, admin_id) = (
+        user_id(&h, "mihai").await,
+        user_id(&h, "zjef").await,
+        user_id(&h, "boss").await,
+    );
+
+    assert_eq!(
+        reset_link(&h, &member, member_id).await.0,
+        StatusCode::FORBIDDEN,
+        "a member makes none, not even for themselves"
+    );
+    assert_eq!(
+        reset_link(&h, &admin, owner_id).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        reset_link(&h, &owner, owner_id).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        reset_link(&h, &admin, admin_id).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(reset_link(&h, &owner, 9999).await.0, StatusCode::NOT_FOUND);
+
+    let (_, invite, _) = h
+        .post("/api/invites", json!({ "role": "admin" }), Some(&owner))
+        .await;
+    h.post(
+        "/api/auth/register",
+        json!({ "username": "second", "password": "a-fourth-long-pass", "invite": invite["code"] }),
+        None,
+    )
+    .await;
+    let second = user_id(&h, "second").await;
+    assert_eq!(
+        reset_link(&h, &admin, second).await.0,
+        StatusCode::FORBIDDEN,
+        "only the owner acts on an administrator"
+    );
+    assert_eq!(reset_link(&h, &owner, second).await.0, StatusCode::OK);
+    assert_eq!(reset_link(&h, &admin, member_id).await.0, StatusCode::OK);
+    assert_eq!(reset_link(&h, &owner, admin_id).await.0, StatusCode::OK);
+
+    let (code, _, _) = h
+        .put(
+            &format!("/api/admin/users/{member_id}"),
+            json!({ "disabled": true }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(
+        reset_link(&h, &owner, member_id).await.0,
+        StatusCode::BAD_REQUEST,
+        "a switched-off account has nothing to open"
+    );
+}
+
+#[tokio::test]
+async fn a_reset_link_changes_the_password_once_and_signs_out_every_device() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    let member_id = user_id(&h, "zjef").await;
+
+    let (status, link) = reset_link(&h, &owner, member_id).await;
+    assert_eq!(status, StatusCode::OK, "{link:?}");
+    let code = link["code"].as_str().unwrap().to_string();
+    assert_eq!(link["path"], json!(format!("/reset?code={code}")));
+
+    // Only the hash is stored.
+    let (stored,): (String,) = sqlx::query_as("SELECT code_hash FROM password_reset")
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, frog::auth::hash_code(&code));
+    assert_ne!(stored, code);
+
+    // A second device, to be signed out with the first.
+    let (_, second) = sign_in(&h, "zjef", "another-long-pass").await;
+    let second = second.unwrap();
+
+    let (status, body, cookie) = h
+        .post(
+            "/api/auth/reset",
+            json!({ "code": code, "password": "a-brand-new-pass" }),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    assert!(cookie.is_none(), "it signs nobody in");
+
+    for device in [&member, &second] {
+        let (status, _) = h.get("/api/account", Some(device)).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+    assert_eq!(
+        sign_in(&h, "zjef", "another-long-pass").await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        sign_in(&h, "zjef", "a-brand-new-pass").await.0,
+        StatusCode::OK
+    );
+
+    // The owner was not touched.
+    let (status, _) = h.get("/api/account", Some(&owner)).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn a_bad_reset_code_gets_one_answer_however_it_is_bad() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    let member_id = user_id(&h, "zjef").await;
+
+    let redeem = |code: String, ip: &'static str| {
+        let h = &h;
+        async move {
+            h.post_from(
+                "/api/auth/reset",
+                json!({ "code": code, "password": "a-brand-new-pass" }),
+                ip,
+            )
+            .await
+        }
+    };
+
+    let (status, unknown, _) = redeem("made-up".into(), "203.0.113.20").await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // Used.
+    let used = reset_link(&h, &owner, member_id).await.1["code"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(redeem(used.clone(), "203.0.113.21").await.0, StatusCode::OK);
+    let (status, body, _) = redeem(used, "203.0.113.22").await;
+    assert_eq!((status, &body), (StatusCode::FORBIDDEN, &unknown));
+
+    // Expired.
+    let expired = reset_link(&h, &owner, member_id).await.1["code"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    sqlx::query("UPDATE password_reset SET expires_at = '2020-01-01T00:00:00+00:00'")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    let (status, body, _) = redeem(expired, "203.0.113.23").await;
+    assert_eq!((status, &body), (StatusCode::FORBIDDEN, &unknown));
+
+    // Replaced by a newer link.
+    let older = reset_link(&h, &owner, member_id).await.1["code"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let newer = reset_link(&h, &owner, member_id).await.1["code"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (status, body, _) = redeem(older, "203.0.113.24").await;
+    assert_eq!((status, &body), (StatusCode::FORBIDDEN, &unknown));
+
+    // Its account was switched off after the link was made.
+    sqlx::query("UPDATE app_user SET disabled = 1 WHERE id = ?")
+        .bind(member_id)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    let (status, body, _) = redeem(newer, "203.0.113.25").await;
+    assert_eq!((status, &body), (StatusCode::FORBIDDEN, &unknown));
+}
+
+#[tokio::test]
+async fn a_short_password_does_not_spend_a_reset_link() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    let code = reset_link(&h, &owner, user_id(&h, "zjef").await).await.1["code"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (status, _, _) = h
+        .post(
+            "/api/auth/reset",
+            json!({ "code": code, "password": "😀😀😀" }),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _, _) = h
+        .post(
+            "/api/auth/reset",
+            json!({ "code": code, "password": "long-enough-now" }),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn trying_reset_codes_is_throttled_by_address_and_a_real_link_clears_the_sign_in_door() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+
+    let mut answers = Vec::new();
+    for n in 0..9 {
+        let (code, _, _) = h
+            .post_from(
+                "/api/auth/reset",
+                json!({ "code": format!("guess-{n}"), "password": "a-brand-new-pass" }),
+                "203.0.113.30",
+            )
+            .await;
+        answers.push(code);
+    }
+    assert_eq!(answers[7], StatusCode::FORBIDDEN);
+    assert_eq!(answers[8], StatusCode::TOO_MANY_REQUESTS);
+
+    // Someone who used up their sign-in tries gets back in with the link.
+    for _ in 0..8 {
+        h.post_from(
+            "/api/auth/login",
+            json!({ "username": "zjef", "password": "wrong-password" }),
+            "203.0.113.31",
+        )
+        .await;
+    }
+    let (locked, _, _) = h
+        .post_from(
+            "/api/auth/login",
+            json!({ "username": "zjef", "password": "wrong-password" }),
+            "203.0.113.31",
+        )
+        .await;
+    assert_eq!(locked, StatusCode::TOO_MANY_REQUESTS);
+
+    let code = reset_link(&h, &owner, user_id(&h, "zjef").await).await.1["code"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (status, _, _) = h
+        .post_from(
+            "/api/auth/reset",
+            json!({ "code": code, "password": "a-brand-new-pass" }),
+            "203.0.113.31",
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body, _) = h
+        .post_from(
+            "/api/auth/login",
+            json!({ "username": "zjef", "password": "a-brand-new-pass" }),
+            "203.0.113.31",
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+}
+
+#[tokio::test]
+async fn two_factor_stays_after_a_reset() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    let id = user_id(&h, "zjef").await;
+    sqlx::query("UPDATE app_user SET totp_secret = 'JBSWY3DPEHPK3PXP' WHERE id = ?")
+        .bind(id)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    let code = reset_link(&h, &owner, id).await.1["code"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    h.post(
+        "/api/auth/reset",
+        json!({ "code": code, "password": "a-brand-new-pass" }),
+        None,
+    )
+    .await;
+    let (status, body, cookie) = h
+        .post(
+            "/api/auth/login",
+            json!({ "username": "zjef", "password": "a-brand-new-pass" }),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body:?}");
+    assert!(cookie.is_none(), "the code is still asked for");
+}
+
+#[tokio::test]
+async fn a_reset_link_does_not_outlive_a_change_to_its_account() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    let id = user_id(&h, "zjef").await;
+    let open = |h: &'_ Harness| {
+        let pool = h.state.pool.clone();
+        async move {
+            let (n,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM password_reset")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            n
+        }
+    };
+
+    reset_link(&h, &owner, id).await;
+    assert_eq!(open(&h).await, 1);
+    let (status, body, _) = h
+        .put(
+            "/api/account/password",
+            json!({ "current": "another-long-pass", "password": "changed-by-hand" }),
+            Some(&member),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    assert_eq!(open(&h).await, 0, "changing the password withdraws it");
+
+    reset_link(&h, &owner, id).await;
+    h.put(
+        &format!("/api/admin/users/{id}"),
+        json!({ "role": "admin" }),
+        Some(&owner),
+    )
+    .await;
+    assert_eq!(open(&h).await, 0, "a new role withdraws it");
+}
+
+#[tokio::test]
+async fn the_reset_routes_sit_where_they_should() {
+    let h = Harness::new().await;
+    let (status, _, _) = h.post("/api/admin/users/1/reset", json!({}), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _, _) = h
+        .put(
+            "/api/account/username",
+            json!({ "username": "new", "password": "x" }),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn the_owner_can_make_their_own_link_from_the_server() {
+    let h = Harness::new().await;
+    assert!(frog::reset::issue_for_owner(&h.state.pool)
+        .await
+        .unwrap()
+        .is_none());
+    two_accounts(&h).await;
+    let (code, _) = frog::reset::issue_for_owner(&h.state.pool)
+        .await
+        .unwrap()
+        .expect("an owner");
+    let (status, _, _) = h
+        .post(
+            "/api/auth/reset",
+            json!({ "code": code, "password": "the-owner-again" }),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        sign_in(&h, "mihai", "the-owner-again").await.0,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn renaming_asks_for_the_password_and_follows_the_rules_of_a_new_name() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    let rename = |username: &str, password: &str| {
+        h.put(
+            "/api/account/username",
+            json!({ "username": username, "password": password }),
+            Some(&member),
+        )
+    };
+
+    assert_eq!(
+        rename("newname", "wrong-password").await.0,
+        StatusCode::BAD_REQUEST
+    );
+    for name in ["😀", "x", " ", "a-name-of-twenty-one-"] {
+        assert_eq!(
+            rename(name, "another-long-pass").await.0,
+            StatusCode::BAD_REQUEST,
+            "{name}"
+        );
+    }
+    for name in ["mihai", "MIHAI", " Mihai "] {
+        assert_eq!(
+            rename(name, "another-long-pass").await.0,
+            StatusCode::CONFLICT,
+            "{name}"
+        );
+    }
+    let (status, _, _) = rename("Zjef", "another-long-pass").await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "a new case of your own name is yours"
+    );
+
+    let (status, body, _) = rename("  Émile  ", "another-long-pass").await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    assert_eq!(body["username"], json!("Émile"));
+    let (_, status_now) = h.get("/api/auth/status", Some(&member)).await;
+    assert_eq!(status_now["username"], json!("Émile"), "the session stays");
+
+    // Case beyond ASCII is the same name too.
+    let (_, invite, _) = h
+        .post("/api/invites", json!({ "role": "user" }), Some(&owner))
+        .await;
+    let (status, _, _) = h
+        .post(
+            "/api/auth/register",
+            json!({ "username": "émile", "password": "a-third-long-pass", "invite": invite["code"] }),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    assert_eq!(
+        sign_in(&h, "zjef", "another-long-pass").await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        sign_in(&h, "Émile", "another-long-pass").await.0,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn a_rename_moves_the_profile_and_its_pictures_with_it() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&member),
+    )
+    .await;
+    let png = b"\x89PNG\r\n\x1a\nsmall".to_vec();
+    let req = Request::builder()
+        .uri("/api/account/images/avatar")
+        .method("PUT")
+        .header(header::COOKIE, &member)
+        .body(Body::from(png.clone()))
+        .unwrap();
+    let (status, _, _) = h.call(req).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body, _) = h
+        .put(
+            "/api/account/username",
+            json!({ "username": "someone-else", "password": "another-long-pass" }),
+            Some(&member),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+
+    let (status, _) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, profile) = h.get("/api/profiles/someone-else", Some(&owner)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(profile["username"], json!("someone-else"));
+    let avatar = profile["avatar"].as_str().expect("a picture");
+    assert!(avatar.starts_with("/api/profiles/someone-else/images/avatar"));
+
+    let req = Request::builder()
+        .uri(avatar)
+        .header(header::COOKIE, &owner)
+        .body(Body::empty())
+        .unwrap();
+    let res = h.router().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let bytes = res.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(bytes.to_vec(), png, "the same picture, under the new name");
+}
+
+/// A title and a library entry, written straight in: no TMDB here.
+async fn track(h: &Harness, user: i64, title: i64, rating: Option<f64>) {
+    let now = "2026-01-01T00:00:00+00:00";
+    sqlx::query(
+        "INSERT OR IGNORE INTO title (id, kind, name, refreshed_at) VALUES (?, 'movie', ?, ?)",
+    )
+    .bind(title)
+    .bind(format!("Film {title}"))
+    .bind(now)
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT OR REPLACE INTO library_entry (user_id, title_id, status, rating, notes, added_at, updated_at)
+         VALUES (?, ?, 'completed', ?, 'my private note', ?, ?)",
+    )
+    .bind(user)
+    .bind(title)
+    .bind(rating)
+    .bind(now)
+    .bind(now)
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+}
+
+async fn watch(h: &Harness, user: i64, title: i64, undated: bool) {
+    sqlx::query(
+        "INSERT INTO watch_event (user_id, title_id, watched_at, undated) VALUES (?, ?, ?, ?)",
+    )
+    .bind(user)
+    .bind(title)
+    .bind((chrono::Utc::now() - chrono::Duration::hours(2)).to_rfc3339())
+    .bind(undated)
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+}
+
+async fn activity(h: &Harness, cookie: &str) -> Vec<Value> {
+    let (status, body) = h.get("/api/home/activity", Some(cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    body["items"].as_array().unwrap().clone()
+}
+
+/// Someone whose watching the owner should see, once their profile is on.
+async fn someone_to_see(h: &Harness, member: &str) -> i64 {
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(member),
+    )
+    .await;
+    let id = user_id(h, "zjef").await;
+    track(h, id, 9301, Some(80.0)).await;
+    watch(h, id, 9301, false).await;
+    id
+}
+
+#[tokio::test]
+async fn the_activity_row_shows_someone_with_their_profile_on() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    someone_to_see(&h, &member).await;
+
+    let items = activity(&h, &owner).await;
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert_eq!(items[0]["who"]["username"], json!("zjef"));
+    assert_eq!(items[0]["title"]["name"], json!("Film 9301"));
+    assert_eq!(items[0]["did"], json!("watched"));
+}
+
+#[tokio::test]
+async fn the_activity_row_never_shows_your_own_watching() {
+    let h = Harness::new().await;
+    let (_, member) = two_accounts(&h).await;
+    someone_to_see(&h, &member).await;
+    assert!(activity(&h, &member).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_private_profile_never_reaches_the_activity_row() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    someone_to_see(&h, &member).await;
+    h.put(
+        "/api/account/profile",
+        json!({ "public": false }),
+        Some(&member),
+    )
+    .await;
+    assert!(activity(&h, &owner).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_switched_off_account_never_reaches_the_activity_row() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    let id = someone_to_see(&h, &member).await;
+    let (status, _, _) = h
+        .put(
+            &format!("/api/admin/users/{id}"),
+            json!({ "disabled": true }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(activity(&h, &owner).await.is_empty());
+}
+
+#[tokio::test]
+async fn undated_watches_and_titles_taken_out_stay_off_the_activity_row() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    let id = someone_to_see(&h, &member).await;
+
+    sqlx::query("DELETE FROM watch_event WHERE user_id = ?")
+        .bind(id)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    watch(&h, id, 9301, true).await;
+    assert!(activity(&h, &owner).await.is_empty(), "undated");
+
+    watch(&h, id, 9301, false).await;
+    assert_eq!(activity(&h, &owner).await.len(), 1);
+    sqlx::query("DELETE FROM library_entry WHERE user_id = ?")
+        .bind(id)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    assert!(
+        activity(&h, &owner).await.is_empty(),
+        "no longer in the library"
+    );
+}
+
+#[tokio::test]
+async fn a_note_appears_nowhere_in_what_others_see() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    let id = someone_to_see(&h, &member).await;
+    let me = user_id(&h, "mihai").await;
+    for title in 9401..9407 {
+        track(&h, id, title, Some(70.0)).await;
+        track(&h, me, title, Some(60.0)).await;
+    }
+
+    let (_, feed) = h.get("/api/home/activity", Some(&owner)).await;
+    let (_, profile) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert_eq!(profile["taste"]["shared"], json!(6));
+    for body in [feed, profile] {
+        let text = body.to_string();
+        assert!(!text.contains("my private note"), "{text}");
+        assert!(!text.contains("\"notes\""), "{text}");
+    }
+}
+
+#[tokio::test]
+async fn a_binge_and_a_large_import_cannot_flood_the_activity_row() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    let id = someone_to_see(&h, &member).await;
+    for title in 9500..9560 {
+        track(&h, id, title, None).await;
+        watch(&h, id, title, false).await;
+    }
+    let items = activity(&h, &owner).await;
+    assert_eq!(items.len(), 3, "{items:?}");
+    assert_eq!(items[2]["also"], json!(58));
+}
+
+#[tokio::test]
+async fn the_number_on_the_last_card_counts_the_whole_fortnight() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    let id = someone_to_see(&h, &member).await;
+    for title in 9700..10200 {
+        track(&h, id, title, None).await;
+        watch(&h, id, title, false).await;
+    }
+    let items = activity(&h, &owner).await;
+    assert_eq!(items.len(), 3, "{items:?}");
+    assert_eq!(
+        items[2]["also"],
+        json!(498),
+        "501 titles, three with a card"
+    );
+}
+
+#[tokio::test]
+async fn names_differing_only_in_case_cannot_both_join_at_once() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    for round in 0..4 {
+        let mut joins = Vec::new();
+        for spelling in [
+            format!("Same{round}"),
+            format!("same{round}"),
+            format!("SAME{round}"),
+        ] {
+            let (_, invite, _) = h
+                .post("/api/invites", json!({ "role": "user" }), Some(&owner))
+                .await;
+            let router = h.router();
+            let req = Request::builder()
+                .uri("/api/auth/register")
+                .method("POST")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    json!({
+                        "username": spelling,
+                        "password": "a-long-enough-pass",
+                        "invite": invite["code"],
+                    })
+                    .to_string(),
+                ))
+                .unwrap();
+            joins.push(tokio::spawn(async move {
+                router.oneshot(req).await.expect("response").status()
+            }));
+        }
+        let mut ok = 0;
+        for join in joins {
+            let status = join.await.unwrap();
+            if status == StatusCode::OK {
+                ok += 1;
+            } else {
+                assert_eq!(status, StatusCode::CONFLICT);
+            }
+        }
+        assert_eq!(ok, 1, "exactly one of them gets the name");
+        let (accounts,): (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM app_user WHERE username = ? COLLATE NOCASE")
+                .bind(format!("same{round}"))
+                .fetch_one(&h.state.pool)
+                .await
+                .unwrap();
+        assert_eq!(accounts, 1);
+    }
+}
+
+#[tokio::test]
+async fn the_activity_row_is_behind_a_session() {
+    let h = Harness::new().await;
+    let (status, _) = h.get("/api/home/activity", None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+/// Five titles rated by both, the owner ten points above the other account.
+async fn five_shared(h: &Harness) -> (i64, i64) {
+    let (me, them) = (user_id(h, "mihai").await, user_id(h, "zjef").await);
+    for title in 9601..9606 {
+        track(h, me, title, Some(80.0)).await;
+        track(h, them, title, Some(70.0)).await;
+    }
+    (me, them)
+}
+
+#[tokio::test]
+async fn taste_match_shows_on_a_profile_you_may_see_once_five_titles_are_shared() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&member),
+    )
+    .await;
+    let (me, them) = five_shared(&h).await;
+
+    let (_, profile) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert_eq!(profile["taste"], json!({ "percent": 80, "shared": 5 }));
+
+    sqlx::query("UPDATE library_entry SET rating = NULL WHERE user_id = ? AND title_id = 9605")
+        .bind(them)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    let (_, profile) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert!(profile["taste"].is_null(), "four is not enough");
+
+    // A show rated by season counts at the average of its seasons.
+    let now = "2026-01-01T00:00:00+00:00";
+    for (season, rating) in [(1, 60.0), (2, 80.0)] {
+        sqlx::query(
+            "INSERT INTO season_rating (user_id, title_id, season_number, rating, updated_at)
+             VALUES (?, 9605, ?, ?, ?)",
+        )
+        .bind(them)
+        .bind(season)
+        .bind(rating)
+        .bind(now)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    }
+    let (_, profile) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert_eq!(profile["taste"], json!({ "percent": 80, "shared": 5 }));
+    assert!(me > 0);
+}
+
+#[tokio::test]
+async fn taste_match_is_never_shown_on_your_own_profile() {
+    let h = Harness::new().await;
+    let (_, member) = two_accounts(&h).await;
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&member),
+    )
+    .await;
+    five_shared(&h).await;
+    let (_, profile) = h.get("/api/profiles/zjef", Some(&member)).await;
+    assert!(profile["taste"].is_null());
+}
+
+#[tokio::test]
+async fn taste_match_cannot_be_read_through_a_private_or_switched_off_profile() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&member),
+    )
+    .await;
+    let (_, them) = five_shared(&h).await;
+
+    h.put(
+        "/api/account/profile",
+        json!({ "public": false }),
+        Some(&member),
+    )
+    .await;
+    let (status, body) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body:?}");
+    assert!(body.get("taste").is_none());
+
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&member),
+    )
+    .await;
+    sqlx::query("UPDATE app_user SET disabled = 1 WHERE id = ?")
+        .bind(them)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    let (status, _) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn signing_in_is_throttled_per_account_and_per_address() {
     let h = Harness::new().await;
     let (_, _) = two_accounts(&h).await;

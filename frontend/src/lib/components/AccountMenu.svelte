@@ -83,6 +83,7 @@
 <style>
 	.account {
 		position: relative;
+		flex: none;
 	}
 
 	.avatar {
@@ -103,6 +104,7 @@
 		right: 0;
 		top: calc(100% + 8px);
 		min-width: 220px;
+		max-width: min(320px, calc(100vw - 20px));
 		padding: 6px;
 		border-radius: var(--radius);
 		background: var(--bg-elev);
