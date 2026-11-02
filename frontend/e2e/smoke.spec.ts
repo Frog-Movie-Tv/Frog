@@ -1160,6 +1160,263 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 	expect(join.status(), 'registering without a real invite is refused').toBe(403);
 });
 
+/** Long names with nowhere to break, the worst a person can type or a provider can send. */
+const LONG = {
+	username: 'w'.repeat(50),
+	friend: 'q'.repeat(50),
+	display: 'D'.repeat(40),
+	shelf: 'S'.repeat(60),
+	title: 'T'.repeat(90)
+};
+
+/** An administrator with long names everywhere, written where the API would refuse them. */
+async function longAccount(
+	project: string,
+	playwright: import('@playwright/test').PlaywrightWorkerArgs['playwright'],
+	baseURL: string,
+	owner: Page
+) {
+	const db = new DatabaseSync(join('.e2e-data', project, 'e2e.db'));
+	db.exec('PRAGMA busy_timeout = 5000');
+	// A retry starts on the same database.
+	for (const name of [LONG.username, LONG.friend]) {
+		db.prepare('DELETE FROM app_user WHERE username = ?').run(name);
+	}
+	const member = async (role: string, temporary: string, name: string) => {
+		const made = await (await owner.request.post('/api/invites', { data: { role } })).json();
+		const context = await playwright.request.newContext({ baseURL });
+		await context.post('/api/auth/register', {
+			data: {
+				username: temporary,
+				password: 'another-long-pass',
+				invite: made.code,
+				remember: true
+			}
+		});
+		await context.put('/api/account/profile', {
+			data: { public: true, display_name: LONG.display, bio: 'B'.repeat(600) }
+		});
+		db.prepare('UPDATE app_user SET username = ? WHERE username = ?').run(name, temporary);
+		return context;
+	};
+	const stamp = Date.now() % 100000;
+	const me = await member('admin', `long${stamp}`, LONG.username);
+	const friend = await member('user', `pal${stamp}`, LONG.friend);
+	await friend.dispose();
+
+	const made = await me.post('/api/shelves', { data: { name: LONG.shelf, kind: 'manual' } });
+	const { shelf } = await made.json();
+
+	const now = '2026-01-01T00:00:00Z';
+	const { id: user } = db
+		.prepare('SELECT id FROM app_user WHERE username = ?')
+		.get(LONG.username) as { id: number };
+	const { id: pal } = db.prepare('SELECT id FROM app_user WHERE username = ?').get(LONG.friend) as {
+		id: number;
+	};
+	db.prepare(
+		`INSERT OR IGNORE INTO title (id, kind, name, genres_json, refreshed_at) VALUES (9120, 'tv', ?, '["Drama"]', ?)`
+	).run(LONG.title, now);
+	db.prepare(
+		`INSERT OR IGNORE INTO title_external (title_id, provider, external_id, is_primary, added_at)
+		 VALUES (9120, 'tmdb', 'tv/9120', 1, ?)`
+	).run(now);
+	const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString();
+	const episode = (number: number, airs: string) =>
+		db
+			.prepare(
+				`INSERT OR REPLACE INTO episode (title_id, season_number, episode_number, name, air_date)
+				 VALUES (9120, 1, ?, ?, ?) RETURNING id`
+			)
+			.get(number, 'E'.repeat(90), airs.slice(0, 10)) as { id: number };
+	const { id: watched } = episode(1, day(-3));
+	episode(2, day(-1));
+	episode(3, day(2));
+	for (const [account, status] of [
+		[user, 'watching'],
+		[pal, 'completed']
+	]) {
+		db.prepare(
+			`INSERT OR REPLACE INTO library_entry (user_id, title_id, status, favourite, added_at, updated_at)
+			 VALUES (?, 9120, ?, 1, ?, ?)`
+		).run(account, status, now, now);
+		db.prepare(
+			`INSERT INTO watch_event (user_id, title_id, episode_id, watched_at) VALUES (?, 9120, ?, ?)`
+		).run(account, watched, day(-1));
+	}
+	db.prepare('INSERT OR IGNORE INTO shelf_item (shelf_id, title_id) VALUES (?, 9120)').run(
+		shelf.id
+	);
+	db.close();
+
+	const state = await me.storageState();
+	await me.dispose();
+	return { state, shelf: shelf.id as number };
+}
+
+/** A page has drawn what it fetched once its skeletons are gone. */
+async function settled(page: Page) {
+	await page.waitForSelector('main > *');
+	await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
+	await page.waitForTimeout(350);
+}
+
+/** What on this page has gone past the edge of the screen. */
+function pastTheEdge(page: Page, selector?: string) {
+	return page.evaluate((selector) => {
+		const width = document.documentElement.clientWidth;
+		const out: string[] = [];
+		const widest = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
+		if (widest > width) {
+			const clipped = (element: Element) => {
+				for (let at = element.parentElement; at; at = at.parentElement) {
+					if (/auto|scroll|hidden|clip/.test(getComputedStyle(at).overflowX)) return true;
+				}
+				return false;
+			};
+			const culprits = [...document.querySelectorAll('body *')]
+				.filter((e) => e.getBoundingClientRect().right > width + 1 && !clipped(e))
+				.slice(-3)
+				.map((e) => `${e.tagName.toLowerCase()}.${String(e.className).split(' ')[0]}`);
+			out.push(`scrolls sideways: ${widest} in ${width} (${culprits.join(', ')})`);
+		}
+		for (const name of ['Search and commands', 'Account']) {
+			const button = document.querySelector(`[aria-label^="${name}"]`);
+			if (!button) continue;
+			const box = button.getBoundingClientRect();
+			if (box.right > width || box.left < 0) out.push(`${name} is off the screen`);
+		}
+		if (selector) {
+			const element = document.querySelector(selector);
+			if (!element) out.push(`${selector} is not there`);
+			else {
+				const box = element.getBoundingClientRect();
+				if (box.right > width + 0.5 || box.left < -0.5) {
+					out.push(`${selector} runs ${Math.round(box.left)} to ${Math.round(box.right)}`);
+				}
+				for (const child of element.querySelectorAll('*')) {
+					const inner = child.getBoundingClientRect();
+					if (inner.width && (inner.right > width + 0.5 || inner.left < -0.5)) {
+						out.push(`${selector} ${child.tagName}.${child.className} past the edge`);
+						break;
+					}
+				}
+			}
+		}
+		return out;
+	}, selector);
+}
+
+test('a very long name never widens a page on a phone', async ({
+	page,
+	browser,
+	playwright,
+	baseURL
+}, testInfo) => {
+	test.setTimeout(240_000);
+	await signIn(page);
+	const { state, shelf } = await longAccount(
+		testInfo.project.name,
+		playwright,
+		baseURL ?? '',
+		page
+	);
+
+	const paths = [
+		'/',
+		'/welcome',
+		'/people',
+		`/people/${LONG.username}`,
+		`/people/${LONG.username}/library`,
+		`/people/${LONG.friend}`,
+		`/people/${LONG.friend}/library`,
+		'/settings#account',
+		'/settings#appearance',
+		'/settings#home',
+		'/settings#watching',
+		'/settings#connections',
+		'/settings#data',
+		'/admin',
+		'/about',
+		'/shelves',
+		`/shelves/${shelf}`,
+		'/library',
+		'/t/9120',
+		`/search?q=${LONG.title}`,
+		`/search?q=${LONG.username}`,
+		'/stats',
+		'/diary',
+		'/calendar',
+		'/import',
+		'/whats-new'
+	];
+
+	const problems: string[] = [];
+	for (const width of [360, 320]) {
+		const context = await browser.newContext({
+			storageState: state,
+			baseURL,
+			viewport: { width, height: 740 }
+		});
+		const seen = await enforceDeployedCsp(context, baseURL ?? '');
+		const tab = await context.newPage();
+		tab.setDefaultTimeout(5000);
+		const note = (at: string, found: string[]) =>
+			problems.push(...found.map((f) => `${width}px ${at}: ${f}`));
+
+		for (const path of paths) {
+			await tab.goto(path);
+			await settled(tab);
+			note(path, await pastTheEdge(tab));
+		}
+
+		await tab.goto('/about');
+		await settled(tab);
+		await tab.getByRole('button', { name: 'Account' }).click();
+		note('account menu', await pastTheEdge(tab, '[role="menu"]'));
+		await tab.keyboard.press('Escape');
+		await tab.goto('/whats-new');
+		await settled(tab);
+
+		await tab.getByRole('button', { name: 'More' }).click();
+		note('More sheet', await pastTheEdge(tab, '.more-sheet'));
+		await tab.getByRole('button', { name: 'More' }).click();
+
+		await tab.goto(`/shelves/${shelf}`);
+		await settled(tab);
+		await tab.getByRole('button', { name: 'Edit' }).click();
+		await tab.getByRole('button', { name: `Remove ${LONG.title}` }).click();
+		await tab.getByRole('button', { name: 'Undo' }).waitFor();
+		note('undo toast', await pastTheEdge(tab, '.stack'));
+		await tab.getByRole('button', { name: 'Undo' }).click();
+		await tab.getByRole('button', { name: `Remove ${LONG.title}` }).waitFor();
+
+		await tab.goto('/shelves');
+		await settled(tab);
+		await tab.getByRole('button', { name: 'New shelf' }).click();
+		await tab.getByRole('dialog').getByRole('textbox').first().fill(LONG.shelf);
+		note('new shelf dialog', await pastTheEdge(tab, '[role="dialog"]'));
+		await tab.keyboard.press('Escape');
+
+		await tab.goto('/library');
+		await settled(tab);
+		await tab.getByRole('button', { name: 'Filters', exact: false }).first().click();
+		note('library filters', await pastTheEdge(tab, '[role="dialog"]'));
+		await tab.keyboard.press('Escape');
+
+		await tab.goto('/');
+		await settled(tab);
+		await tab.getByRole('button', { name: 'Search and commands' }).click();
+		await tab.keyboard.type(LONG.title.slice(0, 30));
+		await tab.waitForTimeout(600);
+		note('search palette', await pastTheEdge(tab, '.palette'));
+
+		expect(seen, 'blocked by the deployed Content-Security-Policy').toEqual([]);
+		await context.close();
+	}
+	expect(problems).toEqual([]);
+});
+
 async function signIn(page: import('@playwright/test').Page) {
 	await page.goto('/login');
 	if (!page.url().includes('/login')) return;

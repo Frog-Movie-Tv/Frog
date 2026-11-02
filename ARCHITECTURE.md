@@ -247,6 +247,9 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
   custom property. Light, dark and AMOLED are three token sets. A title page
   overrides `--accent` locally from its poster, and the theme editor writes
   custom properties at runtime with no component changes.
+- **A long word cannot widen a page.** `app.css` sets `overflow-wrap: anywhere`
+  on `body`, so a name with no spaces wraps wherever it lands, in flex and grid
+  rows too. Rows of Frog's own words opt out where they would stack letters.
 - **Fonts and icons are bundled.** Fontsource packages and Lucide paths
   inlined in `Icon.svelte`; nothing is fetched from a CDN at runtime.
 - **View Transitions.** Cross-route fades plus a real shared-element morph: a

@@ -22,6 +22,8 @@ In progress.
 
 - Signing in stays steady under a flood of attempts, and answers in the same
   time whichever username is tried.
+- A very long name wraps or shortens on every page, and search and your account
+  stay on screen on a phone.
 
 ## [1.0.2] — Bullfrog — 2026-10-31
 

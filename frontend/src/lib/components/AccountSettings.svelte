@@ -243,6 +243,7 @@
 
 	.row {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
 		gap: 16px;
@@ -251,6 +252,7 @@
 
 	.row.column {
 		flex-direction: column;
+		flex-wrap: nowrap;
 		align-items: stretch;
 	}
 
@@ -262,7 +264,9 @@
 		gap: 12px;
 	}
 
+	/* Wide enough to read a name; past that the button takes its own line. */
 	.who {
+		flex: 1 1 12em;
 		display: flex;
 		align-items: center;
 		gap: 12px;

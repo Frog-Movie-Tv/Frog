@@ -334,8 +334,9 @@
 	}
 
 	.right {
+		min-width: 0;
 		margin-left: auto;
-		flex: none;
+		flex: 0 1 auto;
 		display: flex;
 		align-items: center;
 		gap: 12px;
@@ -343,6 +344,7 @@
 
 	/* Search looks like a field, because that is what it is. */
 	.find {
+		flex: none;
 		display: flex;
 		align-items: center;
 		gap: 9px;
@@ -386,7 +388,13 @@
 		}
 	}
 
+	/* Search and the account never give way, so a phone can always reach them. */
 	.pill.warn {
+		display: block;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 		border-color: color-mix(in srgb, var(--warn) 45%, transparent);
 		color: var(--warn);
 	}
@@ -523,6 +531,7 @@
 		}
 
 		.more-sheet {
+			overflow-wrap: normal;
 			position: fixed;
 			z-index: 39;
 			left: 10px;

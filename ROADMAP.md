@@ -229,12 +229,21 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   script.
 - **Rebuild `--release` before Playwright.** The e2e server picks whichever
   binary is newer, and a stale release build silently tests old code.
+- **One long word cannot widen a page.** `body` sets `overflow-wrap: anywhere`,
+  which every page inherits and which also lowers the least a flex or grid track
+  shrinks to. The cost is that tight rows of Frog's own words can stack letter by
+  letter, so those set `overflow-wrap: normal` (Settings → Home, What's new's
+  version column). `verify-long-names` compares every page with the rule on and
+  off, and text kept on one line with `nowrap` still needs `min-width: 0` on its
+  column. The Playwright test `a very long name never widens a page on a phone`
+  is the guard for anything new.
 - **Verify scripts** live in `frontend/scripts/`, each starting its own server
   against a throwaway database: `verify-stats`, `verify-push`,
   `verify-shelves`, `verify-because`, `verify-anime`, `verify-leapfrog`
   (AniList is a stand-in server inside it), `verify-profile-stats` (no TMDB:
   it writes a small library straight into the database with `node:sqlite`),
   `verify-2fa`, `verify-diary`, `verify-import`, `verify-polish`,
+  `verify-long-names` (real titles, ordinary and very long names, phones),
   `verify-accounts` (invites,
   isolation, devices, switching off), `verify-pull` (pull to refresh with
   real touch input), plus `npm run pwa-check` and

@@ -181,8 +181,10 @@
 </section>
 
 <style>
+	/* Frog's own words here, never a person's, in rows with little room. */
 	.block {
 		margin-bottom: 44px;
+		overflow-wrap: normal;
 	}
 
 	.sub {
