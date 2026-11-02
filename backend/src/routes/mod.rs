@@ -57,6 +57,7 @@ pub fn router(state: AppState) -> Router {
         .route("/studios/{id}", get(browse::studio))
         .route("/home", get(home::home))
         .route("/home/because", get(home::because))
+        .route("/home/activity", get(home::activity))
         .route("/calendar", get(timeline::calendar))
         .route("/diary", get(timeline::diary))
         .route("/library", get(library::list))

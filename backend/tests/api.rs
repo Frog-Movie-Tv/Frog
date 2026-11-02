@@ -3685,6 +3685,290 @@ async fn a_rename_moves_the_profile_and_its_pictures_with_it() {
     assert_eq!(bytes.to_vec(), png, "the same picture, under the new name");
 }
 
+/// A title and a library entry, written straight in: no TMDB here.
+async fn track(h: &Harness, user: i64, title: i64, rating: Option<f64>) {
+    let now = "2026-01-01T00:00:00+00:00";
+    sqlx::query(
+        "INSERT OR IGNORE INTO title (id, kind, name, refreshed_at) VALUES (?, 'movie', ?, ?)",
+    )
+    .bind(title)
+    .bind(format!("Film {title}"))
+    .bind(now)
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT OR REPLACE INTO library_entry (user_id, title_id, status, rating, notes, added_at, updated_at)
+         VALUES (?, ?, 'completed', ?, 'my private note', ?, ?)",
+    )
+    .bind(user)
+    .bind(title)
+    .bind(rating)
+    .bind(now)
+    .bind(now)
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+}
+
+async fn watch(h: &Harness, user: i64, title: i64, undated: bool) {
+    sqlx::query(
+        "INSERT INTO watch_event (user_id, title_id, watched_at, undated) VALUES (?, ?, ?, ?)",
+    )
+    .bind(user)
+    .bind(title)
+    .bind((chrono::Utc::now() - chrono::Duration::hours(2)).to_rfc3339())
+    .bind(undated)
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+}
+
+async fn activity(h: &Harness, cookie: &str) -> Vec<Value> {
+    let (status, body) = h.get("/api/home/activity", Some(cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    body["items"].as_array().unwrap().clone()
+}
+
+/// Someone whose watching the owner should see, once their profile is on.
+async fn someone_to_see(h: &Harness, member: &str) -> i64 {
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(member),
+    )
+    .await;
+    let id = user_id(h, "zjef").await;
+    track(h, id, 9301, Some(80.0)).await;
+    watch(h, id, 9301, false).await;
+    id
+}
+
+#[tokio::test]
+async fn the_activity_row_shows_someone_with_their_profile_on() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    someone_to_see(&h, &member).await;
+
+    let items = activity(&h, &owner).await;
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert_eq!(items[0]["who"]["username"], json!("zjef"));
+    assert_eq!(items[0]["title"]["name"], json!("Film 9301"));
+    assert_eq!(items[0]["did"], json!("watched"));
+}
+
+#[tokio::test]
+async fn the_activity_row_never_shows_your_own_watching() {
+    let h = Harness::new().await;
+    let (_, member) = two_accounts(&h).await;
+    someone_to_see(&h, &member).await;
+    assert!(activity(&h, &member).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_private_profile_never_reaches_the_activity_row() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    someone_to_see(&h, &member).await;
+    h.put(
+        "/api/account/profile",
+        json!({ "public": false }),
+        Some(&member),
+    )
+    .await;
+    assert!(activity(&h, &owner).await.is_empty());
+}
+
+#[tokio::test]
+async fn a_switched_off_account_never_reaches_the_activity_row() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    let id = someone_to_see(&h, &member).await;
+    let (status, _, _) = h
+        .put(
+            &format!("/api/admin/users/{id}"),
+            json!({ "disabled": true }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(activity(&h, &owner).await.is_empty());
+}
+
+#[tokio::test]
+async fn undated_watches_and_titles_taken_out_stay_off_the_activity_row() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    let id = someone_to_see(&h, &member).await;
+
+    sqlx::query("DELETE FROM watch_event WHERE user_id = ?")
+        .bind(id)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    watch(&h, id, 9301, true).await;
+    assert!(activity(&h, &owner).await.is_empty(), "undated");
+
+    watch(&h, id, 9301, false).await;
+    assert_eq!(activity(&h, &owner).await.len(), 1);
+    sqlx::query("DELETE FROM library_entry WHERE user_id = ?")
+        .bind(id)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    assert!(
+        activity(&h, &owner).await.is_empty(),
+        "no longer in the library"
+    );
+}
+
+#[tokio::test]
+async fn a_note_appears_nowhere_in_what_others_see() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    let id = someone_to_see(&h, &member).await;
+    let me = user_id(&h, "mihai").await;
+    for title in 9401..9407 {
+        track(&h, id, title, Some(70.0)).await;
+        track(&h, me, title, Some(60.0)).await;
+    }
+
+    let (_, feed) = h.get("/api/home/activity", Some(&owner)).await;
+    let (_, profile) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert_eq!(profile["taste"]["shared"], json!(6));
+    for body in [feed, profile] {
+        let text = body.to_string();
+        assert!(!text.contains("my private note"), "{text}");
+        assert!(!text.contains("\"notes\""), "{text}");
+    }
+}
+
+#[tokio::test]
+async fn a_binge_and_a_large_import_cannot_flood_the_activity_row() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    let id = someone_to_see(&h, &member).await;
+    for title in 9500..9560 {
+        track(&h, id, title, None).await;
+        watch(&h, id, title, false).await;
+    }
+    let items = activity(&h, &owner).await;
+    assert_eq!(items.len(), 3, "{items:?}");
+    assert_eq!(items[2]["also"], json!(58));
+}
+
+#[tokio::test]
+async fn the_activity_row_is_behind_a_session() {
+    let h = Harness::new().await;
+    let (status, _) = h.get("/api/home/activity", None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+/// Five titles rated by both, the owner ten points above the other account.
+async fn five_shared(h: &Harness) -> (i64, i64) {
+    let (me, them) = (user_id(h, "mihai").await, user_id(h, "zjef").await);
+    for title in 9601..9606 {
+        track(h, me, title, Some(80.0)).await;
+        track(h, them, title, Some(70.0)).await;
+    }
+    (me, them)
+}
+
+#[tokio::test]
+async fn taste_match_shows_on_a_profile_you_may_see_once_five_titles_are_shared() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&member),
+    )
+    .await;
+    let (me, them) = five_shared(&h).await;
+
+    let (_, profile) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert_eq!(profile["taste"], json!({ "percent": 80, "shared": 5 }));
+
+    sqlx::query("UPDATE library_entry SET rating = NULL WHERE user_id = ? AND title_id = 9605")
+        .bind(them)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    let (_, profile) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert!(profile["taste"].is_null(), "four is not enough");
+
+    // A show rated by season counts at the average of its seasons.
+    let now = "2026-01-01T00:00:00+00:00";
+    for (season, rating) in [(1, 60.0), (2, 80.0)] {
+        sqlx::query(
+            "INSERT INTO season_rating (user_id, title_id, season_number, rating, updated_at)
+             VALUES (?, 9605, ?, ?, ?)",
+        )
+        .bind(them)
+        .bind(season)
+        .bind(rating)
+        .bind(now)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    }
+    let (_, profile) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert_eq!(profile["taste"], json!({ "percent": 80, "shared": 5 }));
+    assert!(me > 0);
+}
+
+#[tokio::test]
+async fn taste_match_is_never_shown_on_your_own_profile() {
+    let h = Harness::new().await;
+    let (_, member) = two_accounts(&h).await;
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&member),
+    )
+    .await;
+    five_shared(&h).await;
+    let (_, profile) = h.get("/api/profiles/zjef", Some(&member)).await;
+    assert!(profile["taste"].is_null());
+}
+
+#[tokio::test]
+async fn taste_match_cannot_be_read_through_a_private_or_switched_off_profile() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&member),
+    )
+    .await;
+    let (_, them) = five_shared(&h).await;
+
+    h.put(
+        "/api/account/profile",
+        json!({ "public": false }),
+        Some(&member),
+    )
+    .await;
+    let (status, body) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body:?}");
+    assert!(body.get("taste").is_none());
+
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&member),
+    )
+    .await;
+    sqlx::query("UPDATE app_user SET disabled = 1 WHERE id = ?")
+        .bind(them)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    let (status, _) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
 #[tokio::test]
 async fn signing_in_is_throttled_per_account_and_per_address() {
     let h = Harness::new().await;

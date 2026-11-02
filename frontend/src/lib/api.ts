@@ -2,6 +2,7 @@ import { settings } from './settings.svelte';
 import type { TitleRef } from './titles';
 import type { WhenAnswer } from './when.svelte';
 import type {
+	ActivityItem,
 	AniListChoice,
 	AniListEntry,
 	AniListStatus,
@@ -293,6 +294,7 @@ export const api = {
 
 	home: () => get<HomeData>('/api/home'),
 	because: () => get<{ rows: BecauseRow[] }>('/api/home/because'),
+	activity: () => get<{ items: ActivityItem[] }>('/api/home/activity'),
 
 	matchImport: (items: unknown[]) =>
 		send<{ results: MatchResult[] }>('POST', '/api/import/match', { items }),

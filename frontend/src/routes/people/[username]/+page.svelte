@@ -100,6 +100,11 @@
 					<p class="faint">
 						@{profile.username} · joined {prettyDate(profile.joined)}
 					</p>
+					{#if profile.taste}
+						<p class="taste" title={`From the ${profile.taste.shared} titles you have both rated`}>
+							<strong>{profile.taste.percent}%</strong> taste match
+						</p>
+					{/if}
 				</div>
 				<div class="tools">
 					<a
@@ -251,6 +256,17 @@
 		flex: 1;
 		min-width: 140px;
 		padding-top: 52px;
+	}
+
+	.taste {
+		margin-top: 4px;
+		font-size: 0.86rem;
+		color: var(--text-dim);
+	}
+
+	.taste strong {
+		color: var(--accent);
+		font-weight: 650;
 	}
 
 	.names h1 {

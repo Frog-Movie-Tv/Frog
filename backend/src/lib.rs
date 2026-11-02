@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod anilist;
 pub mod auth;
 pub mod bulk;
@@ -17,6 +18,7 @@ pub mod reset;
 pub mod routes;
 pub mod state;
 pub mod store;
+pub mod taste;
 pub mod text;
 pub mod throttle;
 pub mod tmdb;

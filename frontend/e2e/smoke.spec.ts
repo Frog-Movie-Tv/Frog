@@ -1093,6 +1093,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/t/1/seasons/1',
 		'/api/t/1/shelves',
 		'/api/home/because',
+		'/api/home/activity',
 		'/api/account',
 		'/api/account/sessions',
 		'/api/admin/users',
@@ -1365,6 +1366,90 @@ test('pictures are made small before they leave the browser', async ({ page }) =
 
 	await page.request.delete('/api/account/images/avatar');
 	await page.request.delete('/api/account/images/banner');
+});
+
+test('Home shows what your people watched, and a profile how alike you rate', async ({
+	page,
+	playwright,
+	baseURL
+}, testInfo) => {
+	await signIn(page);
+	const name = `pal${Date.now() % 100000}`;
+	const invite = await (await page.request.post('/api/invites', { data: { role: 'user' } })).json();
+	const friend = await playwright.request.newContext({ baseURL });
+	await friend.post('/api/auth/register', {
+		data: { username: name, password: 'another-long-pass', invite: invite.code, remember: true }
+	});
+	await friend.put('/api/account/profile', { data: { public: true, display_name: 'Mira' } });
+
+	const db = new DatabaseSync(join('.e2e-data', testInfo.project.name, 'e2e.db'));
+	db.exec('PRAGMA busy_timeout = 5000');
+	const id = (username: string) =>
+		(db.prepare('SELECT id FROM app_user WHERE username = ?').get(username) as { id: number }).id;
+	const [me, them] = [id(USER), id(name)];
+	const now = '2026-01-01T00:00:00Z';
+	const secret = 'Only for my own eyes';
+	for (const title of [9130, 9131, 9132, 9133, 9134]) {
+		db.prepare(
+			`INSERT OR IGNORE INTO title (id, kind, name, genres_json, refreshed_at) VALUES (?, 'movie', ?, '[]', ?)`
+		).run(title, `Seen ${title}`, now);
+		db.prepare(
+			`INSERT OR IGNORE INTO title_external (title_id, provider, external_id, is_primary, added_at)
+			 VALUES (?, 'tmdb', ?, 1, ?)`
+		).run(title, `movie/${title}`, now);
+		for (const [account, rating] of [
+			[me, 80],
+			[them, 70]
+		]) {
+			db.prepare(
+				`INSERT OR REPLACE INTO library_entry (user_id, title_id, status, rating, notes, added_at, updated_at)
+				 VALUES (?, ?, 'completed', ?, ?, ?, ?)`
+			).run(account, title, rating, secret, now, now);
+		}
+	}
+	db.prepare(`INSERT INTO watch_event (user_id, title_id, watched_at) VALUES (?, 9130, ?)`).run(
+		them,
+		new Date(Date.now() - 3_600_000).toISOString()
+	);
+	db.close();
+
+	const seen = ['shelves', 'continue', 'thisweek', 'activity', 'because', 'recent', 'favourites'];
+	const saved = await (await page.request.get('/api/settings')).json();
+	await page.request.put('/api/settings', {
+		data: { ...saved, homeRows: ['activity', 'continue'], homeRowsSeen: seen }
+	});
+
+	await page.goto('/');
+	const row = page.locator('.rail', { has: page.getByRole('heading', { name: 'Your people' }) });
+	await expect(row.getByText('watched Seen 9130')).toBeVisible();
+	await expect(row.getByText('Mira')).toBeVisible();
+	await expect(page.getByText(secret)).toHaveCount(0);
+
+	await page.goto(`/people/${name}`);
+	await expect(page.getByText('80% taste match')).toBeVisible();
+	await expect(page.getByText(secret)).toHaveCount(0);
+	await page.goto(`/people/${USER}`);
+	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+	await expect(page.getByText('taste match')).toHaveCount(0);
+
+	// A row with its profile off is gone, and takes the row with it.
+	await friend.put('/api/account/profile', { data: { public: false } });
+	await page.goto('/');
+	await expect(page.getByRole('heading', { name: 'Your people' })).toHaveCount(0);
+	await friend.put('/api/account/profile', { data: { public: true } });
+
+	// Switched off in Settings, and nothing is asked for.
+	await page.request.put('/api/settings', {
+		data: { ...saved, homeRows: ['continue'], homeRowsSeen: seen }
+	});
+	const asked: string[] = [];
+	page.on('request', (r) => asked.push(new URL(r.url()).pathname));
+	await page.goto('/');
+	await expect(page.getByRole('heading', { name: 'Your people' })).toHaveCount(0);
+	await page.waitForTimeout(300);
+	expect(asked).not.toContain('/api/home/activity');
+	await page.request.put('/api/settings', { data: saved });
+	await friend.dispose();
 });
 
 /** Long names with nowhere to break, the worst a person can type or a provider can send. */

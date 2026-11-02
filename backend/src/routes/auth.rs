@@ -13,6 +13,7 @@ use crate::error::{AppError, AppResult};
 use crate::reset;
 use crate::routes::{invites, two_factor};
 use crate::state::AppState;
+use crate::store;
 use crate::throttle;
 
 #[derive(Deserialize)]
@@ -93,13 +94,7 @@ pub async fn status(
         .bind(i.user_id)
         .fetch_optional(&state.pool)
         .await?
-        .map(|(at,)| {
-            format!(
-                "/api/profiles/{}/images/avatar?v={}",
-                urlencoding::encode(&i.username),
-                urlencoding::encode(&at)
-            )
-        }),
+        .map(|(at,)| store::picture_address(&i.username, "avatar", &at)),
         None => None,
     };
 

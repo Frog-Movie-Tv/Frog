@@ -315,6 +315,13 @@ pub async fn because(auth: Auth, State(state): State<AppState>) -> AppResult<Jso
     Ok(Json(json!({ "rows": rows })))
 }
 
+/// What other people here have been watching. Separate from `/home`, so a row
+/// that reads other accounts is only asked for by those who show it.
+pub async fn activity(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
+    let items = crate::activity::feed(&state.pool, auth.user_id()).await?;
+    Ok(Json(json!({ "items": items })))
+}
+
 /// Every row query here is scoped to one account, and each uses `?1` for it so
 /// a single bind covers however many times the account appears in the SQL.
 async fn rows(pool: &SqlitePool, sql: &str, user_id: i64) -> AppResult<Vec<TitleRow>> {

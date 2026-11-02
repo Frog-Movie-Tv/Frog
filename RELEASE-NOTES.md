@@ -15,6 +15,11 @@ In progress.
 
 ### Improvements
 
+- Home can show what your people have been watching, in a row of its own. Turn
+  it off in Settings → Home and menus. Only people with their profile on appear
+  there, and turning yours off takes you out of it.
+- See how close your taste is to someone else's on their profile, once you have
+  both rated five of the same titles.
 - Forgot a password? An administrator can make a single-use link that sets a new
   one and signs out every device.
 - Change your username in Settings → Account.

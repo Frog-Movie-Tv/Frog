@@ -16,6 +16,7 @@ use crate::routes::library::{to_map, ListQuery};
 use crate::routes::stats::streaks;
 use crate::state::AppState;
 use crate::store::{self, Page, SharedItem};
+use crate::taste;
 
 /// A page of someone's library, unless asked for less, and the most at once.
 const SHARED_PAGE: i64 = 60;
@@ -205,14 +206,18 @@ pub async fn get(
             .fetch_all(pool)
             .await?;
     let image_url = |kind: &str| {
-        images.iter().find(|(k, _)| k == kind).map(|(_, at)| {
-            // The time in the address makes a new picture show at once.
-            format!(
-                "/api/profiles/{}/images/{kind}?v={}",
-                urlencoding::encode(&username),
-                urlencoding::encode(at)
-            )
-        })
+        images
+            .iter()
+            .find(|(k, _)| k == kind)
+            .map(|(_, at)| store::picture_address(&username, kind, at))
+    };
+
+    // Past `visible`, so a private or switched-off account never gets this far,
+    // and never of yourself: you would match perfectly and learn nothing.
+    let taste = if user_id == auth.user_id() {
+        None
+    } else {
+        taste::between(pool, auth.user_id(), user_id).await?
     };
 
     Ok(Json(json!({
@@ -222,6 +227,7 @@ pub async fn get(
         "joined": joined,
         "public": public,
         "me": user_id == auth.user_id(),
+        "taste": taste,
         "avatar": image_url("avatar"),
         "banner": image_url("banner"),
         "banner_backdrop": banner_backdrop,

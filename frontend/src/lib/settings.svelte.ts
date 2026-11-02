@@ -143,7 +143,7 @@ export const DEFAULTS: Settings = {
 	autoComplete: true,
 
 	landingPage: '/',
-	homeRows: ['continue', 'thisweek', 'because'],
+	homeRows: ['continue', 'thisweek', 'activity', 'because'],
 
 	dateStyle: 'friendly',
 	clock24: true,
@@ -177,6 +177,7 @@ export const HOME_ROWS: { id: string; label: string; hint: string }[] = [
 		hint: 'Shows you are part-way through, then those waiting on an episode'
 	},
 	{ id: 'thisweek', label: 'Airing this week', hint: 'Episodes due in the next seven days' },
+	{ id: 'activity', label: 'Your people', hint: 'What others on this Frog have been watching' },
 	{ id: 'because', label: 'Because you watched', hint: 'More like what you rated highly' },
 	{ id: 'recent', label: 'Recently added', hint: 'The newest things in your library' },
 	{ id: 'favourites', label: 'Favourites', hint: 'Everything you hearted' }

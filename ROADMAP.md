@@ -305,6 +305,16 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   them into the signed-in account whatever they say. A title page's remove goes
   the same way. Marking a show here is `bulk::tick_aired`, the same code as Mark
   all watched.
+- **Your people** (`backend/src/activity.rs`, `/api/home/activity`) is its own
+  request, so nobody who switched the row off reads other accounts. Fourteen
+  days, three titles a person with the rest as a number on their last card,
+  twelve cards in all. A show is Finished only when it stands completed and its
+  last regular episode is in the run. `backend/tests/scoping.rs` also holds that
+  `activity.rs` and `taste.rs` name no notes and go through `store::shown_to`.
+- **Taste match** (`backend/src/taste.rs`) is `100 - 2 × the average difference`,
+  from 5 shared titles up. The doubling is on purpose: people rate near the top,
+  so the plain average reads high for anybody. A show rated by season counts at
+  the average of its seasons.
 - **Someone else's library** is `LibraryBrowser` with `owner`, reading 60 titles
   at a time from `/api/profiles/{name}/library`. Its items are
   `store::SharedItem`, which has no notes field: do not hand that route
