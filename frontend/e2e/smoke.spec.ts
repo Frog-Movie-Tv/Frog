@@ -1094,6 +1094,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/t/1/shelves',
 		'/api/home/because',
 		'/api/home/activity',
+		'/api/activity',
 		'/api/account',
 		'/api/account/sessions',
 		'/api/admin/users',
@@ -1102,7 +1103,10 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/profiles',
 		'/api/profiles/someone',
 		'/api/profiles/someone/library',
+		'/api/profiles/someone/ratings',
+		'/api/profiles/someone/compare',
 		'/api/profiles/someone/images/avatar',
+		'/api/discover/trending?list=top',
 		'/api/anilist',
 		'/api/anilist/entries',
 		'/api/invites',
@@ -1134,7 +1138,8 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/anilist/sync',
 		'/api/t/1/episodes/watch',
 		'/api/t/1/episodes/1/watch',
-		'/api/t/1/episodes/1/1/watch'
+		'/api/t/1/episodes/1/1/watch',
+		'/api/t/1/rewatch'
 	]) {
 		const res = await request.post(path, { data: {} });
 		expect(res.status(), `POST ${path} should be 401`).toBe(401);

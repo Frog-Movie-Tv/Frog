@@ -1,55 +1,44 @@
 <script lang="ts">
-	import { page } from '$app/state';
-	import { api, img } from '#lib/api';
-	import Avatar from '#lib/components/Avatar.svelte';
+	import { img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
-	import Icon from '#lib/components/Icon.svelte';
-	import LoadFailed from '#lib/components/LoadFailed.svelte';
 	import Poster from '#lib/components/Poster.svelte';
+	import ProfileShell from '#lib/components/ProfileShell.svelte';
 	import Rail from '#lib/components/Rail.svelte';
-	import Spinner from '#lib/components/Spinner.svelte';
-	import { failure, type Failure } from '#lib/failure';
-	import { formatScore, longRuntime, plural, prettyDate } from '#lib/format';
-	import { session } from '#lib/session.svelte';
+	import { episodeCode, formatScore, longRuntime, plural } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
+	import { titleHref } from '#lib/titles';
 	import type { Profile, ProfileCard } from '#lib/types';
 
-	const username = $derived(page.params.username ?? '');
+	const score = (r: number | null) =>
+		r == null ? '—' : formatScore(r, settings.current.scoreFormat);
 
-	let profile = $state<Profile | null>(null);
-	let loading = $state(true);
-	let failed = $state<Failure | null>(null);
-	const missing = $derived(!!failed?.missing);
-
-	$effect(() => {
-		if (session.authenticated && username) load();
-	});
-
-	function load() {
-		loading = true;
-		failed = null;
-		void api
-			.profile(username)
-			.then((p) => (profile = p))
-			.catch((e) => {
-				profile = null;
-				failed = failure(e, {
-					title: 'No profile here',
-					hint: 'It may be private, or there is no such account on this Frog.'
-				});
-			})
-			.finally(() => (loading = false));
+	function tiles(p: Profile) {
+		return [
+			{ label: 'Time watched', value: longRuntime(p.stats.minutes) },
+			{ label: 'Films', value: String(p.stats.films) },
+			{
+				label: 'Episodes',
+				value: String(p.stats.episodes),
+				sub: plural(p.stats.shows, 'show')
+			},
+			{
+				label: 'Library',
+				value: String(p.stats.library),
+				sub: `${p.stats.completed} finished`
+			},
+			{
+				label: 'Average rating',
+				value: score(p.stats.mean_rating),
+				sub: plural(p.stats.favourites, 'favourite')
+			},
+			{
+				label: 'Streak',
+				value: plural(p.stats.streak, 'day'),
+				sub: `best ${plural(p.stats.longest_streak, 'day')}`
+			}
+		];
 	}
-
-	const banner = $derived(
-		profile?.banner ?? (profile?.banner_backdrop ? img(profile.banner_backdrop, 'w1280') : null)
-	);
-	const shownName = $derived(profile?.display_name || profile?.username || '');
 </script>
-
-<svelte:head>
-	<title>{profile ? `${shownName} · Frog` : missing ? 'Not found · Frog' : 'Profile · Frog'}</title>
-</svelte:head>
 
 {#snippet rail(title: string, cards: ProfileCard[])}
 	{#if cards.length}
@@ -67,80 +56,28 @@
 	{/if}
 {/snippet}
 
-<div class="page">
-	<a class="back faint hit" href="/people"><Icon name="chevron-left" size={16} /> People</a>
+<ProfileShell tab="overview">
+	{#snippet children(profile: Profile)}
+		<div class="tiles">
+			{#each tiles(profile) as t, i (t.label)}
+				<div class="tile card" style="--i: {i}">
+					<span class="eyebrow">{t.label}</span>
+					<strong>{t.value}</strong>
+					{#if t.sub}<span class="faint">{t.sub}</span>{/if}
+				</div>
+			{/each}
+		</div>
 
-	{#if loading}
-		<Spinner label="Loading profile" />
-	{:else if failed && !failed.missing}
-		<LoadFailed {failed} onretry={load} />
-	{:else if failed || !profile}
-		<Empty
-			art="search"
-			title="No profile here"
-			hint="It may be private, or there is no such account on this Frog."
-		>
-			<a class="btn" href="/people">Everyone sharing</a>
-		</Empty>
-	{:else}
-		<header class="hero card">
-			<div class="banner" class:plain={!banner}>
-				{#if banner}<img
-						src={banner}
-						alt=""
-						style:object-position={profile.banner_position ?? undefined}
-					/>{/if}
-			</div>
-			<div class="identity">
-				<span class="picture"
-					><Avatar src={profile.avatar} name={profile.username} size={96} /></span
-				>
-				<div class="names">
-					<h1>{shownName}</h1>
-					<p class="faint">
-						@{profile.username} · joined {prettyDate(profile.joined)}
-					</p>
-					{#if profile.taste}
-						<p class="taste" title={`From the ${profile.taste.shared} titles you have both rated`}>
-							<strong>{profile.taste.percent}%</strong> taste match
-						</p>
-					{/if}
-				</div>
-				<div class="tools">
-					<a
-						class="btn ghost"
-						href={profile.me
-							? '/library'
-							: `/people/${encodeURIComponent(profile.username)}/library`}
-					>
-						<Icon name="grid" size={15} /> Library
-					</a>
-					{#if profile.me}
-						<a class="btn ghost" href="/settings#account">
-							<Icon name="pencil" size={15} /> Edit profile
-						</a>
-					{/if}
-				</div>
-			</div>
-			{#if profile.bio}
-				<p class="bio">{profile.bio}</p>
-			{/if}
-			{#if profile.me && !profile.public}
-				<p class="private faint">
-					Only you can see this. <a href="/settings#account">Show it to others</a>
-				</p>
-			{/if}
-			{#if profile.genres.length}
-				<ul class="genres" aria-label="Favourite genres">
-					{#each profile.genres as g (g.name)}
-						<li>{g.name}</li>
-					{/each}
-				</ul>
-			{/if}
-		</header>
+		{#if profile.genres.length}
+			<ul class="genres" aria-label="Favourite genres">
+				{#each profile.genres as g (g.name)}
+					<li>{g.name} <span class="faint">{g.titles}</span></li>
+				{/each}
+			</ul>
+		{/if}
 
 		{#if profile.pinned.length}
-			<section class="pinned">
+			<section class="block">
 				<h2>Pinned</h2>
 				<div class="pins">
 					{#each profile.pinned as card (card.id)}
@@ -156,150 +93,91 @@
 			</section>
 		{/if}
 
-		<div class="tiles">
-			<div class="tile card">
-				<span class="eyebrow">Time watched</span>
-				<strong>{longRuntime(profile.stats.minutes)}</strong>
-			</div>
-			<div class="tile card">
-				<span class="eyebrow">Films</span>
-				<strong>{profile.stats.films}</strong>
-			</div>
-			<div class="tile card">
-				<span class="eyebrow">Episodes</span>
-				<strong>{profile.stats.episodes}</strong>
-				<span class="faint">{plural(profile.stats.shows, 'show')}</span>
-			</div>
-			<div class="tile card">
-				<span class="eyebrow">Library</span>
-				<strong>{profile.stats.library}</strong>
-				<span class="faint">{profile.stats.completed} finished</span>
-			</div>
-			<div class="tile card">
-				<span class="eyebrow">Average rating</span>
-				<strong
-					>{profile.stats.mean_rating == null
-						? '—'
-						: formatScore(profile.stats.mean_rating, settings.current.scoreFormat)}</strong
-				>
-				<span class="faint">{plural(profile.stats.favourites, 'favourite')}</span>
-			</div>
-			<div class="tile card">
-				<span class="eyebrow">Streak</span>
-				<strong>{plural(profile.stats.streak, 'day')}</strong>
-				<span class="faint">best {plural(profile.stats.longest_streak, 'day')}</span>
-			</div>
-		</div>
+		{#if profile.watching.length}
+			<!-- Where they are in each show, the way AniList lists what someone
+			     is watching: the next episode and how far through. -->
+			<section class="block">
+				<h2>Watching now</h2>
+				<ul class="watching">
+					{#each profile.watching as card (card.id)}
+						{@const src = img(card.poster_path, 'w185')}
+						{@const done = card.progress?.total
+							? Math.min(100, (card.progress.watched / card.progress.total) * 100)
+							: 0}
+						<li>
+							<a href={titleHref(card) ?? `/t/${card.id}`} class="now card">
+								<span class="cover"
+									>{#if src}<img {src} alt="" loading="lazy" />{/if}</span
+								>
+								<span class="now-body">
+									<strong>{card.name}</strong>
+									{#if card.next}
+										<span class="ep">
+											On {episodeCode(card.next.season, card.next.episode)}
+											{#if card.next.name}<span class="faint">· {card.next.name}</span>{/if}
+										</span>
+									{:else if card.kind === 'movie'}
+										<span class="ep faint">Film</span>
+									{/if}
+									{#if card.progress && card.progress.total > 0}
+										<span class="bar"><i style:width="{done}%"></i></span>
+										<span class="faint count">
+											{card.progress.watched} of {card.progress.total} episodes
+										</span>
+									{/if}
+								</span>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
 
 		{#if !profile.watching.length && !profile.favourites.length && !profile.recent.length}
 			<Empty art="rest" title="Nothing watched yet" />
 		{/if}
 
 		<div class="rails">
-			{@render rail('Watching', profile.watching)}
 			{@render rail('Favourites', profile.favourites)}
 			{@render rail('Recently watched', profile.recent)}
 		</div>
-	{/if}
-</div>
+	{/snippet}
+</ProfileShell>
 
 <style>
-	.back {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		font-size: 0.86rem;
-		text-decoration: none;
+	.tiles {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+		gap: 12px;
+		margin-bottom: 18px;
 	}
 
-	.hero {
-		margin: 12px 0 24px;
-		overflow: hidden;
-		padding-bottom: 18px;
-	}
-
-	.banner {
-		height: clamp(140px, 24vw, 240px);
-		background: var(--bg-elev-2);
-	}
-
-	.banner.plain {
-		background: linear-gradient(135deg, var(--accent-soft), var(--bg-elev-2) 70%);
-	}
-
-	.banner img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-	}
-
-	/* Pulled up over the banner, so it has to sit above it: the banner's
-	   picture would otherwise paint over the profile picture. */
-	.identity {
-		position: relative;
-		z-index: 1;
+	.tile {
+		padding: 16px 18px;
 		display: flex;
-		align-items: flex-end;
-		gap: 16px;
-		padding: 0 22px;
-		margin-top: -44px;
-		flex-wrap: wrap;
+		flex-direction: column;
+		gap: 5px;
+		min-width: 0;
+		animation: tile-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+		animation-delay: calc(var(--i) * 45ms);
 	}
 
-	.picture :global(.avatar) {
-		border: 4px solid var(--bg-elev);
+	@keyframes tile-in {
+		from {
+			opacity: 0;
+			transform: translateY(8px) scale(0.98);
+		}
 	}
 
-	/* Below the banner's edge, never on it: a name over a picture is only
-	   as readable as the picture lets it be. */
-	.names {
-		flex: 1;
-		min-width: 140px;
-		padding-top: 52px;
-	}
-
-	.taste {
-		margin-top: 4px;
-		font-size: 0.86rem;
-		color: var(--text-dim);
-	}
-
-	.taste strong {
-		color: var(--accent);
+	.tile strong {
+		font-family: var(--font-display);
+		font-size: 1.7rem;
 		font-weight: 650;
+		overflow-wrap: normal;
 	}
 
-	.names h1 {
-		margin: 0;
-		font-size: clamp(1.5rem, 4vw, 2.1rem);
-	}
-
-	.names p {
-		margin: 4px 0 2px;
-		font-size: 0.88rem;
-	}
-
-	.tools {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 8px;
-		margin-bottom: 4px;
-	}
-
-	.bio {
-		margin: 16px 22px 0;
-		max-width: 68ch;
-		white-space: pre-line;
-		line-height: 1.55;
-	}
-
-	.private {
-		margin: 12px 22px 0;
-		font-size: 0.86rem;
-	}
-
-	.private a {
-		color: var(--accent);
+	.tile .faint {
+		font-size: 0.8rem;
 	}
 
 	.genres {
@@ -307,24 +185,25 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 6px;
-		margin: 14px 22px 0;
+		margin: 0 0 28px;
 		padding: 0;
 	}
 
 	.genres li {
-		padding: 4px 10px;
+		padding: 5px 12px;
 		border-radius: 999px;
-		background: var(--bg-elev-2);
-		font-size: 0.8rem;
+		background: var(--bg-elev);
+		border: 1px solid var(--line);
+		font-size: 0.82rem;
 	}
 
-	.pinned h2 {
-		font-size: 1.05rem;
-		margin: 0 0 10px;
+	.block {
+		margin-bottom: 32px;
 	}
 
-	.pinned {
-		margin-bottom: 26px;
+	h2 {
+		font-size: 1.1rem;
+		margin: 0 0 12px;
 	}
 
 	/* Fixed widths, as on every rail: one pin never stretches across. */
@@ -334,28 +213,91 @@
 		gap: 14px;
 	}
 
-	.tiles {
+	.watching {
+		list-style: none;
+		margin: 0;
+		padding: 0;
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
 		gap: 12px;
-		margin-bottom: 26px;
 	}
 
-	.tile {
-		padding: 16px 18px;
+	.now {
 		display: flex;
-		flex-direction: column;
-		gap: 5px;
+		gap: 14px;
+		padding: 10px;
+		align-items: center;
+		color: inherit;
+		text-decoration: none;
+		transition:
+			transform var(--fast) var(--ease),
+			border-color var(--fast) var(--ease);
 	}
 
-	.tile strong {
-		font-family: var(--font-display);
-		font-size: 1.7rem;
-		font-weight: 650;
+	.now:hover {
+		transform: translateY(-2px);
+		border-color: var(--line-strong);
 	}
 
-	.tile .faint {
-		font-size: 0.8rem;
+	.cover {
+		flex: none;
+		width: 56px;
+		aspect-ratio: 2 / 3;
+		border-radius: var(--radius-sm);
+		overflow: hidden;
+		background: var(--bg-elev-2);
+	}
+
+	.cover img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+
+	.now-body {
+		display: grid;
+		gap: 4px;
+		min-width: 0;
+		flex: 1;
+	}
+
+	.now-body strong {
+		font-size: 0.95rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.ep {
+		font-size: 0.84rem;
+		font-weight: 600;
+		color: var(--accent);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.ep .faint {
+		font-weight: 400;
+	}
+
+	.bar {
+		display: block;
+		height: 4px;
+		border-radius: 999px;
+		background: var(--line-strong);
+		overflow: hidden;
+	}
+
+	.bar i {
+		display: block;
+		height: 100%;
+		background: var(--accent);
+		transition: width var(--slow) var(--ease);
+	}
+
+	.count {
+		font-size: 0.76rem;
 	}
 
 	.rails {
@@ -364,20 +306,23 @@
 		gap: 10px;
 	}
 
-	@media (max-width: 560px) {
-		.identity {
-			padding: 0 16px;
+	@media (max-width: 600px) {
+		.tiles {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 
-		.bio,
-		.private,
-		.genres {
-			margin-left: 16px;
-			margin-right: 16px;
+		.tile strong {
+			font-size: 1.4rem;
 		}
 
 		.pins {
-			grid-template-columns: repeat(auto-fill, 120px);
+			grid-template-columns: repeat(auto-fill, 112px);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.tile {
+			animation: none;
 		}
 	}
 </style>

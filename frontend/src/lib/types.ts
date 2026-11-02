@@ -544,6 +544,8 @@ export interface InstanceInfo {
 	database_bytes: number;
 	image_cache_bytes: number;
 	accounts: number;
+	/** Every title this Frog has come to know. */
+	titles?: { all: number; films: number; shows: number };
 	last_backup: { at: string; label: string; pushed: boolean } | null;
 }
 
@@ -655,6 +657,28 @@ export interface ProfileCard {
 	name: string;
 	poster_path: string | null;
 	rating: number | null;
+	/** A show someone is watching: how far through it they are. */
+	progress?: { watched: number; total: number };
+	/** And the episode they are on. */
+	next?: { season: number; episode: number; name: string | null };
+}
+
+/** A title someone rated, with the seasons they rated of it. */
+export interface RatedTitle extends ProfileCard {
+	status: Status;
+	seasons: { season: number; first_episode: number; rating: number }[];
+}
+
+/** Two libraries side by side. */
+export interface Comparison {
+	taste: { percent: number; shared: number } | null;
+	both: {
+		title: RatedTitle;
+		mine: { status: Status; rating: number | null };
+		theirs: { status: Status; rating: number | null };
+	}[];
+	only_theirs: (ProfileCard & { status: Status })[];
+	only_mine: (ProfileCard & { status: Status })[];
 }
 
 export interface Profile {

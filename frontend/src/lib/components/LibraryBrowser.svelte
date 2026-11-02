@@ -43,9 +43,11 @@
 	interface Props {
 		/** Whose library, read only. Left out, it is your own. */
 		owner?: string;
+		/** Under a profile's header, which already says whose and where. */
+		embedded?: boolean;
 	}
 
-	let { owner }: Props = $props();
+	let { owner, embedded = false }: Props = $props();
 
 	type Sort = NonNullable<LibraryQuery['sort']>;
 	type Order = 'asc' | 'desc';
@@ -352,15 +354,15 @@
 	}}
 />
 
-<div class="page">
-	{#if owner}
+<div class:page={!embedded}>
+	{#if owner && !embedded}
 		<a class="back faint hit" href="/people/{encodeURIComponent(owner)}">
 			<Icon name="chevron-left" size={16} />
 			{ownerName}
 		</a>
 	{/if}
 	<div class="page-head">
-		<h1>Library</h1>
+		<h1 class:quiet={embedded}>Library</h1>
 		<div class="head-tools actions">
 			{#if answer}<span class="faint">{plural(total, 'title')}</span>{/if}
 			{#if !owner && items.length && !editing}
@@ -1103,5 +1105,14 @@
 		.mobile-bar {
 			display: flex;
 		}
+	}
+
+	/* Under a profile's tabs the tab already names it; kept for screen readers. */
+	h1.quiet {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
 	}
 </style>

@@ -262,10 +262,14 @@
 		min-width: 0;
 	}
 
+	.who strong,
 	.who .faint {
 		overflow: hidden;
 		white-space: nowrap;
 		text-overflow: ellipsis;
+	}
+
+	.who .faint {
 		font-size: 0.8rem;
 	}
 

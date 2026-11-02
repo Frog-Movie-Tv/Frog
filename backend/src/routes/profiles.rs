@@ -56,6 +56,143 @@ fn cards(rows: Vec<CardRow>) -> Vec<Value> {
         .collect()
 }
 
+/// What someone is watching, each show with where they are in it: how many
+/// episodes of how many, and the one they are on.
+async fn watching_cards(
+    pool: &sqlx::SqlitePool,
+    user_id: i64,
+    rows: Vec<CardRow>,
+) -> AppResult<Vec<Value>> {
+    let mut out = Vec::with_capacity(rows.len());
+    for (kind, id, name, poster_path, rating) in rows {
+        let mut card = json!({ "id": id, "kind": kind, "name": name,
+                               "poster_path": poster_path, "rating": rating });
+        if kind == "tv" {
+            let progress = store::progress(pool, user_id, id).await?;
+            card["progress"] = json!({ "watched": progress.watched, "total": progress.total });
+            if let Some(next) = store::next_episode(pool, user_id, id).await? {
+                card["next"] = json!({ "season": next.season_number,
+                                       "episode": next.episode_number,
+                                       "name": next.name });
+            }
+        }
+        out.push(card);
+    }
+    Ok(out)
+}
+
+/// (kind, id, name, poster, status, rating)
+type RatedRow = (String, i64, String, Option<String>, String, Option<f64>);
+
+/// Everything someone has rated, best first, each show with its seasons'
+/// ratings: what a profile's Ratings tab lists.
+pub async fn ratings(
+    auth: Auth,
+    State(state): State<AppState>,
+    Path(username): Path<String>,
+) -> AppResult<Json<Value>> {
+    let user_id = visible(&state, &auth, &username).await?.0;
+    let pool = &state.pool;
+    let seasons: Vec<(i64, i64, i64, f64)> = sqlx::query_as(
+        "SELECT title_id, season_number, first_episode, rating FROM season_rating
+          WHERE user_id = ? ORDER BY title_id, season_number, first_episode",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    let rows: Vec<RatedRow> = sqlx::query_as(
+        "SELECT t.kind, t.id, t.name, t.poster_path, l.status, l.rating
+           FROM library_entry l JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = ?
+            AND (l.rating IS NOT NULL
+                 OR EXISTS (SELECT 1 FROM season_rating s
+                             WHERE s.user_id = l.user_id AND s.title_id = l.title_id))",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    let mut list: Vec<Value> = rows
+        .into_iter()
+        .map(|(kind, id, name, poster_path, status, rating)| {
+            let parts: Vec<Value> = seasons
+                .iter()
+                .filter(|s| s.0 == id)
+                .map(|s| json!({ "season": s.1, "first_episode": s.2, "rating": s.3 }))
+                .collect();
+            // A show rated only by its seasons stands at their average.
+            let own = rating.or_else(|| {
+                let r: Vec<f64> = seasons.iter().filter(|s| s.0 == id).map(|s| s.3).collect();
+                (!r.is_empty()).then(|| r.iter().sum::<f64>() / r.len() as f64)
+            });
+            json!({ "id": id, "kind": kind, "name": name, "poster_path": poster_path,
+                    "status": status, "rating": own, "seasons": parts })
+        })
+        .collect();
+    list.sort_by(|a, b| {
+        b["rating"]
+            .as_f64()
+            .unwrap_or(0.0)
+            .total_cmp(&a["rating"].as_f64().unwrap_or(0.0))
+            .then_with(|| {
+                a["name"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .cmp(b["name"].as_str().unwrap_or_default())
+            })
+    });
+    Ok(Json(json!({ "ratings": list })))
+}
+
+/// The viewer's library beside someone else's: what both have, with both
+/// ratings, and what only one of them has.
+pub async fn compare(
+    auth: Auth,
+    State(state): State<AppState>,
+    Path(username): Path<String>,
+) -> AppResult<Json<Value>> {
+    let other = visible(&state, &auth, &username).await?.0;
+    if other == auth.user_id() {
+        return Err(AppError::BadRequest(
+            "Compare with someone else's library.".into(),
+        ));
+    }
+    let pool = &state.pool;
+    let mine = taste::library_of(pool, auth.user_id()).await?;
+    let theirs = taste::library_of(pool, other).await?;
+    let compared = taste::compare(&mine, &theirs);
+
+    let mut ids: Vec<i64> = mine.iter().chain(&theirs).map(|h| h.title_id).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    let mut titles: std::collections::HashMap<i64, (String, String, Option<String>)> =
+        Default::default();
+    for chunk in ids.chunks(400) {
+        let marks = vec!["?"; chunk.len()].join(", ");
+        let sql = format!("SELECT id, kind, name, poster_path FROM title WHERE id IN ({marks})");
+        let mut q = sqlx::query_as::<_, (i64, String, String, Option<String>)>(&sql);
+        for id in chunk {
+            q = q.bind(id);
+        }
+        for (id, kind, name, poster) in q.fetch_all(pool).await? {
+            titles.insert(id, (kind, name, poster));
+        }
+    }
+    let card = |h: &taste::Held| {
+        let (kind, name, poster) = titles.get(&h.title_id).cloned().unwrap_or_default();
+        json!({ "id": h.title_id, "kind": kind, "name": name, "poster_path": poster,
+                "status": h.status, "rating": h.rating })
+    };
+    Ok(Json(json!({
+        "taste": taste::between(pool, auth.user_id(), other).await?,
+        "both": compared.both.iter().map(|(m, t)| json!({
+            "title": card(t), "mine": { "status": m.status, "rating": m.rating },
+            "theirs": { "status": t.status, "rating": t.rating },
+        })).collect::<Vec<_>>(),
+        "only_theirs": compared.only_theirs.iter().map(card).collect::<Vec<_>>(),
+        "only_mine": compared.only_mine.iter().map(card).collect::<Vec<_>>(),
+    })))
+}
+
 /// (id, username, created_at, profile_public, display name, bio, banner backdrop, pins)
 type UserRow = (
     i64,
@@ -246,7 +383,7 @@ pub async fn get(
         },
         "genres": genres.into_iter().map(|(name, titles)| json!({ "name": name, "titles": titles })).collect::<Vec<_>>(),
         "pinned": cards(pinned),
-        "watching": cards(watching),
+        "watching": watching_cards(pool, user_id, watching).await?,
         "favourites": cards(favourites),
         "recent": cards(recent),
     })))

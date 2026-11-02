@@ -397,6 +397,18 @@
 							<dd>{instance?.accounts ?? '—'}</dd>
 						</div>
 						<div>
+							<dt>Titles known</dt>
+							<dd>
+								{instance?.titles?.all.toLocaleString() ?? '—'}
+								{#if instance?.titles}
+									<span class="faint small-note">
+										{instance.titles.films.toLocaleString()} films ·
+										{instance.titles.shows.toLocaleString()} shows
+									</span>
+								{/if}
+							</dd>
+						</div>
+						<div>
 							<dt>Database</dt>
 							<dd>{instance ? size(instance.database_bytes) : '—'}</dd>
 						</div>
@@ -697,5 +709,11 @@
 
 	.danger {
 		color: var(--bad);
+	}
+
+	.small-note {
+		display: block;
+		font-size: 0.76rem;
+		font-weight: 400;
 	}
 </style>

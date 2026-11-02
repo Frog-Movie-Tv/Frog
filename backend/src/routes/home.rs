@@ -322,6 +322,25 @@ pub async fn activity(auth: Auth, State(state): State<AppState>) -> AppResult<Js
     Ok(Json(json!({ "items": items })))
 }
 
+#[derive(serde::Deserialize)]
+pub struct EverythingQuery {
+    before: Option<String>,
+    limit: Option<usize>,
+}
+
+/// All of it, page by page, for the Activity page.
+pub async fn all_activity(
+    auth: Auth,
+    State(state): State<AppState>,
+    axum::extract::Query(q): axum::extract::Query<EverythingQuery>,
+) -> AppResult<Json<Value>> {
+    let limit = q.limit.unwrap_or(40).clamp(1, 100);
+    let (items, next) =
+        crate::activity::everything(&state.pool, auth.user_id(), q.before.as_deref(), limit)
+            .await?;
+    Ok(Json(json!({ "items": items, "next": next })))
+}
+
 /// Every row query here is scoped to one account, and each uses `?1` for it so
 /// a single bind covers however many times the account appears in the SQL.
 async fn rows(pool: &SqlitePool, sql: &str, user_id: i64) -> AppResult<Vec<TitleRow>> {

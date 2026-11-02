@@ -234,7 +234,8 @@
 						{/each}
 					</Rail>
 				{:else if row === 'activity'}
-					<Rail title="Your people" width="264px">
+					{#snippet allActivity()}<a class="see-all hit" href="/activity">See all</a>{/snippet}
+					<Rail title="Activity" action={allActivity} width="264px">
 						{#each activity as item (`${item.who.username}:${item.title.id}`)}
 							<ActivityCard {item} />
 						{/each}

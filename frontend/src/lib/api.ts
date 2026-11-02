@@ -40,7 +40,9 @@ import type {
 	Stats,
 	Status,
 	TitleDetail,
-	TitleHistory
+	TitleHistory,
+	RatedTitle,
+	Comparison
 } from './types';
 
 export class ApiError extends Error {
@@ -261,6 +263,10 @@ export const api = {
 
 	profiles: () => get<{ profiles: PersonSummary[] }>('/api/profiles'),
 	profile: (username: string) => get<Profile>(`/api/profiles/${encodeURIComponent(username)}`),
+	profileRatings: (username: string) =>
+		get<{ ratings: RatedTitle[] }>(`/api/profiles/${encodeURIComponent(username)}/ratings`),
+	profileCompare: (username: string) =>
+		get<Comparison>(`/api/profiles/${encodeURIComponent(username)}/compare`),
 	profileLibrary: (username: string, query: LibraryQuery) =>
 		get<SharedLibrary>(
 			`/api/profiles/${encodeURIComponent(username)}/library${qs(query as Record<string, unknown>)}`
@@ -300,6 +306,11 @@ export const api = {
 	home: () => get<HomeData>('/api/home'),
 	because: () => get<{ rows: BecauseRow[] }>('/api/home/because'),
 	activity: () => get<{ items: ActivityItem[] }>('/api/home/activity'),
+	/** Everyone's activity, all of it, a page before `before` at a time. */
+	allActivity: (before?: string | null) =>
+		get<{ items: ActivityItem[]; next: string | null }>(
+			`/api/activity${qs({ before: before ?? undefined })}`
+		),
 
 	matchImport: (items: unknown[]) =>
 		send<{ results: MatchResult[] }>('POST', '/api/import/match', { items }),

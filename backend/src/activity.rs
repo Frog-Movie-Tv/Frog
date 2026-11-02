@@ -1,4 +1,5 @@
-//! What other people here have been watching, for a row on Home.
+//! What other people here have been watching, for a row on Home and the
+//! Activity page behind it.
 //!
 //! This reads one account's diary for another, so what it may touch is narrow on
 //! purpose. Only accounts that are switched on and have their profile on
@@ -220,6 +221,108 @@ pub async fn feed(pool: &SqlitePool, viewer: i64) -> AppResult<Vec<Card>> {
         }));
     }
     Ok(row(cards))
+}
+
+/// (day, newest watch, title id, name, kind, poster, episodes, all rewatches,
+/// completed, has its last regular episode, season, episode)
+type DayRow = (
+    String,
+    String,
+    i64,
+    String,
+    String,
+    Option<String>,
+    i64,
+    bool,
+    bool,
+    bool,
+    Option<i64>,
+    Option<i64>,
+);
+
+/// Everything everyone the viewer may see has watched, all of it, a title a
+/// day per card, newest first, `limit` at a time before `before`. The second
+/// value is where the next page starts, when there is one.
+pub async fn everything(
+    pool: &SqlitePool,
+    viewer: i64,
+    before: Option<&str>,
+    limit: usize,
+) -> AppResult<(Vec<Card>, Option<String>)> {
+    let before = before.unwrap_or("9999");
+    let mut cards = Vec::new();
+    for person in store::shown_to(pool, viewer).await? {
+        let rows: Vec<DayRow> = sqlx::query_as(
+            "SELECT substr(w.watched_at, 1, 10) AS day, MAX(w.watched_at) AS latest,
+                    w.title_id, t.name, t.kind, t.poster_path,
+                    COUNT(w.episode_id), MIN(w.is_rewatch), l.status = 'completed',
+                    MAX(COALESCE(e.id = (SELECT f.id FROM episode f
+                                          WHERE f.title_id = w.title_id AND f.season_number > 0
+                                          ORDER BY f.season_number DESC, f.episode_number DESC
+                                          LIMIT 1), 0)),
+                    MIN(e.season_number), MIN(e.episode_number)
+               FROM watch_event w
+               JOIN title t ON t.id = w.title_id
+               JOIN library_entry l ON l.title_id = w.title_id AND l.user_id = w.user_id
+               LEFT JOIN episode e ON e.id = w.episode_id
+              WHERE w.user_id = ? AND w.undated = 0 AND w.watched_at < ?
+              GROUP BY day, w.title_id
+              ORDER BY latest DESC
+              LIMIT ?",
+        )
+        .bind(person.id)
+        .bind(before)
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await?;
+        for (
+            _,
+            latest,
+            id,
+            name,
+            kind,
+            poster_path,
+            episodes,
+            rewatch,
+            completed,
+            last,
+            season,
+            episode,
+        ) in rows
+        {
+            let did = if rewatch {
+                Did::Rewatched
+            } else if kind == "tv" && completed && last {
+                Did::Finished
+            } else {
+                Did::Watched
+            };
+            let one = episodes == 1;
+            cards.push(Card {
+                who: person.shown.clone(),
+                summary: Summary {
+                    title: Title {
+                        id,
+                        kind,
+                        name,
+                        poster_path,
+                    },
+                    did,
+                    episodes: episodes as usize,
+                    season: season.filter(|_| one),
+                    episode: episode.filter(|_| one),
+                    at: latest,
+                    also: 0,
+                },
+            });
+        }
+    }
+    cards.sort_by(|a, b| b.summary.at.cmp(&a.summary.at));
+    let next = (cards.len() > limit).then(|| cards[limit - 1].summary.at.clone());
+    cards.truncate(limit);
+    // Each person gave at most `limit`; when exactly that, there may be more.
+    let next = next.or_else(|| (cards.len() == limit).then(|| cards[limit - 1].summary.at.clone()));
+    Ok((cards, next))
 }
 
 #[cfg(test)]

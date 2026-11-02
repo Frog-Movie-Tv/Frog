@@ -126,6 +126,15 @@
 		flex-direction: column;
 		gap: 2px;
 		padding: 8px 10px 10px;
+		min-width: 0;
+	}
+
+	/* A long name shortens; the menu keeps its width. */
+	.who strong {
+		max-width: 240px;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
 	}
 
 	.who .faint {

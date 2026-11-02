@@ -512,7 +512,7 @@
 				<aside class="side">
 					{#if others.length}
 						<section class="block others">
-							<div class="section-head"><h2>Your people</h2></div>
+							<div class="section-head"><h2>On this Frog</h2></div>
 							<ul>
 								{#each others as o (o.username)}
 									<li>
@@ -554,8 +554,7 @@
 											<span class="eyebrow">{label}</span>
 											<div class="logos">
 												{#each list as p (p.id)}
-													{@const href =
-														p.url ?? providerLink(p.name, item.name, providers?.link ?? null)}
+													{@const href = p.url ?? providerLink(p.name, item.name)}
 													<a
 														class="plogo"
 														{href}

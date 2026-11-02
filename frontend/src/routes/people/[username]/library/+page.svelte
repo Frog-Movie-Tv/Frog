@@ -1,14 +1,13 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import LibraryBrowser from '#lib/components/LibraryBrowser.svelte';
+	import ProfileShell from '#lib/components/ProfileShell.svelte';
 
 	const username = $derived(page.params.username ?? '');
 </script>
 
-<svelte:head>
-	<title>{username} · Library · Frog</title>
-</svelte:head>
-
-{#key username}
-	<LibraryBrowser owner={username} />
-{/key}
+<ProfileShell tab="library">
+	{#key username}
+		<LibraryBrowser owner={username} embedded />
+	{/key}
+</ProfileShell>
