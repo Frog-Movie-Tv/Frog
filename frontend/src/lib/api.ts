@@ -288,9 +288,13 @@ export const api = {
 		),
 	searchGenres: () => get<{ genres: string[] }>('/api/search/genres'),
 	scores: (id: number) => get<TitleScores>(`/api/t/${id}/scores`),
-	trending: () => get<{ results: SearchItem[] }>('/api/discover/trending'),
+	trending: (list: 'trending' | 'top' = 'trending', page = 1) =>
+		get<{ results: SearchItem[]; next_page?: number | null }>(
+			`/api/discover/trending${qs({ list: list === 'top' ? 'top' : undefined, page: page > 1 ? page : undefined })}`
+		),
 	searchMore: (q: string) => get<MoreResults>(`/api/search/more${qs({ q })}`),
-	studio: (id: number) => get<StudioDetail>(`/api/studios/${id}`),
+	studio: (id: number, page = 1) =>
+		get<StudioDetail>(`/api/studios/${id}${qs({ page: page > 1 ? page : undefined })}`),
 
 	home: () => get<HomeData>('/api/home'),
 	because: () => get<{ rows: BecauseRow[] }>('/api/home/because'),

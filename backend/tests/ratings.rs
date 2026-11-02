@@ -25,8 +25,11 @@ struct Fake {
 type Shared = Arc<Mutex<Fake>>;
 
 fn item(tmdb: i64, imdb: f64, tomatoes: f64) -> Value {
+    // Wolf Children's TMDB id stands for an anime film MDBList knows the
+    // MyAnimeList id of.
+    let mal = (tmdb == 110420).then_some(12355);
     json!({
-        "ids": { "tmdb": tmdb, "imdb": "tt1", "mal": null },
+        "ids": { "tmdb": tmdb, "imdb": "tt1", "mal": mal },
         "ratings": [
             { "source": "imdb", "value": imdb / 10.0, "score": imdb, "votes": 100 },
             { "source": "tomatoes", "value": tomatoes, "score": tomatoes, "votes": 10 },
@@ -59,8 +62,11 @@ async fn batch(
     (StatusCode::OK, headers, Json(json!(items)))
 }
 
-async fn by_mal(State(fake): State<Shared>, Path(id): Path<i64>) -> Json<Value> {
-    fake.lock().unwrap().calls.push(format!("GET mal {id}"));
+async fn by_mal(State(fake): State<Shared>, Path((kind, id)): Path<(String, i64)>) -> Json<Value> {
+    fake.lock()
+        .unwrap()
+        .calls
+        .push(format!("GET mal {kind} {id}"));
     Json(json!({
         "ids": { "tmdb": null, "mal": id },
         "ratings": [{ "source": "myanimelist", "value": 7.9, "score": 79, "votes": 5 }]
@@ -69,13 +75,20 @@ async fn by_mal(State(fake): State<Shared>, Path(id): Path<i64>) -> Json<Value> 
 
 async fn anilist(State(fake): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
     let query = body["query"].as_str().unwrap_or_default().to_string();
+    let by_mal = query.contains("idMal_in");
     fake.lock().unwrap().graphql.push(query);
     let media: Vec<Value> = body["variables"]["ids"]
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(Value::as_i64)
-        .map(|id| json!({ "id": id, "idMal": id + 1000, "averageScore": 85, "popularity": 1 }))
+        .map(|id| {
+            if by_mal {
+                json!({ "id": id + 5000, "idMal": id, "averageScore": 90, "format": "MOVIE" })
+            } else {
+                json!({ "id": id, "idMal": id + 1000, "averageScore": 85, "format": "TV" })
+            }
+        })
         .collect();
     Json(json!({ "data": { "Page": { "media": media } } }))
 }
@@ -91,7 +104,7 @@ impl Harness {
         let fake: Shared = Arc::default();
         let app = Router::new()
             .route("/tmdb/{kind}/", post(batch))
-            .route("/mal/any/{id}/", get(by_mal))
+            .route("/mal/{kind}/{id}", get(by_mal))
             .route("/graphql", post(anilist))
             .with_state(fake.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -241,7 +254,7 @@ async fn every_site_lands_on_the_one_title_and_none_makes_another() {
         fake.calls
     );
     assert!(
-        fake.calls.contains(&"GET mal 1777".to_string()),
+        fake.calls.contains(&"GET mal show 1777".to_string()),
         "{:?}",
         fake.calls
     );
@@ -295,6 +308,45 @@ async fn a_failed_request_keeps_what_was_stored_and_tries_again() {
         .await
         .unwrap();
     assert_eq!(next, "2000-01-01", "still due");
+}
+
+#[tokio::test]
+async fn an_anime_film_no_list_maps_still_gets_anilist_through_myanimelist() {
+    let h = Harness::new().await;
+    h.exec(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (1, 'movie', 110420, 'Wolf Children')",
+    )
+    .await;
+    h.exec("UPDATE title SET tmdb_vote = 8.2 WHERE id = 1")
+        .await;
+
+    frog::ratings::refresh(&h.state, &[1], 0).await.unwrap();
+
+    let scores = h.scores(1).await;
+    assert!(
+        scores.contains(&("anilist".to_string(), 90.0)),
+        "{scores:?}"
+    );
+    assert!(scores.contains(&("imdb".to_string(), 88.0)), "{scores:?}");
+}
+
+#[tokio::test]
+async fn without_a_key_titles_are_asked_again_soon() {
+    let mut h = Harness::new().await;
+    h.state.config = std::sync::Arc::new(frog::config::Config {
+        mdblist: None,
+        ..(*h.state.config).clone()
+    });
+    h.exec("INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (1, 'movie', 550, 'Film')")
+        .await;
+    frog::ratings::refresh(&h.state, &[1], 0).await.unwrap();
+    let (next,): (String,) = sqlx::query_as("SELECT next_at FROM title_rating_check")
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    let next = chrono::DateTime::parse_from_rfc3339(&next).unwrap();
+    let days = (next.with_timezone(&chrono::Utc) - chrono::Utc::now()).num_days();
+    assert!(days <= 2, "a key added later is used within days: {days}");
 }
 
 #[tokio::test]

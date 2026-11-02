@@ -74,6 +74,9 @@ pub struct Rating {
 #[derive(Debug, Default, PartialEq)]
 pub struct Found {
     pub tmdb_id: Option<i64>,
+    /// MyAnimeList's id, which leads to AniList's score when Frog has no
+    /// AniList id for the title.
+    pub mal_id: Option<i64>,
     pub ratings: Vec<Rating>,
 }
 
@@ -103,15 +106,28 @@ pub fn parse_item(item: &Value) -> Found {
         .collect();
     Found {
         tmdb_id: item.pointer("/ids/tmdb").and_then(Value::as_i64),
+        mal_id: item.pointer("/ids/mal").and_then(Value::as_i64),
         ratings,
     }
 }
 
+/// What MDBList said about a title this time.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Answer {
+    Found,
+    NothingFound,
+    /// Not asked, because no key is set. A key added later should reach
+    /// these titles within days, not after a month.
+    NotAsked,
+}
+
 /// When to look at a title again: often while it is new and scores still
 /// move, rarely once they have settled, and not soon when nothing was found.
-pub fn next_check(release: Option<&str>, found: bool, now: DateTime<Utc>) -> DateTime<Utc> {
-    if !found {
-        return now + Duration::days(30);
+pub fn next_check(release: Option<&str>, answer: Answer, now: DateTime<Utc>) -> DateTime<Utc> {
+    match answer {
+        Answer::NothingFound => return now + Duration::days(30),
+        Answer::NotAsked => return now + Duration::days(2),
+        Answer::Found => {}
     }
     let age = release
         .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
@@ -247,16 +263,29 @@ async fn ids_of(pool: &SqlitePool, title_id: i64) -> AppResult<Ids> {
 }
 
 const SCORES_QUERY: &str = "query ($ids: [Int]) {
-  Page(perPage: 50) { media(id_in: $ids, type: ANIME) { id idMal averageScore popularity } }
+  Page(perPage: 50) { media(id_in: $ids, type: ANIME) { id idMal format averageScore } }
 }";
 
+const SCORES_BY_MAL_QUERY: &str = "query ($ids: [Int]) {
+  Page(perPage: 50) { media(idMal_in: $ids, type: ANIME) { id idMal format averageScore } }
+}";
+
+/// One AniList entry: its id, score, MyAnimeList id, and whether it is a film.
+type AniListScore = (i64, Option<f64>, Option<i64>, bool);
+
 /// AniList's own score of some of its entries, and their MyAnimeList ids.
-/// Public data, read without anyone's token.
-async fn anilist_scores(state: &AppState, ids: &[i64]) -> Vec<(i64, Option<f64>, Option<i64>)> {
+/// Public data, read without anyone's token. With `by_mal` the ids are
+/// MyAnimeList's.
+async fn anilist_scores(state: &AppState, ids: &[i64], by_mal: bool) -> Vec<AniListScore> {
     let Ok(api) = Api::new(state) else {
         return Vec::new();
     };
-    match api.graphql("", SCORES_QUERY, json!({ "ids": ids })).await {
+    let query = if by_mal {
+        SCORES_BY_MAL_QUERY
+    } else {
+        SCORES_QUERY
+    };
+    match api.graphql("", query, json!({ "ids": ids })).await {
         Ok(data) => data
             .pointer("/Page/media")
             .and_then(Value::as_array)
@@ -267,6 +296,7 @@ async fn anilist_scores(state: &AppState, ids: &[i64]) -> Vec<(i64, Option<f64>,
                     m["id"].as_i64()?,
                     m["averageScore"].as_f64().filter(|s| *s > 0.0),
                     m["idMal"].as_i64(),
+                    m["format"].as_str() == Some("MOVIE"),
                 ))
             })
             .collect(),
@@ -389,12 +419,12 @@ pub async fn refresh(state: &AppState, titles: &[i64], floor: i64) -> AppResult<
     let scores = if wanted.is_empty() {
         Vec::new()
     } else {
-        anilist_scores(state, &wanted).await
+        anilist_scores(state, &wanted, false).await
     };
     let mut mal = Vec::new();
     for (title_id, ids) in &resolved {
         let Some(media) = ids.anilist else { continue };
-        let Some((_, score, id_mal)) = scores.iter().find(|s| s.0 == media) else {
+        let Some((_, score, id_mal, film)) = scores.iter().find(|s| s.0 == media) else {
             continue;
         };
         if let (Some(score), false) = (score, ids.primary_anilist) {
@@ -407,7 +437,7 @@ pub async fn refresh(state: &AppState, titles: &[i64], floor: i64) -> AppResult<
         }
         if ids.tmdb.is_none() {
             if let Some(id) = id_mal {
-                mal.push((*title_id, *id));
+                mal.push((*title_id, *id, *film));
             }
         }
     }
@@ -463,13 +493,15 @@ pub async fn refresh(state: &AppState, titles: &[i64], floor: i64) -> AppResult<
                 }
             }
         }
-        // No batch for MyAnimeList's ids, and they are few.
-        for (title_id, id) in mal {
+        // No batch for MyAnimeList's ids, and they are few. MDBList has to
+        // be told film or show: `any` is refused outright.
+        for (title_id, id, film) in mal {
             if !budget_left(client, floor) {
                 failed.push(title_id);
                 continue;
             }
-            match call(state, client, &format!("/mal/any/{id}/"), None).await {
+            let kind = if film { "movie" } else { "show" };
+            match call(state, client, &format!("/mal/{kind}/{id}"), None).await {
                 Ok(Some(item)) => found.push((title_id, parse_item(&item))),
                 Ok(None) => {}
                 Err(e) => {
@@ -480,6 +512,34 @@ pub async fn refresh(state: &AppState, titles: &[i64], floor: i64) -> AppResult<
         }
     }
 
+    // A title Frog knows no AniList entry for may still have one: MDBList
+    // gives MyAnimeList's id, and AniList can be asked by that.
+    let by_mal: Vec<(i64, i64)> = resolved
+        .iter()
+        .filter(|(_, ids)| ids.anilist.is_none())
+        .filter_map(|(title_id, _)| {
+            let (_, parsed) = found.iter().find(|f| f.0 == *title_id)?;
+            Some((*title_id, parsed.mal_id?))
+        })
+        .collect();
+    if !by_mal.is_empty() {
+        let wanted: Vec<i64> = by_mal.iter().map(|m| m.1).collect();
+        for (_, score, id_mal, _) in anilist_scores(state, &wanted, true).await {
+            let (Some(score), Some(id_mal)) = (score, id_mal) else {
+                continue;
+            };
+            for (title_id, _) in by_mal.iter().filter(|m| m.1 == id_mal) {
+                let rating = Rating {
+                    source: "anilist".into(),
+                    score,
+                    votes: None,
+                };
+                store(pool, *title_id, &[rating], now).await?;
+            }
+        }
+    }
+
+    let asked = state.config.mdblist.is_some();
     for (title_id, _) in &resolved {
         if failed.contains(title_id) {
             continue;
@@ -498,7 +558,12 @@ pub async fn refresh(state: &AppState, titles: &[i64], floor: i64) -> AppResult<
             .iter()
             .find(|a| a.0 == *title_id)
             .and_then(|a| a.1.as_deref());
-        let next = next_check(date.as_deref(), answer.is_some(), now);
+        let answer = match (asked, answer.is_some()) {
+            (false, _) => Answer::NotAsked,
+            (true, true) => Answer::Found,
+            (true, false) => Answer::NothingFound,
+        };
+        let next = next_check(date.as_deref(), answer, now);
         mark_checked(pool, *title_id, age, next, now).await?;
     }
     Ok(())
@@ -644,11 +709,13 @@ mod tests {
     #[test]
     fn new_titles_are_looked_at_often_and_old_ones_rarely() {
         let now = "2026-10-30T12:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        let days = |d: Option<&str>, found| (next_check(d, found, now) - now).num_days();
-        assert_eq!(days(Some("2026-10-01"), true), 3);
-        assert_eq!(days(Some("2026-03-01"), true), 14);
-        assert_eq!(days(Some("1999-10-15"), true), 45);
-        assert_eq!(days(None, true), 45);
-        assert_eq!(days(Some("2026-10-01"), false), 30);
+        let days = |d: Option<&str>, answer| (next_check(d, answer, now) - now).num_days();
+        assert_eq!(days(Some("2026-10-01"), Answer::Found), 3);
+        assert_eq!(days(Some("2026-03-01"), Answer::Found), 14);
+        assert_eq!(days(Some("1999-10-15"), Answer::Found), 45);
+        assert_eq!(days(None, Answer::Found), 45);
+        assert_eq!(days(Some("2026-10-01"), Answer::NothingFound), 30);
+        // Without a key nothing was asked, and a key added later is used soon.
+        assert_eq!(days(Some("1999-10-15"), Answer::NotAsked), 2);
     }
 }

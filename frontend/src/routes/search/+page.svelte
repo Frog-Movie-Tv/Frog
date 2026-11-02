@@ -5,10 +5,11 @@
 	import { address } from '#lib/address';
 	import Icon from '#lib/components/Icon.svelte';
 	import { api, frogId, img } from '#lib/api';
-	import Avatar from '#lib/components/Avatar.svelte';
+	import { completeShow } from '#lib/complete';
 	import Empty from '#lib/components/Empty.svelte';
 	import FilterMenu from '#lib/components/FilterMenu.svelte';
 	import Grid from '#lib/components/Grid.svelte';
+	import LoadMore from '#lib/components/LoadMore.svelte';
 	import Poster from '#lib/components/Poster.svelte';
 	import Rail from '#lib/components/Rail.svelte';
 	import RailSkeleton from '#lib/components/RailSkeleton.svelte';
@@ -21,7 +22,6 @@
 		CharacterResult,
 		MoreResults,
 		PersonResult,
-		PersonSummary,
 		SearchFilters,
 		SearchItem,
 		Status,
@@ -29,15 +29,14 @@
 	} from '#lib/types';
 	import { STATUS_LABEL, STATUSES } from '#lib/types';
 
-	type Tab = 'all' | 'movies' | 'shows' | 'people' | 'characters' | 'studios' | 'members';
+	type Tab = 'all' | 'movies' | 'shows' | 'people' | 'characters' | 'studios';
 	const TABS: { id: Tab; label: string }[] = [
 		{ id: 'all', label: 'All' },
 		{ id: 'movies', label: 'Films' },
 		{ id: 'shows', label: 'Shows' },
 		{ id: 'people', label: 'People' },
 		{ id: 'characters', label: 'Characters' },
-		{ id: 'studios', label: 'Studios' },
-		{ id: 'members', label: 'Members' }
+		{ id: 'studios', label: 'Studios' }
 	];
 	const NONE: MoreResults = { people: [], studios: [], characters: [] };
 	const SORTS = [
@@ -81,8 +80,11 @@
 	let personFirst = $state(false);
 	let more = $state<MoreResults>(NONE);
 	let moreReady = $state(false);
-	let members = $state<PersonSummary[]>([]);
+	/** What shows before anything is typed: this week, or the best of all time. */
+	let list = $state<'trending' | 'top'>(start.get('list') === 'top' ? 'top' : 'trending');
 	let trending = $state<SearchItem[]>([]);
+	let trendingNext = $state<number | null>(null);
+	let trendingLoading = $state(false);
 	let loading = $state(false);
 	let loadingMore = $state(false);
 	let searched = $state(false);
@@ -99,19 +101,6 @@
 
 	$effect(() => {
 		input?.focus();
-		void api
-			.trending()
-			.then((r) => (trending = r.results))
-			.catch(() => {
-				// Trending is a nicety; a missing key or no network just means
-				// the empty state stays plain.
-			});
-		void api
-			.profiles()
-			.then((r) => (members = r.profiles))
-			.catch(() => {
-				// Without profiles there are simply no members to find.
-			});
 		void api
 			.searchGenres()
 			.then((r) => (allGenres = r.genres))
@@ -158,6 +147,38 @@
 		return () => clearTimeout(timer);
 	});
 
+	// The list before anything is typed, again whenever it is switched.
+	$effect(() => {
+		const which = list;
+		trending = [];
+		trendingNext = null;
+		void loadTrending(which, 1);
+	});
+
+	let trendingToken = 0;
+
+	async function loadTrending(which: 'trending' | 'top', pageNo: number) {
+		const mine = ++trendingToken;
+		trendingLoading = true;
+		try {
+			const r = await api.trending(which, pageNo);
+			if (mine !== trendingToken) return;
+			const seen = new Set(trending.map(titleKey));
+			trending = [...trending, ...r.results.filter((t) => !seen.has(titleKey(t)))];
+			trendingNext = r.next_page ?? null;
+		} catch {
+			// A nicety: a missing key or no network just means the empty state
+			// stays plain.
+		} finally {
+			if (mine === trendingToken) trendingLoading = false;
+		}
+	}
+
+	function chooseList(which: 'trending' | 'top') {
+		list = which;
+		remember();
+	}
+
 	function remember() {
 		const url = untrack(() => new URL(address().href));
 		const set = (key: string, value: string | number | null | undefined) => {
@@ -173,6 +194,7 @@
 			set('score', minScore === '0' ? null : minScore);
 			set('status', statuses.join(','));
 			set('sort', sort === 'best' ? null : sort);
+			set('list', list === 'top' ? 'top' : null);
 		});
 		if (url.search !== untrack(() => address().search)) {
 			void goto(url, { shallow: true, replace: true });
@@ -282,12 +304,16 @@
 		adding = key;
 		try {
 			const id = await frogId(item);
-			await api.track(id, { status });
+			const { item: added } = await api.track(id, { status });
 			const mark = (list: SearchItem[]) =>
 				list.map((r) => (sameTitle(r, item) ? { ...r, id, in_library: status } : r));
 			results = mark(results);
 			trending = mark(trending);
 			toasts.push(`Added ${item.name} to ${STATUS_LABEL[status]}`);
+			// Completed is watched: every aired episode, as on the show's page.
+			if (status === 'completed' && added.kind === 'tv' && added.total_episodes > 0) {
+				await completeShow(id, added.name);
+			}
 		} catch (e) {
 			toasts.error(e);
 		} finally {
@@ -295,17 +321,7 @@
 		}
 	}
 
-	const plain = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-
 	const q = $derived(term.trim());
-	const foundMembers = $derived(
-		q
-			? members.filter(
-					(m) =>
-						plain(m.username).includes(plain(q)) || plain(m.display_name ?? '').includes(plain(q))
-				)
-			: []
-	);
 	// Two providers' answers can turn out to be one title of Frog's.
 	const films = $derived(uniqueBy(results, titleKey).filter((r) => r.kind === 'movie'));
 	const shows = $derived(uniqueBy(results, titleKey).filter((r) => r.kind === 'tv'));
@@ -315,11 +331,10 @@
 		shows: shows.length,
 		people: more.people.length,
 		characters: more.characters.length,
-		studios: more.studios.length,
-		members: foundMembers.length
+		studios: more.studios.length
 	});
 	const asking = $derived(!!q || filterCount > 0);
-	/** People, characters, studios and members are found by name; filters
+	/** People, characters and studios are found by name; filters
 	 *  alone only find films and shows. */
 	const byName = (t: Tab) => !['all', 'movies', 'shows'].includes(t);
 	$effect(() => {
@@ -469,18 +484,6 @@
 	</a>
 {/snippet}
 
-{#snippet memberCard(m: PersonSummary)}
-	<a class="face-card member" href="/people/{encodeURIComponent(m.username)}">
-		<Avatar
-			src={m.avatar ? `/api/profiles/${encodeURIComponent(m.username)}/images/avatar` : null}
-			name={m.username}
-			size={96}
-		/>
-		<strong>{m.display_name ?? m.username}</strong>
-		<span class="faint sub">Member · @{m.username}</span>
-	</a>
-{/snippet}
-
 {#snippet seeAll(id: Tab)}
 	<button class="link hit" onclick={() => choose(id)}>See all</button>
 {/snippet}
@@ -499,8 +502,6 @@
 				{#each more.characters.slice(0, 12) as c, i (i)}{@render characterCard(c)}{/each}
 			{:else if id === 'studios'}
 				{#each more.studios.slice(0, 12) as s (s.id)}{@render studioCard(s)}{/each}
-			{:else if id === 'members'}
-				{#each foundMembers.slice(0, 12) as m (m.username)}{@render memberCard(m)}{/each}
 			{/if}
 		</Rail>
 	{:else if id === 'people' && !moreReady}
@@ -509,13 +510,7 @@
 {/snippet}
 
 {#snippet showMore()}
-	{#if nextPage}
-		<div class="more">
-			<button class="btn" disabled={loadingMore} onclick={loadMore}>
-				{loadingMore ? 'Loading…' : 'More results'}
-			</button>
-		</div>
-	{/if}
+	<LoadMore more={!!nextPage} loading={loadingMore} onmore={loadMore} />
 {/snippet}
 
 <div class="page">
@@ -681,10 +676,30 @@
 		     search starting moves nothing. -->
 				<div class:dim={asking}>
 					{#if trendingShown.length}
-						<div class="section-head"><h2>Trending this week</h2></div>
+						<div class="section-head lists">
+							<div class="switch" role="tablist" aria-label="What to show">
+								<button
+									role="tab"
+									class:on={list === 'trending'}
+									aria-selected={list === 'trending'}
+									onclick={() => chooseList('trending')}>Trending this week</button
+								>
+								<button
+									role="tab"
+									class:on={list === 'top'}
+									aria-selected={list === 'top'}
+									onclick={() => chooseList('top')}>Top rated</button
+								>
+							</div>
+						</div>
 						<Grid>
 							{#each trendingShown as item (titleKey(item))}{@render titleCard(item)}{/each}
 						</Grid>
+						<LoadMore
+							more={!!trendingNext}
+							loading={trendingLoading}
+							onmore={() => trendingNext && loadTrending(list, trendingNext)}
+						/>
 					{:else if asking}
 						<Spinner label="Searching" />
 					{:else}
@@ -706,7 +721,6 @@
 				{#if !personFirst && q}{@render section('people', 'People')}{/if}
 				{@render section('characters', 'Characters')}
 				{@render section('studios', 'Studios')}
-				{@render section('members', 'Members')}
 				{@render showMore()}
 			{:else if !counts[tab]}
 				{#if moreReady || tab === 'movies' || tab === 'shows'}
@@ -727,8 +741,6 @@
 						{#each more.characters as c, i (i)}{@render characterCard(c)}{/each}
 					{:else if tab === 'studios'}
 						{#each more.studios as s (s.id)}{@render studioCard(s)}{/each}
-					{:else if tab === 'members'}
-						{#each foundMembers as m (m.username)}{@render memberCard(m)}{/each}
 					{/if}
 				</div>
 			{/if}
@@ -945,10 +957,38 @@
 		min-width: 0;
 	}
 
-	.more {
-		display: flex;
-		justify-content: center;
-		margin: 8px 0 32px;
+	/* Trending or the best of all time: two words, one of them lit. */
+	.switch {
+		display: inline-flex;
+		gap: 4px;
+		padding: 4px;
+		border-radius: var(--radius-pill);
+		background: var(--bg-elev);
+		border: 1px solid var(--line);
+	}
+
+	.switch button {
+		min-height: 34px;
+		padding: 0 14px;
+		border: 0;
+		border-radius: var(--radius-pill);
+		background: none;
+		color: var(--text-dim);
+		font-size: 0.86rem;
+		font-weight: 650;
+		cursor: pointer;
+		transition:
+			background var(--fast) var(--ease),
+			color var(--fast) var(--ease);
+	}
+
+	.switch button:hover {
+		color: var(--text);
+	}
+
+	.switch button.on {
+		background: var(--text);
+		color: var(--bg);
 	}
 
 	.searchbar {
@@ -1133,13 +1173,6 @@
 	.face-card:hover .face,
 	.studio:hover .logo {
 		transform: translateY(-2px);
-	}
-
-	.member :global(.avatar) {
-		width: 100% !important;
-		height: auto !important;
-		aspect-ratio: 1;
-		font-size: 2rem !important;
 	}
 
 	/* Logos are drawn for white paper, often dark on transparent, so they sit

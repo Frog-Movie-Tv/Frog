@@ -762,4 +762,6 @@ export interface StudioDetail {
 	country: string | null;
 	homepage: string | null;
 	titles: SearchItem[];
+	/** The page after this one, when the studio made more. */
+	next_page?: number | null;
 }
