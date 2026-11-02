@@ -7,6 +7,7 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod fanart;
+pub mod franchise;
 pub mod images;
 pub mod jobs;
 pub mod ops;

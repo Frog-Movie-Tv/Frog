@@ -234,6 +234,26 @@ export interface TitleDetail {
 	};
 	/** Known from AniList alone: no TMDB entry, so no cast, seasons or links. */
 	anilist_only?: boolean;
+	/** My time with it, while it is in my library. */
+	history?: TitleHistory | null;
+	/** Others on this Frog with it in their library. */
+	others?: OtherWatcher[];
+}
+
+export interface TitleHistory {
+	/** yyyy-mm-dd */
+	started: string | null;
+	finished: string | null;
+	rewatches: number;
+}
+
+export interface OtherWatcher {
+	username: string;
+	display_name: string | null;
+	avatar: string | null;
+	status: Status;
+	rating: number | null;
+	favourite: boolean;
 }
 
 /** A season, or a part of one that AniList counts as its own entry. */

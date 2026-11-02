@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backCloses } from '#lib/layers.svelte';
 	import { sameTitle, titleHref, titleKey } from '#lib/titles';
 	import { goto } from '$app/navigation';
 	import { api, img } from '#lib/api';
@@ -19,6 +20,11 @@
 	}
 
 	let open = $state(false);
+	// Back closes it on a phone, as Esc does on a computer.
+	backCloses(
+		() => open,
+		() => (open = false)
+	);
 	let query = $state('');
 	let cursor = $state(0);
 	let input: HTMLInputElement | undefined = $state();

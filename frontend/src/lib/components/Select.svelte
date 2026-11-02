@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { backCloses } from '#lib/layers.svelte';
+	import { onScreen } from '#lib/onscreen';
 	import Icon from './Icon.svelte';
 
 	interface Option {
@@ -20,6 +22,11 @@
 	let { value, options, onchange, label, compact = false, full = false }: Props = $props();
 
 	let open = $state(false);
+	// Back closes it on a phone, as Esc does on a computer.
+	backCloses(
+		() => open,
+		() => (open = false)
+	);
 	let root: HTMLDivElement | undefined = $state();
 	let cursor = $state(0);
 
@@ -86,7 +93,9 @@
 	</button>
 
 	{#if open}
-		<ul class="menu" role="listbox" aria-label={label} tabindex="-1" onkeydown={onKey}>
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+		<div class="scrim" onclick={() => (open = false)}></div>
+		<ul class="menu" use:onScreen role="listbox" aria-label={label} tabindex="-1" onkeydown={onKey}>
 			{#each options as option, i (option.value)}
 				<li>
 					<button
@@ -231,5 +240,49 @@
 		font-size: 0.74rem;
 		color: var(--text-faint);
 		font-weight: 400;
+	}
+
+	/* A phone: the menu rises from the bottom, always whole and in reach,
+	   over a dimmed page. */
+	.scrim {
+		display: none;
+	}
+
+	@media (max-width: 600px) {
+		.scrim {
+			display: block;
+			position: fixed;
+			inset: 0;
+			z-index: 199;
+			background: rgb(0 0 0 / 0.45);
+			animation: scrim-in 160ms ease both;
+		}
+
+		.menu {
+			position: fixed;
+			z-index: 200;
+			top: auto;
+			left: 10px;
+			right: 10px;
+			bottom: calc(10px + env(safe-area-inset-bottom));
+			min-width: 0;
+			max-height: 70dvh;
+			overflow-y: auto;
+			border-radius: 18px;
+			animation: sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+		}
+	}
+
+	@keyframes sheet-up {
+		from {
+			transform: translateY(24px);
+			opacity: 0;
+		}
+	}
+
+	@keyframes scrim-in {
+		from {
+			opacity: 0;
+		}
 	}
 </style>

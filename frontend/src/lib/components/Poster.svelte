@@ -91,15 +91,18 @@
 			{/if}
 		{/if}
 
-		{#if kindBadge || (status && show.showBadge)}
+		{#if status && show.showBadge}
 			<div class="badges">
-				{#if status && show.showBadge}
-					<span class="badge" data-status={status}>{STATUS_LABEL[status]}</span>
-				{/if}
-				{#if kindBadge}
-					<span class="badge kind">{kind === 'tv' ? 'Show' : 'Film'}</span>
-				{/if}
+				<span class="badge" data-status={status}>{STATUS_LABEL[status]}</span>
 			</div>
+		{/if}
+		{#if kindBadge}
+			<!-- Film or show as a mark in the other corner, so it never pushes
+			     the library label down on a narrow card. -->
+			<span class="kind" title={kind === 'tv' ? 'Show' : 'Film'}>
+				<Icon name={kind === 'tv' ? 'tv' : 'film'} size={12} />
+				<span class="sr">{kind === 'tv' ? 'Show' : 'Film'}</span>
+			</span>
 		{/if}
 
 		{#if scored && show.showRating}
@@ -195,7 +198,6 @@
 		overflow: hidden;
 	}
 
-	/* Stacked, on every width: a narrow card has no room for two side by side. */
 	.badges {
 		position: absolute;
 		top: 7px;
@@ -204,7 +206,29 @@
 		flex-direction: column;
 		align-items: flex-start;
 		gap: 4px;
-		max-width: calc(100% - 14px);
+		max-width: calc(100% - 44px);
+	}
+
+	.kind {
+		position: absolute;
+		top: 7px;
+		right: 7px;
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		background: rgba(10, 10, 14, 0.78);
+		border: 1px solid rgba(255, 255, 255, 0.16);
+		color: #fff;
+	}
+
+	.sr {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
 	}
 
 	.badge {
@@ -229,11 +253,6 @@
 	.badge[data-status] {
 		background: color-mix(in srgb, var(--status) 72%, black);
 		border-color: color-mix(in srgb, var(--status) 60%, white 10%);
-	}
-
-	.badge.kind {
-		background: rgba(10, 10, 14, 0.8);
-		font-weight: 650;
 	}
 
 	/* Library's edit mode. Bottom left: the badges keep the top, the score

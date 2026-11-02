@@ -4709,9 +4709,10 @@ async fn emptying_a_library_takes_only_your_own() {
 
     // Give the guest something of their own, so "it emptied everything"
     // and "it emptied the right account" are different results.
+    // The diary lists what is in a library, so the watched show is in theirs.
     sqlx::query(
         "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
-         VALUES (2, 1, 'watching', 'x', 'x')",
+         VALUES (2, 1, 'watching', 'x', 'x'), (2, 2, 'watching', 'x', 'x')",
     )
     .execute(&h.state.pool)
     .await
@@ -4784,7 +4785,7 @@ async fn emptying_a_library_takes_only_your_own() {
     let (_, theirs) = h.get("/api/library", Some(&guest)).await;
     assert_eq!(
         theirs["items"].as_array().unwrap().len(),
-        1,
+        2,
         "the guest lost a title: {theirs:?}"
     );
     let (_, their_diary) = h.get("/api/diary", Some(&guest)).await;
@@ -5298,6 +5299,44 @@ async fn undoing_a_remove_puts_back_every_field() {
     assert_eq!(before, after);
     let (_, library) = h.get("/api/library", Some(&owner)).await;
     assert_eq!(library["items"].as_array().unwrap().len(), 4);
+}
+
+#[tokio::test]
+async fn a_removed_show_is_no_longer_watched_and_undo_brings_its_watches_back() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    library_to_edit(&h, &owner).await;
+    for episode in [1, 2] {
+        let (code, body, _) = h
+            .post(
+                &format!("/api/t/3/episodes/1/{episode}/watch"),
+                json!({ "watched": true, "watched_at": format!("2024-05-0{episode}T20:00:00Z") }),
+                Some(&owner),
+            )
+            .await;
+        assert_eq!(code, StatusCode::OK, "{body}");
+    }
+    let (_, diary) = h.get("/api/diary", Some(&owner)).await;
+    assert_eq!(diary["entries"].as_array().unwrap().len(), 2);
+    let watched = watches_of(&h, 3).await;
+
+    let removed = bulk(&h, json!({ "action": "remove", "title_ids": [3] }), &owner).await;
+    assert!(
+        watches_of(&h, 3).await.is_empty(),
+        "the episodes are unticked"
+    );
+    let (_, diary) = h.get("/api/diary", Some(&owner)).await;
+    assert!(diary["entries"].as_array().unwrap().is_empty(), "{diary}");
+
+    bulk(
+        &h,
+        json!({ "action": "restore", "entries": removed["before"] }),
+        &owner,
+    )
+    .await;
+    assert_eq!(watches_of(&h, 3).await, watched, "every watch, on its day");
+    let (_, diary) = h.get("/api/diary", Some(&owner)).await;
+    assert_eq!(diary["entries"].as_array().unwrap().len(), 2);
 }
 
 #[tokio::test]

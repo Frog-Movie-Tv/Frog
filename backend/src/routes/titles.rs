@@ -120,6 +120,15 @@ async fn detail_of(state: &AppState, user_id: i64, title_id: i64) -> AppResult<J
 
     let collection = match item.title.collection_id {
         Some(cid) => collection_parts(state, user_id, cid).await.ok(),
+        // A show TMDB keeps no collection for may still be where a film
+        // collection began; never long, since the page waits on it.
+        None if kind == "tv" && !anilist_only => {
+            let look = crate::franchise::collection_of_show(state, &item.title.name);
+            match tokio::time::timeout(FRANCHISE_WAIT, look).await {
+                Ok(Some(cid)) => collection_parts(state, user_id, cid).await.ok(),
+                _ => None,
+            }
+        }
         // AniList's related works, the franchise of a title TMDB lacks.
         None if anilist_only => {
             let mut parts = models::related(&raw, "related", 24);
@@ -152,8 +161,13 @@ async fn detail_of(state: &AppState, user_id: i64, title_id: i64) -> AppResult<J
         None
     };
 
+    let history = store::history(&state.pool, user_id, title_id, &kind).await?;
+    let others = store::others_with(&state.pool, user_id, title_id).await?;
+
     Ok(Json(json!({
         "item": item,
+        "history": history,
+        "others": others,
         "external": external,
         "tagline": models::str_at(&raw, "tagline"),
         "age_rating": models::age_rating(&raw, state.tmdb.region()),
@@ -223,8 +237,11 @@ async fn local_episodes(
         .collect())
 }
 
-/// Films in the same franchise, in release order: the watch order that is
-/// actually defensible without hand-maintained lists.
+/// How long a title page waits on TMDB to name a franchise's shows.
+const FRANCHISE_WAIT: std::time::Duration = std::time::Duration::from_millis(1500);
+
+/// Films in the same franchise, and the shows by its name, in release order:
+/// the watch order that is defensible without hand-maintained lists.
 async fn collection_parts(state: &AppState, user_id: i64, collection_id: i64) -> AppResult<Value> {
     let raw = state
         .tmdb
@@ -245,7 +262,12 @@ async fn collection_parts(state: &AppState, user_id: i64, collection_id: i64) ->
         })
         .unwrap_or_default();
 
-    let mut parts = models::unique_items(parts);
+    // The shows of the same franchise, which TMDB never puts in a collection.
+    let name = models::str_at(&raw, "name").unwrap_or_default();
+    let shows = tokio::time::timeout(FRANCHISE_WAIT, crate::franchise::shows_of(state, &name))
+        .await
+        .unwrap_or_default();
+    let mut parts = models::unique_items(parts.into_iter().chain(shows).collect());
     parts.sort_by_key(|p| p.year.unwrap_or(9999));
     crate::routes::search::annotate_library(state, user_id, &mut parts).await?;
 
@@ -473,6 +495,44 @@ pub async fn person(
         "known_for_department": models::str_at(&raw, "known_for_department"),
         "credits": credits,
     })))
+}
+
+#[derive(Deserialize)]
+pub struct RewatchBody {
+    /// When it was watched again; now when absent.
+    pub watched_at: Option<String>,
+    #[serde(default)]
+    pub undated: bool,
+}
+
+/// Watched it again: a film gets another watch, a show another time through.
+pub async fn rewatch(
+    auth: Auth,
+    State(state): State<AppState>,
+    Path(title_id): Path<i64>,
+    Json(body): Json<RewatchBody>,
+) -> AppResult<Json<Value>> {
+    let row = catalog::get_title(&state.pool, title_id).await?;
+    if store::get_entry(&state.pool, auth.user_id(), title_id)
+        .await?
+        .is_none()
+    {
+        return Err(AppError::BadRequest("Add it to your library first.".into()));
+    }
+    let at = body
+        .watched_at
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+    store::add_rewatch(
+        &state.pool,
+        auth.user_id(),
+        title_id,
+        &row.kind,
+        &at,
+        body.undated,
+    )
+    .await?;
+    let history = store::history(&state.pool, auth.user_id(), title_id, &row.kind).await?;
+    Ok(Json(json!({ "history": history })))
 }
 
 #[derive(Deserialize)]

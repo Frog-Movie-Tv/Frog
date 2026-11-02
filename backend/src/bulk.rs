@@ -245,15 +245,19 @@ pub async fn mark_watched(
     Ok(out)
 }
 
-/// Take titles out of a library, and say what they held, so undo can put back
-/// every field as it was. Watches, shelves and season ratings stay, as they do
-/// when one title is removed.
+/// Take titles out of a library, with what was watched of them, and say what
+/// they held, so undo can put back every field and every watch as it was.
+/// Shelves and season ratings stay.
 pub async fn remove(
     pool: &SqlitePool,
     user_id: i64,
     title_ids: &[i64],
 ) -> AppResult<Vec<EntryRecord>> {
-    let held = store::entry_records(pool, user_id, title_ids).await?;
+    let mut held = store::entry_records(pool, user_id, title_ids).await?;
+    for entry in &mut held {
+        (entry.watches, entry.episode_notes) =
+            store::held_watches(pool, user_id, entry.title_id).await?;
+    }
     let ids: Vec<i64> = held.iter().map(|e| e.title_id).collect();
     store::remove_entries(pool, user_id, &ids).await?;
     Ok(held)

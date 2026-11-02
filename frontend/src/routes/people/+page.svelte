@@ -103,6 +103,8 @@
 				autocomplete="off"
 				autocapitalize="off"
 				spellcheck="false"
+				enterkeyhint="search"
+				onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
 			/>
 			{#if term}
 				<button class="clear hit" aria-label="Clear search" onclick={() => (term = '')}>

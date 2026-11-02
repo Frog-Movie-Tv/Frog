@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backCloses } from '#lib/layers.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import '../app.css';
 	import { goto, onNavigate } from '$app/navigation';
@@ -70,8 +71,13 @@
 		if (settings.current.animations === 'off') return;
 
 		return new Promise((resolve) => {
+			// A page that draws no frames (in the background, or busy) would
+			// never start the transition, and the navigation would wait on it.
+			if (document.hidden) return resolve();
+			const fallback = setTimeout(resolve, 600);
 			try {
 				const transition = document.startViewTransition(async () => {
+					clearTimeout(fallback);
 					resolve();
 					// Interrupted navigations reject here too, and nothing else
 					// would catch it.
@@ -119,6 +125,10 @@
 	]);
 
 	let moreOpen = $state(false);
+	backCloses(
+		() => moreOpen,
+		() => (moreOpen = false)
+	);
 	const inMore = $derived(more.some((p) => isActive(p.href)));
 
 	const current = $derived(page.url.pathname);

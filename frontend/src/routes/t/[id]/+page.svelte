@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { api, img } from '#lib/api';
+	import { ApiError, api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import AddToShelf from '#lib/components/AddToShelf.svelte';
 	import Icon from '#lib/components/Icon.svelte';
@@ -13,7 +13,8 @@
 	import TrackControls from '#lib/components/TrackControls.svelte';
 	import { failure, idParam, type Failure } from '#lib/failure';
 	import { localDay } from '#lib/day';
-	import { episodeCode, prettyDate, runtime, year } from '#lib/format';
+	import Avatar from '#lib/components/Avatar.svelte';
+	import { episodeCode, formatScore, prettyDate, runtime, year } from '#lib/format';
 	import { providerLink } from '#lib/providers';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
@@ -21,6 +22,7 @@
 	import { uniqueBy } from '#lib/unique';
 	import { whenWatched } from '#lib/when.svelte';
 	import type { LibraryItem, TitleDetail, TitleScore, TitleScores } from '#lib/types';
+	import { STATUS_LABEL } from '#lib/types';
 
 	let detail = $state<TitleDetail | null>(null);
 	let loading = $state(true);
@@ -54,7 +56,15 @@
 		loading = true;
 		error = null;
 		try {
-			const res = await api.title(id);
+			// One quiet retry: an update restarting the server, or TMDB slow for
+			// a moment, should not be a page that says it went wrong.
+			const res = await api.title(id).catch(async (e) => {
+				const status = e instanceof ApiError ? e.status : -1;
+				if (status !== 0 && status < 500) throw e;
+				await new Promise((r) => setTimeout(r, 1200));
+				if (mine !== token) throw e;
+				return api.title(id);
+			});
 			if (mine !== token) return;
 			// Known from AniList alone before, and on TMDB now: that is its page.
 			if (res.moved_to) {
@@ -89,9 +99,12 @@
 	async function refreshAfterEpisodes(item: LibraryItem) {
 		updateItem(item);
 		// Pull "up next" and the progress again, cheaply, after a tick change.
+		// Only for this page: another title may have opened in the meantime.
+		const mine = token;
 		try {
 			if (titleId === null) return;
 			const fresh = await api.title(titleId);
+			if (mine !== token || fresh.item.id !== detail?.item.id) return;
 			detail = fresh;
 		} catch {
 			// The optimistic update already landed; the rest can wait.
@@ -200,6 +213,80 @@
 			: []
 	);
 	const hasProviders = $derived(providerGroups.length > 0);
+
+	/** When it was started and finished, and how often watched again. */
+	const history = $derived(detail?.history ?? null);
+	const others = $derived(uniqueBy(detail?.others ?? [], (o) => o.username));
+
+	function times(n: number): string {
+		return n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`;
+	}
+
+	async function watchedAgain() {
+		if (!item) return;
+		const answer = await whenWatched.ask(item.name, 'Watched again', {
+			film: item.kind === 'movie',
+			confirm: 'Add rewatch'
+		});
+		if (!answer) return;
+		const id = item.id;
+		const body =
+			answer.when === 'date' && answer.date
+				? { watched_at: `${answer.date}T20:00:00Z` }
+				: answer.when === 'release' && item.release_date
+					? { watched_at: `${item.release_date}T20:00:00Z` }
+					: answer.when === 'unknown'
+						? { undated: true }
+						: {};
+		try {
+			const res = await api.rewatch(id, body);
+			if (detail && detail.item.id === id) detail = { ...detail, history: res.history };
+			toasts.push('Rewatch added');
+		} catch (e) {
+			toasts.error(e);
+		}
+	}
+
+	/*
+	 * YouTube will not play some trailers inside another site: those it
+	 * age-restricts, and those whose owner turned embedding off. The player
+	 * says so through messages to this page, and then the trailer is offered
+	 * on YouTube itself, where it plays.
+	 */
+	let blocked = $state<string | null>(null);
+	let frame: HTMLIFrameElement | undefined = $state();
+
+	$effect(() => {
+		const onMessage = (e: MessageEvent) => {
+			if (!/^https:\/\/www\.youtube(-nocookie)?\.com$/.test(e.origin)) return;
+			let data: { event?: string; info?: unknown } | null;
+			try {
+				data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+			} catch {
+				return;
+			}
+			if (data?.event === 'onError' && trailerOpen) blocked = trailerOpen;
+		};
+		window.addEventListener('message', onMessage);
+		return () => window.removeEventListener('message', onMessage);
+	});
+
+	/** Ask the player to report its errors, as YouTube's own script would. */
+	function listen() {
+		const target = frame?.contentWindow;
+		if (!target) return;
+		const origin = 'https://www.youtube-nocookie.com';
+		target.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), origin);
+		target.postMessage(
+			JSON.stringify({ event: 'command', func: 'addEventListener', args: ['onError'], id: 1 }),
+			origin
+		);
+	}
+
+	function play(key: string) {
+		blocked = null;
+		trailerOpen = key;
+	}
 
 	let markingAll = $state(false);
 	/** Bumped to remount the season list after a whole-show change. */
@@ -338,6 +425,16 @@
 							</button>
 						{/if}
 						<AddToShelf titleId={item.id} name={item.name} />
+						{#if item.entry?.status === 'completed'}
+							<button
+								class="btn icon"
+								title="Watched it again"
+								aria-label="Watched it again"
+								onclick={watchedAgain}
+							>
+								<Icon name="repeat" size={16} />
+							</button>
+						{/if}
 					</div>
 
 					{#if item.total_episodes > 0 && item.entry}
@@ -358,6 +455,23 @@
 								</span>
 							{/if}
 						</a>
+					{/if}
+
+					{#if history && (history.started || history.finished || history.rewatches > 0)}
+						<p class="history">
+							{#if history.started}
+								<span><span class="faint">Started</span> {prettyDate(history.started)}</span>
+							{/if}
+							{#if history.finished}
+								<span><span class="faint">Finished</span> {prettyDate(history.finished)}</span>
+							{/if}
+							{#if history.rewatches > 0}
+								<span class="rewatched">
+									<Icon name="repeat" size={13} />
+									Rewatched {times(history.rewatches)}
+								</span>
+							{/if}
+						</p>
 					{/if}
 				</div>
 			</div>
@@ -396,6 +510,35 @@
 				</div>
 
 				<aside class="side">
+					{#if others.length}
+						<section class="block others">
+							<div class="section-head"><h2>Your people</h2></div>
+							<ul>
+								{#each others as o (o.username)}
+									<li>
+										<a href="/people/{encodeURIComponent(o.username)}">
+											<Avatar src={o.avatar} name={o.display_name ?? o.username} size={36} />
+											<span class="who">
+												<strong>{o.display_name ?? o.username}</strong>
+												<span class="what">
+													<i class="dot-status" style:background="var(--status-{o.status})"></i>
+													{STATUS_LABEL[o.status]}
+													{#if o.rating !== null}
+														· <Icon name="star" size={11} filled />
+														{formatScore(o.rating, settings.current.scoreFormat)}
+													{/if}
+													{#if o.favourite}
+														· <Icon name="heart" size={11} filled />
+													{/if}
+												</span>
+											</span>
+										</a>
+									</li>
+								{/each}
+							</ul>
+						</section>
+					{/if}
+
 					{#if hasProviders && providers}
 						<section class="block">
 							<div class="section-head">
@@ -460,11 +603,12 @@
 							Mark all watched
 						</button>
 					</div>
-					{#key seasonsVersion}
+					{#key `${item.id}-${seasonsVersion}`}
 						<SeasonList
 							titleId={item.id}
 							showName={item.name}
 							fallbackStill={item.backdrop_path}
+							fallbackPoster={item.poster_path}
 							seasons={detail.seasons}
 							ratings={detail.ratings ?? []}
 							initialSeason={detail.next_up?.season_number ?? null}
@@ -498,17 +642,47 @@
 				<section class="block">
 					{#if playing}
 						<div class="player">
-							<!-- YouTube refuses to play (error 153) without knowing which site
-							     embeds it, and the site sends no referrer anywhere else, so this
-							     one frame gets the address of Frog and nothing more. -->
-							<iframe
-								src="https://www.youtube-nocookie.com/embed/{playing.key}?autoplay=1"
-								title={playing.name}
-								referrerpolicy="strict-origin-when-cross-origin"
-								allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture"
-								allowfullscreen
-							></iframe>
+							{#if blocked === playing.key}
+								<div class="blocked">
+									<p>This trailer only plays on YouTube.</p>
+									<a
+										class="btn primary"
+										href="https://www.youtube.com/watch?v={playing.key}"
+										target="_blank"
+										rel="noreferrer noopener"
+									>
+										<Icon name="external" size={15} />
+										Watch on YouTube
+									</a>
+								</div>
+							{:else}
+								<!-- YouTube refuses to play (error 153) without knowing which site
+								     embeds it, and the site sends no referrer anywhere else, so this
+								     one frame gets the address of Frog and nothing more. A new frame
+								     for each trailer: changing one frame's address would add a step
+								     to Back for every trailer played. -->
+								{#key playing.key}
+									<iframe
+										bind:this={frame}
+										onload={listen}
+										src="https://www.youtube-nocookie.com/embed/{playing.key}?autoplay=1&enablejsapi=1"
+										title={playing.name}
+										referrerpolicy="strict-origin-when-cross-origin"
+										allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture"
+										allowfullscreen
+									></iframe>
+								{/key}
+							{/if}
 						</div>
+						<a
+							class="on-youtube faint"
+							href="https://www.youtube.com/watch?v={playing.key}"
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							<Icon name="external" size={12} />
+							Open on YouTube
+						</a>
 					{/if}
 					<Rail title={trailers.length === 1 ? 'Trailer' : 'Trailers'} wide>
 						{#each trailers as t (t.key)}
@@ -516,7 +690,7 @@
 								class="trailer"
 								class:on={trailerOpen === t.key}
 								aria-pressed={trailerOpen === t.key}
-								onclick={() => (trailerOpen = t.key)}
+								onclick={() => play(t.key)}
 							>
 								{#if item.backdrop_path}
 									<img class="still" src={img(item.backdrop_path, 'w780')} alt="" loading="lazy" />
@@ -534,7 +708,6 @@
 							</button>
 						{/each}
 					</Rail>
-					<p class="faint tiny trailer-note">Playing a trailer loads it from YouTube.</p>
 				</section>
 			{/if}
 
@@ -552,7 +725,7 @@
 							/>
 						{/each}
 					</Rail>
-					<p class="faint tiny">Franchise shown in release order.</p>
+					<p class="faint tiny">Films and shows in release order.</p>
 				</section>
 			{/if}
 
@@ -1084,8 +1257,93 @@
 		text-overflow: ellipsis;
 	}
 
-	.trailer-note {
-		margin-top: -26px;
+	.blocked {
+		display: grid;
+		place-content: center;
+		justify-items: center;
+		gap: 14px;
+		height: 100%;
+		padding: 20px;
+		text-align: center;
+		color: #fff;
+		background: radial-gradient(circle at 50% 40%, rgb(255 255 255 / 0.08), transparent 60%), #000;
+	}
+
+	.on-youtube {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		margin: -8px 0 18px;
+		font-size: 0.78rem;
+	}
+
+	.on-youtube:hover {
+		color: var(--text);
+	}
+
+	.history {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 16px;
+		margin-top: 2px;
+		font-size: 0.84rem;
+		color: var(--text);
+	}
+
+	.rewatched {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		color: var(--accent);
+		font-weight: 600;
+	}
+
+	.others ul {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 4px;
+	}
+
+	.others a {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 8px;
+		margin: 0 -8px;
+		border-radius: var(--radius-sm);
+		transition: background var(--fast) var(--ease);
+	}
+
+	.others a:hover {
+		background: var(--bg-elev);
+	}
+
+	.who {
+		display: grid;
+		min-width: 0;
+	}
+
+	.who strong {
+		font-size: 0.88rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.what {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		font-size: 0.76rem;
+		color: var(--text-dim);
+	}
+
+	.dot-status {
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
 	}
 
 	.player {

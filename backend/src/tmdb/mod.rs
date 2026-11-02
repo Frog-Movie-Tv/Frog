@@ -395,6 +395,19 @@ impl Tmdb {
         .await
     }
 
+    /// Shows, or film collections, by name (`kind` is `tv` or `collection`).
+    pub async fn search_named(&self, kind: &str, query: &str) -> AppResult<Value> {
+        self.get(
+            &format!("/search/{kind}"),
+            &[
+                ("query", query.to_string()),
+                ("include_adult", "false".into()),
+            ],
+            Duration::hours(ttl::TRENDING_HOURS),
+        )
+        .await
+    }
+
     pub async fn search_company(&self, query: &str) -> AppResult<Value> {
         self.get(
             "/search/company",

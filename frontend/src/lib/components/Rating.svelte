@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { backCloses } from '#lib/layers.svelte';
+	import { onScreen } from '#lib/onscreen';
 	import { formatScore, fromDisplay, scale, toDisplay } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import Icon from './Icon.svelte';
@@ -15,6 +17,11 @@
 	let { value, onchange, compact = false, disabled = false }: Props = $props();
 
 	let open = $state(false);
+	// Back closes it on a phone, as Esc does on a computer.
+	backCloses(
+		() => open,
+		() => (open = false)
+	);
 	let root: HTMLElement | undefined = $state();
 
 	const format = $derived(settings.current.scoreFormat);
@@ -86,7 +93,9 @@
 	</button>
 
 	{#if open}
-		<div class="pop" role="menu" aria-label="Choose a rating">
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+		<div class="scrim" onclick={() => (open = false)}></div>
+		<div class="pop" use:onScreen role="menu" aria-label="Choose a rating">
 			<div class="grid" data-format={format}>
 				{#each steps as step (step)}
 					<button
@@ -264,5 +273,49 @@
 	.clear:hover {
 		color: var(--text);
 		border-color: var(--line-strong);
+	}
+
+	/* A phone: the menu rises from the bottom, always whole and in reach,
+	   over a dimmed page. */
+	.scrim {
+		display: none;
+	}
+
+	@media (max-width: 600px) {
+		.scrim {
+			display: block;
+			position: fixed;
+			inset: 0;
+			z-index: 199;
+			background: rgb(0 0 0 / 0.45);
+			animation: scrim-in 160ms ease both;
+		}
+
+		.pop {
+			position: fixed;
+			z-index: 200;
+			top: auto;
+			left: 10px;
+			right: 10px;
+			bottom: calc(10px + env(safe-area-inset-bottom));
+			min-width: 0;
+			max-height: 70dvh;
+			overflow-y: auto;
+			border-radius: 18px;
+			animation: sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+		}
+	}
+
+	@keyframes sheet-up {
+		from {
+			transform: translateY(24px);
+			opacity: 0;
+		}
+	}
+
+	@keyframes scrim-in {
+		from {
+			opacity: 0;
+		}
 	}
 </style>

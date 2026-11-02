@@ -85,6 +85,8 @@ export interface Settings {
 
 	spoilerProtection: boolean;
 	hideAnimation: boolean;
+	/** Episodes as cards with their stills, or as a compact list. */
+	episodeView?: 'grid' | 'list';
 
 	defaultStatus: Status;
 	autoComplete: boolean;

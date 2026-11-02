@@ -260,7 +260,8 @@ pub async fn diary(
                 l.rating
            FROM watch_event w
            JOIN title t ON t.id = w.title_id
-           LEFT JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?
+           -- Only what is in the library: a title taken out leaves the diary.
+           JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?
           WHERE w.user_id = ? AND w.undated = 0
           GROUP BY day, t.id, film
           ORDER BY day DESC, latest DESC
@@ -326,19 +327,23 @@ pub async fn diary(
 
     let (total,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM (
-            SELECT 1 FROM watch_event
-             WHERE user_id = ? AND undated = 0
-             GROUP BY substr(watched_at, 1, 10), title_id, episode_id IS NULL)",
+            SELECT 1 FROM watch_event w
+             JOIN library_entry l ON l.title_id = w.title_id AND l.user_id = w.user_id
+             WHERE w.user_id = ? AND w.undated = 0
+             GROUP BY substr(w.watched_at, 1, 10), w.title_id, w.episode_id IS NULL)",
     )
     .bind(auth.user_id())
     .fetch_one(&state.pool)
     .await?;
 
-    let (undated,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE user_id = ? AND undated = 1")
-            .bind(auth.user_id())
-            .fetch_one(&state.pool)
-            .await?;
+    let (undated,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM watch_event w
+               JOIN library_entry l ON l.title_id = w.title_id AND l.user_id = w.user_id
+              WHERE w.user_id = ? AND w.undated = 1",
+    )
+    .bind(auth.user_id())
+    .fetch_one(&state.pool)
+    .await?;
 
     Ok(Json(
         json!({ "entries": entries, "total": total, "undated": undated }),

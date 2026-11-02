@@ -26,6 +26,8 @@
 		showName?: string;
 		/** The show's backdrop, for episodes TMDB has no still of. */
 		fallbackStill?: string | null;
+		/** Its poster, for a show with no backdrop either. */
+		fallbackPoster?: string | null;
 		/** What can be rated: whole seasons, or the AniList parts of one. */
 		ratings?: RatingUnit[];
 		onprogress?: (item: LibraryItem) => void;
@@ -37,6 +39,7 @@
 		initialSeason = null,
 		showName = 'This show',
 		fallbackStill = null,
+		fallbackPoster = null,
 		ratings = [],
 		onprogress
 	}: Props = $props();
@@ -84,8 +87,12 @@
 
 	async function fetchSeason(season: number) {
 		loading = season;
+		// Another show's page may have taken this one's place by the time the
+		// answer comes; its episodes must never land here.
+		const forTitle = titleId;
 		try {
-			const detail = await api.season(titleId, season);
+			const detail = await api.season(forTitle, season);
+			if (forTitle !== titleId) return;
 			loaded = { ...loaded, [season]: detail };
 		} catch (e) {
 			toasts.error(e);
@@ -223,6 +230,64 @@
 		return !!ep.air_date && ep.air_date > today;
 	}
 
+	/** Cards with stills, or a compact list: one choice, for every show. */
+	const view = $derived(settings.current.episodeView ?? 'grid');
+
+	/** What stands in for a missing still: the backdrop, else the poster. */
+	const standIn = $derived(
+		fallbackStill ? img(fallbackStill, 'w300') : fallbackPoster ? img(fallbackPoster, 'w342') : null
+	);
+
+	/*
+	 * A long show has more seasons than fit across. The row scrolls, and
+	 * arrows say there is more and move to it; the open season is kept in view.
+	 */
+	let tabsEl: HTMLDivElement | undefined = $state();
+	let canLeft = $state(false);
+	let canRight = $state(false);
+
+	function measure() {
+		if (!tabsEl) return;
+		canLeft = tabsEl.scrollLeft > 4;
+		canRight = tabsEl.scrollLeft + tabsEl.clientWidth < tabsEl.scrollWidth - 4;
+	}
+
+	function nudge(direction: -1 | 1) {
+		if (!tabsEl) return;
+		tabsEl.scrollBy({ left: direction * tabsEl.clientWidth * 0.75, behavior: 'smooth' });
+	}
+
+	$effect(() => {
+		const el = tabsEl;
+		if (!el) return;
+		measure();
+		const resize = new ResizeObserver(measure);
+		resize.observe(el);
+		// A mouse wheel moves the row sideways, as a trackpad already does.
+		const wheel = (e: WheelEvent) => {
+			if (el.scrollWidth <= el.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+			el.scrollLeft += e.deltaY;
+			e.preventDefault();
+		};
+		el.addEventListener('wheel', wheel, { passive: false });
+		return () => {
+			resize.disconnect();
+			el.removeEventListener('wheel', wheel);
+		};
+	});
+
+	$effect(() => {
+		void open;
+		const el = tabsEl;
+		const on = el?.querySelector<HTMLElement>('.season-tab.on');
+		if (!el || !on) return;
+		const left = on.offsetLeft - el.offsetLeft;
+		if (left < el.scrollLeft || left + on.offsetWidth > el.scrollLeft + el.clientWidth) {
+			el.scrollTo({ left: left - el.clientWidth / 2 + on.offsetWidth / 2 });
+		}
+		measure();
+	});
+
 	function seasonWatched(season: number): boolean {
 		const detail = loaded[season];
 		return !!detail?.episodes.length && detail.episodes.every((e) => e.watched);
@@ -231,18 +296,36 @@
 
 <div class="seasons">
 	{#if ordered.length > 1}
-		<div class="season-tabs" role="tablist" aria-label="Seasons">
-			{#each ordered as season (season.season_number)}
-				<button
-					role="tab"
-					class="season-tab"
-					class:on={open === season.season_number}
-					aria-selected={open === season.season_number}
-					onclick={() => (chosen = season.season_number)}
-				>
-					{season.name}
+		<div class="tabs-wrap" class:fade-left={canLeft} class:fade-right={canRight}>
+			{#if canLeft}
+				<button class="tab-arrow left" aria-label="Earlier seasons" onclick={() => nudge(-1)}>
+					<Icon name="chevron-left" size={18} />
 				</button>
-			{/each}
+			{/if}
+			<div
+				class="season-tabs"
+				role="tablist"
+				aria-label="Seasons"
+				bind:this={tabsEl}
+				onscroll={measure}
+			>
+				{#each ordered as season (season.season_number)}
+					<button
+						role="tab"
+						class="season-tab"
+						class:on={open === season.season_number}
+						aria-selected={open === season.season_number}
+						onclick={() => (chosen = season.season_number)}
+					>
+						{season.name}
+					</button>
+				{/each}
+			</div>
+			{#if canRight}
+				<button class="tab-arrow right" aria-label="Later seasons" onclick={() => nudge(1)}>
+					<Icon name="chevron-right" size={18} />
+				</button>
+			{/if}
 		</div>
 	{/if}
 
@@ -263,6 +346,26 @@
 					</span>
 				</div>
 				<div class="season-actions">
+					<div class="view-switch" role="group" aria-label="Show episodes as">
+						<button
+							class:on={view === 'grid'}
+							aria-pressed={view === 'grid'}
+							title="Cards"
+							aria-label="Cards"
+							onclick={() => settings.set('episodeView', 'grid')}
+						>
+							<Icon name="grid" size={15} />
+						</button>
+						<button
+							class:on={view === 'list'}
+							aria-pressed={view === 'list'}
+							title="List"
+							aria-label="List"
+							onclick={() => settings.set('episodeView', 'list')}
+						>
+							<Icon name="list" size={16} />
+						</button>
+					</div>
 					{#if whole && (whole.rateable || started)}
 						{#if whole.rateable}
 							<Rating compact value={ratingOf(whole)} onchange={(v) => rateUnit(whole, v)} />
@@ -320,6 +423,63 @@
 						</li>
 					{/each}
 				</ul>
+			{:else if view === 'list'}
+				<ul class="ep-list">
+					{#each uniqueBy(detail.episodes, (e) => e.episode_number) as ep (ep.episode_number)}
+						{@const key = `${ep.season_number}-${ep.episode_number}`}
+						{@const code = episodeCode(ep.season_number, ep.episode_number)}
+						<li class="ep-row" class:watched={ep.watched} class:future={unaired(ep)}>
+							<button
+								class="check row-check hit"
+								class:on={ep.watched}
+								disabled={busy === key || unaired(ep)}
+								aria-pressed={ep.watched}
+								aria-label={unaired(ep) ? `${code} has not aired yet` : `Mark ${code} watched`}
+								title={unaired(ep) ? 'Not out yet' : 'Mark watched'}
+								onclick={() => toggle(ep)}
+							>
+								<Icon name="check" size={14} strokeWidth={2.8} />
+							</button>
+							<span class="code">{ep.episode_number}</span>
+							<div class="row-body">
+								<span class="name">
+									{ep.name ?? 'Untitled'}
+									{#if ep.watch_count > 1}<span class="times-inline">×{ep.watch_count}</span>{/if}
+								</span>
+								{#if ep.overview && !blurStill(ep)}
+									<p class="overview">{ep.overview}</p>
+								{/if}
+								{#if noteFor === key}
+									<textarea
+										class="input note"
+										rows="3"
+										placeholder="What did you think?"
+										value={ep.notes ?? ''}
+										onblur={(e) => saveNote(ep, e.currentTarget.value)}></textarea>
+								{/if}
+							</div>
+							<span class="row-meta">
+								{#if unaired(ep)}
+									<span class="soon">Airs {relativeDate(ep.air_date)}</span>
+								{:else}
+									{#if ep.air_date}<span>{prettyDate(ep.air_date)}</span>{/if}
+									{#if ep.runtime}<span>{runtime(ep.runtime)}</span>{/if}
+								{/if}
+							</span>
+							{#if !unaired(ep)}
+								<button
+									class="note-btn hit"
+									class:has={!!ep.notes}
+									aria-label="Episode note"
+									title={ep.notes ? 'Your note' : 'Add a note'}
+									onclick={() => (noteFor = noteFor === key ? null : key)}
+								>
+									<Icon name="pencil" size={13} />
+								</button>
+							{/if}
+						</li>
+					{/each}
+				</ul>
 			{:else}
 				<ul class="episodes">
 					{#each uniqueBy(detail.episodes, (e) => e.episode_number) as ep (ep.episode_number)}
@@ -329,8 +489,8 @@
 							<div class="still" class:blurred={blurStill(ep)}>
 								{#if ep.still_path}
 									<img src={img(ep.still_path, 'w300')} alt="" loading="lazy" />
-								{:else if fallbackStill}
-									<img class="stand-in" src={img(fallbackStill, 'w300')} alt="" loading="lazy" />
+								{:else if standIn}
+									<img class="stand-in" src={standIn} alt="" loading="lazy" />
 								{:else}
 									<span class="no-still" aria-hidden="true">{code}</span>
 								{/if}
@@ -390,12 +550,194 @@
 </div>
 
 <style>
+	.tabs-wrap {
+		position: relative;
+		margin-bottom: 18px;
+	}
+
 	.season-tabs {
 		display: flex;
 		gap: 6px;
-		margin-bottom: 18px;
 		overflow-x: auto;
 		scrollbar-width: none;
+		scroll-behavior: smooth;
+	}
+
+	/* The row fades where it goes on, so a cut-off season reads as "more". */
+	.tabs-wrap.fade-right .season-tabs {
+		mask-image: linear-gradient(to right, #000 calc(100% - 64px), transparent);
+	}
+
+	.tabs-wrap.fade-left .season-tabs {
+		mask-image: linear-gradient(to left, #000 calc(100% - 64px), transparent);
+	}
+
+	.tabs-wrap.fade-left.fade-right .season-tabs {
+		mask-image: linear-gradient(
+			to right,
+			transparent,
+			#000 64px,
+			#000 calc(100% - 64px),
+			transparent
+		);
+	}
+
+	.tab-arrow {
+		position: absolute;
+		top: 50%;
+		z-index: 1;
+		display: grid;
+		place-items: center;
+		width: 34px;
+		height: 34px;
+		margin-top: -17px;
+		border: 1px solid var(--line-strong);
+		border-radius: 50%;
+		background: var(--bg-elev);
+		color: var(--text);
+		box-shadow: var(--shadow-2);
+		cursor: pointer;
+		transition: transform var(--fast) var(--ease);
+	}
+
+	.tab-arrow:hover {
+		transform: scale(1.08);
+	}
+
+	.tab-arrow.left {
+		left: -4px;
+	}
+
+	.tab-arrow.right {
+		right: -4px;
+	}
+
+	.view-switch {
+		display: inline-flex;
+		padding: 3px;
+		gap: 2px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-pill);
+	}
+
+	.view-switch button {
+		display: grid;
+		place-items: center;
+		width: 30px;
+		height: 26px;
+		border: 0;
+		border-radius: var(--radius-pill);
+		background: none;
+		color: var(--text-faint);
+		cursor: pointer;
+		transition:
+			background var(--fast) var(--ease),
+			color var(--fast) var(--ease);
+	}
+
+	.view-switch button:hover {
+		color: var(--text);
+	}
+
+	.view-switch button.on {
+		background: var(--bg-elev-2);
+		color: var(--text);
+	}
+
+	/* The list: one line an episode, the tick first, quick to run down. */
+	.ep-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		border-top: 1px solid var(--line);
+	}
+
+	.ep-row {
+		display: grid;
+		grid-template-columns: auto 2.4ch minmax(0, 1fr) auto auto;
+		align-items: start;
+		gap: 4px 14px;
+		padding: 12px 4px;
+		border-bottom: 1px solid var(--line);
+		transition: background var(--fast) var(--ease);
+	}
+
+	.ep-row:hover {
+		background: color-mix(in srgb, var(--bg-elev) 60%, transparent);
+	}
+
+	.ep-row .code {
+		padding-top: 6px;
+		text-align: right;
+	}
+
+	.ep-row .name {
+		display: block;
+		padding-top: 4px;
+		white-space: normal;
+	}
+
+	.ep-row.watched .name {
+		color: var(--text-dim);
+	}
+
+	.ep-row.future {
+		opacity: 0.6;
+	}
+
+	.ep-row .row-check {
+		position: static;
+		width: 28px;
+		height: 28px;
+		border-color: var(--line-strong);
+		background: none;
+	}
+
+	.ep-row .row-check:hover:not(:disabled) {
+		color: var(--text-faint);
+	}
+
+	.ep-row .row-check.on {
+		border-color: transparent;
+		background: var(--accent);
+		color: var(--accent-ink);
+	}
+
+	.row-body {
+		min-width: 0;
+		overflow-wrap: normal;
+	}
+
+	.overview {
+		margin-top: 4px;
+		font-size: 0.8rem;
+		line-height: 1.45;
+		color: var(--text-faint);
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.row-meta {
+		display: flex;
+		gap: 10px;
+		padding-top: 6px;
+		font-size: 0.76rem;
+		color: var(--text-faint);
+		white-space: nowrap;
+	}
+
+	.ep-row .note-btn {
+		margin-top: 2px;
+	}
+
+	.times-inline {
+		margin-left: 6px;
+		font-size: 0.7rem;
+		font-weight: 650;
+		color: var(--accent);
 	}
 
 	.season-tabs::-webkit-scrollbar {
@@ -700,6 +1042,21 @@
 		.check {
 			right: 6px;
 			bottom: 6px;
+			width: 30px;
+			height: 30px;
+		}
+
+		.ep-row {
+			grid-template-columns: auto 2.4ch minmax(0, 1fr) auto;
+		}
+
+		.row-meta {
+			grid-column: 3;
+			grid-row: 2;
+			padding-top: 0;
+		}
+
+		.ep-row .row-check {
 			width: 30px;
 			height: 30px;
 		}

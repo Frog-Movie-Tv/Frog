@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { backCloses } from '#lib/layers.svelte';
+	import { onScreen } from '#lib/onscreen';
 	import Icon from './Icon.svelte';
 	import NewShelf from './NewShelf.svelte';
 	import { api } from '#lib/api';
@@ -14,6 +16,11 @@
 	let { titleId, name }: Props = $props();
 
 	let open = $state(false);
+	// Back closes it on a phone, as Esc does on a computer.
+	backCloses(
+		() => open,
+		() => (open = false)
+	);
 	let creating = $state(false);
 	let shelves = $state<{ id: number; name: string; on: boolean }[] | null>(null);
 	let root: HTMLDivElement | undefined = $state();
@@ -72,7 +79,7 @@
 	</button>
 
 	{#if open && shelves}
-		<div class="menu" role="menu" aria-label="Shelves">
+		<div class="menu" role="menu" aria-label="Shelves" use:onScreen>
 			{#each shelves as shelf (shelf.id)}
 				<button
 					class="item"

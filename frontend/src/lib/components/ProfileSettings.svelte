@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backCloses } from '#lib/layers.svelte';
 	import { api, img } from '#lib/api';
 	import Avatar from '#lib/components/Avatar.svelte';
 	import Icon from '#lib/components/Icon.svelte';
@@ -18,6 +19,10 @@
 	/** Bumped after an upload so the previews load the new picture. */
 	let version = $state(Date.now());
 	let choosingBanner = $state(false);
+	backCloses(
+		() => choosingBanner,
+		() => (choosingBanner = false)
+	);
 
 	// --- where the banner sits -------------------------------------------
 	const parsePosition = (value: string | null | undefined) => {
@@ -104,6 +109,7 @@
 		if (framing) URL.revokeObjectURL(framing.url);
 		framing = null;
 	}
+	backCloses(() => !!framing, closeFrame);
 
 	async function saveFrame() {
 		if (!framing) return;
@@ -128,6 +134,10 @@
 		await send('avatar', () => encode(canvas, source));
 	}
 	let choosingPins = $state(false);
+	backCloses(
+		() => choosingPins,
+		() => (choosingPins = false)
+	);
 
 	// The session first: it is what a rename on this same page updates.
 	const username = $derived(session.status?.username ?? account?.username ?? '');

@@ -17,8 +17,10 @@
 </script>
 
 <script lang="ts">
+	import { backCloses } from '#lib/layers.svelte';
 	import { untrack } from 'svelte';
 	import { afterNavigate, goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { address } from '#lib/address';
 	import { titleHref } from '#lib/titles';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -64,7 +66,15 @@
 	/** Someone else's library that is private, or was never there. */
 	let missing = $state(false);
 	let sheetOpen = $state(false);
+	backCloses(
+		() => sheetOpen,
+		() => (sheetOpen = false)
+	);
 	let menuOpen = $state(false);
+	backCloses(
+		() => menuOpen,
+		() => (menuOpen = false)
+	);
 
 	let status = $state<Status | 'all'>(STATUSES.find((s) => s === start.get('status')) ?? 'all');
 	let kind = $state<Kind | 'all'>(kindFrom(start));
@@ -173,7 +183,7 @@
 			() => {
 				sent = name;
 				if (wanted !== untrack(() => address().search)) {
-					void goto(`${home}${wanted}`, { shallow: true, replace: true });
+					void goto(`${home}${wanted}`, { shallow: true, replace: true, state: page.state });
 				}
 				void load(query, keyOf(wanted));
 			},
@@ -402,7 +412,13 @@
 		</div>
 
 		<div class="row">
-			<input class="input search" placeholder="Filter by name" bind:value={term} />
+			<input
+				class="input search"
+				placeholder="Filter by name"
+				bind:value={term}
+				enterkeyhint="search"
+				onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+			/>
 
 			<Select
 				label="Type"
@@ -479,7 +495,13 @@
 
 				<label class="field">
 					<span>Name</span>
-					<input class="input" placeholder="Filter by name" bind:value={term} />
+					<input
+						class="input"
+						placeholder="Filter by name"
+						bind:value={term}
+						enterkeyhint="search"
+						onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+					/>
 				</label>
 
 				<div class="field">

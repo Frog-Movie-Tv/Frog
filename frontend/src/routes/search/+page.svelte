@@ -2,6 +2,7 @@
 	import { sameTitle, titleHref, titleKey } from '#lib/titles';
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { address } from '#lib/address';
 	import Icon from '#lib/components/Icon.svelte';
 	import { api, frogId, img } from '#lib/api';
@@ -197,7 +198,7 @@
 			set('list', list === 'top' ? 'top' : null);
 		});
 		if (url.search !== untrack(() => address().search)) {
-			void goto(url, { shallow: true, replace: true });
+			void goto(url, { shallow: true, replace: true, state: page.state });
 		}
 	}
 
@@ -527,6 +528,12 @@
 			autocapitalize="off"
 			spellcheck="false"
 			aria-label="Search"
+			enterkeyhint="search"
+			onkeydown={(e) => {
+				// The results are already there as you type; Enter puts the
+				// phone keyboard away so they can be seen.
+				if (e.key === 'Enter') e.currentTarget.blur();
+			}}
 		/>
 		{#if term}
 			<button class="clear hit" aria-label="Clear search" onclick={() => (term = '')}>
@@ -1067,10 +1074,12 @@
 
 	/* Always visible. A hover-only control is invisible on a laptop until you
 	   go hunting for it, and absent on a touchscreen. */
+	/* Top left: a title not in the library has no status label there, and
+	   the corner opposite says film or show. */
 	.quick {
 		position: absolute;
 		top: 7px;
-		right: 7px;
+		left: 7px;
 		display: flex;
 		gap: 5px;
 		opacity: 0.92;

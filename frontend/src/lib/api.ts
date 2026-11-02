@@ -39,7 +39,8 @@ import type {
 	ShelfRules,
 	Stats,
 	Status,
-	TitleDetail
+	TitleDetail,
+	TitleHistory
 } from './types';
 
 export class ApiError extends Error {
@@ -370,6 +371,10 @@ export const api = {
 	) => send<{ item: LibraryItem }>('PUT', `/api/t/${titleId}/library`, patch),
 
 	untrack: (titleId: number) => send<{ ok: true }>('DELETE', `/api/t/${titleId}/library`),
+
+	/** Watched it again: another watch of a film, another time through a show. */
+	rewatch: (titleId: number, body: { watched_at?: string; undated?: boolean }) =>
+		send<{ history: TitleHistory | null }>('POST', `/api/t/${titleId}/rewatch`, body),
 
 	/** `at` puts back a watch exactly as it was, for undo. */
 	setEpisodeWatched: (
