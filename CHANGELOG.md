@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.3.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.2.0...v1.3.0) (2026-11-03)
+
+
+### Features
+
+* **library:** Rewatched filter, AniList's dates win, faster pages ([7fbdf62](https://github.com/Frog-Movie-Tv/Frog/commit/7fbdf6250ff7432cf38c37fd99079cd827b39d4d))
+* Rewatched filter, every score for anime, AniList's dates win ([470863b](https://github.com/Frog-Movie-Tv/Frog/commit/470863b06069cc0f8ecee7087ff9ddd09aa5e87b))
+
+
+### Fixes
+
+* **library:** the phone filter sheet's buttons wrap on a narrow screen ([33a1053](https://github.com/Frog-Movie-Tv/Frog/commit/33a10534d801ca68a9427fbccfabe971bfbc1dee))
+* **ratings:** anime and older titles get every site's score ([7fda0e0](https://github.com/Frog-Movie-Tv/Frog/commit/7fda0e00e07e192624de175f7a50cc17a0b8dff0))
+* **ui:** rating opens clear of the tab bar, every score in reach, wit… ([64bb8ba](https://github.com/Frog-Movie-Tv/Frog/commit/64bb8babfffb622b5536ea52f1a682e4ccbc2198))
+* **ui:** rating opens clear of the tab bar, every score in reach, with Clear ([b9e8e82](https://github.com/Frog-Movie-Tv/Frog/commit/b9e8e8264a323a987a7d18ac2f6d42b1598c67e8))
+
 ## [1.2.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.1.0...v1.2.0) (2026-11-03)
 
 
