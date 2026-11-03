@@ -100,7 +100,8 @@ left. See CLAUDE.md for the rule.
 | `auth` | Argon2 password hashing, session tokens, roles, the `Auth` and `AdminAuth` extractors. |
 | `tmdb` | HTTP client, response cache, the curated mapping from TMDB's JSON to what a screen draws. |
 | `catalog` | Frog's titles and their provider ids (`title_external`): finding a title by any provider's id, making or refreshing one from a provider, episodes, credits, poster colour. |
-| `store` | One account's library: entries, the filtered list and what its filters offer (`LibraryFilter`), progress, "up next", a title's history (`history`: started, finished, rewatches), the days another place knows (`set_known_dates`), who else has a title (`others_with`), emptying it, and moving one account's data between titles (`move_title_data`). Removing a title takes its watches and episode notes with it, held in `EntryRecord` so undo puts them back. |
+| `store` | One account's library: entries, the filtered list and what its filters offer (`LibraryFilter`), progress, "up next", a title's history (`history`: started, finished, rewatches), the days another place knows (`set_known_dates`, and `replace_known_dates`
+for AniList's, which win), who else has a title (`others_with`), emptying it, and moving one account's data between titles (`move_title_data`). Removing a title takes its watches and episode notes with it, held in `EntryRecord` so undo puts them back. |
 | `images` | The picture cache in SQLite, and its budget. |
 | `bulk` | One action on many titles of a library, one request each, and the marking of aired episodes it shares with "Mark all watched" (`tick_aired`, `When`). Removing, changing a status or favouriting answers with what the titles held (`store::EntryRecord`), which is what undo sends back. |
 | `activity` | What others have been watching, for Home's Activity row and the Activity page. `summarise` adds up one person's watches on plain values; `everything` pages through all of it, a title a day per card. Only accounts `store::shown_to` names, only dated watches of titles still in that library, and never notes. |
@@ -325,8 +326,10 @@ left is in [ROADMAP.md](ROADMAP.md).
 `title_rating`, on Frog's own title and matched only by provider id: TMDB's,
 AniList's through `title_external` or `anime_map`, and MyAnimeList's through
 AniList. MDBList carries IMDb, Rotten Tomatoes, Metacritic and the rest; its
-key stays on the server. The worker refreshes what somebody tracks, a few
-titles at a time, and `/api/t/{id}/scores` gives a title page its first look.
+key stays on the server. The worker refreshes what somebody tracks, up to a
+hundred titles a pass (ten MDBList requests), and `/api/t/{id}/scores` gives a
+title page its first look, and another look when the title is due and has
+nothing from MDBList yet (`look_now`).
 A title page shows AniList, IMDb, Rotten Tomatoes, Metacritic, Letterboxd
 and MyAnimeList as percentages, each with its own mark (Simple Icons, CC0,
 inlined in `Scores.svelte`). While MDBList has nothing for a title (its daily
@@ -334,8 +337,9 @@ limit, or no match yet), TMDB's own score stands in.
 
 A title with no AniList id of its own gets AniList's score through the
 MyAnimeList id MDBList gives. MDBList is asked by MyAnimeList id as `movie` or
-`show`, never `any`, which it refuses. A title checked while no MDBList key
-was set is asked again within two days, not a month.
+`show`, never `any`, which it refuses. So is an anime whose borrowed TMDB id
+MDBList does not answer for. A title checked while no MDBList key was set is
+asked again within two days, not a month.
 
 ## Logos
 

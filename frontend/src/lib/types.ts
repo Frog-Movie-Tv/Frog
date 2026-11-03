@@ -56,6 +56,8 @@ export interface LibraryItem {
 	watched_episodes: number;
 	total_episodes: number;
 	last_watched_at: string | null;
+	/** Watched again this many times. */
+	rewatches: number;
 }
 
 /** What someone else's profile shows of a library entry: never their notes. */

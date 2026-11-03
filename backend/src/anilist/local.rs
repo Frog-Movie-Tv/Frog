@@ -143,11 +143,12 @@ pub(super) async fn sync_local(
         _ => (None, None),
     };
     let f = local_view(&state.pool, user_id, title_id, film).await?;
-    if f.is_none() && snap_al.is_some() {
-        // Taken out of the library in Frog: left alone from now on.
-        save_snapshots(&state.pool, user_id, remote.media_id, a, None, true).await?;
-        return Ok(false);
-    }
+    // Taken out of the library in Frog: it comes back as AniList has it.
+    let (snap_al, snap_frog) = if f.is_none() {
+        (None, None)
+    } else {
+        (snap_al, snap_frog)
+    };
     let c = Changes::between(snap_al.as_ref(), snap_frog.as_ref(), a, f.as_ref());
 
     if c.first || c.al_changed {
@@ -170,7 +171,7 @@ pub(super) async fn sync_local(
             ..Default::default()
         };
         store::apply_patch(&state.pool, user_id, title_id, &patch).await?;
-        store::set_known_dates(
+        store::replace_known_dates(
             &state.pool,
             user_id,
             title_id,
@@ -196,15 +197,7 @@ pub(super) async fn sync_local(
     }
     let f_now = local_view(&state.pool, user_id, title_id, film).await?;
 
-    save_snapshots(
-        &state.pool,
-        user_id,
-        remote.media_id,
-        a,
-        f_now.as_ref(),
-        false,
-    )
-    .await?;
+    save_snapshots(&state.pool, user_id, remote.media_id, a, f_now.as_ref()).await?;
     Ok(f_now != f)
 }
 
@@ -242,10 +235,11 @@ async fn sync_local_episodes(
         )
     };
     let f = view(&state.pool).await?;
-    if f.is_none() && snap_al.is_some() {
-        save_snapshots(&state.pool, user_id, remote.media_id, a, None, true).await?;
-        return Ok(false);
-    }
+    let (snap_al, snap_frog) = if f.is_none() {
+        (None, None)
+    } else {
+        (snap_al, snap_frog)
+    };
     let c = Changes::between(snap_al.as_ref(), snap_frog.as_ref(), a, f.as_ref());
     match c.mode(false) {
         Some(mode) => {
@@ -273,15 +267,7 @@ async fn sync_local_episodes(
     }
     let f_now = view(&state.pool).await?;
 
-    save_snapshots(
-        &state.pool,
-        user_id,
-        remote.media_id,
-        a,
-        f_now.as_ref(),
-        false,
-    )
-    .await?;
+    save_snapshots(&state.pool, user_id, remote.media_id, a, f_now.as_ref()).await?;
     Ok(f_now != f)
 }
 

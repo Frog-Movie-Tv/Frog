@@ -11,7 +11,26 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Glass Frog —
 
-In progress.
+Rewatches you can find, and scores from every site on every title.
+
+### Improvements
+
+- **Rewatched.** Library has a Rewatched filter, and a title you watched again
+  says how many times on its card, in your library and on your profile.
+  AniList's rewatch counts come in with every sync.
+- AniList's start and finish dates replace the ones in Frog, so your history
+  matches your list.
+- An AniList entry you remove in Frog comes back on the next sync, as AniList
+  has it. Choose Not in Frog in Settings to keep one out.
+- Libraries and title pages appear sooner, and posters you have seen show at
+  once.
+
+### Fixes
+
+- Anime gets the scores other sites give it, IMDb and Rotten Tomatoes
+  included, not only AniList's and TMDB's.
+- Titles that showed only one or two scores get the rest, within a day or the
+  next time you open them.
 
 ## [1.2.0] — Spring Peeper — 2026-11-03
 

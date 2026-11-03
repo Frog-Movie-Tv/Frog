@@ -340,6 +340,7 @@
 						rating={item.entry?.rating ?? null}
 						watched={item.watched_episodes}
 						total={item.total_episodes}
+						rewatches={item.rewatches}
 					/>
 				{/each}
 			</Grid>

@@ -29,6 +29,8 @@
 		fallbackPath?: string | null;
 		/** Library's edit mode: ticked or not. Unset, the card has no tick. */
 		selected?: boolean;
+		/** Watched again this many times, marked under the status. */
+		rewatches?: number;
 	}
 
 	let {
@@ -46,6 +48,7 @@
 		size = 'w342',
 		fallbackPath = null,
 		selected,
+		rewatches = 0,
 		...rest
 	}: Props = $props();
 
@@ -64,6 +67,11 @@
 
 	/** The picture fades in once it is there, instead of popping in. */
 	let loaded = $state(false);
+
+	/** One the browser already has (Back, a second visit) shows at once. */
+	function known(node: HTMLImageElement) {
+		if (node.complete && node.naturalWidth > 0) loaded = true;
+	}
 </script>
 
 <a
@@ -88,6 +96,7 @@
 				decoding="async"
 				class="art-img"
 				class:loaded
+				use:known
 				onload={() => (loaded = true)}
 			/>
 		{:else}
@@ -105,6 +114,15 @@
 		{#if status && show.showBadge}
 			<div class="badges">
 				<span class="badge" data-status={status}>{STATUS_LABEL[status]}</span>
+				{#if rewatches > 0}
+					<span
+						class="badge again"
+						title={rewatches === 1 ? 'Watched again' : `Watched again ${rewatches} times`}
+					>
+						<Icon name="repeat" size={10} />
+						{rewatches}×
+					</span>
+				{/if}
 			</div>
 		{/if}
 		{#if kindBadge}
@@ -165,7 +183,7 @@
 
 	.art-img {
 		opacity: 0;
-		transition: opacity 360ms var(--ease);
+		transition: opacity 200ms var(--ease);
 	}
 
 	.art-img.loaded {
@@ -294,6 +312,13 @@
 	.badge[data-status] {
 		background: color-mix(in srgb, var(--status) 72%, black);
 		border-color: color-mix(in srgb, var(--status) 60%, white 10%);
+	}
+
+	.badge.again {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		text-transform: none;
 	}
 
 	/* Library's edit mode. Bottom left: the badges keep the top, the score

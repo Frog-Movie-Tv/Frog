@@ -48,8 +48,10 @@ const ORDER: [&str; 11] = [
 
 /// MDBList's answer to one batch holds at most this many ids.
 const BATCH: usize = 10;
-/// Batches one pass of the worker may ask for.
-const BATCHES_PER_PASS: usize = 2;
+/// Batches one pass of the worker may ask for. A pass every half hour at ten
+/// batches is at most 480 of MDBList's 1,000 daily requests, and clears a
+/// backlog of a few thousand titles in a day instead of a week.
+const BATCHES_PER_PASS: usize = 10;
 /// Requests left today below which the worker stops, so opening a title
 /// still finds its scores.
 const WORKER_FLOOR: i64 = 200;
@@ -422,6 +424,10 @@ pub async fn refresh(state: &AppState, titles: &[i64], floor: i64) -> AppResult<
         anilist_scores(state, &wanted, false).await
     };
     let mut mal = Vec::new();
+    // Anime that borrowed a TMDB id, to ask by MyAnimeList id if MDBList
+    // does not know that TMDB id: a later season often maps to a TMDB show
+    // MDBList files under another entry.
+    let mut mal_spare = Vec::new();
     for (title_id, ids) in &resolved {
         let Some(media) = ids.anilist else { continue };
         let Some((_, score, id_mal, film)) = scores.iter().find(|s| s.0 == media) else {
@@ -435,9 +441,11 @@ pub async fn refresh(state: &AppState, titles: &[i64], floor: i64) -> AppResult<
             };
             store(pool, *title_id, &[rating], now).await?;
         }
-        if ids.tmdb.is_none() {
-            if let Some(id) = id_mal {
+        if let Some(id) = id_mal {
+            if ids.tmdb.is_none() {
                 mal.push((*title_id, *id, *film));
+            } else {
+                mal_spare.push((*title_id, *id, *film));
             }
         }
     }
@@ -493,6 +501,9 @@ pub async fn refresh(state: &AppState, titles: &[i64], floor: i64) -> AppResult<
                 }
             }
         }
+        mal.extend(mal_spare.into_iter().filter(|(title_id, _, _)| {
+            !failed.contains(title_id) && !found.iter().any(|f| f.0 == *title_id)
+        }));
         // No batch for MyAnimeList's ids, and they are few. MDBList has to
         // be told film or show: `any` is refused outright.
         for (title_id, id, film) in mal {
@@ -653,14 +664,21 @@ pub async fn of_title(pool: &SqlitePool, title_id: i64) -> AppResult<Value> {
 
 /// A title's scores for its page. The first time anyone opens it, a quick
 /// look, held to a moment so the page never waits on another site; whatever
-/// did not make it is there next time.
+/// did not make it is there next time. So does a title that is due and has
+/// nothing from MDBList yet, rather than waiting its turn in the worker.
 pub async fn for_page(state: &AppState, title_id: i64) -> AppResult<Value> {
-    let checked: Option<(String,)> =
-        sqlx::query_as("SELECT next_at FROM title_rating_check WHERE title_id = ?")
-            .bind(title_id)
-            .fetch_optional(&state.pool)
-            .await?;
-    if checked.is_none() {
+    // (due, has a score from somewhere other than TMDB or AniList)
+    let checked: Option<(bool, bool)> = sqlx::query_as(
+        "SELECT c.next_at <= ?,
+                EXISTS (SELECT 1 FROM title_rating r
+                         WHERE r.title_id = c.title_id AND r.source NOT IN ('tmdb', 'anilist'))
+           FROM title_rating_check c WHERE c.title_id = ?",
+    )
+    .bind(Utc::now().to_rfc3339())
+    .bind(title_id)
+    .fetch_optional(&state.pool)
+    .await?;
+    if look_now(checked) {
         let state_for_look = state.clone();
         let look = tokio::spawn(async move { refresh(&state_for_look, &[title_id], 20).await });
         if let Ok(Ok(Err(e))) = tokio::time::timeout(FIRST_LOOK, look).await {
@@ -670,9 +688,29 @@ pub async fn for_page(state: &AppState, title_id: i64) -> AppResult<Value> {
     of_title(&state.pool, title_id).await
 }
 
+/// Whether opening a title should ask for its scores there and then: never
+/// asked, or due with nothing but TMDB's and AniList's own.
+fn look_now(checked: Option<(bool, bool)>) -> bool {
+    match checked {
+        None => true,
+        Some((due, full)) => due && !full,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_page_looks_when_never_asked_or_due_and_thin() {
+        assert!(look_now(None));
+        assert!(look_now(Some((true, false))));
+        assert!(
+            !look_now(Some((true, true))),
+            "a full title waits for the worker"
+        );
+        assert!(!look_now(Some((false, false))), "not due yet");
+    }
 
     #[test]
     fn a_source_without_a_score_is_left_out() {

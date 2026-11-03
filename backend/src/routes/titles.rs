@@ -123,9 +123,13 @@ async fn detail_of(state: &AppState, user_id: i64, title_id: i64) -> AppResult<J
         // A show TMDB keeps no collection for may still be where a film
         // collection began; never long, since the page waits on it.
         None if kind == "tv" && !anilist_only => {
-            let look = crate::franchise::collection_of_show(state, &item.title.name);
+            let (owned, name) = (state.clone(), item.title.name.clone());
+            let look =
+                tokio::spawn(
+                    async move { crate::franchise::collection_of_show(&owned, &name).await },
+                );
             match tokio::time::timeout(FRANCHISE_WAIT, look).await {
-                Ok(Some(cid)) => collection_parts(state, user_id, cid).await.ok(),
+                Ok(Ok(Some(cid))) => collection_parts(state, user_id, cid).await.ok(),
                 _ => None,
             }
         }
@@ -237,8 +241,10 @@ async fn local_episodes(
         .collect())
 }
 
-/// How long a title page waits on TMDB to name a franchise's shows.
-const FRANCHISE_WAIT: std::time::Duration = std::time::Duration::from_millis(1500);
+/// How long a title page waits on TMDB to name a franchise's shows. The
+/// lookup runs on without the page when it takes longer, so its answer is
+/// cached for the next visit instead of being thrown away and asked again.
+const FRANCHISE_WAIT: std::time::Duration = std::time::Duration::from_millis(700);
 
 /// Films in the same franchise, and the shows by its name, in release order:
 /// the watch order that is defensible without hand-maintained lists.
@@ -264,9 +270,12 @@ async fn collection_parts(state: &AppState, user_id: i64, collection_id: i64) ->
 
     // The shows of the same franchise, which TMDB never puts in a collection.
     let name = models::str_at(&raw, "name").unwrap_or_default();
-    let shows = tokio::time::timeout(FRANCHISE_WAIT, crate::franchise::shows_of(state, &name))
-        .await
-        .unwrap_or_default();
+    let owned = state.clone();
+    let look = tokio::spawn(async move { crate::franchise::shows_of(&owned, &name).await });
+    let shows = match tokio::time::timeout(FRANCHISE_WAIT, look).await {
+        Ok(Ok(shows)) => shows,
+        _ => Vec::new(),
+    };
     let mut parts = models::unique_items(parts.into_iter().chain(shows).collect());
     parts.sort_by_key(|p| p.year.unwrap_or(9999));
     crate::routes::search::annotate_library(state, user_id, &mut parts).await?;

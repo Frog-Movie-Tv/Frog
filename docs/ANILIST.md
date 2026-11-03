@@ -32,7 +32,7 @@ and `sync_user`.
    fails the sync, because a list read halfway looks like entries removed.
 4. `records::mark_gone` — entries no longer on the list get `gone_at`.
 5. For each entry (`sync::Run::entry`):
-   - ignored or detached → nothing;
+   - ignored ("Not in Frog") → nothing;
    - not placed, nothing new, not due for another look → kept as it is
      (`local::sync_local`);
    - `decide`: a manual or current placement stays; otherwise `place::place`.
@@ -90,13 +90,19 @@ failed for it, and it is tried again with backoff.
   show, across TMDB seasons. Each entry keeps a snapshot of both sides from
   the last sync; whichever side differs from its snapshot changed and wins.
   A Frog title never on AniList is not added there, and removing one in Frog
-  never removes it on AniList — both on purpose.
-- **Dates and rewatches** (`store::set_known_dates`). Each entry's
-  `startedAt`, `completedAt` and `repeat` reach the title's library entry on
-  every sync, changed or not, so a list synced before Frog read them gets them
-  too. Known days are stored as plain `yyyy-mm-dd`, which tells them from the
-  moment Frog stamps on a status change: a known day replaces a stamp, and
-  across a show's several entries the earliest start and the latest finish win.
+  never removes it on AniList — both on purpose. An entry removed from the
+  library in Frog is added back on the next sync as AniList has it (its
+  snapshots are dropped, so it is new again); "Not in Frog" in Settings
+  (`ignored`) is how to keep one out. `anilist_entry.detached` is no longer
+  set and stays 0.
+- **Dates and rewatches** (`store::replace_known_dates`). Each entry's
+  `startedAt`, `completedAt` and `repeat` are gathered per title over the
+  whole sync (`sync::KnownDays`: across a show's several entries the earliest
+  start and the latest finish) and written when it ends, changed or not, so a
+  list synced before Frog read them gets them too. AniList's days replace
+  Frog's; a day AniList lacks leaves Frog's, and the rewatch count only goes
+  up, so one logged in Frog survives. Days are plain `yyyy-mm-dd`. Imports go
+  through `store::set_known_dates` instead, which only widens what is there.
 - **A title AniList does not have** (removed, or kept from view) answers 404
   "Not Found". `client::answer_error` makes that `NotFound`, so the one entry
   fails and the rest of the list syncs; read as an outage, it stopped a whole

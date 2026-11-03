@@ -248,12 +248,24 @@ async fn sync_inner(state: &AppState, user_id: i64) -> AppResult<Summary> {
         },
         shows: HashMap::new(),
         touched: HashSet::new(),
+        days: HashMap::new(),
     };
     run.summary.removed = records::mark_gone(&state.pool, user_id, &remotes, &known).await?;
     for remote in &remotes {
         run.entry(remote, known.get(&remote.media_id)).await?;
     }
     run.settle_shows(&remotes).await?;
+    for (title_id, d) in &run.days {
+        crate::store::replace_known_dates(
+            &state.pool,
+            user_id,
+            *title_id,
+            d.started.as_deref(),
+            d.finished.as_deref(),
+            d.rewatches,
+        )
+        .await?;
+    }
     Ok(run.summary)
 }
 
@@ -275,13 +287,42 @@ struct Run<'a> {
     shows: HashMap<i64, Mode>,
     /// Every show an entry is placed in, so each is settled once at the end.
     touched: HashSet<i64>,
+    /// The days AniList has for each title, over all of its entries.
+    days: HashMap<i64, KnownDays>,
+}
+
+/// When a title was started and finished, and how often watched again, as
+/// AniList has it. A show is several entries, one a season.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct KnownDays {
+    pub started: Option<String>,
+    pub finished: Option<String>,
+    pub rewatches: i64,
+}
+
+impl KnownDays {
+    /// Another entry of the same title: the first start, the last finish, and
+    /// the most rewatches any one season has.
+    pub fn widen(&mut self, started: Option<&str>, finished: Option<&str>, rewatches: i64) {
+        if let Some(s) = started {
+            if self.started.as_deref().is_none_or(|have| s < have) {
+                self.started = Some(s.to_string());
+            }
+        }
+        if let Some(f) = finished {
+            if self.finished.as_deref().is_none_or(|have| f > have) {
+                self.finished = Some(f.to_string());
+            }
+        }
+        self.rewatches = self.rewatches.max(rewatches);
+    }
 }
 
 impl Run<'_> {
     /// One entry: placed and synced, kept as an AniList-only title, or left
     /// as it is. Only an outage (or the database) stops the whole sync.
     async fn entry(&mut self, remote: &Remote, prior: Option<&Known>) -> AppResult<()> {
-        if prior.is_some_and(|k| k.state == "ignored" || k.detached) {
+        if prior.is_some_and(|k| k.state == "ignored") {
             return Ok(());
         }
         let prior_place =
@@ -517,11 +558,14 @@ impl Run<'_> {
         )
         .await?;
 
-        // Removed from Frog after it was synced: leave it be from now on.
-        if f.is_none() && snap_al.is_some() {
-            save_snapshots(pool, user_id, remote.media_id, a, None, true).await?;
-            return Ok(());
-        }
+        // Not in the library, removed from Frog after an earlier sync or never
+        // added: AniList is where the list is kept, so it comes back as AniList
+        // has it. "Not in Frog" in Settings is how to keep an entry out.
+        let (snap_al, snap_frog) = if f.is_none() {
+            (None, None)
+        } else {
+            (snap_al, snap_frog)
+        };
 
         // Placed again by a newer matcher: AniList's progress is laid out
         // afresh where the entry now runs, which also fills in what an older,
@@ -560,18 +604,13 @@ impl Run<'_> {
             }
         }
 
-        // The days AniList knows, every sync, changed or not: a list synced
-        // before Frog read them gets them now, and an entry not in the
-        // library is left alone (the update finds nothing).
-        crate::store::set_known_dates(
-            pool,
-            user_id,
-            title_id,
+        // The days AniList knows, every sync, changed or not, written once
+        // per title when the sync ends.
+        self.days.entry(title_id).or_default().widen(
             remote.started.as_deref(),
             remote.completed.as_deref(),
             remote.repeat,
-        )
-        .await?;
+        );
 
         let f_now = frog_view(
             pool,
@@ -586,7 +625,7 @@ impl Run<'_> {
             self.summary.to_frog += 1;
         }
 
-        save_snapshots(pool, user_id, remote.media_id, a, f_now.as_ref(), false).await
+        save_snapshots(pool, user_id, remote.media_id, a, f_now.as_ref()).await
     }
 
     /// One status per show, once all of its seasons are in. Shows AniList
@@ -621,5 +660,21 @@ impl Run<'_> {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::KnownDays;
+
+    #[test]
+    fn a_show_runs_from_its_first_start_to_its_last_finish() {
+        let mut days = KnownDays::default();
+        days.widen(Some("2020-06-01"), Some("2020-06-20"), 0);
+        days.widen(Some("2019-01-05"), Some("2019-02-01"), 2);
+        days.widen(None, None, 1);
+        assert_eq!(days.started.as_deref(), Some("2019-01-05"));
+        assert_eq!(days.finished.as_deref(), Some("2020-06-20"));
+        assert_eq!(days.rewatches, 2);
     }
 }

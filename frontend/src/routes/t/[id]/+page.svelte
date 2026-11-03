@@ -724,7 +724,6 @@
 							/>
 						{/each}
 					</Rail>
-					<p class="faint tiny">Films and shows in release order.</p>
 				</section>
 			{/if}
 
@@ -1395,11 +1394,6 @@
 		width: 100%;
 		height: 100%;
 		border: none;
-	}
-
-	.tiny {
-		font-size: 0.72rem;
-		margin-top: 10px;
 	}
 
 	@media (max-width: 860px) {

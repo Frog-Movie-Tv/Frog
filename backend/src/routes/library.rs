@@ -20,6 +20,7 @@ pub struct ListQuery {
     pub genre: Option<String>,
     pub q: Option<String>,
     pub favourite: Option<bool>,
+    pub rewatched: Option<bool>,
     /// added | updated | name | rating | release | last_watched
     pub sort: Option<String>,
     /// asc | desc
@@ -70,6 +71,7 @@ impl ListQuery {
             genre: self.genre.clone(),
             term: self.q.clone(),
             favourite: self.favourite == Some(true),
+            rewatched: self.rewatched == Some(true),
         })
     }
 }
