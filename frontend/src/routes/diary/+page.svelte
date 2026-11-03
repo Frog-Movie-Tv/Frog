@@ -234,8 +234,8 @@
 												{#if entry.film}
 													Film
 												{:else if entry.episodes.length === 1}
-													{range(entry.episodes)}{#if entry.episodes[0].name}
-														· {entry.episodes[0].name}{/if}
+													{range(entry.episodes)}
+													{#if entry.episodes[0].name}· {entry.episodes[0].name}{/if}
 												{:else}
 													{range(entry.episodes)} · {plural(entry.count, 'episode')}
 													<Icon name={open === key ? 'chevron-up' : 'chevron-down'} size={13} />

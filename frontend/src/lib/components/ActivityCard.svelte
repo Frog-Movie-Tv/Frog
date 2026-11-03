@@ -27,8 +27,8 @@
 		</span>
 		<span class="line">{activityLine(item)}</span>
 		<span class="faint when">
-			{relativeDate(item.at)}{#if item.also}
-				· {alsoLine(item.also)}{/if}
+			{relativeDate(item.at)}
+			{#if item.also}· {alsoLine(item.also)}{/if}
 		</span>
 	</span>
 </a>
