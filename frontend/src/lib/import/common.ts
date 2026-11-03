@@ -64,6 +64,17 @@ export interface Incoming {
 }
 
 /** Split CSV text into rows, honouring quoted fields and embedded newlines. */
+/**
+ * A score from another tracker on Frog's 0..100, or none. Trackers write 0
+ * for "not rated"; a score off the scale, as a damaged file can hold, is held
+ * to it rather than failing the title; and it is a whole number, which every
+ * score format shows exactly.
+ */
+export function cleanRating(rating: number | null | undefined): number | null {
+	if (rating == null || !Number.isFinite(rating) || rating <= 0) return null;
+	return Math.round(Math.min(100, rating));
+}
+
 export function parseCsv(text: string): string[][] {
 	const rows: string[][] = [];
 	let row: string[] = [];

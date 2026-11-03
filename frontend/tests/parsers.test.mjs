@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { gzipSync, strToU8, zipSync } from 'fflate';
 import { animeTitle, dedupe, parseCsv, readFile } from '../src/lib/import/parsers.ts';
+import { cleanRating } from '../src/lib/import/common.ts';
 
 /** Read one file as the import page does, and return its rows. */
 async function rows(format, name, text) {
@@ -721,4 +722,14 @@ test('a number that is part of the name is not a season', () => {
 		['Show - Season 2 Part 2', { base: 'Show', season: 2, part: 2, unnumbered: false }]
 	];
 	for (const [title, want] of cases) assert.deepEqual(animeTitle(title), want, title);
+});
+
+test('an imported score is a whole number on the scale, and 0 is none', () => {
+	assert.equal(cleanRating(85), 85);
+	assert.equal(cleanRating(87.35), 87);
+	assert.equal(cleanRating(120), 100, 'a damaged file does not fail the title');
+	assert.equal(cleanRating(0), null, 'trackers write 0 for not rated');
+	assert.equal(cleanRating(-4), null);
+	assert.equal(cleanRating(Number.NaN), null);
+	assert.equal(cleanRating(null), null);
 });

@@ -136,7 +136,7 @@ pub async fn set_part_rating(
             .bind(title_id)
             .bind(season)
             .bind(first_episode)
-            .bind(r.clamp(0.0, 100.0))
+            .bind(crate::store::whole_rating(r))
             .bind(Utc::now().to_rfc3339())
             .execute(pool)
             .await?;
