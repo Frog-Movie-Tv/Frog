@@ -11,6 +11,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Glass Frog —
 
+In progress.
+
+## [1.3.0] — Spring Peeper — 2026-11-03
+
 Rewatches you can find, and scores from every site on every title.
 
 ### Improvements
@@ -708,6 +712,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.3.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.3.0
 [1.2.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.2.0
 [1.1.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.1.0
 [1.0.2]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.0.2
