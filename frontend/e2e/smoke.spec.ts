@@ -368,9 +368,17 @@ test('score format changes how a rating reads without touching the value', async
 	await page.getByRole('button', { name: /10 point decimal/ }).click();
 	await expect(page.getByRole('button', { name: 'Rated 7.8' })).toBeVisible();
 
-	// An unrated control has to say so, not show a dash.
+	// Ten with a decimal is typed: what does not fit is turned away, with why.
 	await page.getByRole('button', { name: 'Rated 7.8' }).click();
-	await page.getByRole('menuitemradio', { name: '7.5' }).click();
+	const field = page.getByLabel('Score out of 10');
+	await field.fill('12');
+	await field.press('Enter');
+	await expect(page.getByRole('alert').filter({ hasText: 'Between 0 and 10' })).toBeVisible();
+	await field.fill('7,55');
+	await field.press('Enter');
+	await expect(page.getByRole('alert').filter({ hasText: 'One decimal at most' })).toBeVisible();
+	await field.fill('7,5');
+	await field.press('Enter');
 	await expect(page.getByRole('button', { name: 'Rated 7.5' })).toBeVisible();
 });
 
@@ -512,6 +520,52 @@ async function filters(
 const statusChip = (page: Page, name: RegExp) =>
 	page.getByRole('group', { name: 'Status filter' }).getByRole('button', { name });
 const titles = (page: Page) => page.locator('.grid a.poster');
+
+test('the rating deck takes a typed score, skips, and takes both back', async ({
+	page
+}, testInfo) => {
+	await signIn(page);
+	seedLibrary(testInfo.project.name);
+	await page.goto('/rate');
+	await expect(page.getByRole('heading', { name: 'Rate your library' })).toBeVisible();
+	const togo = page.getByText(/\d+ to go/);
+	await expect(togo).toBeVisible();
+	const start = Number((await togo.innerText()).match(/(\d+) to go/)?.[1]);
+	expect(start).toBeGreaterThanOrEqual(4);
+
+	const card = page.locator('.card.top h2');
+	const first = await card.innerText();
+	const ratingOf = async (name: string) => {
+		const res = await page.request.get('/api/library');
+		const items: { name: string; entry: { rating: number | null } | null }[] = (await res.json())
+			.items;
+		return items.find((i) => i.name === name)?.entry?.rating ?? null;
+	};
+
+	// Ten with a decimal is typed: a score that does not fit stays on the card,
+	// one that does rates it and the next one comes up.
+	const field = page.getByLabel('Score out of 10');
+	await field.fill('11');
+	await field.press('Enter');
+	await expect(page.getByRole('alert').filter({ hasText: 'Between 0 and 10' })).toBeVisible();
+	await expect(card).toHaveText(first);
+	await field.fill('8.5');
+	await field.press('Enter');
+	await expect(card).not.toHaveText(first);
+	await expect(page.getByText(`${start - 1} to go`)).toBeVisible();
+	await expect.poll(() => ratingOf(first)).not.toBeNull();
+
+	await page.getByRole('button', { name: /^Skip/ }).click();
+	await expect(page.getByText(`${start - 2} to go`)).toBeVisible();
+
+	// Undo takes back the skip, then the rating.
+	await page.getByRole('button', { name: /^Undo/ }).click();
+	await expect(page.getByText(`${start - 1} to go`)).toBeVisible();
+	await page.getByRole('button', { name: /^Undo/ }).click();
+	await expect(card).toHaveText(first);
+	await expect.poll(() => ratingOf(first)).toBeNull();
+	clearLibrary(testInfo.project.name);
+});
 
 test('library filters combine, and each status says what it would show', async ({
 	page,

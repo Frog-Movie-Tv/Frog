@@ -169,6 +169,7 @@ const ROUTES = [
 	'/people/audit/library',
 	'/people/audit/ratings',
 	'/activity',
+	'/rate',
 	'/settings',
 	'/import',
 	'/about',

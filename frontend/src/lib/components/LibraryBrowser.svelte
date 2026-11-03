@@ -18,6 +18,7 @@
 
 <script lang="ts">
 	import { backCloses } from '#lib/layers.svelte';
+	import Score from '#lib/components/Score.svelte';
 	import { untrack } from 'svelte';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -32,7 +33,7 @@
 	import Poster from '#lib/components/Poster.svelte';
 	import Select from '#lib/components/Select.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
-	import { formatScore, plural, relativeDate, runtime, year } from '#lib/format';
+	import { plural, relativeDate, runtime, year } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
@@ -291,7 +292,6 @@
 	}
 
 	const style = $derived(settings.current.cardStyle);
-	const fmt = $derived(settings.current.scoreFormat);
 
 	function progressOf(item: SharedItem): number {
 		return item.total_episodes > 0 ? (item.watched_episodes / item.total_episodes) * 100 : 0;
@@ -373,6 +373,9 @@
 		<div class="head-tools actions">
 			{#if answer}<span class="faint">{plural(total, 'title')}</span>{/if}
 			{#if !owner && items.length && !editing}
+				<a class="btn ghost rate-link" href="/rate" aria-label="Rate your library">
+					<Icon name="star" size={15} /> <span>Rate</span>
+				</a>
 				<button class="btn ghost" onclick={() => (editing = true)}>
 					<Icon name="pencil" size={15} /> Edit
 				</button>
@@ -391,6 +394,7 @@
 					<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 					<div class="menu-catch" onclick={() => (menuOpen = false)}></div>
 					<div class="menu" role="menu">
+						<a role="menuitem" href="/rate"><Icon name="star" size={16} /> Rate your library</a>
 						<a role="menuitem" href="/import"><Icon name="upload" size={16} /> Import</a>
 						<a role="menuitem" href="/api/export/library.json" download>
 							<Icon name="download" size={16} /> Download backup
@@ -684,7 +688,7 @@
 						{:else if item.runtime}
 							<span class="faint nums">{runtime(item.runtime)}</span>
 						{/if}
-						<span class="score">{formatScore(item.entry?.rating ?? null, fmt)}</span>
+						<span class="score"><Score value={item.entry?.rating ?? null} /></span>
 					</a>
 				</li>
 			{/each}
@@ -718,7 +722,7 @@
 							<td class="num">
 								{item.total_episodes > 0 ? `${item.watched_episodes}/${item.total_episodes}` : '—'}
 							</td>
-							<td class="num">{formatScore(item.entry?.rating ?? null, fmt)}</td>
+							<td class="num"><Score value={item.entry?.rating ?? null} /></td>
 							<td>{relativeDate(item.last_watched_at) || '—'}</td>
 						</tr>
 					{/each}
@@ -746,6 +750,13 @@
 </div>
 
 <style>
+	/* On a phone the header is tight: Rate keeps its star, not its word. */
+	@media (max-width: 600px) {
+		.rate-link span {
+			display: none;
+		}
+	}
+
 	.controls {
 		display: flex;
 		flex-direction: column;
