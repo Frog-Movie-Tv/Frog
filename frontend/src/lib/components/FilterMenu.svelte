@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { backCloses } from '#lib/layers.svelte';
+	import { onScreen } from '#lib/onscreen';
 	import Icon from './Icon.svelte';
 	import type { Snippet } from 'svelte';
 
@@ -15,6 +17,11 @@
 	let { label, value = null, wide = false, children }: Props = $props();
 
 	let open = $state(false);
+	// Back closes it on a phone, as Esc does on a computer.
+	backCloses(
+		() => open,
+		() => (open = false)
+	);
 	let root: HTMLDivElement | undefined = $state();
 </script>
 
@@ -42,7 +49,7 @@
 	</button>
 
 	{#if open}
-		<div class="panel" class:wide role="dialog" aria-label={label}>
+		<div class="panel" class:wide role="dialog" aria-label={label} use:onScreen>
 			{@render children()}
 		</div>
 	{/if}

@@ -249,12 +249,26 @@ function readFrogJson(text: string): Incoming[] {
 
 		const watches = t.watches as { watched_at?: string }[] | undefined;
 		row.watched_at = watches?.[0]?.watched_at ?? null;
+		const day = (v: unknown) => (typeof v === 'string' ? toDate(v) : null);
+		row.started_at = day(t.started_at);
+		row.finished_at = day(t.finished_at);
+		row.rewatches = typeof t.rewatch_count === 'number' ? t.rewatch_count : 0;
 
-		// The backup says which episodes, not when: they come back undated.
-		const episodes = (t.episodes ?? []) as { season: number; episode: number; watched?: boolean }[];
+		// Each episode on its day, when the backup has it; older backups only
+		// said which, and those come back undated.
+		const episodes = (t.episodes ?? []) as {
+			season: number;
+			episode: number;
+			watched?: boolean;
+			watched_at?: string | null;
+		}[];
 		const seen = episodes.filter((e) => e.watched);
 		if (seen.length) {
-			row.watches = seen.map((e) => ({ season: e.season, episode: e.episode, watched_at: null }));
+			row.watches = seen.map((e) => ({
+				season: e.season,
+				episode: e.episode,
+				watched_at: e.watched_at ?? null
+			}));
 			row.progress = seen.length;
 		}
 		return row;

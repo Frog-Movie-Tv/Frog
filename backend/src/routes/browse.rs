@@ -455,30 +455,43 @@ async fn anime_characters(state: &AppState, term: &str) -> AppResult<Vec<Value>>
     Ok(out)
 }
 
-/// A studio, and the most popular of what it made, films and shows together.
+#[derive(Deserialize)]
+pub struct PageQuery {
+    #[serde(default)]
+    page: Option<u32>,
+}
+
+/// A studio, and what it made, films and shows together, most popular first,
+/// a page at a time: everything it made, not only the first page.
 pub async fn studio(
     auth: Auth,
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    Query(q): Query<PageQuery>,
 ) -> AppResult<Json<Value>> {
+    let page = q.page.unwrap_or(1).clamp(1, 500);
     // A studio AniList knows: the same page, from AniList.
     if id < 0 {
-        let (mut header, mut items) = anilist::media::studio(&state, -id).await?;
+        let (mut header, mut items, more) = anilist::media::studio(&state, -id, page).await?;
         annotate_library(&state, auth.user_id(), &mut items).await?;
         if let Some(name) = header["name"].as_str().map(str::to_string) {
             header["logo_path"] = json!(studio_logo(&state, &name).await);
         }
         header["titles"] = json!(items);
+        header["next_page"] = json!(more.then_some(page + 1));
         return Ok(Json(header));
     }
     let raw = state.tmdb.company(id).await?;
     let (films, shows) = tokio::join!(
-        state.tmdb.by_company("movie", id, 1),
-        state.tmdb.by_company("tv", id, 1)
+        state.tmdb.by_company("movie", id, page),
+        state.tmdb.by_company("tv", id, page)
     );
     let mut items: Vec<SearchItem> = Vec::new();
+    let mut more = false;
     for (kind, list) in [("movie", films), ("tv", shows)] {
         let Ok(list) = list else { continue };
+        let total = list["total_pages"].as_u64().unwrap_or(0) as u32;
+        more |= page < total.min(500);
         items.extend(
             list["results"]
                 .as_array()
@@ -506,5 +519,6 @@ pub async fn studio(
         "country": models::str_at(&raw, "origin_country").filter(|s| !s.is_empty()),
         "homepage": models::str_at(&raw, "homepage").filter(|s| !s.is_empty()),
         "titles": items,
+        "next_page": more.then_some(page + 1),
     })))
 }

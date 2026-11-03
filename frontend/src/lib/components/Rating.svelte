@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { backCloses } from '#lib/layers.svelte';
+	import { onScreen } from '#lib/onscreen';
 	import { formatScore, fromDisplay, scale, toDisplay } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import Icon from './Icon.svelte';
@@ -15,6 +17,13 @@
 	let { value, onchange, compact = false, disabled = false }: Props = $props();
 
 	let open = $state(false);
+	/** Inside a dialog or sheet: a dropdown there too, never a sheet over a sheet. */
+	let nested = $state(false);
+	// Back closes it on a phone, as Esc does on a computer.
+	backCloses(
+		() => open,
+		() => (open = false)
+	);
 	let root: HTMLElement | undefined = $state();
 
 	const format = $derived(settings.current.scoreFormat);
@@ -67,7 +76,10 @@
 		aria-expanded={open}
 		aria-label={value === null ? 'Rate this' : `Rated ${label}`}
 		title={value === null ? 'Rate this' : `Rated ${label}`}
-		onclick={() => (open = !open)}
+		onclick={() => {
+			nested = !!root?.parentElement?.closest('[role="dialog"]');
+			open = !open;
+		}}
 	>
 		{#if format === 'star5' && value !== null}
 			<span class="stars" aria-hidden="true">
@@ -86,7 +98,9 @@
 	</button>
 
 	{#if open}
-		<div class="pop" role="menu" aria-label="Choose a rating">
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+		<div class="scrim" class:nested onclick={() => (open = false)}></div>
+		<div class="pop" class:nested use:onScreen={!nested} role="menu" aria-label="Choose a rating">
 			<div class="grid" data-format={format}>
 				{#each steps as step (step)}
 					<button
@@ -264,5 +278,49 @@
 	.clear:hover {
 		color: var(--text);
 		border-color: var(--line-strong);
+	}
+
+	/* A phone: the menu rises from the bottom, always whole and in reach,
+	   over a dimmed page. */
+	.scrim {
+		display: none;
+	}
+
+	@media (max-width: 600px) {
+		.scrim:not(.nested) {
+			display: block;
+			position: fixed;
+			inset: 0;
+			z-index: 199;
+			background: rgb(0 0 0 / 0.45);
+			animation: scrim-in 160ms ease backwards;
+		}
+
+		.pop:not(.nested) {
+			position: fixed;
+			z-index: 200;
+			top: auto;
+			left: 10px;
+			right: 10px;
+			bottom: calc(10px + env(safe-area-inset-bottom));
+			min-width: 0;
+			max-height: 70dvh;
+			overflow-y: auto;
+			border-radius: 18px;
+			animation: sheet-up 220ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+		}
+	}
+
+	@keyframes sheet-up {
+		from {
+			transform: translateY(24px);
+			opacity: 0;
+		}
+	}
+
+	@keyframes scrim-in {
+		from {
+			opacity: 0;
+		}
 	}
 </style>

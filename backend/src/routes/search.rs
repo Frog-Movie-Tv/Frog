@@ -11,7 +11,7 @@ use crate::error::{AppError, AppResult};
 use crate::routes::shelves::{self, Rules};
 use crate::state::AppState;
 use crate::text::{self, Closeness};
-use crate::tmdb::models::SearchItem;
+use crate::tmdb::models::{self, SearchItem};
 
 /// TMDB's genre id for Animation, shared by films and shows.
 const ANIMATION_GENRE: i64 = 16;
@@ -517,11 +517,50 @@ async fn from_library(
     Ok(items)
 }
 
-pub async fn trending(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
-    let raw = state.tmdb.trending().await?;
-    let mut items = collect(&raw, None);
+#[derive(Deserialize)]
+pub struct DiscoverQuery {
+    #[serde(default)]
+    page: Option<u32>,
+    /// `trending` (this week) or `top` (best rated of all time).
+    #[serde(default)]
+    list: Option<String>,
+}
+
+/// TMDB answers at most 500 pages of anything.
+const LAST_PAGE: u32 = 500;
+
+fn next_page(raw: &Value, page: u32) -> Option<u32> {
+    let total = raw["total_pages"].as_u64().unwrap_or(0) as u32;
+    (page < total.min(LAST_PAGE)).then_some(page + 1)
+}
+
+/// What Search shows before anything is typed: this week's trending titles,
+/// or the best rated of all time, films and shows together, page by page.
+pub async fn trending(
+    auth: Auth,
+    State(state): State<AppState>,
+    Query(q): Query<DiscoverQuery>,
+) -> AppResult<Json<Value>> {
+    let page = q.page.unwrap_or(1).clamp(1, LAST_PAGE);
+    let (items, next) = if q.list.as_deref() == Some("top") {
+        let (films, shows) = tokio::join!(
+            state.tmdb.top_rated("movie", page),
+            state.tmdb.top_rated("tv", page)
+        );
+        let (films, shows) = (films?, shows?);
+        let mut items = collect(&films, Some("movie"));
+        items.extend(collect(&shows, Some("tv")));
+        items.sort_by(|a, b| b.vote.unwrap_or(0.0).total_cmp(&a.vote.unwrap_or(0.0)));
+        (items, next_page(&films, page).or(next_page(&shows, page)))
+    } else {
+        let raw = state.tmdb.trending(page).await?;
+        (collect(&raw, None), next_page(&raw, page))
+    };
+    let mut items = models::unique_items(items);
     annotate_library(&state, auth.user_id(), &mut items).await?;
-    Ok(Json(serde_json::json!({ "results": items })))
+    Ok(Json(
+        serde_json::json!({ "results": items, "next_page": next }),
+    ))
 }
 
 /// (id, kind, primary provider, its id, name, poster, backdrop, release date,

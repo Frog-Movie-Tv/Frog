@@ -357,10 +357,27 @@ impl Tmdb {
         .await
     }
 
-    pub async fn trending(&self) -> AppResult<Value> {
+    pub async fn trending(&self, page: u32) -> AppResult<Value> {
+        // Page 1 is asked without a page, as it always was, so its cached
+        // answer is still the one used.
+        let params = if page > 1 {
+            vec![("page", page.to_string())]
+        } else {
+            Vec::new()
+        };
         self.get(
             "/trending/all/week",
-            &[],
+            &params,
+            Duration::hours(ttl::TRENDING_HOURS),
+        )
+        .await
+    }
+
+    /// TMDB's best rated films or shows of all time, by its own voters.
+    pub async fn top_rated(&self, kind: &str, page: u32) -> AppResult<Value> {
+        self.get(
+            &format!("/{kind}/top_rated"),
+            &[("page", page.to_string())],
             Duration::hours(ttl::TRENDING_HOURS),
         )
         .await
@@ -374,6 +391,19 @@ impl Tmdb {
                 ("include_adult", "false".into()),
             ],
             Duration::minutes(ttl::SEARCH_MINUTES),
+        )
+        .await
+    }
+
+    /// Shows, or film collections, by name (`kind` is `tv` or `collection`).
+    pub async fn search_named(&self, kind: &str, query: &str) -> AppResult<Value> {
+        self.get(
+            &format!("/search/{kind}"),
+            &[
+                ("query", query.to_string()),
+                ("include_adult", "false".into()),
+            ],
+            Duration::hours(ttl::TRENDING_HOURS),
         )
         .await
     }

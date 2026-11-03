@@ -358,7 +358,20 @@ pub async fn load(state: &AppState, title_id: i64) -> AppResult<(TitleRow, Value
             return Ok((row, detail));
         }
     }
-    let (id, detail) = ensure(state, &source).await?;
+    let (id, detail) = match ensure(state, &source).await {
+        Ok(found) => found,
+        // The provider is slow or down, and Frog already holds this title: it
+        // opens from what was kept, as old as that is, rather than failing.
+        Err(e) => {
+            tracing::warn!(title_id, error = %e, "title opened from what Frog kept");
+            let kept = match &source {
+                ExternalId::Tmdb { kind, id } => state.tmdb.kept(kind, *id).await.map(|k| k.0),
+                _ => None,
+            };
+            let detail = kept.unwrap_or_else(|| kept_detail(&row));
+            return Ok((row, detail));
+        }
+    };
     if id != title_id {
         // The provider id was linked to this title a moment ago; it cannot
         // name another one.
@@ -773,34 +786,68 @@ pub async fn ensure_episodes(
     title_id: i64,
     detail: Option<&Value>,
 ) -> AppResult<()> {
-    let (have,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM episode WHERE title_id = ?")
-        .bind(title_id)
-        .fetch_one(&state.pool)
-        .await?;
-    if have > 0 {
+    // Episodes arrive a season at a time (opening a season lists it), so a
+    // show with some listed is not a show with all of them: a season missing
+    // here would be left out of "every episode".
+    let have: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT season_number, COUNT(*) FROM episode WHERE title_id = ? GROUP BY season_number",
+    )
+    .bind(title_id)
+    .fetch_all(&state.pool)
+    .await?;
+    let loaded;
+    let detail = match detail {
+        Some(detail) => detail,
+        None => {
+            loaded = load(state, title_id).await?.1;
+            &loaded
+        }
+    };
+    let short = seasons_to_list(&models::seasons(detail), &have);
+    if short.is_empty() {
         return Ok(());
     }
-    match detail {
-        Some(detail) => sync_all_seasons(state, title_id, detail).await,
-        None => {
-            let (_, detail) = load(state, title_id).await?;
-            sync_all_seasons(state, title_id, &detail).await
-        }
-    }
+    sync_seasons(state, title_id, &short).await
+}
+
+/// The seasons of a show that have fewer episodes stored than the provider
+/// lists for them, specials included.
+pub fn seasons_to_list(seasons: &[models::SeasonSummary], have: &[(i64, i64)]) -> Vec<i64> {
+    seasons
+        .iter()
+        .filter(|s| s.episode_count > 0)
+        .filter(|s| {
+            let stored = have
+                .iter()
+                .find(|h| h.0 == s.season_number)
+                .map_or(0, |h| h.1);
+            stored < s.episode_count
+        })
+        .map(|s| s.season_number)
+        .collect()
 }
 
 /// Pull every season of a show into the local episode table. Used when a show
 /// is added, so progress and "up next" work without opening each season. A
 /// title from AniList has its episodes from AniList, with its detail.
 pub async fn sync_all_seasons(state: &AppState, title_id: i64, detail: &Value) -> AppResult<()> {
+    let all: Vec<i64> = models::seasons(detail)
+        .iter()
+        .map(|s| s.season_number)
+        .collect();
+    sync_seasons(state, title_id, &all).await
+}
+
+/// Pull these seasons of a show into the local episode table.
+async fn sync_seasons(state: &AppState, title_id: i64, seasons: &[i64]) -> AppResult<()> {
     let Some(ExternalId::Tmdb { id: tmdb_id, .. }) = primary(&state.pool, title_id).await? else {
         return Ok(());
     };
-    for season in models::seasons(detail) {
-        let payload = match state.tmdb.season(tmdb_id, season.season_number).await {
+    for &season in seasons {
+        let payload = match state.tmdb.season(tmdb_id, season).await {
             Ok(v) => v,
             Err(e) => {
-                tracing::warn!(season = season.season_number, error = %e, "season sync skipped");
+                tracing::warn!(season, error = %e, "season sync skipped");
                 continue;
             }
         };
@@ -813,6 +860,24 @@ pub async fn sync_all_seasons(state: &AppState, title_id: i64, detail: &Value) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_show_with_one_season_listed_still_lists_the_rest() {
+        let season = |n: i64, count: i64| models::SeasonSummary {
+            season_number: n,
+            name: format!("Season {n}"),
+            episode_count: count,
+            poster_path: None,
+            air_date: None,
+            overview: None,
+        };
+        let seasons = [season(0, 2), season(1, 10), season(2, 10), season(3, 0)];
+        // Opening the page listed season 1; the rest were never asked for.
+        assert_eq!(seasons_to_list(&seasons, &[(1, 10)]), [0, 2]);
+        // A season TMDB has since added an episode to is listed again.
+        assert_eq!(seasons_to_list(&seasons, &[(0, 2), (1, 9), (2, 10)]), [1]);
+        assert!(seasons_to_list(&seasons, &[(0, 2), (1, 10), (2, 10)]).is_empty());
+    }
 
     #[test]
     fn provider_ids_read_back_as_written() {

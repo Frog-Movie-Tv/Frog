@@ -170,6 +170,15 @@ pub(super) async fn sync_local(
             ..Default::default()
         };
         store::apply_patch(&state.pool, user_id, title_id, &patch).await?;
+        store::set_known_dates(
+            &state.pool,
+            user_id,
+            title_id,
+            remote.started.as_deref(),
+            remote.completed.as_deref(),
+            remote.repeat,
+        )
+        .await?;
         if film {
             if a.status == "COMPLETED" {
                 film_watch(&state.pool, user_id, title_id).await?;

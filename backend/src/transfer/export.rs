@@ -31,8 +31,8 @@ type ExportRow = (
     i64,
 );
 
-/// (season, episode, my rating, my notes, watch count)
-type EpisodeExportRow = (i64, i64, Option<f64>, Option<String>, i64);
+/// (season, episode, my rating, my notes, watch count, latest dated watch)
+type EpisodeExportRow = (i64, i64, Option<f64>, Option<String>, i64, Option<String>);
 
 /// (watched_at, is_rewatch, source)
 type WatchExportRow = (String, i64, String);
@@ -72,7 +72,9 @@ pub async fn library_json(state: &AppState, user_id: i64) -> AppResult<Value> {
         let episodes: Vec<EpisodeExportRow> = sqlx::query_as(
             "SELECT e.season_number, e.episode_number, s.rating, s.notes,
                     (SELECT COUNT(*) FROM watch_event w
-                      WHERE w.user_id = ?1 AND w.episode_id = e.id)
+                      WHERE w.user_id = ?1 AND w.episode_id = e.id),
+                    (SELECT MAX(w.watched_at) FROM watch_event w
+                      WHERE w.user_id = ?1 AND w.episode_id = e.id AND w.undated = 0)
                FROM episode e
                LEFT JOIN episode_state s ON s.episode_id = e.id AND s.user_id = ?1
               WHERE e.title_id = ?2
@@ -97,6 +99,16 @@ pub async fn library_json(state: &AppState, user_id: i64) -> AppResult<Value> {
         .fetch_all(&state.pool)
         .await?;
 
+        let (started_at, finished_at, rewatch_count): (Option<String>, Option<String>, i64) =
+            sqlx::query_as(
+                "SELECT started_at, finished_at, rewatch_count FROM library_entry
+                  WHERE user_id = ? AND title_id = ?",
+            )
+            .bind(user_id)
+            .bind(title_id)
+            .fetch_one(&state.pool)
+            .await?;
+
         titles.push(json!({
             "id": title_id,
             "ids": {
@@ -113,11 +125,14 @@ pub async fn library_json(state: &AppState, user_id: i64) -> AppResult<Value> {
             "favourite": favourite,
             "notes": notes,
             "added_at": added_at,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "rewatch_count": rewatch_count,
             "episodes": episodes
                 .into_iter()
-                .map(|(s, e, rating, notes, watched)| json!({
+                .map(|(s, e, rating, notes, watched, watched_at)| json!({
                     "season": s, "episode": e, "rating": rating,
-                    "notes": notes, "watched": watched > 0,
+                    "notes": notes, "watched": watched > 0, "watched_at": watched_at,
                 }))
                 .collect::<Vec<_>>(),
             "watches": watches

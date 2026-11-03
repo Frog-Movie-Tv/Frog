@@ -61,6 +61,9 @@
 	// only a step on the way there.
 	const key = $derived(ref.id ? `t${ref.id}` : `${kind}-${ref.tmdb_id ?? ref.anilist_id}`);
 	const named = $derived(morph && opened.key === key);
+
+	/** The picture fades in once it is there, instead of popping in. */
+	let loaded = $state(false);
 </script>
 
 <a
@@ -78,7 +81,15 @@
 >
 	<div class="art" class:picked={selected}>
 		{#if src}
-			<img {src} alt="" loading="lazy" decoding="async" />
+			<img
+				{src}
+				alt=""
+				loading="lazy"
+				decoding="async"
+				class="art-img"
+				class:loaded
+				onload={() => (loaded = true)}
+			/>
 		{:else}
 			{#if fallback}
 				<img class="cropped" src={fallback} alt="" loading="lazy" decoding="async" />
@@ -91,15 +102,18 @@
 			{/if}
 		{/if}
 
-		{#if kindBadge || (status && show.showBadge)}
+		{#if status && show.showBadge}
 			<div class="badges">
-				{#if status && show.showBadge}
-					<span class="badge" data-status={status}>{STATUS_LABEL[status]}</span>
-				{/if}
-				{#if kindBadge}
-					<span class="badge kind">{kind === 'tv' ? 'Show' : 'Film'}</span>
-				{/if}
+				<span class="badge" data-status={status}>{STATUS_LABEL[status]}</span>
 			</div>
+		{/if}
+		{#if kindBadge}
+			<!-- Film or show as a mark in the other corner, so it never pushes
+			     the library label down on a narrow card. -->
+			<span class="kind" title={kind === 'tv' ? 'Show' : 'Film'}>
+				<Icon name={kind === 'tv' ? 'tv' : 'film'} size={12} />
+				<span class="sr">{kind === 'tv' ? 'Show' : 'Film'}</span>
+			</span>
 		{/if}
 
 		{#if scored && show.showRating}
@@ -149,6 +163,36 @@
 		box-shadow: var(--shadow-2);
 	}
 
+	.art-img {
+		opacity: 0;
+		transition: opacity 360ms var(--ease);
+	}
+
+	.art-img.loaded {
+		opacity: 1;
+	}
+
+	/* A soft light passing over the card on hover: the poster as an object. */
+	.art::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		background: linear-gradient(
+			115deg,
+			transparent 35%,
+			rgb(255 255 255 / 0.16) 50%,
+			transparent 65%
+		);
+		transform: translateX(-120%);
+		transition: transform 0s;
+	}
+
+	.poster:hover .art::after {
+		transform: translateX(120%);
+		transition: transform 700ms var(--ease);
+	}
+
 	img {
 		width: 100%;
 		height: 100%;
@@ -195,7 +239,6 @@
 		overflow: hidden;
 	}
 
-	/* Stacked, on every width: a narrow card has no room for two side by side. */
 	.badges {
 		position: absolute;
 		top: 7px;
@@ -204,7 +247,29 @@
 		flex-direction: column;
 		align-items: flex-start;
 		gap: 4px;
-		max-width: calc(100% - 14px);
+		max-width: calc(100% - 44px);
+	}
+
+	.kind {
+		position: absolute;
+		top: 7px;
+		right: 7px;
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		background: rgba(10, 10, 14, 0.78);
+		border: 1px solid rgba(255, 255, 255, 0.16);
+		color: #fff;
+	}
+
+	.sr {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
 	}
 
 	.badge {
@@ -229,11 +294,6 @@
 	.badge[data-status] {
 		background: color-mix(in srgb, var(--status) 72%, black);
 		border-color: color-mix(in srgb, var(--status) 60%, white 10%);
-	}
-
-	.badge.kind {
-		background: rgba(10, 10, 14, 0.8);
-		font-weight: 650;
 	}
 
 	/* Library's edit mode. Bottom left: the badges keep the top, the score

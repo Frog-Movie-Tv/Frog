@@ -17,8 +17,10 @@
 </script>
 
 <script lang="ts">
+	import { backCloses } from '#lib/layers.svelte';
 	import { untrack } from 'svelte';
 	import { afterNavigate, goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { address } from '#lib/address';
 	import { titleHref } from '#lib/titles';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -41,9 +43,11 @@
 	interface Props {
 		/** Whose library, read only. Left out, it is your own. */
 		owner?: string;
+		/** Under a profile's header, which already says whose and where. */
+		embedded?: boolean;
 	}
 
-	let { owner }: Props = $props();
+	let { owner, embedded = false }: Props = $props();
 
 	type Sort = NonNullable<LibraryQuery['sort']>;
 	type Order = 'asc' | 'desc';
@@ -64,7 +68,15 @@
 	/** Someone else's library that is private, or was never there. */
 	let missing = $state(false);
 	let sheetOpen = $state(false);
+	backCloses(
+		() => sheetOpen,
+		() => (sheetOpen = false)
+	);
 	let menuOpen = $state(false);
+	backCloses(
+		() => menuOpen,
+		() => (menuOpen = false)
+	);
 
 	let status = $state<Status | 'all'>(STATUSES.find((s) => s === start.get('status')) ?? 'all');
 	let kind = $state<Kind | 'all'>(kindFrom(start));
@@ -173,7 +185,7 @@
 			() => {
 				sent = name;
 				if (wanted !== untrack(() => address().search)) {
-					void goto(`${home}${wanted}`, { shallow: true, replace: true });
+					void goto(`${home}${wanted}`, { shallow: true, replace: true, state: page.state });
 				}
 				void load(query, keyOf(wanted));
 			},
@@ -342,15 +354,15 @@
 	}}
 />
 
-<div class="page">
-	{#if owner}
+<div class:page={!embedded}>
+	{#if owner && !embedded}
 		<a class="back faint hit" href="/people/{encodeURIComponent(owner)}">
 			<Icon name="chevron-left" size={16} />
 			{ownerName}
 		</a>
 	{/if}
 	<div class="page-head">
-		<h1>Library</h1>
+		<h1 class:quiet={embedded}>Library</h1>
 		<div class="head-tools actions">
 			{#if answer}<span class="faint">{plural(total, 'title')}</span>{/if}
 			{#if !owner && items.length && !editing}
@@ -402,7 +414,13 @@
 		</div>
 
 		<div class="row">
-			<input class="input search" placeholder="Filter by name" bind:value={term} />
+			<input
+				class="input search"
+				placeholder="Filter by name"
+				bind:value={term}
+				enterkeyhint="search"
+				onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+			/>
 
 			<Select
 				label="Type"
@@ -479,7 +497,13 @@
 
 				<label class="field">
 					<span>Name</span>
-					<input class="input" placeholder="Filter by name" bind:value={term} />
+					<input
+						class="input"
+						placeholder="Filter by name"
+						bind:value={term}
+						enterkeyhint="search"
+						onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+					/>
 				</label>
 
 				<div class="field">
@@ -1081,5 +1105,14 @@
 		.mobile-bar {
 			display: flex;
 		}
+	}
+
+	/* Under a profile's tabs the tab already names it; kept for screen readers. */
+	h1.quiet {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
 	}
 </style>

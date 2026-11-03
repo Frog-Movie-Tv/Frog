@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backCloses } from '#lib/layers.svelte';
 	import { fade, fly } from 'svelte/transition';
 	import Icon from './Icon.svelte';
 	import Spinner from './Spinner.svelte';
@@ -72,6 +73,12 @@
 		a.click();
 		toasts.push('Image saved');
 	}
+
+	// Open for as long as it is shown; Back closes it.
+	backCloses(
+		() => true,
+		() => onclose()
+	);
 
 	function onKey(event: KeyboardEvent) {
 		if (event.key === 'Escape') {

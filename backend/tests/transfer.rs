@@ -509,6 +509,38 @@ async fn a_dated_import_fills_in_an_undated_one() {
 }
 
 #[tokio::test]
+async fn the_days_a_tracker_knows_land_on_the_title() {
+    let h = Harness::new().await;
+    let owner = h.owner().await;
+    h.cache_show(70523, "Dark", &[(1, "Season 1", 2), (2, "Season 2", 2)])
+        .await;
+
+    // Two seasons, as a tracker lists them: the show began with the first
+    // and ended with the second.
+    let (_, body) = h
+        .post(
+            "/api/import/apply",
+            json!({ "on_conflict": "overwrite", "items": [
+                { "kind": "tv", "tmdb_id": 70523, "status": "completed", "season": 1,
+                  "started_at": "2019-01-05T20:00:00Z", "finished_at": "2019-02-01T20:00:00Z" },
+                { "kind": "tv", "tmdb_id": 70523, "status": "completed", "season": 2,
+                  "started_at": "2020-06-01T20:00:00Z", "finished_at": "2020-06-20T20:00:00Z",
+                  "rewatches": 2 }
+            ]}),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(body["failed"], json!([]), "{body}");
+    let (started, finished, rewatches): (Option<String>, Option<String>, i64) = h
+        .one("SELECT started_at, finished_at, rewatch_count FROM library_entry")
+        .await;
+    // Plain days, not the moment the import ran.
+    assert_eq!(started.as_deref(), Some("2019-01-05"));
+    assert_eq!(finished.as_deref(), Some("2020-06-20"));
+    assert_eq!(rewatches, 2);
+}
+
+#[tokio::test]
 async fn a_match_or_import_batch_is_capped() {
     let h = Harness::new().await;
     let owner = h.owner().await;
@@ -778,6 +810,10 @@ async fn both_exports_keep_their_shape() {
     for t in body["titles"].as_array_mut().unwrap() {
         assert!(t["added_at"].is_string());
         t["added_at"] = Value::Null;
+        // Stamped when the status was set: today, whatever today is.
+        assert!(t["started_at"].is_string(), "{t}");
+        t["started_at"] = Value::Null;
+        t["finished_at"] = Value::Null;
     }
     assert_eq!(
         body["titles"],
@@ -787,10 +823,12 @@ async fn both_exports_keep_their_shape() {
                 "ids": { "tmdb": { "kind": "tv", "id": 70523 }, "anilist": [], "imdb": [] },
                 "kind": "tv", "tmdb_id": 70523, "name": "Dark", "release_date": "2015-01-01",
                 "status": "watching", "rating": null, "favourite": false, "notes": null,
-                "added_at": null,
+                "added_at": null, "started_at": null, "finished_at": null, "rewatch_count": 0,
                 "episodes": [
-                    { "season": 1, "episode": 1, "rating": null, "notes": null, "watched": true },
-                    { "season": 1, "episode": 2, "rating": null, "notes": null, "watched": true }
+                    { "season": 1, "episode": 1, "rating": null, "notes": null, "watched": true,
+                      "watched_at": null },
+                    { "season": 1, "episode": 2, "rating": null, "notes": null, "watched": true,
+                      "watched_at": null }
                 ],
                 "watches": []
             },
@@ -799,7 +837,7 @@ async fn both_exports_keep_their_shape() {
                 "ids": { "tmdb": { "kind": "movie", "id": 949 }, "anilist": [], "imdb": [] },
                 "kind": "movie", "tmdb_id": 949, "name": "Heat, the film", "release_date": "1995-05-01",
                 "status": "completed", "rating": 85.0, "favourite": true, "notes": "Diner scene",
-                "added_at": null,
+                "added_at": null, "started_at": null, "finished_at": null, "rewatch_count": 0,
                 "episodes": [],
                 "watches": [{ "watched_at": "2023-03-03T20:00:00Z", "rewatch": false, "source": "import" }]
             }

@@ -81,13 +81,20 @@ a new source is a new reader and nothing else.
   they are dropped too. This is the documented, tested behaviour
   (`tests/parsers.test.mjs`); keeping exact times would be a change with its
   own requirements, not a fix.
+- **Start and finish days** (`started_at`, `finished_at`) and a rewatch count
+  (`rewatches`) travel with a row when the file has them: MyAnimeList's
+  `my_start_date`, `my_finish_date` and `my_times_watched`, and Frog's own
+  backup. They land through `store::set_known_dates`, as AniList's do
+  (docs/ANILIST.md). Removing a title from a library takes its watches with it,
+  so the diary and the stats only ever hold what is in the library.
 - **Exports** are a contract with files people already hold: add fields,
   never rename or remove them. Backup version 2 adds `id` (Frog's) and
   `ids` (`tmdb`, `anilist`, `imdb`) to every version 1 field; `tmdb_id` is
   null for an anime TMDB lacks. The CSV added `Frog ID` and `AniList ID` as
-  its last columns. A Frog backup of either version is read back by
-  `parsers.ts` (`readFrogJson`), with the episodes that were watched, undated:
-  the file says which, not when.
+  its last columns. Backups now also carry `started_at`, `finished_at`,
+  `rewatch_count` and each episode's `watched_at` (its latest dated watch). A
+  Frog backup of any version is read back by `parsers.ts` (`readFrogJson`),
+  each episode on its day when the file has one, undated when it does not.
 
 ## Tests
 

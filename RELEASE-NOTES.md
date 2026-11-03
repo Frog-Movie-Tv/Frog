@@ -11,7 +11,60 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Glass Frog —
 
-In progress.
+Profiles worth visiting, title pages that remember your history with a title,
+and a Frog that feels at home on a phone.
+
+### Highlights
+
+- **Profiles, in full.** A profile has Overview, Library, Ratings and Compare.
+  See what someone is watching and the episode they are on, everything they
+  rated down to the season, and their whole library by status.
+- **Compare libraries.** Put your library beside someone else's: what you both
+  have with both ratings, and what only one of you has.
+- **Your history with a title.** A title page says when you started and
+  finished it and how often you watched it again, and adds a rewatch in one
+  tap. Dates come from AniList, MyAnimeList and Frog backups too.
+- **Who else watched it.** A title page shows who on this Frog has it, with
+  their status and rating.
+- **Activity.** Home's row of what others are watching is now Activity, and See
+  all opens everything, day by day.
+
+### Improvements
+
+- Scores from IMDb, Rotten Tomatoes, Metacritic, Letterboxd and MyAnimeList
+  appear for anime as well, each with the site's own mark.
+- Episodes can be a list as well as cards. Long shows scroll through their
+  seasons with arrows, and a show without stills shows its artwork instead.
+- Search's trending list goes on as you scroll, with Top rated beside it.
+  Studios list everything they made, page after page.
+- A franchise lists its shows beside its films.
+- Cast is in billing order, leads first.
+- Back closes menus, sheets and search on a phone, as Esc does on a computer.
+- Menus open as sheets from the bottom of a phone and always stay on screen.
+- Enter puts the phone keyboard away in search.
+- Streaming logos open the service itself, Rakuten TV, VRT MAX, Streamz, GoPlay
+  and more among them.
+- A trailer YouTube will not play here opens on YouTube in one tap.
+- Because you watched moves on to another favourite every few hours.
+- Stats' top films and shows scroll with arrows.
+- Cards fade in and catch the light, and pages settle into place.
+- Administration counts the titles this Frog knows.
+- A long name shortens instead of running off the screen.
+
+### Fixes
+
+- Marking a show watched, or adding it as Completed, ticks every season.
+- Removing a show unticks its episodes and takes it out of your diary. Undo
+  brings it all back.
+- Switching quickly between shows never shows one show's episodes on another.
+- Back after playing trailers leaves the page.
+- A title page that cannot reach TMDB for a moment opens from what Frog kept.
+- AniList keeps syncing when one entry on your list no longer exists there.
+- An uploaded banner and a chosen backdrop no longer sit one over the other,
+  and choosing a backdrop on a phone no longer slides under your picture.
+- A person with many parts in one show keeps the page in line.
+- The film or show mark on a card no longer pushes your library label down.
+- Search no longer lists members; People has everyone.
 
 ## [1.1.0] — Spring Peeper — 2026-11-02
 

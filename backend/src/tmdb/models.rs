@@ -437,16 +437,18 @@ pub fn cast(v: &Value, limit: usize) -> Vec<CastMember> {
             known.order = known.order.min(i64_at(c, "order").unwrap_or(999));
             continue;
         }
-        if out.len() < limit {
-            out.push(CastMember {
-                id,
-                name,
-                character,
-                profile_path: str_at(c, "profile_path"),
-                order: i64_at(c, "order").unwrap_or(999),
-            });
-        }
+        out.push(CastMember {
+            id,
+            name,
+            character,
+            profile_path: str_at(c, "profile_path"),
+            order: i64_at(c, "order").unwrap_or(999),
+        });
     }
+    // Top billing first, whatever order TMDB listed them in, and only then
+    // cut to length, so the leads are never the ones left out.
+    out.sort_by_key(|m| m.order);
+    out.truncate(limit);
     out
 }
 
@@ -806,13 +808,27 @@ mod tests {
         ] } });
         let c = cast(&v, 24);
         assert_eq!(c.len(), 2);
-        assert_eq!(c[0].id, 5727);
+        // Billed first, so listed first.
+        assert_eq!(c[0].character.as_deref(), Some("Ginormica"));
+        assert_eq!(c[1].id, 5727);
         assert_eq!(
-            c[0].character.as_deref(),
+            c[1].character.as_deref(),
             Some("The Missing Link / Coverton")
         );
-        assert_eq!(c[0].order, 1);
-        assert_eq!(c[1].character.as_deref(), Some("Ginormica"));
+        assert_eq!(c[1].order, 1);
+    }
+
+    #[test]
+    fn the_leads_come_first_and_are_never_cut() {
+        // TMDB lists a show's cast by when they joined, not by billing.
+        let v = json!({ "credits": { "cast": [
+            { "id": 3, "name": "Guest", "order": 12 },
+            { "id": 4, "name": "Support", "order": 5 },
+            { "id": 1, "name": "Lead", "order": 0 },
+            { "id": 2, "name": "Co-lead", "order": 1 }
+        ] } });
+        let c = cast(&v, 3);
+        assert_eq!(c.iter().map(|m| m.id).collect::<Vec<_>>(), [1, 2, 4]);
     }
 
     #[test]

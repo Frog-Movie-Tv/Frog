@@ -46,6 +46,9 @@ pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
     })
 }
 
+/// How long a TMDB answer past its time is kept for when TMDB cannot be reached.
+const STALE_TMDB_DAYS: i64 = 7;
+
 async fn tick(state: &AppState) -> anyhow::Result<()> {
     state.login_failures.sweep();
     state.reset_failures.sweep();
@@ -56,8 +59,10 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
         tracing::info!(expired, "purged expired sessions");
     }
 
+    // Stale answers stand in while TMDB is down, which a week covers; kept a
+    // month they were half the cache on a small server (120 MB of 250).
     let dropped = sqlx::query("DELETE FROM tmdb_cache WHERE expires_at < ?")
-        .bind((Utc::now() - chrono::Duration::days(30)).to_rfc3339())
+        .bind((Utc::now() - chrono::Duration::days(STALE_TMDB_DAYS)).to_rfc3339())
         .execute(&state.pool)
         .await?
         .rows_affected();

@@ -232,26 +232,25 @@ pub async fn seeds(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<SeedRow>> {
     .await?)
 }
 
-/// Which seeds get a row today. The best one always does; the rest rotate
-/// daily through the other highly rated titles, so Home does not show the
-/// same three rows for months.
-pub fn pick_seeds<T: Clone>(seeds: &[T], day: i64) -> Vec<T> {
-    let Some((first, rest)) = seeds.split_first() else {
+/// Which seeds get a row now. Every highly rated title takes its turn at the
+/// front, a new one every few hours, and the next ones follow it: Home shows
+/// the first row, which used to be the best rated title, every day, for good.
+pub fn pick_seeds<T: Clone>(seeds: &[T], slot: i64) -> Vec<T> {
+    if seeds.is_empty() {
         return Vec::new();
-    };
-    let mut out = vec![first.clone()];
-    if !rest.is_empty() {
-        let start = day.rem_euclid(rest.len() as i64) as usize;
-        out.extend(
-            rest.iter()
-                .cycle()
-                .skip(start)
-                .take((BECAUSE_ROWS - 1).min(rest.len()))
-                .cloned(),
-        );
     }
-    out
+    let start = slot.rem_euclid(seeds.len() as i64) as usize;
+    seeds
+        .iter()
+        .cycle()
+        .skip(start)
+        .take(BECAUSE_ROWS.min(seeds.len()))
+        .cloned()
+        .collect()
 }
+
+/// How long one seed leads before the next takes over.
+const SEED_HOURS: i64 = 6;
 
 /// "Because you watched X": TMDB's recommendations for titles you rated
 /// highly, minus everything already in your library and anything an earlier
@@ -276,10 +275,10 @@ pub async fn because(auth: Auth, State(state): State<AppState>) -> AppResult<Jso
     .map(|r| r.0)
     .collect();
 
-    let day = chrono::Utc::now().timestamp() / 86_400;
+    let slot = chrono::Utc::now().timestamp() / (SEED_HOURS * 3600);
     let mut offered = std::collections::HashSet::new();
     let mut rows = Vec::new();
-    for (title_id, key, name) in pick_seeds(&seeds(pool, me).await?, day) {
+    for (title_id, key, name) in pick_seeds(&seeds(pool, me).await?, slot) {
         let Some(ExternalId::Tmdb { kind, id: tmdb_id }) = ExternalId::parse("tmdb", &key) else {
             continue;
         };
@@ -322,6 +321,25 @@ pub async fn activity(auth: Auth, State(state): State<AppState>) -> AppResult<Js
     Ok(Json(json!({ "items": items })))
 }
 
+#[derive(serde::Deserialize)]
+pub struct EverythingQuery {
+    before: Option<String>,
+    limit: Option<usize>,
+}
+
+/// All of it, page by page, for the Activity page.
+pub async fn all_activity(
+    auth: Auth,
+    State(state): State<AppState>,
+    axum::extract::Query(q): axum::extract::Query<EverythingQuery>,
+) -> AppResult<Json<Value>> {
+    let limit = q.limit.unwrap_or(40).clamp(1, 100);
+    let (items, next) =
+        crate::activity::everything(&state.pool, auth.user_id(), q.before.as_deref(), limit)
+            .await?;
+    Ok(Json(json!({ "items": items, "next": next })))
+}
+
 /// Every row query here is scoped to one account, and each uses `?1` for it so
 /// a single bind covers however many times the account appears in the SQL.
 async fn rows(pool: &SqlitePool, sql: &str, user_id: i64) -> AppResult<Vec<TitleRow>> {
@@ -346,12 +364,12 @@ mod tests {
     use super::pick_seeds;
 
     #[test]
-    fn the_best_seed_stays_and_the_rest_rotate_daily() {
+    fn every_seed_takes_its_turn_at_the_front() {
         let seeds = ["best", "b", "c", "d", "e"];
         assert_eq!(pick_seeds(&seeds, 0), ["best", "b", "c"]);
-        assert_eq!(pick_seeds(&seeds, 1), ["best", "c", "d"]);
-        assert_eq!(pick_seeds(&seeds, 3), ["best", "e", "b"], "wraps around");
-        assert_eq!(pick_seeds(&seeds[..2], 7), ["best", "b"]);
+        assert_eq!(pick_seeds(&seeds, 1), ["b", "c", "d"]);
+        assert_eq!(pick_seeds(&seeds, 4), ["e", "best", "b"], "wraps around");
+        assert_eq!(pick_seeds(&seeds[..2], 7), ["b", "best"]);
         assert_eq!(pick_seeds(&["only"], 9), ["only"]);
         assert!(pick_seeds::<&str>(&[], 0).is_empty());
     }

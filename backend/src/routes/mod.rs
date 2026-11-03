@@ -58,6 +58,7 @@ pub fn router(state: AppState) -> Router {
         .route("/home", get(home::home))
         .route("/home/because", get(home::because))
         .route("/home/activity", get(home::activity))
+        .route("/activity", get(home::all_activity))
         .route("/calendar", get(timeline::calendar))
         .route("/diary", get(timeline::diary))
         .route("/library", get(library::list))
@@ -123,6 +124,8 @@ pub fn router(state: AppState) -> Router {
         .route("/profiles", get(profiles::list))
         .route("/profiles/{username}", get(profiles::get))
         .route("/profiles/{username}/library", get(profiles::library))
+        .route("/profiles/{username}/ratings", get(profiles::ratings))
+        .route("/profiles/{username}/compare", get(profiles::compare))
         .route("/profiles/{username}/images/{kind}", get(profiles::image))
         .route("/invites", get(invites::list).post(invites::create))
         .route("/invites/{id}", delete(invites::revoke))
@@ -137,6 +140,7 @@ pub fn router(state: AppState) -> Router {
         // Everything else about a title goes by Frog's own id.
         .route("/t/{id}", get(titles::detail_by_id))
         .route("/t/{id}/scores", get(titles::scores))
+        .route("/t/{id}/rewatch", post(titles::rewatch))
         .route("/t/{id}/seasons/{season}", get(titles::season))
         .route("/t/{id}/seasons/{season}/rating", put(titles::rate_season))
         .route(

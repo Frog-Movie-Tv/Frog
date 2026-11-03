@@ -742,18 +742,24 @@ pub async fn person(state: &AppState, staff_id: i64) -> AppResult<(Value, Vec<Cr
     Ok((header, credits))
 }
 
-/// A studio AniList knows, with its most popular work.
-pub async fn studio(state: &AppState, studio_id: i64) -> AppResult<(Value, Vec<SearchItem>)> {
+/// A studio AniList knows, with its work, most popular first, a page at a
+/// time. The last value says whether there is another page.
+pub async fn studio(
+    state: &AppState,
+    studio_id: i64,
+    page: u32,
+) -> AppResult<(Value, Vec<SearchItem>, bool)> {
     let query = format!(
-        "query ($id: Int) {{ Studio(id: $id) {{ id name siteUrl
-          media(sort: POPULARITY_DESC, isMain: true, perPage: 40) {{ nodes {{ {WORK} }} }}
+        "query ($id: Int, $page: Int) {{ Studio(id: $id) {{ id name siteUrl
+          media(sort: POPULARITY_DESC, isMain: true, page: $page, perPage: 40) {{
+            pageInfo {{ hasNextPage }} nodes {{ {WORK} }} }}
         }} }}"
     );
     let data = cached(
         state,
-        &format!("anilist:studio:1:{studio_id}"),
+        &format!("anilist:studio:2:{studio_id}:{page}"),
         &query,
-        json!({ "id": studio_id }),
+        json!({ "id": studio_id, "page": page }),
     )
     .await?;
     let studio = &data["Studio"];
@@ -775,7 +781,8 @@ pub async fn studio(state: &AppState, studio_id: i64) -> AppResult<(Value, Vec<S
         "country": null,
         "homepage": studio["siteUrl"].as_str(),
     });
-    Ok((header, items))
+    let more = studio["media"]["pageInfo"]["hasNextPage"].as_bool() == Some(true);
+    Ok((header, items, more))
 }
 
 #[cfg(test)]

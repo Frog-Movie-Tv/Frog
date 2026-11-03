@@ -39,7 +39,10 @@ import type {
 	ShelfRules,
 	Stats,
 	Status,
-	TitleDetail
+	TitleDetail,
+	TitleHistory,
+	RatedTitle,
+	Comparison
 } from './types';
 
 export class ApiError extends Error {
@@ -260,6 +263,10 @@ export const api = {
 
 	profiles: () => get<{ profiles: PersonSummary[] }>('/api/profiles'),
 	profile: (username: string) => get<Profile>(`/api/profiles/${encodeURIComponent(username)}`),
+	profileRatings: (username: string) =>
+		get<{ ratings: RatedTitle[] }>(`/api/profiles/${encodeURIComponent(username)}/ratings`),
+	profileCompare: (username: string) =>
+		get<Comparison>(`/api/profiles/${encodeURIComponent(username)}/compare`),
 	profileLibrary: (username: string, query: LibraryQuery) =>
 		get<SharedLibrary>(
 			`/api/profiles/${encodeURIComponent(username)}/library${qs(query as Record<string, unknown>)}`
@@ -288,13 +295,22 @@ export const api = {
 		),
 	searchGenres: () => get<{ genres: string[] }>('/api/search/genres'),
 	scores: (id: number) => get<TitleScores>(`/api/t/${id}/scores`),
-	trending: () => get<{ results: SearchItem[] }>('/api/discover/trending'),
+	trending: (list: 'trending' | 'top' = 'trending', page = 1) =>
+		get<{ results: SearchItem[]; next_page?: number | null }>(
+			`/api/discover/trending${qs({ list: list === 'top' ? 'top' : undefined, page: page > 1 ? page : undefined })}`
+		),
 	searchMore: (q: string) => get<MoreResults>(`/api/search/more${qs({ q })}`),
-	studio: (id: number) => get<StudioDetail>(`/api/studios/${id}`),
+	studio: (id: number, page = 1) =>
+		get<StudioDetail>(`/api/studios/${id}${qs({ page: page > 1 ? page : undefined })}`),
 
 	home: () => get<HomeData>('/api/home'),
 	because: () => get<{ rows: BecauseRow[] }>('/api/home/because'),
 	activity: () => get<{ items: ActivityItem[] }>('/api/home/activity'),
+	/** Everyone's activity, all of it, a page before `before` at a time. */
+	allActivity: (before?: string | null) =>
+		get<{ items: ActivityItem[]; next: string | null }>(
+			`/api/activity${qs({ before: before ?? undefined })}`
+		),
 
 	matchImport: (items: unknown[]) =>
 		send<{ results: MatchResult[] }>('POST', '/api/import/match', { items }),
@@ -366,6 +382,10 @@ export const api = {
 	) => send<{ item: LibraryItem }>('PUT', `/api/t/${titleId}/library`, patch),
 
 	untrack: (titleId: number) => send<{ ok: true }>('DELETE', `/api/t/${titleId}/library`),
+
+	/** Watched it again: another watch of a film, another time through a show. */
+	rewatch: (titleId: number, body: { watched_at?: string; undated?: boolean }) =>
+		send<{ history: TitleHistory | null }>('POST', `/api/t/${titleId}/rewatch`, body),
 
 	/** `at` puts back a watch exactly as it was, for undo. */
 	setEpisodeWatched: (

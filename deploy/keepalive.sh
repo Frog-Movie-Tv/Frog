@@ -23,7 +23,9 @@ SHARE=28
 # say — holding memory buys nothing and simply takes RAM the machine needs, so
 # there the keepalive is a light touch of CPU and network instead.
 shape() {
-	curl -s --max-time 2 http://169.254.169.254/opc/v1/instance/shape 2>/dev/null || echo unknown
+	# Oracle's metadata service: version 2 wants this header, and version 1 now
+	# answers an HTML 404, which matched no shape and only worked by accident.
+	curl -sf --max-time 2 -H 'Authorization: Bearer Oracle' 		http://169.254.169.254/opc/v2/instance/shape 2>/dev/null || echo unknown
 }
 
 is_a1() {

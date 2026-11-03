@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { backCloses } from '#lib/layers.svelte';
+	import { onScreen } from '#lib/onscreen';
 	import { goto } from '$app/navigation';
 	import Avatar from './Avatar.svelte';
 	import Icon, { type IconName } from './Icon.svelte';
@@ -6,6 +8,11 @@
 	import { toasts } from '#lib/toast.svelte';
 
 	let open = $state(false);
+	// Back closes it on a phone, as Esc does on a computer.
+	backCloses(
+		() => open,
+		() => (open = false)
+	);
 	let root: HTMLDivElement | undefined = $state();
 
 	const name = $derived(session.status?.username ?? '');
@@ -56,7 +63,7 @@
 	</button>
 
 	{#if open}
-		<div class="menu" role="menu" aria-label="Account">
+		<div class="menu" role="menu" aria-label="Account" use:onScreen>
 			<div class="who">
 				<strong>{name}</strong>
 				<span class="faint">{role}</span>
@@ -119,6 +126,15 @@
 		flex-direction: column;
 		gap: 2px;
 		padding: 8px 10px 10px;
+		min-width: 0;
+	}
+
+	/* A long name shortens; the menu keeps its width. */
+	.who strong {
+		max-width: 240px;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
 	}
 
 	.who .faint {

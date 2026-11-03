@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backCloses } from '#lib/layers.svelte';
 	import { fly, fade } from 'svelte/transition';
 	import Icon from './Icon.svelte';
 	import { localDay } from '#lib/day';
@@ -61,6 +62,11 @@
 			mode === 'date' ? { when: 'date', date, ...extras } : { when: mode, ...extras }
 		);
 	}
+
+	backCloses(
+		() => !!pending,
+		() => whenWatched.answer(null)
+	);
 
 	function onKey(event: KeyboardEvent) {
 		if (!pending) return;

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Rail from '#lib/components/Rail.svelte';
 	import { titleHref } from '#lib/titles';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -138,32 +139,30 @@
 
 {#snippet titles(title: string, list: StatsTitle[], show: boolean)}
 	{#if list.length}
+		<!-- A rail, with its arrows: the list runs on past the screen, and says so. -->
 		<section class="block">
-			<div class="section-head"><h2>{title}</h2></div>
-			<ol class="tops">
+			<Rail {title} width="112px">
 				{#each list as t, i (t.id)}
 					{@const src = img(t.poster_path, 'w185')}
-					<li>
-						<a href={titleHref(t)} class="top">
-							<span class="cover">
-								{#if src}<img {src} alt="" loading="lazy" />{/if}
-								<span class="badge">{i + 1}</span>
-							</span>
-							<span class="top-name">{t.name}</span>
-							<span class="faint top-meta">
-								{#if show}
-									{plural(t.watches, 'episode')} · {longRuntime(t.minutes)}
-								{:else if t.rating !== null}
-									{formatScore(t.rating, settings.current.scoreFormat)}
-									{#if t.watches > 1}· {t.watches}×{/if}
-								{:else}
-									{t.watches > 1 ? `${t.watches}×` : runtime(t.minutes)}
-								{/if}
-							</span>
-						</a>
-					</li>
+					<a href={titleHref(t)} class="top">
+						<span class="cover">
+							{#if src}<img {src} alt="" loading="lazy" />{/if}
+							<span class="badge">{i + 1}</span>
+						</span>
+						<span class="top-name">{t.name}</span>
+						<span class="faint top-meta">
+							{#if show}
+								{plural(t.watches, 'episode')} · {longRuntime(t.minutes)}
+							{:else if t.rating !== null}
+								{formatScore(t.rating, settings.current.scoreFormat)}
+								{#if t.watches > 1}· {t.watches}×{/if}
+							{:else}
+								{t.watches > 1 ? `${t.watches}×` : runtime(t.minutes)}
+							{/if}
+						</span>
+					</a>
 				{/each}
-			</ol>
+			</Rail>
 		</section>
 	{/if}
 {/snippet}
@@ -465,8 +464,7 @@
 		min-width: 0;
 	}
 
-	.panel h2,
-	.section-head h2 {
+	.panel h2 {
 		font-size: 1.05rem;
 		margin-bottom: 14px;
 	}
@@ -489,10 +487,10 @@
 		}
 	}
 
+	/* One under the other, each the full width: side by side, both were cut. */
 	.split {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
-		gap: 0 28px;
+		grid-template-columns: minmax(0, 1fr);
 		margin: 10px 0 8px;
 	}
 
@@ -588,21 +586,6 @@
 	}
 
 	/* Ranked titles */
-	.tops {
-		list-style: none;
-		margin: 0;
-		padding: 0;
-		display: flex;
-		gap: 12px;
-		overflow-x: auto;
-		scrollbar-width: none;
-		padding-bottom: 4px;
-	}
-
-	.tops li {
-		flex: 0 0 112px;
-	}
-
 	.top {
 		display: flex;
 		flex-direction: column;

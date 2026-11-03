@@ -157,7 +157,40 @@ pub struct EntryRecord {
     pub updated_at: String,
     pub notify: bool,
     pub progress: Option<i64>,
+    /// Its watches, which leave with it and come back with undo.
+    #[sqlx(skip)]
+    #[serde(default)]
+    pub watches: Vec<WatchRecord>,
+    /// Its episodes' ratings and notes, likewise.
+    #[sqlx(skip)]
+    #[serde(default)]
+    pub episode_notes: Vec<EpisodeNoteRecord>,
 }
+
+/// One watch, by episode number rather than Frog's row ids, so that what comes
+/// back from the browser can only ever name an episode of the same title.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct WatchRecord {
+    /// None for a film's own watch.
+    pub season: Option<i64>,
+    pub episode: Option<i64>,
+    pub watched_at: String,
+    pub is_rewatch: bool,
+    pub source: String,
+    pub undated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct EpisodeNoteRecord {
+    pub season: i64,
+    pub episode: i64,
+    pub rating: Option<f64>,
+    pub notes: Option<String>,
+    pub updated_at: String,
+}
+
+/// Where a watch can have come from.
+const SOURCES: [&str; 5] = ["manual", "import", "anilist", "netflix", "trakt"];
 
 /// A title of a library, as much as a bulk action needs of it.
 #[derive(Debug, Clone, FromRow)]
@@ -545,12 +578,7 @@ pub async fn apply_patch(
 }
 
 pub async fn remove_entry(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppResult<()> {
-    sqlx::query("DELETE FROM library_entry WHERE user_id = ? AND title_id = ?")
-        .bind(user_id)
-        .bind(title_id)
-        .execute(pool)
-        .await?;
-    Ok(())
+    remove_entries(pool, user_id, &[title_id]).await
 }
 
 /// Which of these titles are in this account's library. An id it does not
@@ -602,19 +630,70 @@ pub async fn entry_records(
     Ok(out)
 }
 
-/// Remove these titles from this account's library, all or none.
+/// A title's watches and episode notes in this account, to keep for undo.
+pub async fn held_watches(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+) -> AppResult<(Vec<WatchRecord>, Vec<EpisodeNoteRecord>)> {
+    let watches = sqlx::query_as::<_, WatchRecord>(
+        "SELECT e.season_number AS season, e.episode_number AS episode, w.watched_at,
+                w.is_rewatch, w.source, w.undated
+           FROM watch_event w
+           LEFT JOIN episode e ON e.id = w.episode_id
+          WHERE w.user_id = ? AND w.title_id = ?",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .fetch_all(pool)
+    .await?;
+    let notes = sqlx::query_as::<_, EpisodeNoteRecord>(
+        "SELECT e.season_number AS season, e.episode_number AS episode, s.rating, s.notes,
+                s.updated_at
+           FROM episode_state s
+           JOIN episode e ON e.id = s.episode_id
+          WHERE s.user_id = ? AND e.title_id = ?",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .fetch_all(pool)
+    .await?;
+    Ok((watches, notes))
+}
+
+/// Remove these titles from this account's library, all or none, and with
+/// them what was watched of them: a title taken out is no longer watched, in
+/// its episodes, the diary or the stats.
 pub async fn remove_entries(pool: &SqlitePool, user_id: i64, title_ids: &[i64]) -> AppResult<()> {
     let mut tx = pool.begin().await?;
     for ids in title_ids.chunks(IDS_AT_ONCE) {
-        let mut q: QueryBuilder<Sqlite> =
-            QueryBuilder::new("DELETE FROM library_entry WHERE user_id = ");
-        q.push_bind(user_id).push(" AND title_id IN (");
-        let mut list = q.separated(", ");
-        for id in ids {
-            list.push_bind(*id);
+        // (before the account, between it and the ids, after the ids)
+        for (head, middle, tail) in [
+            (
+                "DELETE FROM library_entry WHERE user_id = ",
+                " AND title_id IN (",
+                ")",
+            ),
+            (
+                "DELETE FROM watch_event WHERE user_id = ",
+                " AND title_id IN (",
+                ")",
+            ),
+            (
+                "DELETE FROM episode_state WHERE user_id = ",
+                " AND episode_id IN (SELECT id FROM episode WHERE title_id IN (",
+                "))",
+            ),
+        ] {
+            let mut q: QueryBuilder<Sqlite> = QueryBuilder::new(head);
+            q.push_bind(user_id).push(middle);
+            let mut list = q.separated(", ");
+            for id in ids {
+                list.push_bind(*id);
+            }
+            q.push(tail);
+            q.build().execute(&mut *tx).await?;
         }
-        q.push(")");
-        q.build().execute(&mut *tx).await?;
     }
     tx.commit().await?;
     Ok(())
@@ -670,6 +749,63 @@ pub async fn restore_entries(
         .execute(&mut *tx)
         .await?
         .rows_affected();
+        // Its watches, each matched to its episode by number; a watch put
+        // back twice is still one watch.
+        for w in &e.watches {
+            let source = if SOURCES.contains(&w.source.as_str()) {
+                w.source.as_str()
+            } else {
+                "manual"
+            };
+            sqlx::query(
+                "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                          source, undated)
+                 SELECT ?1, t.id,
+                        (SELECT e.id FROM episode e
+                          WHERE e.title_id = t.id AND e.season_number = ?3
+                            AND e.episode_number = ?4),
+                        ?5, ?6, ?7, ?8
+                   FROM title t
+                  WHERE t.id = ?2
+                    AND (?3 IS NULL OR EXISTS (SELECT 1 FROM episode e
+                          WHERE e.title_id = t.id AND e.season_number = ?3
+                            AND e.episode_number = ?4))
+                    AND NOT EXISTS (SELECT 1 FROM watch_event x
+                          WHERE x.user_id = ?1 AND x.title_id = t.id AND x.watched_at = ?5
+                            AND x.episode_id IS (SELECT e.id FROM episode e
+                                  WHERE e.title_id = t.id AND e.season_number = ?3
+                                    AND e.episode_number = ?4))",
+            )
+            .bind(user_id)
+            .bind(e.title_id)
+            .bind(w.season)
+            .bind(w.episode)
+            .bind(&w.watched_at)
+            .bind(w.is_rewatch)
+            .bind(source)
+            .bind(w.undated)
+            .execute(&mut *tx)
+            .await?;
+        }
+        for n in &e.episode_notes {
+            sqlx::query(
+                "INSERT INTO episode_state (user_id, episode_id, rating, notes, updated_at)
+                 SELECT ?, e.id, ?, ?, ? FROM episode e
+                  WHERE e.title_id = ? AND e.season_number = ? AND e.episode_number = ?
+                 ON CONFLICT (user_id, episode_id) DO UPDATE SET
+                    rating = excluded.rating, notes = excluded.notes,
+                    updated_at = excluded.updated_at",
+            )
+            .bind(user_id)
+            .bind(n.rating.filter(|r| (0.0..=100.0).contains(r)))
+            .bind(&n.notes)
+            .bind(&n.updated_at)
+            .bind(e.title_id)
+            .bind(n.season)
+            .bind(n.episode)
+            .execute(&mut *tx)
+            .await?;
+        }
     }
     tx.commit().await?;
     Ok(restored)
@@ -702,6 +838,237 @@ pub async fn add_first_film_watch(
 pub struct Progress {
     pub watched: i64,
     pub total: i64,
+}
+
+/// One account's time with a title, as its page tells it.
+#[derive(Debug, Default, Clone, Serialize, PartialEq)]
+pub struct History {
+    /// The day it was started: the first dated watch, or the day the entry
+    /// says (an import or AniList may know it), whichever is earlier.
+    pub started: Option<String>,
+    /// The day it was finished, once it is completed: the last dated watch,
+    /// or the day the entry says.
+    pub finished: Option<String>,
+    /// How many times it was watched again after the first.
+    pub rewatches: i64,
+}
+
+/// The day of a stored time, `YYYY-MM-DD`.
+fn day_of(at: &Option<String>) -> Option<String> {
+    at.as_deref()
+        .filter(|a| a.len() >= 10)
+        .map(|a| a[..10].to_string())
+}
+
+/// Put the pieces of a history together: the decision, apart from the reads.
+/// `passes` is how many times every released episode (or the film) was seen.
+pub fn history_of(
+    entry: &LibraryEntry,
+    first_watch: &Option<String>,
+    last_watch: &Option<String>,
+    passes: i64,
+) -> History {
+    let started = match (day_of(first_watch), day_of(&entry.started_at)) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    };
+    let finished = (entry.status == "completed")
+        .then(|| day_of(last_watch).or_else(|| day_of(&entry.finished_at)))
+        .flatten();
+    History {
+        started,
+        finished,
+        rewatches: entry.rewatch_count.max(passes - 1).max(0),
+    }
+}
+
+/// (first dated watch, last dated watch)
+type SpanRow = (Option<String>, Option<String>);
+
+/// A title's history for one account, or nothing when it is not in the library.
+pub async fn history(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    kind: &str,
+) -> AppResult<Option<History>> {
+    let Some(entry) = get_entry(pool, user_id, title_id).await? else {
+        return Ok(None);
+    };
+    let (first, last): SpanRow = sqlx::query_as(
+        "SELECT MIN(watched_at), MAX(watched_at) FROM watch_event
+          WHERE user_id = ? AND title_id = ? AND undated = 0",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .fetch_one(pool)
+    .await?;
+    let passes: (Option<i64>,) = if kind == "movie" {
+        sqlx::query_as(
+            "SELECT COUNT(*) FROM watch_event
+              WHERE user_id = ? AND title_id = ? AND episode_id IS NULL",
+        )
+        .bind(user_id)
+        .bind(title_id)
+        .fetch_one(pool)
+        .await?
+    } else {
+        // Seen in full as often as its least-seen released episode.
+        sqlx::query_as(concat!(
+            "SELECT MIN((SELECT COUNT(*) FROM watch_event w
+                          WHERE w.user_id = ? AND w.episode_id = e.id))
+               FROM episode e
+              WHERE e.title_id = ? AND e.season_number > 0 AND ",
+            crate::released!()
+        ))
+        .bind(user_id)
+        .bind(title_id)
+        .fetch_one(pool)
+        .await?
+    };
+    Ok(Some(history_of(
+        &entry,
+        &first,
+        &last,
+        passes.0.unwrap_or(0),
+    )))
+}
+
+/// Start and finish days another place knows (AniList, an import), and how
+/// often it was watched again. They are kept as plain days, which is what
+/// tells them from the moment Frog stamps when a status changes: a known day
+/// always replaces a stamp, and between known days the earliest start and the
+/// latest finish win, so a show AniList keeps as several entries starts with
+/// its first and finishes with its last. Nothing given changes nothing.
+pub async fn set_known_dates(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    started: Option<&str>,
+    finished: Option<&str>,
+    rewatches: i64,
+) -> AppResult<()> {
+    let day = |d: Option<&str>| {
+        d.filter(|d| {
+            d.len() >= 10 && chrono::NaiveDate::parse_from_str(&d[..10], "%Y-%m-%d").is_ok()
+        })
+        .map(|d| d[..10].to_string())
+    };
+    let (started, finished) = (day(started), day(finished));
+    if started.is_none() && finished.is_none() && rewatches <= 0 {
+        return Ok(());
+    }
+    sqlx::query(
+        "UPDATE library_entry
+            SET started_at = CASE
+                    WHEN ?1 IS NULL THEN started_at
+                    WHEN started_at IS NULL OR length(started_at) <> 10 OR ?1 < started_at THEN ?1
+                    ELSE started_at END,
+                finished_at = CASE
+                    WHEN ?2 IS NULL THEN finished_at
+                    WHEN finished_at IS NULL OR length(finished_at) <> 10 OR ?2 > finished_at THEN ?2
+                    ELSE finished_at END,
+                rewatch_count = MAX(rewatch_count, ?3)
+          WHERE user_id = ?4 AND title_id = ?5",
+    )
+    .bind(started)
+    .bind(finished)
+    .bind(rewatches.max(0))
+    .bind(user_id)
+    .bind(title_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Watched it again. A film gets another watch on that day; a show, whose
+/// rewatch is not one episode, is counted on its entry, with the day as when
+/// it was last finished.
+pub async fn add_rewatch(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    kind: &str,
+    watched_at: &str,
+    undated: bool,
+) -> AppResult<()> {
+    if kind == "movie" {
+        sqlx::query(
+            "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                      source, undated)
+             VALUES (?, ?, NULL, ?, 1, 'manual', ?)",
+        )
+        .bind(user_id)
+        .bind(title_id)
+        .bind(watched_at)
+        .bind(undated)
+        .execute(pool)
+        .await?;
+    }
+    sqlx::query(
+        "UPDATE library_entry
+            SET rewatch_count = rewatch_count + ?,
+                finished_at = CASE WHEN ? THEN finished_at ELSE ? END,
+                updated_at = ?
+          WHERE user_id = ? AND title_id = ?",
+    )
+    // A film's rewatches are its watches, counted where they are.
+    .bind(if kind == "movie" { 0 } else { 1 })
+    .bind(undated)
+    .bind(watched_at)
+    .bind(Utc::now().to_rfc3339())
+    .bind(user_id)
+    .bind(title_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Someone else on this Frog with a title in their library, as a title page
+/// shows them: what they made of it, never their notes.
+#[derive(Debug, Clone, Serialize)]
+pub struct OtherWatcher {
+    #[serde(flatten)]
+    pub who: Shown,
+    pub status: String,
+    pub rating: Option<f64>,
+    pub favourite: bool,
+}
+
+/// Everyone the viewer may see who has this title in their library.
+pub async fn others_with(
+    pool: &SqlitePool,
+    viewer: i64,
+    title_id: i64,
+) -> AppResult<Vec<OtherWatcher>> {
+    let mut out = Vec::new();
+    for person in shown_to(pool, viewer).await? {
+        let row: Option<(String, Option<f64>, bool)> = sqlx::query_as(
+            "SELECT status, rating, favourite FROM library_entry
+              WHERE user_id = ? AND title_id = ?",
+        )
+        .bind(person.id)
+        .bind(title_id)
+        .fetch_optional(pool)
+        .await?;
+        if let Some((status, rating, favourite)) = row {
+            out.push(OtherWatcher {
+                who: person.shown,
+                status,
+                rating,
+                favourite,
+            });
+        }
+    }
+    // Who finished it first, then who is on it, then who means to.
+    let order = |s: &str| {
+        ["completed", "watching", "paused", "planned", "dropped"]
+            .iter()
+            .position(|x| *x == s)
+            .unwrap_or(9)
+    };
+    out.sort_by_key(|o| order(&o.status));
+    Ok(out)
 }
 
 pub async fn progress(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppResult<Progress> {
@@ -1241,7 +1608,7 @@ pub async fn empty_library(pool: &SqlitePool, user_id: i64) -> AppResult<Emptied
 
 #[cfg(test)]
 mod order_tests {
-    use super::order_clause;
+    use super::{history_of, order_clause, LibraryEntry};
 
     #[test]
     fn sort_keys_are_allowlisted() {
@@ -1257,5 +1624,55 @@ mod order_tests {
     fn sorting_by_last_watched_only_counts_my_watches() {
         let clause = order_clause(Some("last_watched"), None, 7);
         assert!(clause.contains("w.user_id = 7"));
+    }
+
+    fn entry(status: &str, started: Option<&str>, finished: Option<&str>) -> LibraryEntry {
+        LibraryEntry {
+            status: status.into(),
+            rating: None,
+            favourite: false,
+            notes: None,
+            started_at: started.map(str::to_string),
+            finished_at: finished.map(str::to_string),
+            rewatch_count: 0,
+            added_at: String::new(),
+            updated_at: String::new(),
+            notify: true,
+        }
+    }
+
+    #[test]
+    fn a_history_goes_by_the_watches_and_the_dates_an_import_gave() {
+        let some = |s: &str| Some(s.to_string());
+        // Imported today, watched in 2019: the watches say when.
+        let e = entry(
+            "completed",
+            Some("2026-11-02T20:00:00Z"),
+            Some("2026-11-02T20:00:00Z"),
+        );
+        let h = history_of(
+            &e,
+            &some("2019-03-01T20:00:00Z"),
+            &some("2019-04-10T20:00:00Z"),
+            1,
+        );
+        assert_eq!(h.started.as_deref(), Some("2019-03-01"));
+        assert_eq!(h.finished.as_deref(), Some("2019-04-10"));
+        assert_eq!(h.rewatches, 0);
+
+        // AniList knew the start, and nothing was dated.
+        let e = entry("completed", Some("2018-01-05"), Some("2018-02-01"));
+        let h = history_of(&e, &None, &None, 1);
+        assert_eq!(h.started.as_deref(), Some("2018-01-05"));
+        assert_eq!(h.finished.as_deref(), Some("2018-02-01"));
+
+        // Not finished yet: no end day. Seen twice through: one rewatch.
+        let e = entry("watching", Some("2025-01-01"), None);
+        let h = history_of(&e, &None, &some("2025-02-01T20:00:00Z"), 0);
+        assert_eq!(h.finished, None);
+        assert_eq!(
+            history_of(&entry("completed", None, None), &None, &None, 3).rewatches,
+            2
+        );
     }
 }

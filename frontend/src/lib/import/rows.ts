@@ -27,7 +27,10 @@ export function applyItem(row: Foldable) {
 		progress: row.incoming.progress ?? null,
 		episode_offset: row.incoming.episode_offset ?? 0,
 		episode_total: row.incoming.episode_total ?? null,
-		episodes: chosen.kind === 'tv' ? (row.incoming.watches ?? []) : []
+		episodes: chosen.kind === 'tv' ? (row.incoming.watches ?? []) : [],
+		started_at: row.incoming.started_at ?? null,
+		finished_at: row.incoming.finished_at ?? null,
+		rewatches: row.incoming.rewatches ?? 0
 	};
 }
 

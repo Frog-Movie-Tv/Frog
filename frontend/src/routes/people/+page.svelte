@@ -103,6 +103,8 @@
 				autocomplete="off"
 				autocapitalize="off"
 				spellcheck="false"
+				enterkeyhint="search"
+				onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
 			/>
 			{#if term}
 				<button class="clear hit" aria-label="Clear search" onclick={() => (term = '')}>
@@ -260,10 +262,14 @@
 		min-width: 0;
 	}
 
+	.who strong,
 	.who .faint {
 		overflow: hidden;
 		white-space: nowrap;
 		text-overflow: ellipsis;
+	}
+
+	.who .faint {
 		font-size: 0.8rem;
 	}
 

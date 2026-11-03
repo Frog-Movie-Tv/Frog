@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backCloses } from '#lib/layers.svelte';
 	import { api, img } from '#lib/api';
 	import Avatar from '#lib/components/Avatar.svelte';
 	import Icon from '#lib/components/Icon.svelte';
@@ -18,6 +19,10 @@
 	/** Bumped after an upload so the previews load the new picture. */
 	let version = $state(Date.now());
 	let choosingBanner = $state(false);
+	backCloses(
+		() => choosingBanner,
+		() => (choosingBanner = false)
+	);
 
 	// --- where the banner sits -------------------------------------------
 	const parsePosition = (value: string | null | undefined) => {
@@ -104,6 +109,7 @@
 		if (framing) URL.revokeObjectURL(framing.url);
 		framing = null;
 	}
+	backCloses(() => !!framing, closeFrame);
 
 	async function saveFrame() {
 		if (!framing) return;
@@ -128,6 +134,10 @@
 		await send('avatar', () => encode(canvas, source));
 	}
 	let choosingPins = $state(false);
+	backCloses(
+		() => choosingPins,
+		() => (choosingPins = false)
+	);
 
 	// The session first: it is what a rename on this same page updates.
 	const username = $derived(session.status?.username ?? account?.username ?? '');
@@ -277,7 +287,17 @@
 	</div>
 
 	{#if choosingBanner}
-		<div class="picker">
+		<!-- Its own layer, over the page: inline it slid under the picture,
+		     which is pulled up over the banner. -->
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+		<div class="picker-scrim" onclick={() => (choosingBanner = false)}></div>
+		<div class="picker card" role="dialog" aria-modal="true" aria-labelledby="picker-title">
+			<div class="picker-head">
+				<h3 id="picker-title">Choose a backdrop</h3>
+				<button class="btn ghost small" aria-label="Close" onclick={() => (choosingBanner = false)}>
+					<Icon name="x" size={16} />
+				</button>
+			</div>
 			{#if backdrops.length}
 				<p class="faint small">From the titles you rated highest.</p>
 				<div class="backdrops">
@@ -287,7 +307,7 @@
 							aria-label="Use {t.name}"
 							onclick={() => chooseBackdrop(t.backdrop_path ?? '')}
 						>
-							<img src={img(t.backdrop_path, 'w300')} alt="" />
+							<img src={img(t.backdrop_path, 'w300')} alt="" loading="lazy" />
 							<span>{t.name}</span>
 						</button>
 					{/each}
@@ -616,8 +636,80 @@
 		cursor: pointer;
 	}
 
+	.picker-scrim {
+		position: fixed;
+		inset: 0;
+		z-index: 199;
+		background: rgb(0 0 0 / 0.5);
+		animation: fade 160ms ease backwards;
+	}
+
 	.picker {
-		padding: 14px 18px 0;
+		position: fixed;
+		z-index: 200;
+		top: 50%;
+		left: 50%;
+		width: min(720px, calc(100vw - 32px));
+		max-height: min(80dvh, 640px);
+		overflow-y: auto;
+		padding: 18px;
+		transform: translate(-50%, -50%);
+		box-shadow: var(--shadow-3);
+		animation: pop 220ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+	}
+
+	.picker-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 4px;
+	}
+
+	.picker-head h3 {
+		margin: 0;
+		font-size: 1.05rem;
+	}
+
+	.picker .small {
+		margin-bottom: 12px;
+	}
+
+	@keyframes fade {
+		from {
+			opacity: 0;
+		}
+	}
+
+	@keyframes pop {
+		from {
+			opacity: 0;
+			transform: translate(-50%, -46%) scale(0.98);
+		}
+	}
+
+	/* A phone: a sheet from the bottom, in reach of a thumb. */
+	@media (max-width: 600px) {
+		.picker {
+			top: auto;
+			left: 10px;
+			right: 10px;
+			bottom: calc(10px + env(safe-area-inset-bottom));
+			width: auto;
+			transform: none;
+			border-radius: 18px;
+			animation-name: sheet;
+		}
+
+		.backdrops {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+
+	@keyframes sheet {
+		from {
+			opacity: 0;
+			transform: translateY(24px);
+		}
 	}
 
 	.backdrops {

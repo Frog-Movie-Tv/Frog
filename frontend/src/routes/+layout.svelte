@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { backCloses } from '#lib/layers.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import '../app.css';
 	import { goto, onNavigate } from '$app/navigation';
@@ -68,14 +69,25 @@
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;
 		if (settings.current.animations === 'off') return;
+		// A step on the same page (a filter, a menu opening) is not a new page.
+		if (navigation.from?.url.pathname === navigation.to?.url.pathname) return;
 
 		return new Promise((resolve) => {
+			// A page that draws no frames (in the background, or busy) would
+			// never start the transition, and the navigation would wait on it.
+			if (document.hidden) return resolve();
+			const fallback = setTimeout(resolve, 600);
 			try {
 				const transition = document.startViewTransition(async () => {
+					clearTimeout(fallback);
 					resolve();
 					// Interrupted navigations reject here too, and nothing else
 					// would catch it.
-					await navigation.complete.catch(() => {});
+					// Never longer than a moment: a frozen picture covers the page.
+					await Promise.race([
+						navigation.complete.catch(() => {}),
+						new Promise((r) => setTimeout(r, 1000))
+					]);
 				});
 				// Interrupting one navigation with another rejects these; that is
 				// normal and must not surface as an uncaught error.
@@ -119,6 +131,10 @@
 	]);
 
 	let moreOpen = $state(false);
+	backCloses(
+		() => moreOpen,
+		() => (moreOpen = false)
+	);
 	const inMore = $derived(more.some((p) => isActive(p.href)));
 
 	const current = $derived(page.url.pathname);

@@ -5,6 +5,7 @@
 	import { api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Grid from '#lib/components/Grid.svelte';
+	import LoadMore from '#lib/components/LoadMore.svelte';
 	import Poster from '#lib/components/Poster.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { failure, type Failure } from '#lib/failure';
@@ -15,6 +16,7 @@
 	let error = $state<Failure | null>(null);
 	let only = $state<Kind | null>(null);
 	let expanded = $state(false);
+	let loadingMore = $state(false);
 
 	const id = $derived(Number(page.params.id));
 
@@ -40,6 +42,23 @@
 			});
 		} finally {
 			if (mine === token) loading = false;
+		}
+	}
+
+	/** The next page of what the studio made, added to the end. */
+	async function loadMore() {
+		const next = studio?.next_page;
+		if (!studio || !next || loadingMore) return;
+		const mine = token;
+		loadingMore = true;
+		try {
+			const res = await api.studio(id, next);
+			if (mine !== token || !studio) return;
+			studio = { ...studio, titles: [...studio.titles, ...res.titles], next_page: res.next_page };
+		} catch {
+			// The button stays; pressing it again tries again.
+		} finally {
+			loadingMore = false;
 		}
 	}
 
@@ -119,6 +138,7 @@
 					/>
 				{/each}
 			</Grid>
+			<LoadMore more={!!studio.next_page} loading={loadingMore} onmore={loadMore} />
 		{/if}
 	{/if}
 </div>
