@@ -136,12 +136,25 @@ impl From<LibraryItem> for SharedItem {
     }
 }
 
+/// A field that was sent, even as null, against one that was left out:
+/// `Some(None)` clears it, `None` leaves it as it is. Serde on its own reads
+/// a null `Option<Option<T>>` as left out, so Clear never cleared anything.
+fn sent<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(d).map(Some)
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct LibraryPatch {
     pub status: Option<String>,
     /// 0..100 internally; the UI converts to whichever score format is set.
+    #[serde(default, deserialize_with = "sent")]
     pub rating: Option<Option<f64>>,
     pub favourite: Option<bool>,
+    #[serde(default, deserialize_with = "sent")]
     pub notes: Option<Option<String>>,
     pub notify: Option<bool>,
 }

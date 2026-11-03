@@ -5922,3 +5922,50 @@ async fn the_repair_moves_only_a_show_that_cannot_have_been_watched() {
         (Some(80.0), Some("kept"))
     );
 }
+
+/// A rating or a note sent as null is cleared, not left as it was: Clear on a
+/// title page and Undo in the rating deck both send null.
+#[tokio::test]
+async fn a_null_rating_or_note_clears_it() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    let (user,): (i64,) = sqlx::query_as("SELECT id FROM app_user WHERE username = 'mihai'")
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    track(&h, user, 77, Some(80.0)).await;
+
+    let (code, body, _) = h
+        .put(
+            "/api/t/77/library",
+            json!({ "rating": null, "notes": null }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    let (rating, notes): (Option<f64>, Option<String>) = sqlx::query_as(
+        "SELECT rating, notes FROM library_entry WHERE user_id = ? AND title_id = 77",
+    )
+    .bind(user)
+    .fetch_one(&h.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(rating, None, "the rating is cleared");
+    assert_eq!(notes, None, "the note is cleared");
+
+    // Leaving a field out still leaves it as it is.
+    track(&h, user, 77, Some(60.0)).await;
+    h.put(
+        "/api/t/77/library",
+        json!({ "favourite": true }),
+        Some(&owner),
+    )
+    .await;
+    let (rating,): (Option<f64>,) =
+        sqlx::query_as("SELECT rating FROM library_entry WHERE user_id = ? AND title_id = 77")
+            .bind(user)
+            .fetch_one(&h.state.pool)
+            .await
+            .unwrap();
+    assert_eq!(rating, Some(60.0));
+}
