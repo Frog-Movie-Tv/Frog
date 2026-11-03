@@ -31,6 +31,8 @@ Rewatches you can find, and scores from every site on every title.
   included, not only AniList's and TMDB's.
 - Titles that showed only one or two scores get the rest, within a day or the
   next time you open them.
+- Rating opens clear of the tab bar on a phone, with every score in reach, and
+  Clear at the top removes a rating.
 
 ## [1.2.0] — Spring Peeper — 2026-11-03
 

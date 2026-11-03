@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { backCloses } from '#lib/layers.svelte';
-	import { onScreen } from '#lib/onscreen';
+	import { onScreen, SHEET_QUERY } from '#lib/onscreen';
 	import { formatScore, fromDisplay, scale, toDisplay } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import Icon from './Icon.svelte';
@@ -25,6 +25,7 @@
 		() => (open = false)
 	);
 	let root: HTMLElement | undefined = $state();
+	let pop: HTMLElement | undefined = $state();
 
 	const format = $derived(settings.current.scoreFormat);
 	const bounds = $derived(scale(format));
@@ -54,7 +55,53 @@
 	}
 
 	function onWindowClick(event: MouseEvent) {
-		if (open && root && !root.contains(event.target as Node)) open = false;
+		const target = event.target as Node;
+		if (open && root && !root.contains(target) && !pop?.contains(target)) open = false;
+	}
+
+	/**
+	 * The menu opens at the top of the page, not inside the button's own box:
+	 * a title's hero and an episode row are layers of their own, and a menu
+	 * left inside one ended under the tab bar with its last scores cut off.
+	 * On a computer it sits under the button, or over it when there is no
+	 * room below; on a phone it is a sheet above the tab bar (see the CSS).
+	 * Inside a dialog it stays where it is, a dropdown, kept on screen.
+	 */
+	function lift(node: HTMLElement, inPlace: boolean) {
+		const menu = node.querySelector<HTMLElement>('.pop');
+		if (inPlace) {
+			if (!menu) return;
+			const kept = onScreen(menu, false);
+			return { destroy: () => kept.destroy() };
+		}
+		document.body.appendChild(node);
+		const place = () => {
+			if (!menu || !root || window.matchMedia(SHEET_QUERY).matches) return;
+			const pad = 8;
+			const at = root.getBoundingClientRect();
+			const tall = menu.offsetHeight;
+			const below = window.innerHeight - at.bottom - pad;
+			menu.style.top = '';
+			menu.style.bottom = '';
+			if (below >= tall + 6 || below >= at.top) {
+				menu.style.top = `${Math.round(at.bottom + 6)}px`;
+			} else {
+				menu.style.bottom = `${Math.round(window.innerHeight - at.top + 6)}px`;
+			}
+			const width = menu.offsetWidth;
+			const left = Math.min(Math.max(pad, at.right - width), window.innerWidth - width - pad);
+			menu.style.left = `${Math.round(left)}px`;
+		};
+		place();
+		window.addEventListener('resize', place);
+		window.addEventListener('scroll', place, { passive: true, capture: true });
+		return {
+			destroy() {
+				window.removeEventListener('resize', place);
+				window.removeEventListener('scroll', place, { capture: true });
+				node.remove();
+			}
+		};
 	}
 
 	function onKey(event: KeyboardEvent) {
@@ -98,31 +145,45 @@
 	</button>
 
 	{#if open}
-		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-		<div class="scrim" class:nested onclick={() => (open = false)}></div>
-		<div class="pop" class:nested use:onScreen={!nested} role="menu" aria-label="Choose a rating">
-			<div class="grid" data-format={format}>
-				{#each steps as step (step)}
-					<button
-						class="opt"
-						class:on={shown !== null && Math.abs(shown - step) < 1e-6}
-						role="menuitemradio"
-						aria-checked={shown !== null && Math.abs(shown - step) < 1e-6}
-						onclick={() => choose(step)}
-					>
-						{formatScore(fromDisplay(step, format), format)}
-					</button>
-				{/each}
-			</div>
-			{#if value !== null}
-				<button
-					class="clear"
-					onclick={() => {
-						onchange(null);
-						open = false;
-					}}>Clear rating</button
+		<div class="hold">
+			<div class="layer" use:lift={nested}>
+				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+				<div class="scrim" class:nested onclick={() => (open = false)}></div>
+				<div
+					class="pop"
+					class:nested
+					class:lifted={!nested}
+					bind:this={pop}
+					role="menu"
+					aria-label="Choose a rating"
 				>
-			{/if}
+					<div class="head">
+						<strong>Your rating</strong>
+						{#if value !== null}
+							<button
+								class="clear"
+								onclick={() => {
+									onchange(null);
+									open = false;
+								}}>Clear</button
+							>
+						{/if}
+					</div>
+					<div class="grid" data-format={format}>
+						{#each steps as step (step)}
+							<button
+								class="opt"
+								class:on={shown !== null && Math.abs(shown - step) < 1e-6}
+								role="menuitemradio"
+								aria-checked={shown !== null && Math.abs(shown - step) < 1e-6}
+								onclick={() => choose(step)}
+							>
+								{formatScore(fromDisplay(step, format), format)}
+							</button>
+						{/each}
+					</div>
+				</div>
+			</div>
 		</div>
 	{/if}
 </div>
@@ -225,6 +286,32 @@
 		min-width: max-content;
 	}
 
+	/* Held at the top of the page (see `lift`): placed against the window. */
+	.pop.lifted {
+		position: fixed;
+		z-index: 200;
+		top: auto;
+		right: auto;
+		max-height: calc(100dvh - 16px);
+		overflow-y: auto;
+	}
+
+	/* In place, inside a dialog, the wrappers take no room of their own. */
+	.hold,
+	.layer {
+		display: contents;
+	}
+
+	.head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		min-height: 30px;
+		margin: -2px 2px 8px;
+		font-size: 0.82rem;
+	}
+
 	.grid {
 		display: grid;
 		gap: 4px;
@@ -264,20 +351,19 @@
 	}
 
 	.clear {
-		margin-top: 8px;
-		width: 100%;
-		padding: 7px;
-		border-radius: var(--radius-sm);
+		padding: 5px 12px;
+		border-radius: var(--radius-pill);
 		border: 1px solid var(--line);
 		background: transparent;
-		color: var(--text-faint);
+		color: var(--bad);
 		font-size: 0.78rem;
+		font-weight: 600;
 		cursor: pointer;
 	}
 
 	.clear:hover {
-		color: var(--text);
-		border-color: var(--line-strong);
+		border-color: color-mix(in srgb, var(--bad) 50%, transparent);
+		background: color-mix(in srgb, var(--bad) 10%, transparent);
 	}
 
 	/* A phone: the menu rises from the bottom, always whole and in reach,
