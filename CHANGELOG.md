@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.3.1](https://github.com/Frog-Movie-Tv/Frog/compare/v1.3.0...v1.3.1) (2026-11-03)
+
+
+### Features
+
+* rate your library one card at a time ([fe330b9](https://github.com/Frog-Movie-Tv/Frog/commit/fe330b9032cff18dd80ce8ce1976442c7528b374))
+* **rate:** rate a whole library one card at a time ([a4695f7](https://github.com/Frog-Movie-Tv/Frog/commit/a4695f70646644de6cf48c85cc3b684d48a7ad78))
+* **ratings:** slide to fine scores, draw stars, and deal cards as one ([1e955f1](https://github.com/Frog-Movie-Tv/Frog/commit/1e955f11c91de3f2239f63d144ddb1725d075f7b))
+
+
+### Fixes
+
+* **library:** a rating or note sent as null is cleared ([002f42d](https://github.com/Frog-Movie-Tv/Frog/commit/002f42dd56ea08ff038a75b545b63b91a25b10cd))
+* **ratings:** every rating is kept whole and on the scale ([6acd5e4](https://github.com/Frog-Movie-Tv/Frog/commit/6acd5e4893cec1bbd4a2871f48e276346acb2757))
+* **ui:** a separator dot keeps its space after the word before it ([7f4fc54](https://github.com/Frog-Movie-Tv/Frog/commit/7f4fc5436241e6fc4a922225066957e50b673420))
+
+
+### Documentation
+
+* 1.2.0 is Glass Frog, 1.3.0 Horned Frog, and this is 1.3.1 ([9f72abe](https://github.com/Frog-Movie-Tv/Frog/commit/9f72abe4f780aa3c43ca3d6595751d08aac1c419))
+
 ## [1.3.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.2.0...v1.3.0) (2026-11-03)
 
 
