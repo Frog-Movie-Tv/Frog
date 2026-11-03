@@ -1,3 +1,4 @@
+import { untrack } from 'svelte';
 import { goto } from '$app/navigation';
 import { navigating, page } from '$app/state';
 import { address } from './address';
@@ -43,23 +44,30 @@ export function backCloses(isOpen: () => boolean, close: () => void) {
 		const layer: Layer = { close };
 		layers.push(layer);
 		const depth = layers.length;
-		void goto(address().href, {
-			shallow: true,
-			state: { ...page.state, layer: depth }
+		const at = untrack(() => address().href);
+		// Read without depending on them: the step pushed here changes both,
+		// and depending on them would close and reopen the layer for ever.
+		untrack(() => {
+			void goto(address().href, {
+				shallow: true,
+				state: { ...page.state, layer: depth }
+			});
 		});
 		return () => {
-			const at = layers.indexOf(layer);
+			const index = layers.indexOf(layer);
 			// Already taken away by Back: nothing more to do.
-			if (at === -1) return;
-			layers.splice(at, 1);
-			// Closed by a choice that goes somewhere else: that navigation
-			// replaces the page, and the step is left behind it, harmless.
-			// So is a step something else has since replaced.
+			if (index === -1) return;
+			layers.splice(index, 1);
+			// Taken back out only when nothing else moved meanwhile. A choice
+			// that goes somewhere else (a link in a menu) or changes the address
+			// (a filter in a sheet) keeps its step, which is harmless, rather
+			// than have Back undo it. A moment's wait lets a navigation begin.
 			setTimeout(() => {
-				if (navigating.to || page.state.layer !== depth) return;
+				const still = !navigating.to && page.state.layer === depth && address().href === at;
+				if (!still) return;
 				ownBacks++;
 				history.back();
-			}, 0);
+			}, 80);
 		};
 	});
 }
