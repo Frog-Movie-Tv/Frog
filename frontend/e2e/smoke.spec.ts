@@ -368,9 +368,20 @@ test('score format changes how a rating reads without touching the value', async
 	await page.getByRole('button', { name: /10 point decimal/ }).click();
 	await expect(page.getByRole('button', { name: 'Rated 7.8' })).toBeVisible();
 
-	// An unrated control has to say so, not show a dash.
+	// Ten with a decimal slides, from where the rating is, and goes no further
+	// than the scale: End stops at 10, Home at 0, a step is a tenth.
 	await page.getByRole('button', { name: 'Rated 7.8' }).click();
-	await page.getByRole('menuitemradio', { name: '7.5' }).click();
+	const slider = page.getByRole('slider', { name: 'Score out of 10' });
+	await expect(slider).toHaveAttribute('aria-valuetext', '7.8');
+	await slider.press('End');
+	await expect(slider).toHaveAttribute('aria-valuetext', '10.0');
+	await slider.press('ArrowRight');
+	await expect(slider).toHaveAttribute('aria-valuetext', '10.0');
+	await slider.press('Home');
+	await expect(slider).toHaveAttribute('aria-valuetext', '0.0');
+	for (let i = 0; i < 75; i++) await slider.press('ArrowRight');
+	await expect(slider).toHaveAttribute('aria-valuetext', '7.5');
+	await slider.press('Enter');
 	await expect(page.getByRole('button', { name: 'Rated 7.5' })).toBeVisible();
 });
 
@@ -512,6 +523,50 @@ async function filters(
 const statusChip = (page: Page, name: RegExp) =>
 	page.getByRole('group', { name: 'Status filter' }).getByRole('button', { name });
 const titles = (page: Page) => page.locator('.grid a.poster');
+
+test('the rating deck takes a slid score, skips, and takes both back', async ({
+	page
+}, testInfo) => {
+	await signIn(page);
+	seedLibrary(testInfo.project.name);
+	await page.goto('/rate');
+	await expect(page.getByRole('heading', { name: 'Rate your library' })).toBeVisible();
+	const togo = page.getByText(/\d+ to go/);
+	await expect(togo).toBeVisible();
+	const start = Number((await togo.innerText()).match(/(\d+) to go/)?.[1]);
+	expect(start).toBeGreaterThanOrEqual(4);
+
+	const card = page.locator('.card.top h2');
+	const first = await card.innerText();
+	const ratingOf = async (name: string) => {
+		const res = await page.request.get('/api/library');
+		const items: { name: string; entry: { rating: number | null } | null }[] = (await res.json())
+			.items;
+		return items.find((i) => i.name === name)?.entry?.rating ?? null;
+	};
+
+	// Ten with a decimal slides: it starts in the middle, a step is a tenth,
+	// and the score given rates the card and brings up the next.
+	const slider = page.getByRole('slider', { name: 'Score out of 10' });
+	await expect(slider).toHaveAttribute('aria-valuetext', '5.0');
+	for (let i = 0; i < 35; i++) await slider.press('ArrowRight');
+	await expect(slider).toHaveAttribute('aria-valuetext', '8.5');
+	await page.getByRole('button', { name: 'Rate', exact: true }).click();
+	await expect(card).not.toHaveText(first);
+	await expect(page.getByText(`${start - 1} to go`)).toBeVisible();
+	await expect.poll(() => ratingOf(first)).not.toBeNull();
+
+	await page.getByRole('button', { name: /^Skip/ }).click();
+	await expect(page.getByText(`${start - 2} to go`)).toBeVisible();
+
+	// Undo takes back the skip, then the rating.
+	await page.getByRole('button', { name: /^Undo/ }).click();
+	await expect(page.getByText(`${start - 1} to go`)).toBeVisible();
+	await page.getByRole('button', { name: /^Undo/ }).click();
+	await expect(card).toHaveText(first);
+	await expect.poll(() => ratingOf(first)).toBeNull();
+	clearLibrary(testInfo.project.name);
+});
 
 test('library filters combine, and each status says what it would show', async ({
 	page,

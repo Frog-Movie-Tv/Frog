@@ -1,16 +1,13 @@
 <script lang="ts">
 	import { img } from '#lib/api';
+	import Score from '#lib/components/Score.svelte';
 	import Empty from '#lib/components/Empty.svelte';
 	import Poster from '#lib/components/Poster.svelte';
 	import ProfileShell from '#lib/components/ProfileShell.svelte';
 	import Rail from '#lib/components/Rail.svelte';
-	import { episodeCode, formatScore, longRuntime, plural } from '#lib/format';
-	import { settings } from '#lib/settings.svelte';
+	import { episodeCode, longRuntime, plural } from '#lib/format';
 	import { titleHref } from '#lib/titles';
 	import type { Profile, ProfileCard } from '#lib/types';
-
-	const score = (r: number | null) =>
-		r == null ? '—' : formatScore(r, settings.current.scoreFormat);
 
 	function tiles(p: Profile) {
 		return [
@@ -28,7 +25,8 @@
 			},
 			{
 				label: 'Average rating',
-				value: score(p.stats.mean_rating),
+				value: '',
+				rating: p.stats.mean_rating,
 				sub: plural(p.stats.favourites, 'favourite')
 			},
 			{
@@ -62,7 +60,9 @@
 			{#each tiles(profile) as t, i (t.label)}
 				<div class="tile card" style="--i: {i}">
 					<span class="eyebrow">{t.label}</span>
-					<strong>{t.value}</strong>
+					<strong
+						>{#if 'rating' in t}<Score value={t.rating} empty="—" />{:else}{t.value}{/if}</strong
+					>
 					{#if t.sub}<span class="faint">{t.sub}</span>{/if}
 				</div>
 			{/each}

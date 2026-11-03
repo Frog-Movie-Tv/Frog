@@ -136,12 +136,33 @@ impl From<LibraryItem> for SharedItem {
     }
 }
 
+/// A rating as it is kept: a whole number from 0 to 100. Every score format
+/// shows one exactly (8.7 is 87, half stars are tens), so whatever a person,
+/// an import or AniList sends is held to that, and nothing is kept that no
+/// format could show as it is.
+pub fn whole_rating(rating: f64) -> f64 {
+    rating.clamp(0.0, 100.0).round()
+}
+
+/// A field that was sent, even as null, against one that was left out:
+/// `Some(None)` clears it, `None` leaves it as it is. Serde on its own reads
+/// a null `Option<Option<T>>` as left out, so Clear never cleared anything.
+fn sent<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(d).map(Some)
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct LibraryPatch {
     pub status: Option<String>,
     /// 0..100 internally; the UI converts to whichever score format is set.
+    #[serde(default, deserialize_with = "sent")]
     pub rating: Option<Option<f64>>,
     pub favourite: Option<bool>,
+    #[serde(default, deserialize_with = "sent")]
     pub notes: Option<Option<String>>,
     pub notify: Option<bool>,
 }
@@ -517,7 +538,7 @@ pub async fn apply_patch(
         .unwrap_or_else(|| "planned".into());
 
     let rating = match patch.rating {
-        Some(v) => v,
+        Some(v) => v.map(whole_rating),
         None => existing.as_ref().and_then(|e| e.rating),
     };
     let favourite = patch
@@ -1681,7 +1702,16 @@ pub async fn empty_library(pool: &SqlitePool, user_id: i64) -> AppResult<Emptied
 
 #[cfg(test)]
 mod order_tests {
-    use super::{history_of, order_clause, LibraryEntry};
+    use super::{history_of, order_clause, whole_rating, LibraryEntry};
+
+    #[test]
+    fn a_rating_is_kept_whole_and_on_the_scale() {
+        assert_eq!(whole_rating(87.0), 87.0);
+        assert_eq!(whole_rating(87.4), 87.0);
+        assert_eq!(whole_rating(87.5), 88.0, "8.75 out of 10 reads as 8.8");
+        assert_eq!(whole_rating(120.0), 100.0);
+        assert_eq!(whole_rating(-3.0), 0.0);
+    }
 
     #[test]
     fn sort_keys_are_allowlisted() {

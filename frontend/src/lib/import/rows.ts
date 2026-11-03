@@ -1,6 +1,6 @@
 import type { MatchResult, SearchItem } from '#lib/types';
 import { titleKey } from '#lib/titles';
-import type { Incoming } from './common';
+import { cleanRating, type Incoming } from './common';
 
 /** What folding needs from a row: the tracker's entry and the title chosen for it. */
 export interface Foldable {
@@ -19,7 +19,7 @@ export function applyItem(row: Foldable) {
 		tmdb_id: chosen.tmdb_id,
 		anilist_id: chosen.anilist_id ?? null,
 		status: row.incoming.status,
-		rating: row.incoming.rating,
+		rating: cleanRating(row.incoming.rating),
 		watched_at: row.incoming.watched_at,
 		favourite: row.incoming.favourite,
 		rewatch: row.incoming.rewatch,

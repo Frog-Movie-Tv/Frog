@@ -281,6 +281,24 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
 - **Profiles are tabs.** `ProfileShell` loads a profile once and draws
   `ProfileHeader` over each tab: Overview, Library (`LibraryBrowser` with
   `embedded`), Ratings and Compare.
+- **Rating as a deck.** `routes/rate` deals the unrated titles of the library
+  one card at a time; which titles, in what order, and the ten-or-fewer score
+  buttons a format gets are pure functions in `lib/rate.ts` (tested in
+  `tests/rate.test.mjs`). It saves through `api.track` like a title page and
+  needs no route of its own; the next two cards' scores load ahead.
+- **Slid scores.** A hundred points, or ten with a decimal, are slid to on
+  `ScoreSlider` rather than picked, in the deck and in `Rating`; its scale (0
+  to the format's top, whole steps or tenths) is `lib/score-entry.ts`, tested
+  in `tests/score-entry.test.mjs`. `Score` shows a rating in the chosen
+  format wherever one appears, and `Stars` draws five-star scores as icons,
+  the half star clipped from the same star.
+- **A rating is whole.** `store::whole_rating` keeps every saved rating a
+  whole number from 0 to 100, which every format shows exactly, whoever sends
+  it; imports clean theirs first (`lib/import/common.ts::cleanRating`), so an
+  odd score never fails a title.
+- **A null clears.** `LibraryPatch` reads a field sent as null as "clear it"
+  and a field left out as "leave it" (`store::sent`); serde alone read both
+  as left out, so Clear never cleared.
 - **Optimistic episode ticks.** The checkmark is the most-used control in the
   app, so it updates immediately and rolls back if the request fails.
 - **Service worker.** App shell and hashed assets cache-first; posters

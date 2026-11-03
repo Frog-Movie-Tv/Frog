@@ -9,11 +9,31 @@ people working on Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Glass Frog —
+## Upcoming — Horned Frog —
 
-In progress.
+Rate a whole library, one card at a time.
 
-## [1.3.0] — Spring Peeper — 2026-11-03
+### Highlights
+
+- **Rate your library.** Press Rate in Library and your unrated titles come up
+  as a deck of cards: the poster, what it was about, how far you got and what
+  IMDb, Rotten Tomatoes, AniList and the rest made of it. Pick a score and the
+  next card comes up; swipe or press Skip to leave one for later, and Undo
+  takes a card back. Number keys rate, the arrows skip.
+
+### Improvements
+
+- On a 100 point or 10 point decimal scale you slide to your score, in the
+  deck and wherever you rate, with a step either way for the last point.
+- Stars are drawn as stars, half stars too.
+
+### Fixes
+
+- Clear removes a rating, and emptying your notes removes them.
+- Every rating stays on the scale, from any tracker or AniList, so an odd
+  score in an import never turns a title away.
+
+## [1.3.0] — Horned Frog — 2026-11-03
 
 Rewatches you can find, and scores from every site on every title.
 
@@ -40,7 +60,7 @@ Rewatches you can find, and scores from every site on every title.
 - A season's year, an episode's name and a second piece of activity sit a space
   apart from what comes before them.
 
-## [1.2.0] — Spring Peeper — 2026-11-03
+## [1.2.0] — Glass Frog — 2026-11-03
 
 Profiles worth visiting, title pages that remember your history with a title,
 and a Frog that feels at home on a phone.

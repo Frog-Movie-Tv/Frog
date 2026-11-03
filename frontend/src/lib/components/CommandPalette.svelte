@@ -91,6 +91,13 @@
 	const pages: Command[] = [
 		{ id: 'p-home', group: GO, label: 'Home', icon: 'home', run: () => goto('/') },
 		{ id: 'p-library', group: GO, label: 'Library', icon: 'grid', run: () => goto('/library') },
+		{
+			id: 'p-rate',
+			group: GO,
+			label: 'Rate your library',
+			icon: 'star',
+			run: () => goto('/rate')
+		},
 		{ id: 'p-shelves', group: GO, label: 'Shelves', icon: 'layers', run: () => goto('/shelves') },
 		{ id: 'p-search', group: GO, label: 'Search', icon: 'search', run: () => goto('/search') },
 		{ id: 'p-cal', group: GO, label: 'Calendar', icon: 'calendar', run: () => goto('/calendar') },

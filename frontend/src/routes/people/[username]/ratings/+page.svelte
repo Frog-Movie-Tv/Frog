@@ -1,11 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import Score from '#lib/components/Score.svelte';
 	import { api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import ProfileShell from '#lib/components/ProfileShell.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
-	import { formatScore } from '#lib/format';
-	import { settings } from '#lib/settings.svelte';
 	import { titleHref } from '#lib/titles';
 	import { STATUS_LABEL, type RatedTitle } from '#lib/types';
 	import { uniqueBy } from '#lib/unique';
@@ -26,8 +25,6 @@
 	});
 
 	const shown = $derived((ratings ?? []).filter((t) => kind === 'all' || t.kind === kind));
-	const score = (r: number | null) =>
-		r == null ? '—' : formatScore(r, settings.current.scoreFormat);
 	const partName = (s: { season: number; first_episode: number }) =>
 		(s.season === 0 ? 'Specials' : `S${s.season}`) +
 		(s.first_episode > 1 ? ` from E${s.first_episode}` : '');
@@ -62,13 +59,13 @@
 								<span class="seasons">
 									{#each t.seasons as s (`${s.season}-${s.first_episode}`)}
 										<span class="season">
-											{partName(s)} <b>{score(s.rating)}</b>
+											{partName(s)} <b><Score value={s.rating} empty="—" /></b>
 										</span>
 									{/each}
 								</span>
 							{/if}
 						</span>
-						<span class="score">{score(t.rating)}</span>
+						<span class="score"><Score value={t.rating} empty="—" /></span>
 					</a>
 				</li>
 			{/each}

@@ -7,8 +7,8 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 1.1.0 "Spring Peeper" |
-| **Next codenames** | Glass Frog, Horned Frog |
+| **Release** | 1.3.0 "Horned Frog"; 1.3.1 next |
+| **Next codenames** | Wood Frog, Goliath |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
 | **Updates** | by itself: a timer pulls the newest release every 15 minutes, backs up first, rolls back on an unhealthy `/healthz` |
@@ -21,13 +21,12 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 ## Next
 
-0. **Release Glass Frog.** The 3 November batch is merged. Left: merge
-   release-please's pull request (1.2.0; 1.1.0 is already out), then re-run
-   install.sh on the VM, because the deploy scripts changed (backup.sh,
-   keepalive.sh) and a release image does not carry them. The Cycle (2026)
-   did not reproduce; a stored title now opens from what Frog kept when TMDB
-   fails, and the page retries once. Back closing menus is checked on
-   desktop Chromium only; try it on the Android phone.
+0. **Release 1.3.1.** The rating deck, slid and drawn scores and Clear that
+   clears are in their pull request, with `Release-As: 1.3.1`; merge it, then
+   release-please's pull request. Small releases carry the newest codename,
+   Horned Frog. Back closing menus is checked on desktop Chromium only; try
+   it on the Android phone. The Glass appearance waits on its own branch,
+   `feat/glass-appearance`, unpushed until the owner has looked at it.
 
 1. **Ship the catalog release with a snapshot at hand.** Frog's own title
    ids (`docs/CATALOG-IDENTITY.md`) are built and tested: fresh databases, a
@@ -384,6 +383,14 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   `lib/settings.svelte.ts`. Add the id to `HOME_ROWS` and to the default list.
 
 ## Shipped
+
+**1.3.0 Horned Frog** — A Rewatched filter, rewatches on cards and profiles,
+every site's scores for anime and older titles, AniList's dates winning, an
+AniList entry removed in Frog coming back, and lighter title pages.
+
+**1.2.0 Glass Frog** — Profiles in tabs with Ratings and Compare, a title's
+history and rewatches, who else on the Frog has it, Activity, phone sheets,
+Back closing menus, and the 3 November batch.
 
 **1.1.0 Spring Peeper** — Your people on Home, a taste match on profiles, reset
 links and `frog owner-reset-link`, renaming, and pictures that stay small, clear

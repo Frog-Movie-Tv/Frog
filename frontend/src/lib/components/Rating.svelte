@@ -3,7 +3,11 @@
 	import { onScreen, SHEET_QUERY } from '#lib/onscreen';
 	import { formatScore, fromDisplay, scale, toDisplay } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
+	import { sliding } from '#lib/score-entry';
 	import Icon from './Icon.svelte';
+	import Score from './Score.svelte';
+	import ScoreSlider from './ScoreSlider.svelte';
+	import Stars from './Stars.svelte';
 
 	interface Props {
 		/** 0..100, or null for unrated. */
@@ -33,15 +37,14 @@
 	const label = $derived(value === null ? 'Rate' : formatScore(value, format));
 
 	/**
-	 * The choices offered in the popover, in display units. A hundred buttons
-	 * would be absurd, so the fine-grained formats step in fives and halves:
-	 * about twenty targets, which is one comfortable tap each.
+	 * The choices offered in the popover, in display units: ten at most, one
+	 * comfortable tap each. A hundred points, or ten with a decimal, are slid
+	 * to instead.
 	 */
 	const steps = $derived.by(() => {
+		// The fine-grained formats slide instead (`ScoreSlider`).
 		let step = bounds.step;
-		if (format === 'pt100') step = 5;
-		else if (format === 'pt10dec') step = 0.5;
-		else if (format === 'star5') step = settings.current.halfStars ? 0.5 : 1;
+		if (format === 'star5') step = settings.current.halfStars ? 0.5 : 1;
 
 		const out: number[] = [];
 		for (let v = step; v <= bounds.max + 1e-9; v += step) out.push(Math.round(v * 10) / 10);
@@ -119,7 +122,7 @@
 		class="chip hit"
 		class:rated={value !== null}
 		{disabled}
-		aria-haspopup="menu"
+		aria-haspopup={sliding(format) ? 'dialog' : 'menu'}
 		aria-expanded={open}
 		aria-label={value === null ? 'Rate this' : `Rated ${label}`}
 		title={value === null ? 'Rate this' : `Rated ${label}`}
@@ -129,14 +132,7 @@
 		}}
 	>
 		{#if format === 'star5' && value !== null}
-			<span class="stars" aria-hidden="true">
-				{#each [1, 2, 3, 4, 5] as s (s)}
-					<i
-						class:on={shown !== null && shown >= s - 0.5}
-						class:half={shown !== null && shown >= s - 0.5 && shown < s}>★</i
-					>
-				{/each}
-			</span>
+			<span class="meter"><Stars value={shown ?? 0} outOf={5} size={14} /></span>
 			<span class="sr">{label}</span>
 		{:else}
 			{#if !compact}<Icon name="star" size={15} filled={value !== null} />{/if}
@@ -154,7 +150,7 @@
 					class:nested
 					class:lifted={!nested}
 					bind:this={pop}
-					role="menu"
+					role={sliding(format) ? 'dialog' : 'menu'}
 					aria-label="Choose a rating"
 				>
 					<div class="head">
@@ -169,19 +165,33 @@
 							>
 						{/if}
 					</div>
-					<div class="grid" data-format={format}>
-						{#each steps as step (step)}
-							<button
-								class="opt"
-								class:on={shown !== null && Math.abs(shown - step) < 1e-6}
-								role="menuitemradio"
-								aria-checked={shown !== null && Math.abs(shown - step) < 1e-6}
-								onclick={() => choose(step)}
-							>
-								{formatScore(fromDisplay(step, format), format)}
-							</button>
-						{/each}
-					</div>
+					{#if sliding(format)}
+						<!-- A hundred points, or ten with a decimal: slid to, not picked. -->
+						<ScoreSlider
+							{format}
+							{value}
+							action="Save"
+							autofocus
+							onsubmit={(v) => {
+								onchange(v);
+								open = false;
+							}}
+						/>
+					{:else}
+						<div class="grid" data-format={format}>
+							{#each steps as step (step)}
+								<button
+									class="opt"
+									class:on={shown !== null && Math.abs(shown - step) < 1e-6}
+									role="menuitemradio"
+									aria-checked={shown !== null && Math.abs(shown - step) < 1e-6}
+									onclick={() => choose(step)}
+								>
+									<Score value={fromDisplay(step, format)} />
+								</button>
+							{/each}
+						</div>
+					{/if}
 				</div>
 			</div>
 		</div>
@@ -242,27 +252,9 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	.stars {
+	.meter {
 		display: inline-flex;
-		gap: 1px;
-		font-style: normal;
-	}
-
-	.stars i {
-		font-style: normal;
-		color: var(--line-strong);
-		font-size: 0.86em;
-	}
-
-	.stars i.on {
 		color: var(--accent);
-	}
-
-	.stars i.half {
-		background: linear-gradient(90deg, var(--accent) 50%, var(--line-strong) 50%);
-		-webkit-background-clip: text;
-		background-clip: text;
-		color: transparent;
 	}
 
 	.sr {

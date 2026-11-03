@@ -1,13 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import Score from '#lib/components/Score.svelte';
 	import { api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Poster from '#lib/components/Poster.svelte';
 	import ProfileShell from '#lib/components/ProfileShell.svelte';
 	import Rail from '#lib/components/Rail.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
-	import { formatScore } from '#lib/format';
-	import { settings } from '#lib/settings.svelte';
 	import { titleHref } from '#lib/titles';
 	import { STATUS_LABEL, type Comparison, type Profile } from '#lib/types';
 
@@ -27,8 +26,6 @@
 			.catch(() => (failed = true));
 	});
 
-	const score = (r: number | null) =>
-		r == null ? '—' : formatScore(r, settings.current.scoreFormat);
 	const firstName = (p: Profile) => p.display_name || p.username;
 </script>
 
@@ -95,11 +92,11 @@
 										<strong>{b.title.name}</strong>
 									</span>
 									<span class="side">
-										<b>{score(b.mine.rating)}</b>
+										<b><Score value={b.mine.rating} empty="—" /></b>
 										<span class="faint">{STATUS_LABEL[b.mine.status]}</span>
 									</span>
 									<span class="side">
-										<b>{score(b.theirs.rating)}</b>
+										<b><Score value={b.theirs.rating} empty="—" /></b>
 										<span class="faint">{STATUS_LABEL[b.theirs.status]}</span>
 									</span>
 								</a>

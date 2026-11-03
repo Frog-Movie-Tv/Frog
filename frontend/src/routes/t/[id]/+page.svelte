@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import Score from '#lib/components/Score.svelte';
 	import { page } from '$app/state';
 	import { ApiError, api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
@@ -14,7 +15,7 @@
 	import { failure, idParam, type Failure } from '#lib/failure';
 	import { localDay } from '#lib/day';
 	import Avatar from '#lib/components/Avatar.svelte';
-	import { episodeCode, formatScore, prettyDate, runtime, year } from '#lib/format';
+	import { episodeCode, prettyDate, runtime, year } from '#lib/format';
 	import { providerLink } from '#lib/providers';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
@@ -525,7 +526,7 @@
 													{STATUS_LABEL[o.status]}
 													{#if o.rating !== null}
 														· <Icon name="star" size={11} filled />
-														{formatScore(o.rating, settings.current.scoreFormat)}
+														<Score value={o.rating} />
 													{/if}
 													{#if o.favourite}
 														· <Icon name="heart" size={11} filled />

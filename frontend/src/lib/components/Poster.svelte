@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { img } from '#lib/api';
+	import Score from './Score.svelte';
 	import Icon from './Icon.svelte';
 	import { formatScore } from '#lib/format';
 	import { morph as opened } from '#lib/morph.svelte';
@@ -135,7 +136,7 @@
 		{/if}
 
 		{#if scored && show.showRating}
-			<span class="score">{scored}</span>
+			<span class="score"><Score value={rating} /></span>
 		{/if}
 
 		{#if progress > 0 && progress < 100 && show.showProgress}
