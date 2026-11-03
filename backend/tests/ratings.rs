@@ -311,6 +311,37 @@ async fn a_failed_request_keeps_what_was_stored_and_tries_again() {
 }
 
 #[tokio::test]
+async fn an_anime_mdblist_misses_by_tmdb_id_is_asked_by_myanimelist_id() {
+    let h = Harness::new().await;
+    // A TMDB id MDBList leaves out of its answer, which a list maps to AniList.
+    h.exec("INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (1, 'tv', 404, 'Anime')")
+        .await;
+    h.exec(
+        "INSERT INTO anime_map (anilist_id, tmdb_kind, tmdb_id, tmdb_season, tmdb_offset) VALUES
+            (300, 'tv', 404, 1, 0)",
+    )
+    .await;
+
+    frog::ratings::refresh(&h.state, &[1], 0).await.unwrap();
+
+    let scores = h.scores(1).await;
+    assert!(
+        scores.contains(&("myanimelist".to_string(), 79.0)),
+        "{scores:?}"
+    );
+    assert!(
+        scores.contains(&("anilist".to_string(), 85.0)),
+        "{scores:?}"
+    );
+    let fake = h.fake.lock().unwrap();
+    assert!(
+        fake.calls.contains(&"GET mal show 1300".to_string()),
+        "{:?}",
+        fake.calls
+    );
+}
+
+#[tokio::test]
 async fn an_anime_film_no_list_maps_still_gets_anilist_through_myanimelist() {
     let h = Harness::new().await;
     h.exec(
