@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.2.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.1.0...v1.2.0) (2026-11-03)
+
+
+### Features
+
+* dates from AniList and imports, motion, a lighter server ([5987b5f](https://github.com/Frog-Movie-Tv/Frog/commit/5987b5f39b9077a029321316597e75264ef3b427))
+* Glass Frog — profiles, title history, phone polish and the 3 November batch ([d18f8b9](https://github.com/Frog-Movie-Tv/Frog/commit/d18f8b98162b082952e53bc4e490dabb557f0b9c))
+* **people:** profiles with tabs, comparing libraries, and all activity ([b69ec59](https://github.com/Frog-Movie-Tv/Frog/commit/b69ec5996bd310b336b9c6cc93cbd0a0f6f856f8))
+* **titles:** history, rewatches, your people and franchises on a title page ([81ad0e2](https://github.com/Frog-Movie-Tv/Frog/commit/81ad0e22e7a71fa1c6b4c84b0974cf495b38810a))
+
+
+### Fixes
+
+* **anilist:** one missing title no longer stops a whole sync ([a74097e](https://github.com/Frog-Movie-Tv/Frog/commit/a74097e5e47fcfbeb905471933dd628fdac1a739))
+* **titles:** scores for anime, real marks, every season ticked, every page of a list ([6dfaa1e](https://github.com/Frog-Movie-Tv/Frog/commit/6dfaa1ef087f7c190246818f699cd0527b92472e))
+* **ui:** Back closes menus without touching the history ([01e3841](https://github.com/Frog-Movie-Tv/Frog/commit/01e384170c3faa32abe94a86ded989507c874d4f))
+* **ui:** Back closes menus without touching the history ([1f3c664](https://github.com/Frog-Movie-Tv/Frog/commit/1f3c66405e2209dd956fbda12c0327d9d0f3fb7c))
+* **ui:** Back never undoes a choice made while a menu was open ([147dc5f](https://github.com/Frog-Movie-Tv/Frog/commit/147dc5ffac405c433670925e7b872ccced697ad2))
+* **ui:** menus inside sheets stay dropdowns, same-page steps never animate ([df9351e](https://github.com/Frog-Movie-Tv/Frog/commit/df9351eb06ff3238979d52d757e80827a4ccad96))
+
 ## [1.1.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.0.2...v1.1.0) (2026-11-02)
 
 
