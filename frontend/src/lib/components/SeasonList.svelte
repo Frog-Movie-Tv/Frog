@@ -341,8 +341,8 @@
 					<h3>{season.name}</h3>
 					<span class="faint">
 						{season.episode_count}
-						{season.episode_count === 1 ? 'episode' : 'episodes'}{#if season.air_date}
-							· {season.air_date.slice(0, 4)}{/if}
+						{season.episode_count === 1 ? 'episode' : 'episodes'}
+						{#if season.air_date}· {season.air_date.slice(0, 4)}{/if}
 					</span>
 				</div>
 				<div class="season-actions">

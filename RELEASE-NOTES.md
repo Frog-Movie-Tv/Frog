@@ -33,6 +33,8 @@ Rewatches you can find, and scores from every site on every title.
   next time you open them.
 - Rating opens clear of the tab bar on a phone, with every score in reach, and
   Clear at the top removes a rating.
+- A season's year, an episode's name and a second piece of activity sit a space
+  apart from what comes before them.
 
 ## [1.2.0] — Spring Peeper — 2026-11-03
 
