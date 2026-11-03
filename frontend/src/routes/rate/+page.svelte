@@ -3,14 +3,14 @@
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import LoadFailed from '#lib/components/LoadFailed.svelte';
-	import ScoreField from '#lib/components/ScoreField.svelte';
+	import ScoreSlider from '#lib/components/ScoreSlider.svelte';
 	import Scores from '#lib/components/Scores.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import Stars from '#lib/components/Stars.svelte';
 	import { failure, type Failure } from '#lib/failure';
 	import { formatScore, fromDisplay, toDisplay } from '#lib/format';
 	import { choiceForKey, choices, deckOf, type DeckScope } from '#lib/rate';
-	import { typed } from '#lib/score-entry';
+	import { sliding } from '#lib/score-entry';
 	import { settings } from '#lib/settings.svelte';
 	import { titleHref } from '#lib/titles';
 	import { toasts } from '#lib/toast.svelte';
@@ -30,13 +30,20 @@
 	let rated = $state(0);
 	/** What each step did, so Undo can take it back. */
 	let steps = $state<{ index: number; id: number; before: number | null; skipped: boolean }[]>([]);
-	/** The card on its way out: which way, and the score stamped on it. */
-	let leaving = $state<{ dir: -1 | 1; stamp: string | null } | null>(null);
-	/** The score just given, shown over the deck for a moment. A count, so the
-	 *  same score twice in a row still pops. */
-	let flash = $state<{ text: string; stars: number | null; n: number } | null>(null);
-	let flashes = 0;
-	let flashTimer: ReturnType<typeof setTimeout> | undefined;
+	/**
+	 * The card on its way out: which way, the score stamped on it, and how far
+	 * along. A rated card holds for a beat while the stamp lands, then flies;
+	 * a skipped one flies at once. The card under it rises as it flies, so it
+	 * is already in front when the first is gone.
+	 */
+	let leaving = $state<{
+		dir: -1 | 1;
+		stamp: string | null;
+		stars: number | null;
+		flying: boolean;
+	} | null>(null);
+	/** A card brought back by Undo comes in from the side it left by. */
+	let returning = $state<-1 | 1 | null>(null);
 	/** How far the card has been dragged sideways, in pixels. */
 	let drag = $state(0);
 	let dragging = $state(false);
@@ -44,8 +51,8 @@
 
 	const format = $derived(settings.current.scoreFormat);
 	const options = $derived(choices(format, settings.current.halfStars));
-	/** A hundred points, or ten with a decimal: typed, not picked. */
-	const typing = $derived(typed(format));
+	/** A hundred points, or ten with a decimal: slid to, not picked. */
+	const slide = $derived(sliding(format));
 	const card = $derived<LibraryItem | undefined>(deck[at]);
 	/** The card in hand and the two under it, top first. */
 	const pile = $derived(deck.slice(at, at + 3));
@@ -107,23 +114,29 @@
 
 	let busy = false;
 
+	/** How long a stamp holds, and how long a card takes to fly, in ms. */
+	const HOLD = 260;
+	const FLY = 320;
+
 	/** The card leaves that way, and the next one comes up. */
 	function onward(dir: -1 | 1, stamp: string | null, stars: number | null = null) {
-		leaving = { dir, stamp };
-		if (stamp) {
-			flash = { text: stamp, stars, n: ++flashes };
-			clearTimeout(flashTimer);
-			flashTimer = setTimeout(() => (flash = null), moving() ? 700 : 400);
-		}
-		setTimeout(
-			() => {
-				leaving = null;
-				drag = 0;
-				at += 1;
-				busy = false;
-			},
-			moving() ? 340 : 0
-		);
+		returning = null;
+		const motion = moving();
+		leaving = { dir, stamp, stars, flying: !stamp || !motion };
+		const fly = () => {
+			if (leaving) leaving = { ...leaving, flying: true };
+			setTimeout(
+				() => {
+					leaving = null;
+					drag = 0;
+					at += 1;
+					busy = false;
+				},
+				motion ? FLY : 0
+			);
+		};
+		if (stamp && motion) setTimeout(fly, HOLD);
+		else fly();
 	}
 
 	/** Give the card in hand a score, 0..100. */
@@ -154,6 +167,7 @@
 		const last = steps.at(-1);
 		if (!last || busy) return;
 		steps = steps.slice(0, -1);
+		returning = last.skipped ? -1 : 1;
 		at = last.index;
 		drag = 0;
 		if (last.skipped) return;
@@ -171,7 +185,7 @@
 		if (e.ctrlKey || e.metaKey || e.altKey) return;
 		const target = e.target as HTMLElement | null;
 		if (target?.closest('input, textarea, select, [role="dialog"]')) return;
-		const pick = typing ? null : choiceForKey(e.key, options.length);
+		const pick = slide ? null : choiceForKey(e.key, options.length);
 		if (pick !== null) {
 			e.preventDefault();
 			void rate(fromDisplay(options[pick], format) ?? 0);
@@ -211,8 +225,15 @@
 
 	/** Where a card in the pile sits: the top one follows the hand. */
 	function placed(depth: number) {
-		if (depth > 0) return `translateY(${depth * 14}px) scale(${1 - depth * 0.05})`;
-		if (leaving) return `translateX(${leaving.dir * 130}%) rotate(${leaving.dir * 14}deg)`;
+		// While the top card flies, everything under it moves up a place.
+		const rise = leaving?.flying && depth > 0 ? 1 : 0;
+		const place = depth - rise;
+		if (place > 0) return `translateY(${place * 14}px) scale(${1 - place * 0.05})`;
+		if (depth > 0) return 'none';
+		if (leaving?.flying) {
+			return `translateX(${leaving.dir * 125}%) translateY(-4%) rotate(${leaving.dir * 12}deg)`;
+		}
+		if (leaving) return 'scale(1.02)';
 		return `translateX(${drag}px) rotate(${drag / 22}deg)`;
 	}
 
@@ -279,7 +300,9 @@
 					class="card"
 					class:top={depth === 0}
 					class:dragging={depth === 0 && dragging}
-					class:gone={depth === 0 && leaving}
+					class:gone={depth === 0 && leaving?.flying}
+					class:back={depth === 0 && returning !== null}
+					style:--from={returning ?? 1}
 					style:transform={placed(depth)}
 					style:z-index={10 - depth}
 					style:--tint={it.accent.shade}
@@ -330,29 +353,25 @@
 						</a>
 					</div>
 
-					{#if depth === 0 && !leaving && Math.abs(drag) > 24}
+					{#if depth === 0 && leaving?.stamp}
+						<span class="stamp" aria-hidden="true">
+							{#if leaving.stars !== null}<Stars
+									value={leaving.stars}
+									size={34}
+								/>{:else}{leaving.stamp}{/if}
+						</span>
+					{:else if depth === 0 && !leaving && Math.abs(drag) > 24}
 						<span class="stamp skip" style:opacity={Math.min(1, Math.abs(drag) / THROW)}>
 							Skip
 						</span>
 					{/if}
 				</article>
 			{/each}
-
-			{#if flash}
-				{#key flash.n}
-					<span class="stamp" aria-hidden="true">
-						{#if flash.stars !== null}<Stars
-								value={flash.stars}
-								size={34}
-							/>{:else}{flash.text}{/if}
-					</span>
-				{/key}
-			{/if}
 		</div>
 
-		{#if typing}
+		{#if slide}
 			<div class="typed">
-				<ScoreField {format} autofocus reset={card.id} onsubmit={(v) => rate(v)} />
+				<ScoreSlider {format} autofocus reset={card.id} onsubmit={(v) => rate(v)} />
 			</div>
 		{:else}
 			<div
@@ -461,9 +480,17 @@
 			opacity 340ms ease;
 	}
 
+	.card {
+		animation: join 260ms ease-out backwards;
+	}
+
 	.card.top {
 		cursor: grab;
-		animation: deal-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+	}
+
+	/* Brought back by Undo: in from the side it went. */
+	.card.back {
+		animation: return 360ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 	}
 
 	.card:not(.top) {
@@ -479,10 +506,18 @@
 		opacity: 0;
 	}
 
-	@keyframes deal-in {
+	/* A card new to the pile fades in where it lies: only opacity, so it never
+	   fights the move that puts it there. */
+	@keyframes join {
 		from {
 			opacity: 0;
-			transform: translateY(14px) scale(0.95);
+		}
+	}
+
+	@keyframes return {
+		from {
+			opacity: 0;
+			transform: translateX(calc(var(--from) * 110%)) rotate(calc(var(--from) * 10deg));
 		}
 	}
 
@@ -578,8 +613,8 @@
 		font-weight: 600;
 	}
 
-	/* The score just given, stamped over the middle of the deck while the card
-	   flies off: big, a little turned, and gone again. */
+	/* The score just given, stamped across the card it was given to, which
+	   then carries it away. */
 	.stamp {
 		position: absolute;
 		z-index: 20;
@@ -598,24 +633,13 @@
 		pointer-events: none;
 		transform: translate(-50%, -50%) rotate(-6deg);
 		box-shadow: var(--shadow-3);
-		animation: stamp 700ms cubic-bezier(0.3, 1.4, 0.5, 1) forwards;
+		animation: stamp 240ms cubic-bezier(0.3, 1.5, 0.5, 1) backwards;
 	}
 
 	@keyframes stamp {
-		0% {
+		from {
 			opacity: 0;
-			transform: translate(-50%, -50%) rotate(-6deg) scale(1.6);
-		}
-		25% {
-			opacity: 1;
-			transform: translate(-50%, -50%) rotate(-6deg) scale(1);
-		}
-		75% {
-			opacity: 1;
-		}
-		100% {
-			opacity: 0;
-			transform: translate(-50%, -50%) rotate(-6deg) scale(0.96);
+			transform: translate(-50%, -50%) rotate(-6deg) scale(1.7);
 		}
 	}
 
@@ -764,7 +788,8 @@
 			transition: none;
 		}
 
-		.card.top,
+		.card,
+		.card.back,
 		.stamp {
 			animation: none;
 		}

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Rail from '#lib/components/Rail.svelte';
+	import Score from '#lib/components/Score.svelte';
 	import { titleHref } from '#lib/titles';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -154,7 +155,7 @@
 							{#if show}
 								{plural(t.watches, 'episode')} · {longRuntime(t.minutes)}
 							{:else if t.rating !== null}
-								{formatScore(t.rating, settings.current.scoreFormat)}
+								<Score value={t.rating} />
 								{#if t.watches > 1}· {t.watches}×{/if}
 							{:else}
 								{t.watches > 1 ? `${t.watches}×` : runtime(t.minutes)}
@@ -239,7 +240,7 @@
 				{/if}
 				<div class="tile card">
 					<span class="eyebrow">Mean rating</span>
-					<strong>{formatScore(stats.totals.mean_rating, settings.current.scoreFormat)}</strong>
+					<strong><Score value={stats.totals.mean_rating} /></strong>
 					{#if rated}<span class="faint">{plural(rated, 'rating')}</span>{/if}
 				</div>
 			</div>
@@ -312,9 +313,7 @@
 								>
 									<span class="value faint">{n || ''}</span>
 									<span class="bar-v" style:height="{(n / ratingMax) * 100}%"></span>
-									<span class="label faint"
-										>{formatScore((i + 1) * 10, settings.current.scoreFormat)}</span
-									>
+									<span class="label faint"><Score value={(i + 1) * 10} /></span>
 								</div>
 							{/each}
 						</div>

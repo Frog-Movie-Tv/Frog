@@ -368,17 +368,20 @@ test('score format changes how a rating reads without touching the value', async
 	await page.getByRole('button', { name: /10 point decimal/ }).click();
 	await expect(page.getByRole('button', { name: 'Rated 7.8' })).toBeVisible();
 
-	// Ten with a decimal is typed: what does not fit is turned away, with why.
+	// Ten with a decimal slides, from where the rating is, and goes no further
+	// than the scale: End stops at 10, Home at 0, a step is a tenth.
 	await page.getByRole('button', { name: 'Rated 7.8' }).click();
-	const field = page.getByLabel('Score out of 10');
-	await field.fill('12');
-	await field.press('Enter');
-	await expect(page.getByRole('alert').filter({ hasText: 'Between 0 and 10' })).toBeVisible();
-	await field.fill('7,55');
-	await field.press('Enter');
-	await expect(page.getByRole('alert').filter({ hasText: 'One decimal at most' })).toBeVisible();
-	await field.fill('7,5');
-	await field.press('Enter');
+	const slider = page.getByRole('slider', { name: 'Score out of 10' });
+	await expect(slider).toHaveAttribute('aria-valuetext', '7.8');
+	await slider.press('End');
+	await expect(slider).toHaveAttribute('aria-valuetext', '10.0');
+	await slider.press('ArrowRight');
+	await expect(slider).toHaveAttribute('aria-valuetext', '10.0');
+	await slider.press('Home');
+	await expect(slider).toHaveAttribute('aria-valuetext', '0.0');
+	for (let i = 0; i < 75; i++) await slider.press('ArrowRight');
+	await expect(slider).toHaveAttribute('aria-valuetext', '7.5');
+	await slider.press('Enter');
 	await expect(page.getByRole('button', { name: 'Rated 7.5' })).toBeVisible();
 });
 
@@ -521,7 +524,7 @@ const statusChip = (page: Page, name: RegExp) =>
 	page.getByRole('group', { name: 'Status filter' }).getByRole('button', { name });
 const titles = (page: Page) => page.locator('.grid a.poster');
 
-test('the rating deck takes a typed score, skips, and takes both back', async ({
+test('the rating deck takes a slid score, skips, and takes both back', async ({
 	page
 }, testInfo) => {
 	await signIn(page);
@@ -542,15 +545,13 @@ test('the rating deck takes a typed score, skips, and takes both back', async ({
 		return items.find((i) => i.name === name)?.entry?.rating ?? null;
 	};
 
-	// Ten with a decimal is typed: a score that does not fit stays on the card,
-	// one that does rates it and the next one comes up.
-	const field = page.getByLabel('Score out of 10');
-	await field.fill('11');
-	await field.press('Enter');
-	await expect(page.getByRole('alert').filter({ hasText: 'Between 0 and 10' })).toBeVisible();
-	await expect(card).toHaveText(first);
-	await field.fill('8.5');
-	await field.press('Enter');
+	// Ten with a decimal slides: it starts in the middle, a step is a tenth,
+	// and the score given rates the card and brings up the next.
+	const slider = page.getByRole('slider', { name: 'Score out of 10' });
+	await expect(slider).toHaveAttribute('aria-valuetext', '5.0');
+	for (let i = 0; i < 35; i++) await slider.press('ArrowRight');
+	await expect(slider).toHaveAttribute('aria-valuetext', '8.5');
+	await page.getByRole('button', { name: 'Rate', exact: true }).click();
 	await expect(card).not.toHaveText(first);
 	await expect(page.getByText(`${start - 1} to go`)).toBeVisible();
 	await expect.poll(() => ratingOf(first)).not.toBeNull();

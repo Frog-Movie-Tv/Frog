@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { titleHref } from '#lib/titles';
+	import Score from '#lib/components/Score.svelte';
 	import { api, ApiError, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import LoadFailed from '#lib/components/LoadFailed.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { failure, type Failure } from '#lib/failure';
-	import { episodeCode, formatScore, plural, prettyDate } from '#lib/format';
+	import { episodeCode, plural, prettyDate } from '#lib/format';
 	import { session } from '#lib/session.svelte';
-	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import { whenWatched } from '#lib/when.svelte';
 
@@ -156,8 +156,6 @@
 		}
 	}
 
-	const fmt = $derived(settings.current.scoreFormat);
-
 	/** "Mon", in the reader's language, for a YYYY-MM-DD day. */
 	function weekday(day: string): string {
 		return new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' });
@@ -244,9 +242,9 @@
 										</button>
 
 										{#if entry.film && entry.rating !== null}
-											<span class="score">{formatScore(entry.rating, fmt)}</span>
+											<span class="score"><Score value={entry.rating} /></span>
 										{:else if entry.episodes.length === 1 && entry.episodes[0].rating !== null}
-											<span class="score">{formatScore(entry.episodes[0].rating, fmt)}</span>
+											<span class="score"><Score value={entry.episodes[0].rating} /></span>
 										{/if}
 
 										<button
@@ -268,7 +266,7 @@
 													>
 													<span class="ep-name">{ep.name ?? 'Untitled'}</span>
 													{#if ep.rating !== null}
-														<span class="score small">{formatScore(ep.rating, fmt)}</span>
+														<span class="score small"><Score value={ep.rating} /></span>
 													{/if}
 												</li>
 											{/each}
