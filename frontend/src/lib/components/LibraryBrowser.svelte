@@ -83,6 +83,7 @@
 	let genre = $state(start.get('genre') ?? '');
 	let term = $state(start.get('q') ?? '');
 	let favourite = $state(start.has('favourite'));
+	let rewatched = $state(start.has('rewatched'));
 	let sort = $state<Sort>(startSort);
 	let order = $state<Order>(orderFrom(start, startSort));
 
@@ -107,12 +108,14 @@
 	const everyStatus = $derived(Object.values(counts).reduce((n, c) => n + (c ?? 0), 0));
 
 	const filtered = $derived(
-		status !== 'all' || kind !== 'all' || genre !== '' || name !== '' || favourite
+		status !== 'all' || kind !== 'all' || genre !== '' || name !== '' || favourite || rewatched
 	);
 
 	/** How many filters are on, for the mobile button's badge. */
 	const activeCount = $derived(
-		[status !== 'all', kind !== 'all', genre !== '', name !== '', favourite].filter(Boolean).length
+		[status !== 'all', kind !== 'all', genre !== '', name !== '', favourite, rewatched].filter(
+			Boolean
+		).length
 	);
 
 	const kindOptions = [
@@ -147,6 +150,7 @@
 		if (genre) pairs.push(['genre', genre]);
 		if (name) pairs.push(['q', name]);
 		if (favourite) pairs.push(['favourite', '1']);
+		if (rewatched) pairs.push(['rewatched', '1']);
 		if (sort !== 'added') pairs.push(['sort', sort]);
 		if (order !== naturalOrder(sort)) pairs.push(['order', order]);
 		const text = new URLSearchParams(pairs).toString();
@@ -160,6 +164,7 @@
 			genre: genre || undefined,
 			q: name || undefined,
 			favourite: favourite || undefined,
+			rewatched: rewatched || undefined,
 			sort,
 			order
 		};
@@ -204,6 +209,7 @@
 		genre = params.get('genre') ?? '';
 		term = params.get('q') ?? '';
 		favourite = params.has('favourite');
+		rewatched = params.has('rewatched');
 		sort = SORTS.find((s) => s === params.get('sort')) ?? 'added';
 		order = orderFrom(params, sort);
 	});
@@ -276,6 +282,7 @@
 		genre = '';
 		term = '';
 		favourite = false;
+		rewatched = false;
 	}
 
 	function chooseSort(value: string) {
@@ -453,6 +460,17 @@
 				<Icon name="heart" filled={favourite} />
 			</button>
 
+			<button
+				class="btn ghost icon-only"
+				class:on={rewatched}
+				aria-pressed={rewatched}
+				aria-label="Rewatched only"
+				title="Rewatched only"
+				onclick={() => (rewatched = !rewatched)}
+			>
+				<Icon name="repeat" />
+			</button>
+
 			{#if filtered}
 				<button class="btn ghost" onclick={reset}>Clear</button>
 			{/if}
@@ -542,6 +560,10 @@
 						<Icon name="heart" filled={favourite} />
 						Favourites
 					</button>
+					<button class="btn ghost" class:on={rewatched} onclick={() => (rewatched = !rewatched)}>
+						<Icon name="repeat" />
+						Rewatched
+					</button>
 				</div>
 
 				<div class="sheet-row">
@@ -605,6 +627,7 @@
 					rating={item.entry?.rating ?? null}
 					watched={item.watched_episodes}
 					total={item.total_episodes}
+					rewatches={item.rewatches}
 				/>
 			{/each}
 		</Grid>

@@ -5566,6 +5566,53 @@ async fn a_shared_library_never_carries_notes() {
 }
 
 #[tokio::test]
+async fn rewatches_are_counted_filtered_and_shown_to_others() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    a_shared_library(&h, &owner, true).await;
+
+    // A film watched again, and a show AniList counts two rewatches of.
+    let (code, body, _) = h.post("/api/t/1/rewatch", json!({}), Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    sqlx::query("UPDATE library_entry SET rewatch_count = 2 WHERE title_id = 3")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+
+    let again = |list: &Value| -> Vec<(String, i64)> {
+        let mut out: Vec<(String, i64)> = list["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| {
+                (
+                    i["name"].as_str().unwrap().to_string(),
+                    i["rewatches"].as_i64().unwrap(),
+                )
+            })
+            .collect();
+        out.sort();
+        out
+    };
+    let (_, mine) = h.get("/api/library?rewatched=true", Some(&owner)).await;
+    assert_eq!(
+        again(&mine),
+        [("Alpha".to_string(), 1), ("Gamma".to_string(), 2)]
+    );
+    let (_, all) = h.get("/api/library", Some(&owner)).await;
+    assert_eq!(all["items"].as_array().unwrap().len(), 4);
+
+    let (code, theirs) = h
+        .get("/api/profiles/mihai/library?rewatched=true", Some(&guest))
+        .await;
+    assert_eq!(code, StatusCode::OK, "{theirs}");
+    assert_eq!(
+        again(&theirs),
+        [("Alpha".to_string(), 1), ("Gamma".to_string(), 2)]
+    );
+}
+
+#[tokio::test]
 async fn a_shared_library_goes_by_the_same_rule_as_the_profile() {
     let h = Harness::new().await;
     let (owner, guest) = two_accounts(&h).await;

@@ -518,7 +518,8 @@ async fn anilist_comes_in_read_only_and_places_seasons_by_id() {
     h.sync(user).await;
     assert!(h.saves().is_empty(), "{:?}", h.saves());
 
-    // Taking the film out of Frog leaves AniList alone, and it is not re-added.
+    // Taking the film out of Frog leaves AniList alone, and the next sync puts
+    // it back as AniList has it: AniList is where the list is kept.
     h.call(
         "DELETE",
         &format!("/api/t/{}/library", h.tid("movie", 500).await),
@@ -533,7 +534,7 @@ async fn anilist_comes_in_read_only_and_places_seasons_by_id() {
         .call("GET", "/api/titles/movie/500", None, Some(&cookie))
         .await;
     assert_eq!(code, StatusCode::OK);
-    assert!(film["item"]["entry"].is_null(), "{film}");
+    assert!(!film["item"]["entry"].is_null(), "{film}");
 
     // The unsure one: offered candidates, then placed by choice.
     let (_, list, _, _) = h

@@ -89,6 +89,8 @@ pub struct LibraryItem {
     pub watched_episodes: i64,
     pub total_episodes: i64,
     pub last_watched_at: Option<String>,
+    /// Watched again this many times: a show's count, or a film's repeat watches.
+    pub rewatches: i64,
 }
 
 /// What another account may see of a library entry. Named field by field on
@@ -112,6 +114,7 @@ pub struct SharedItem {
     pub watched_episodes: i64,
     pub total_episodes: i64,
     pub last_watched_at: Option<String>,
+    pub rewatches: i64,
 }
 
 impl From<LibraryItem> for SharedItem {
@@ -128,6 +131,7 @@ impl From<LibraryItem> for SharedItem {
             watched_episodes: item.watched_episodes,
             total_episodes: item.total_episodes,
             last_watched_at: item.last_watched_at,
+            rewatches: item.rewatches,
         }
     }
 }
@@ -940,6 +944,44 @@ pub async fn history(
 /// always replaces a stamp, and between known days the earliest start and the
 /// latest finish win, so a show AniList keeps as several entries starts with
 /// its first and finishes with its last. Nothing given changes nothing.
+/// A plain yyyy-mm-dd day from whatever a tracker sent, or nothing.
+fn day(d: Option<&str>) -> Option<String> {
+    d.filter(|d| d.len() >= 10 && chrono::NaiveDate::parse_from_str(&d[..10], "%Y-%m-%d").is_ok())
+        .map(|d| d[..10].to_string())
+}
+
+/// The days AniList has for a title, which win over Frog's: AniList is where
+/// the list is kept. A day AniList does not have leaves Frog's; the rewatch
+/// count only goes up, so one logged in Frog is not lost to a sync.
+pub async fn replace_known_dates(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    started: Option<&str>,
+    finished: Option<&str>,
+    rewatches: i64,
+) -> AppResult<()> {
+    let (started, finished) = (day(started), day(finished));
+    if started.is_none() && finished.is_none() && rewatches <= 0 {
+        return Ok(());
+    }
+    sqlx::query(
+        "UPDATE library_entry
+            SET started_at = COALESCE(?1, started_at),
+                finished_at = COALESCE(?2, finished_at),
+                rewatch_count = MAX(rewatch_count, ?3)
+          WHERE user_id = ?4 AND title_id = ?5",
+    )
+    .bind(started)
+    .bind(finished)
+    .bind(rewatches.max(0))
+    .bind(user_id)
+    .bind(title_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn set_known_dates(
     pool: &SqlitePool,
     user_id: i64,
@@ -948,12 +990,6 @@ pub async fn set_known_dates(
     finished: Option<&str>,
     rewatches: i64,
 ) -> AppResult<()> {
-    let day = |d: Option<&str>| {
-        d.filter(|d| {
-            d.len() >= 10 && chrono::NaiveDate::parse_from_str(&d[..10], "%Y-%m-%d").is_ok()
-        })
-        .map(|d| d[..10].to_string())
-    };
     let (started, finished) = (day(started), day(finished));
     if started.is_none() && finished.is_none() && rewatches <= 0 {
         return Ok(());
@@ -1241,6 +1277,15 @@ pub async fn build_item(
         p.watched = *n;
     }
     let last = last_watched_at(pool, user_id, title.id).await?;
+    let (film_again,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM watch_event
+          WHERE user_id = ? AND title_id = ? AND episode_id IS NULL AND is_rewatch = 1",
+    )
+    .bind(user_id)
+    .bind(title.id)
+    .fetch_one(pool)
+    .await?;
+    let rewatches = entry.as_ref().map_or(0, |e| e.rewatch_count) + film_again;
     let total = if p.total > 0 {
         p.total
     } else {
@@ -1254,6 +1299,7 @@ pub async fn build_item(
         watched_episodes: p.watched,
         total_episodes: total,
         last_watched_at: last,
+        rewatches,
         title,
     })
 }
@@ -1316,6 +1362,8 @@ pub struct LibraryFilter {
     /// A name, typed by a person.
     pub term: Option<String>,
     pub favourite: bool,
+    /// Only what was watched more than once.
+    pub rewatched: bool,
 }
 
 impl LibraryFilter {
@@ -1346,6 +1394,14 @@ impl LibraryFilter {
         }
         if self.favourite {
             q.push(" AND l.favourite = 1");
+        }
+        if self.rewatched {
+            q.push(
+                " AND (l.rewatch_count > 0 OR EXISTS (
+                        SELECT 1 FROM watch_event w
+                         WHERE w.user_id = l.user_id AND w.title_id = l.title_id
+                           AND w.episode_id IS NULL AND w.is_rewatch = 1))",
+            );
         }
     }
 }
@@ -1464,6 +1520,8 @@ pub struct ItemFacts {
     totals: std::collections::HashMap<i64, i64>,
     last: std::collections::HashMap<i64, Option<String>>,
     counted: std::collections::HashMap<i64, i64>,
+    /// A film's repeat watches; a show's rewatches are counted on its entry.
+    film_again: std::collections::HashMap<i64, i64>,
 }
 
 impl ItemFacts {
@@ -1525,6 +1583,16 @@ impl ItemFacts {
         .into_iter()
         .collect();
         let counted = local_progress(pool, user_id).await?;
+        let film_again: HashMap<i64, i64> = sqlx::query_as::<_, (i64, i64)>(
+            "SELECT title_id, COUNT(*) FROM watch_event
+              WHERE user_id = ? AND episode_id IS NULL AND is_rewatch = 1
+              GROUP BY title_id",
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .collect();
 
         Ok(ItemFacts {
             entries,
@@ -1532,6 +1600,7 @@ impl ItemFacts {
             totals,
             last,
             counted,
+            film_again,
         })
     }
 
@@ -1541,10 +1610,14 @@ impl ItemFacts {
             .counted
             .get(&title.id)
             .or_else(|| self.watched.get(&title.id));
+        let entry = self.entries.get(&title.id).cloned();
+        let rewatches = entry.as_ref().map_or(0, |e| e.rewatch_count)
+            + self.film_again.get(&title.id).copied().unwrap_or(0);
         LibraryItem {
             genres: parse_genres(&title.genres_json),
             accent: parse_accent(title.accent_json.as_deref()),
-            entry: self.entries.get(&title.id).cloned(),
+            entry,
+            rewatches,
             watched_episodes: seen.copied().unwrap_or(0),
             total_episodes: if total > 0 {
                 total

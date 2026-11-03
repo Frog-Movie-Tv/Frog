@@ -80,7 +80,6 @@ struct EntryRow {
     frog_status: Option<String>,
     frog_progress: Option<i64>,
     frog_score: Option<i64>,
-    detached: bool,
     manual: bool,
     resolver: i64,
     episodes: Option<i64>,
@@ -98,7 +97,6 @@ pub(super) struct Known {
     pub target: Option<Target>,
     pub al: Option<View>,
     pub frog: Option<View>,
-    pub detached: bool,
     /// Chosen by the person: kept, whatever the matcher thinks.
     pub manual: bool,
     pub resolver: i64,
@@ -140,7 +138,7 @@ pub(super) async fn known_entries(
     let rows: Vec<EntryRow> = sqlx::query_as(
         "SELECT a.media_id, a.state, a.title_id, x.external_id AS tmdb_key, a.season,
                 a.episode_offset, a.al_status, a.al_progress, a.al_score,
-                a.frog_status, a.frog_progress, a.frog_score, a.detached, a.manual, a.resolver,
+                a.frog_status, a.frog_progress, a.frog_score, a.manual, a.resolver,
                 a.episodes, a.format, a.media_status, a.start_date, a.tries, a.next_try_at,
                 a.gone_at
            FROM anilist_entry a
@@ -174,7 +172,6 @@ pub(super) async fn known_entries(
                 target,
                 al: snapshot(r.al_status, r.al_progress, r.al_score),
                 frog: snapshot(r.frog_status, r.frog_progress, r.frog_score),
-                detached: r.detached,
                 manual: r.manual,
                 resolver: r.resolver,
                 meta: (r.episodes, r.format, r.media_status, r.start_date),
@@ -260,21 +257,19 @@ pub(super) async fn save_entry(
     Ok(())
 }
 
-/// What both sides looked like at the end of this sync; `detached` leaves
-/// the entry alone from now on (taken out of the library in Frog).
+/// What both sides looked like at the end of this sync.
 pub(super) async fn save_snapshots(
     pool: &SqlitePool,
     user_id: i64,
     media_id: i64,
     al: &View,
     frog: Option<&View>,
-    detached: bool,
 ) -> AppResult<()> {
     sqlx::query(
         "UPDATE anilist_entry
             SET al_status = ?, al_progress = ?, al_score = ?,
                 frog_status = ?, frog_progress = ?, frog_score = ?,
-                detached = ?, updated_at = ?
+                detached = 0, updated_at = ?
           WHERE user_id = ? AND media_id = ?",
     )
     .bind(&al.status)
@@ -283,7 +278,6 @@ pub(super) async fn save_snapshots(
     .bind(frog.map(|f| f.status.clone()))
     .bind(frog.map(|f| f.progress))
     .bind(frog.map(|f| f.score))
-    .bind(detached)
     .bind(Utc::now().to_rfc3339())
     .bind(user_id)
     .bind(media_id)

@@ -20,25 +20,17 @@
 	/* Cards rise into place as a grid appears; the first rows a little
 	   apart, the rest together, so a long list never waits on its tail. */
 	.grid > :global(*) {
-		animation: card-rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+		animation: card-rise 240ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 	}
 
-	.grid > :global(*:nth-child(-n + 6)) {
-		animation-delay: 30ms;
-	}
-
-	.grid > :global(*:nth-child(n + 7):nth-child(-n + 12)) {
-		animation-delay: 80ms;
-	}
-
-	.grid > :global(*:nth-child(n + 13)) {
-		animation-delay: 120ms;
+	.grid > :global(*:nth-child(n + 7)) {
+		animation-delay: 40ms;
 	}
 
 	@keyframes card-rise {
 		from {
 			opacity: 0;
-			transform: translateY(10px);
+			transform: translateY(6px);
 		}
 	}
 </style>

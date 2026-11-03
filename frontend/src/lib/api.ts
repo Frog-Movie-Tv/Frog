@@ -140,6 +140,7 @@ export interface LibraryQuery {
 	genre?: string;
 	q?: string;
 	favourite?: boolean;
+	rewatched?: boolean;
 	sort?: 'added' | 'updated' | 'name' | 'rating' | 'release' | 'last_watched';
 	order?: 'asc' | 'desc';
 	limit?: number;

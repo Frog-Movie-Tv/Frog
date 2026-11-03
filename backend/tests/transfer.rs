@@ -538,6 +538,31 @@ async fn the_days_a_tracker_knows_land_on_the_title() {
     assert_eq!(started.as_deref(), Some("2019-01-05"));
     assert_eq!(finished.as_deref(), Some("2020-06-20"));
     assert_eq!(rewatches, 2);
+
+    // AniList's days replace these, earlier or later, where it has one; the
+    // rewatch count does not go down.
+    let (user_id, title_id): (i64, i64) =
+        h.one("SELECT user_id, title_id FROM library_entry").await;
+    frog::store::replace_known_dates(
+        &h.state.pool,
+        user_id,
+        title_id,
+        Some("2019-03-01"),
+        None,
+        0,
+    )
+    .await
+    .unwrap();
+    let (started, finished, rewatches): (Option<String>, Option<String>, i64) = h
+        .one("SELECT started_at, finished_at, rewatch_count FROM library_entry")
+        .await;
+    assert_eq!(started.as_deref(), Some("2019-03-01"));
+    assert_eq!(
+        finished.as_deref(),
+        Some("2020-06-20"),
+        "a day AniList lacks stays"
+    );
+    assert_eq!(rewatches, 2);
 }
 
 #[tokio::test]
