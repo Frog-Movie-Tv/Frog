@@ -270,10 +270,10 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
   poster in the library grid carries `view-transition-name`, and the same name
   lands on the hero poster of the title page.
 - **Back closes what is on top.** Menus, sheets, dialogs and the command
-  palette call `backCloses` (`lib/layers.svelte.ts`): opening one adds a
-  shallow history step, Back takes it away and closes the top layer, and
-  closing it any other way takes the step back out. Shallow address updates
-  pass `page.state` along so they never wipe a layer's step.
+  palette call `backCloses` (`lib/layers.svelte.ts`), which holds a
+  `CloseWatcher` while the layer is open: Back on Android and Esc close the
+  newest one. It never adds history steps — those raced the shallow
+  navigations that keep Library's and Search's filters in the address.
 - **Menus stay on screen.** `use:onScreen` (`lib/onscreen.ts`) nudges a
   dropdown back inside the window on a computer; on a phone `Select` and
   `Rating` draw as a sheet from the bottom over a scrim.
