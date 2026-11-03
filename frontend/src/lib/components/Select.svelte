@@ -22,6 +22,8 @@
 	let { value, options, onchange, label, compact = false, full = false }: Props = $props();
 
 	let open = $state(false);
+	/** Inside a dialog or sheet: a dropdown there too, never a sheet over a sheet. */
+	let nested = $state(false);
 	// Back closes it on a phone, as Esc does on a computer.
 	backCloses(
 		() => open,
@@ -33,6 +35,7 @@
 	const current = $derived(options.find((o) => o.value === value) ?? options[0]);
 
 	function toggle() {
+		nested = !!root?.parentElement?.closest('[role="dialog"]');
 		open = !open;
 		if (open)
 			cursor = Math.max(
@@ -94,8 +97,16 @@
 
 	{#if open}
 		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-		<div class="scrim" onclick={() => (open = false)}></div>
-		<ul class="menu" use:onScreen role="listbox" aria-label={label} tabindex="-1" onkeydown={onKey}>
+		<div class="scrim" class:nested onclick={() => (open = false)}></div>
+		<ul
+			class="menu"
+			class:nested
+			use:onScreen={!nested}
+			role="listbox"
+			aria-label={label}
+			tabindex="-1"
+			onkeydown={onKey}
+		>
 			{#each options as option, i (option.value)}
 				<li>
 					<button
@@ -249,7 +260,7 @@
 	}
 
 	@media (max-width: 600px) {
-		.scrim {
+		.scrim:not(.nested) {
 			display: block;
 			position: fixed;
 			inset: 0;
@@ -258,7 +269,7 @@
 			animation: scrim-in 160ms ease backwards;
 		}
 
-		.menu {
+		.menu:not(.nested) {
 			position: fixed;
 			z-index: 200;
 			top: auto;

@@ -4,14 +4,16 @@ export const SHEET_QUERY = '(max-width: 600px)';
 /**
  * Keeps a menu inside the window: moved sideways when it would run off an
  * edge, and opened above its button when there is no room below. Use on the
- * element that drops down, as `use:onScreen`.
+ * element that drops down, as `use:onScreen`; `use:onScreen={false}` for one
+ * that stays a dropdown on a phone as well.
  */
-export function onScreen(node: HTMLElement) {
+export function onScreen(node: HTMLElement, sheet = true) {
 	const fit = () => {
 		node.style.translate = '';
 		node.style.top = '';
 		node.style.bottom = '';
-		if (window.matchMedia(SHEET_QUERY).matches) return;
+		// Drawn as a sheet on a phone: nothing to nudge.
+		if (sheet && window.matchMedia(SHEET_QUERY).matches) return;
 		const pad = 8;
 		const r = node.getBoundingClientRect();
 		let dx = 0;

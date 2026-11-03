@@ -17,6 +17,8 @@
 	let { value, onchange, compact = false, disabled = false }: Props = $props();
 
 	let open = $state(false);
+	/** Inside a dialog or sheet: a dropdown there too, never a sheet over a sheet. */
+	let nested = $state(false);
 	// Back closes it on a phone, as Esc does on a computer.
 	backCloses(
 		() => open,
@@ -74,7 +76,10 @@
 		aria-expanded={open}
 		aria-label={value === null ? 'Rate this' : `Rated ${label}`}
 		title={value === null ? 'Rate this' : `Rated ${label}`}
-		onclick={() => (open = !open)}
+		onclick={() => {
+			nested = !!root?.parentElement?.closest('[role="dialog"]');
+			open = !open;
+		}}
 	>
 		{#if format === 'star5' && value !== null}
 			<span class="stars" aria-hidden="true">
@@ -94,8 +99,8 @@
 
 	{#if open}
 		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-		<div class="scrim" onclick={() => (open = false)}></div>
-		<div class="pop" use:onScreen role="menu" aria-label="Choose a rating">
+		<div class="scrim" class:nested onclick={() => (open = false)}></div>
+		<div class="pop" class:nested use:onScreen={!nested} role="menu" aria-label="Choose a rating">
 			<div class="grid" data-format={format}>
 				{#each steps as step (step)}
 					<button
@@ -282,7 +287,7 @@
 	}
 
 	@media (max-width: 600px) {
-		.scrim {
+		.scrim:not(.nested) {
 			display: block;
 			position: fixed;
 			inset: 0;
@@ -291,7 +296,7 @@
 			animation: scrim-in 160ms ease backwards;
 		}
 
-		.pop {
+		.pop:not(.nested) {
 			position: fixed;
 			z-index: 200;
 			top: auto;

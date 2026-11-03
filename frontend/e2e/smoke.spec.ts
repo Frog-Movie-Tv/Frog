@@ -887,7 +887,10 @@ test("someone's whole library opens from their profile, without their notes", as
 	});
 
 	await page.goto(`/people/${name}`);
-	await page.locator('.identity').getByRole('link', { name: 'Library' }).click();
+	await page
+		.getByRole('navigation', { name: 'Profile' })
+		.getByRole('link', { name: 'Library' })
+		.click();
 	await expect(page).toHaveURL(new RegExp(`/people/${name}/library`));
 	await expect(titles(page)).toHaveCount(60);
 	await expect(page.getByText('70 titles')).toBeVisible();
@@ -1449,7 +1452,7 @@ test('Home shows what your people watched, and a profile how alike you rate', as
 	});
 
 	await page.goto('/');
-	const row = page.locator('.rail', { has: page.getByRole('heading', { name: 'Your people' }) });
+	const row = page.locator('.rail', { has: page.getByRole('heading', { name: 'Activity' }) });
 	await expect(row.getByText('watched Seen 9130')).toBeVisible();
 	await expect(row.getByText('Mira')).toBeVisible();
 	await expect(page.getByText(secret)).toHaveCount(0);
@@ -1464,7 +1467,7 @@ test('Home shows what your people watched, and a profile how alike you rate', as
 	// A row with its profile off is gone, and takes the row with it.
 	await friend.put('/api/account/profile', { data: { public: false } });
 	await page.goto('/');
-	await expect(page.getByRole('heading', { name: 'Your people' })).toHaveCount(0);
+	await expect(page.getByRole('heading', { name: 'Activity' })).toHaveCount(0);
 	await friend.put('/api/account/profile', { data: { public: true } });
 
 	// Switched off in Settings, and nothing is asked for.
@@ -1474,7 +1477,7 @@ test('Home shows what your people watched, and a profile how alike you rate', as
 	const asked: string[] = [];
 	page.on('request', (r) => asked.push(new URL(r.url()).pathname));
 	await page.goto('/');
-	await expect(page.getByRole('heading', { name: 'Your people' })).toHaveCount(0);
+	await expect(page.getByRole('heading', { name: 'Activity' })).toHaveCount(0);
 	await page.waitForTimeout(300);
 	expect(asked).not.toContain('/api/home/activity');
 	await page.request.put('/api/settings', { data: saved });
