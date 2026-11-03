@@ -11,6 +11,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Horned Frog —
 
+In progress.
+
+## [1.3.1] — Horned Frog — 2026-11-03
+
 Rate a whole library, one card at a time.
 
 ### Highlights
@@ -734,6 +738,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.3.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.3.1
 [1.3.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.3.0
 [1.2.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.2.0
 [1.1.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.1.0
