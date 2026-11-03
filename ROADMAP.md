@@ -21,19 +21,13 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 ## Next
 
-0. **Finish Glass Frog (branch `feat/glass-frog`, not pushed).** Every item of
-   the owner's 3 November batch is built and the backend suite, svelte-check
-   and the frontend unit tests pass. Left: the Playwright run fails on
-   "the command palette opens and can navigate" since Back-closes-layers
-   (`lib/layers.svelte.ts`) landed — closing the palette by choosing a result
-   likely races its history step against the navigation; fix it, run
-   `npx playwright test` and `npm run audit`, look at the title page,
-   profile tabs and phone sheets by eye, then open the PR and release
-   through release-please (it will be 1.2.0: 1.1.0 is already out). The Cycle
-   (2026) did not reproduce; a stored title now opens from what Frog kept
-   when TMDB fails, and the page retries once. Server side: the deploy
-   scripts changed (backup.sh, keepalive.sh) and reach the VM only by
-   re-running install.sh; the VM wants a reboot for a kernel update.
+0. **Release Glass Frog.** The 3 November batch is merged. Left: merge
+   release-please's pull request (1.2.0; 1.1.0 is already out), then re-run
+   install.sh on the VM, because the deploy scripts changed (backup.sh,
+   keepalive.sh) and a release image does not carry them. The Cycle (2026)
+   did not reproduce; a stored title now opens from what Frog kept when TMDB
+   fails, and the page retries once. Back closing menus is checked on
+   desktop Chromium only; try it on the Android phone.
 
 1. **Ship the catalog release with a snapshot at hand.** Frog's own title
    ids (`docs/CATALOG-IDENTITY.md`) are built and tested: fresh databases, a
