@@ -76,6 +76,8 @@ Manga, read and counted like everything you watch, and a new look over all of Fr
 - A white title logo keeps its edges on the Light themes.
 - On a phone, a title's status menu opens above the tab bar, with every
   choice in reach.
+- In search and commands, Enter opens the best match for what you typed,
+  wherever the pointer happens to rest.
 
 ## [1.3.1] — Horned Frog — 2026-11-03
 

@@ -27,6 +27,13 @@
 	);
 	let query = $state('');
 	let cursor = $state(0);
+	/**
+	 * Where the pointer was last seen over the list. A row is picked only when
+	 * the pointer really moves: a list redrawn under a pointer resting where a
+	 * finger last tapped would otherwise pick whatever row lands there, and
+	 * Enter would run that instead of the first match.
+	 */
+	let pointer: { x: number; y: number } | null = null;
 	let input: HTMLInputElement | undefined = $state();
 	let mine = $state<LibraryItem[]>([]);
 	let remote = $state<SearchItem[]>([]);
@@ -36,6 +43,7 @@
 		open = true;
 		query = '';
 		cursor = 0;
+		pointer = null;
 		remote = [];
 		queueMicrotask(() => input?.focus());
 	}
@@ -231,6 +239,19 @@
 		if (cursor >= results.length) cursor = Math.max(0, results.length - 1);
 	});
 
+	// What was typed starts over at its best match.
+	$effect(() => {
+		void query;
+		cursor = 0;
+	});
+
+	function hover(i: number, event: PointerEvent) {
+		const at = { x: event.clientX, y: event.clientY };
+		const moved = pointer && (pointer.x !== at.x || pointer.y !== at.y);
+		pointer = at;
+		if (moved) cursor = i;
+	}
+
 	async function choose(command: Command | undefined) {
 		if (!command) return;
 		hide();
@@ -327,7 +348,7 @@
 							class:on={i === cursor}
 							role="option"
 							aria-selected={i === cursor}
-							onmouseenter={() => (cursor = i)}
+							onpointermove={(e) => hover(i, e)}
 							onclick={() => choose(command)}
 						>
 							{#if command.poster}
