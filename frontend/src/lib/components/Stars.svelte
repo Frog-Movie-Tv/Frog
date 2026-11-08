@@ -22,6 +22,7 @@
 </script>
 
 <!--
+	Phosphor's star (Icon.svelte): [0] is its outline, [1] the solid star.
 	Stars drawn rather than typed: a whole star for each point, a half star
 	that is the same star filled to its middle, and the rest of the five as
 	outlines, so every rating is drawn on the same row.
@@ -33,35 +34,22 @@
 	aria-hidden={label ? undefined : 'true'}
 >
 	{#each { length: full }, i (i)}
-		<svg viewBox="0 0 24 24" width={size} height={size}>
-			<path d={ICONS.star} fill="currentColor" />
+		<svg viewBox="0 0 256 256" width={size} height={size}>
+			<path d={ICONS.star[1]} fill="currentColor" />
 		</svg>
 	{/each}
 	{#if half}
-		<svg viewBox="0 0 24 24" width={size} height={size}>
+		<svg viewBox="0 0 256 256" width={size} height={size}>
 			<defs>
-				<clipPath id="{uid}-half"><rect x="0" y="0" width="12" height="24" /></clipPath>
+				<clipPath id="{uid}-half"><rect x="0" y="0" width="128" height="256" /></clipPath>
 			</defs>
-			<path
-				d={ICONS.star}
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.6"
-				stroke-linejoin="round"
-				opacity="0.5"
-			/>
-			<path d={ICONS.star} fill="currentColor" clip-path="url(#{uid}-half)" />
+			<path d={ICONS.star[0]} fill="currentColor" opacity="0.5" />
+			<path d={ICONS.star[1]} fill="currentColor" clip-path="url(#{uid}-half)" />
 		</svg>
 	{/if}
 	{#each { length: empty }, i (i)}
-		<svg class="empty" viewBox="0 0 24 24" width={size} height={size}>
-			<path
-				d={ICONS.star}
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.6"
-				stroke-linejoin="round"
-			/>
+		<svg class="empty" viewBox="0 0 256 256" width={size} height={size}>
+			<path d={ICONS.star[0]} fill="currentColor" />
 		</svg>
 	{/each}
 </span>

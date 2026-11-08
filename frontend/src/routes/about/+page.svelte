@@ -23,7 +23,7 @@
 			role: 'Films, shows, artwork and episode data',
 			href: 'https://www.themoviedb.org'
 		},
-		{ name: 'Lucide', role: 'Icons, ISC licence', href: 'https://lucide.dev' },
+		{ name: 'Phosphor', role: 'Icons, MIT', href: 'https://phosphoricons.com' },
 		{
 			name: 'Inter',
 			role: 'Interface type, SIL Open Font Licence',
@@ -65,7 +65,7 @@
 		<Logo size={56} />
 		<div>
 			<h1>Frog</h1>
-			<p class="muted">Version {session.status?.version ?? '—'} · Spring Peeper</p>
+			<p class="muted">Version {session.status?.version ?? '—'} · Wood Frog</p>
 		</div>
 	</header>
 

@@ -110,7 +110,7 @@
 		</header>
 
 		{#if films && shows}
-			<div class="chips" role="group" aria-label="Show">
+			<div class="segmented" role="group" aria-label="Show">
 				<button class="chip" class:on={!only} onclick={() => (only = null)}>All</button>
 				<button class="chip" class:on={only === 'movie'} onclick={() => (only = 'movie')}>
 					Films <span class="faint">{films}</span>
@@ -188,11 +188,6 @@
 
 	.eyebrow {
 		margin: 0;
-		font-size: 0.72rem;
-		font-weight: 650;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: var(--text-faint);
 	}
 
 	.muted {
@@ -219,9 +214,7 @@
 		font-size: 0.8rem;
 	}
 
-	.chips {
-		display: flex;
-		gap: 8px;
+	.segmented {
 		margin-bottom: 20px;
 	}
 

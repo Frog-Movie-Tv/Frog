@@ -93,9 +93,10 @@
 		flex: none;
 	}
 
+	/* The ring holds the 34px picture exactly, so it sits centred in it. */
 	.avatar {
-		width: 34px;
-		height: 34px;
+		width: 36px;
+		height: 36px;
 		padding: 0;
 		display: grid;
 		place-items: center;
@@ -114,11 +115,15 @@
 		max-width: min(320px, calc(100vw - 20px));
 		padding: 6px;
 		border-radius: var(--radius);
-		background: var(--bg-elev);
+		background: var(--bg-float);
 		border: 1px solid var(--line-strong);
-		box-shadow: var(--shadow-3);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-3);
 		display: flex;
 		flex-direction: column;
+		/* Grows out of what opened it. */
+		animation: pop 180ms var(--spring) backwards;
 	}
 
 	.who {

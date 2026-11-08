@@ -411,7 +411,7 @@
 
 	<!-- Desktop: everything laid out. Mobile: one button into a sheet. -->
 	<div class="controls" class:open={sheetOpen}>
-		<div class="chips" role="group" aria-label="Status filter">
+		<div class="segmented" role="group" aria-label="Status filter">
 			<button class="chip" class:on={status === 'all'} onclick={() => (status = 'all')}>
 				All
 				{#if everyStatus}<span class="n">{everyStatus}</span>{/if}
@@ -773,7 +773,8 @@
 		flex: none;
 	}
 
-	.chip.on .sdot {
+	/* On an accent chip (the phone's sheet) the dot keeps a ring to stand on. */
+	.chips .chip.on .sdot {
 		box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-ink) 70%, transparent);
 	}
 
@@ -801,9 +802,13 @@
 		min-width: 220px;
 		padding: 6px;
 		border-radius: var(--radius);
-		background: var(--bg-elev-2);
+		background: var(--bg-float);
 		border: 1px solid var(--line-strong);
-		box-shadow: var(--shadow-3);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-3);
+		/* Grows out of what opened it. */
+		animation: pop 180ms var(--spring) backwards;
 	}
 
 	.menu a {
@@ -888,10 +893,12 @@
 		inset: auto 0 0 0;
 		max-height: 86dvh;
 		overflow-y: auto;
-		background: var(--bg-elev);
+		background: var(--bg-float);
 		border-top: 1px solid var(--line-strong);
 		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-		box-shadow: var(--shadow-3);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-3);
 		padding-bottom: calc(14px + env(safe-area-inset-bottom));
 	}
 
@@ -901,11 +908,6 @@
 		border-radius: var(--radius-pill);
 		background: var(--line-strong);
 		margin: 10px auto 4px;
-	}
-
-	.sheet .chips {
-		flex-wrap: wrap;
-		overflow: visible;
 	}
 
 	.sheet-body {
@@ -1049,11 +1051,10 @@
 	}
 
 	th {
-		font-size: 0.74rem;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
+		font-size: 0.78rem;
 		color: var(--text-faint);
-		background: var(--bg-elev);
+		/* Solid: the rows scroll under it. */
+		background: var(--bg-float);
 		position: sticky;
 		top: 0;
 	}

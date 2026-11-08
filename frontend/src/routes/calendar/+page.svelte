@@ -132,7 +132,7 @@
 <div class="page">
 	<div class="page-head">
 		<h1>Calendar</h1>
-		<div class="switch" role="group" aria-label="View">
+		<div class="segmented" role="group" aria-label="View">
 			<button class:on={view === 'month'} onclick={() => (view = 'month')}>Month</button>
 			<button class:on={view === 'agenda'} onclick={() => (view = 'agenda')}>Agenda</button>
 		</div>
@@ -280,34 +280,6 @@
 {/snippet}
 
 <style>
-	.switch {
-		display: inline-flex;
-		border-radius: var(--radius-pill);
-		border: 1px solid var(--line);
-		overflow: hidden;
-	}
-
-	.switch button {
-		padding: 7px 15px;
-		border: none;
-		background: transparent;
-		color: var(--text-dim);
-		font-size: 0.84rem;
-		font-weight: 600;
-		cursor: pointer;
-	}
-
-	.switch button.on {
-		background: var(--accent);
-		color: var(--accent-ink);
-	}
-
-	@media (max-width: 760px) {
-		.switch button {
-			min-height: 44px;
-		}
-	}
-
 	/* Grid and the chosen day side by side, so the details are never below
 	   the fold on a desktop. */
 	.layout {
@@ -360,10 +332,8 @@
 
 	.dayname {
 		text-align: center;
-		font-size: 0.7rem;
+		font-size: 0.78rem;
 		font-weight: 650;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
 		padding-bottom: 4px;
 	}
 

@@ -37,7 +37,7 @@
 	{:else if !ratings.length}
 		<Empty art="rest" title="Nothing rated yet" />
 	{:else}
-		<div class="chips" role="group" aria-label="Show">
+		<div class="segmented" role="group" aria-label="Show">
 			<button class="chip" class:on={kind === 'all'} onclick={() => (kind = 'all')}>All</button>
 			<button class="chip" class:on={kind === 'movie'} onclick={() => (kind = 'movie')}
 				>Films</button
@@ -80,7 +80,7 @@
 </ProfileShell>
 
 <style>
-	.chips {
+	.segmented {
 		margin-bottom: 16px;
 	}
 

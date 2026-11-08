@@ -29,7 +29,9 @@ function themePalette(): Palette {
 	const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
 	return {
 		bg: v('--bg', '#07120e'),
-		elev: v('--bg-elev', '#0e1f19'),
+		// Solid: a pane on the page is translucent over its light, and a
+		// picture has no light behind it.
+		elev: v('--bg-float', '#0e1f19'),
 		text: v('--text', '#f2efe3'),
 		dim: v('--text-dim', '#a9bdb0'),
 		faint: v('--text-faint', '#6f8a7c'),

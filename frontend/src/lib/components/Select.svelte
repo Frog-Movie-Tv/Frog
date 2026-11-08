@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { backCloses } from '#lib/layers.svelte';
-	import { onScreen } from '#lib/onscreen';
+	import { onScreen, SHEET_QUERY } from '#lib/onscreen';
 	import Icon from './Icon.svelte';
 
 	interface Option {
@@ -47,6 +47,17 @@
 	function pick(option: Option) {
 		open = false;
 		if (option.value !== value) onchange(option.value);
+	}
+
+	/**
+	 * On a phone the menu is a sheet over everything, so it moves to the end
+	 * of the page while open: a title's hero is a layer of its own, and a sheet
+	 * left inside it opened under the tab bar with its last choice hidden.
+	 * Rating's menu does the same. On a computer it stays a dropdown in place.
+	 */
+	function sheet(node: HTMLElement, inPlace: boolean) {
+		if (inPlace || !window.matchMedia(SHEET_QUERY).matches) return;
+		document.body.appendChild(node);
 	}
 
 	function onKey(event: KeyboardEvent) {
@@ -96,44 +107,51 @@
 	</button>
 
 	{#if open}
-		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-		<div class="scrim" class:nested onclick={() => (open = false)}></div>
-		<ul
-			class="menu"
-			class:nested
-			use:onScreen={!nested}
-			role="listbox"
-			aria-label={label}
-			tabindex="-1"
-			onkeydown={onKey}
-		>
-			{#each options as option, i (option.value)}
-				<li>
-					<button
-						type="button"
-						class="option"
-						class:on={option.value === value}
-						class:cursor={i === cursor}
-						role="option"
-						aria-selected={option.value === value}
-						onmouseenter={() => (cursor = i)}
-						onclick={() => pick(option)}
-					>
-						<span class="tick">
-							{#if option.value === value}<Icon name="check" size={14} />{/if}
-						</span>
-						<span class="text">
-							{option.label}
-							{#if option.hint}<small>{option.hint}</small>{/if}
-						</span>
-					</button>
-				</li>
-			{/each}
-		</ul>
+		<div class="layer" use:sheet={nested}>
+			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+			<div class="scrim" class:nested onclick={() => (open = false)}></div>
+			<ul
+				class="menu"
+				class:nested
+				use:onScreen={!nested}
+				role="listbox"
+				aria-label={label}
+				tabindex="-1"
+				onkeydown={onKey}
+			>
+				{#each options as option, i (option.value)}
+					<li>
+						<button
+							type="button"
+							class="option"
+							class:on={option.value === value}
+							class:cursor={i === cursor}
+							role="option"
+							aria-selected={option.value === value}
+							onmouseenter={() => (cursor = i)}
+							onclick={() => pick(option)}
+						>
+							<span class="tick">
+								{#if option.value === value}<Icon name="check" size={14} />{/if}
+							</span>
+							<span class="text">
+								{option.label}
+								{#if option.hint}<small>{option.hint}</small>{/if}
+							</span>
+						</button>
+					</li>
+				{/each}
+			</ul>
+		</div>
 	{/if}
 </div>
 
 <style>
+	/* Only a wrapper to move: the menu inside places itself. */
+	.layer {
+		display: contents;
+	}
+
 	/* A styled menu rather than a native select: the native control cannot be
 	   themed on any platform, so one dropdown looked like Windows and the rest
 	   of the app looked like Frog. */
@@ -202,9 +220,13 @@
 		margin: 0;
 		padding: 6px;
 		border-radius: var(--radius);
-		background: var(--bg-elev-2);
+		background: var(--bg-float);
 		border: 1px solid var(--line-strong);
-		box-shadow: var(--shadow-3);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-3);
+		/* Grows out of what opened it. */
+		animation: pop 180ms var(--spring) backwards;
 	}
 
 	.option {

@@ -73,7 +73,7 @@
 </svelte:head>
 
 <div class="page">
-	<header class="head">
+	<header class="head page-head">
 		<Logo size={44} />
 		<div>
 			<h1>What's new</h1>
@@ -98,7 +98,7 @@
 						{/if}
 					</div>
 
-					<div class="body">
+					<div class="body card">
 						{#if release.intro}<p class="intro">{release.intro}</p>{/if}
 
 						{#each release.groups as group (group.title)}
@@ -121,8 +121,8 @@
 
 <style>
 	.head {
-		display: flex;
 		align-items: center;
+		justify-content: flex-start;
 		gap: 18px;
 		margin-bottom: 34px;
 	}
@@ -138,8 +138,8 @@
 		padding: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 36px;
-		max-width: 80ch;
+		gap: 22px;
+		max-width: 1000px;
 	}
 
 	.release {
@@ -181,10 +181,12 @@
 		font-size: 0.78rem;
 	}
 
+	/* Each release's notes are one pane beside its version. */
 	.body {
 		display: flex;
 		flex-direction: column;
 		gap: 22px;
+		padding: 24px 28px;
 	}
 
 	.intro {
@@ -193,9 +195,7 @@
 	}
 
 	.group h3 {
-		font-size: 0.74rem;
-		letter-spacing: 0.1em;
-		text-transform: uppercase;
+		font-size: 0.78rem;
 		color: var(--text-faint);
 		margin-bottom: 10px;
 	}
@@ -279,8 +279,13 @@
 		.version {
 			position: static;
 			flex-direction: row;
+			flex-wrap: wrap;
 			align-items: baseline;
 			gap: 12px;
+		}
+
+		.body {
+			padding: 18px 18px;
 		}
 	}
 </style>

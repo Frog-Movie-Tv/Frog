@@ -75,7 +75,7 @@
 	{:else}
 		{#each days as group (group.day)}
 			<section class="day">
-				<h2>{prettyDate(group.items[0].at)}</h2>
+				<h2 class="sticky-head">{prettyDate(group.items[0].at)}</h2>
 				<div class="cards">
 					{#each group.items as item (key(item))}
 						<ActivityCard {item} />
@@ -101,14 +101,18 @@
 	}
 
 	h2 {
-		position: sticky;
-		top: var(--header-h);
-		z-index: 1;
-		margin: 0 0 12px;
-		padding: 8px 0;
+		margin: 0 -15px 12px;
+		padding: 8px 14px;
 		font-size: 0.95rem;
 		color: var(--text-dim);
-		background: var(--bg);
+	}
+
+	/* A phone's margin is narrower: the strip steps out only part of it. */
+	@media (max-width: 720px) {
+		h2 {
+			margin-inline: -8px;
+			padding-inline: 8px;
+		}
 	}
 
 	.cards {

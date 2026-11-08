@@ -456,7 +456,7 @@
 			: undefined}
 		style:--page-shade={accent?.shade ?? 'var(--bg)'}
 	>
-		<header class="hero">
+		<header class="hero" class:pictured={!!item.backdrop_path}>
 			{#if item.backdrop_path}
 				<img
 					class="backdrop"
@@ -887,27 +887,49 @@
 		--accent-ink: var(--poster-ink);
 	}
 
+	:global(:root[data-tone='light']) .veil {
+		--veil: var(--bg);
+	}
+
 	/* On a light page a pale poster colour would vanish as text and icons:
 	   darken it, and put white on it. */
-	:global(:root[data-theme='light']) .title-page.tinted,
-	:global(:root[data-theme='pond-light']) .title-page.tinted {
+	:global(:root[data-tone='light']) .title-page.tinted {
 		--accent: color-mix(in oklab, var(--poster-accent) 58%, #000);
 		--accent-ink: #fff;
 	}
 
+	/* The light behind the page shows below the picture, as on every page. */
 	.title-page {
-		/* The poster's dark companion sits behind the artwork, which is what
-		   makes two different films feel like two different pages. It stays
-		   inside the hero, which fades to the page, so nothing shows a seam. */
-		background: var(--bg);
 		min-height: 100dvh;
 	}
 
+	/* The poster's dark companion sits behind the artwork, which is what makes
+	   two different films feel like two different pages. It fades into the
+	   light below, so nothing shows a seam. */
 	.hero {
 		position: relative;
 		isolation: isolate;
-		background: linear-gradient(var(--page-shade) 50%, var(--bg));
+		background: linear-gradient(var(--page-shade) 40%, transparent);
 		padding: calc(var(--header-h) + 56px) var(--page-pad) 32px;
+	}
+
+	/* With a picture, the picture is the page: it fills the screen, and the
+	   words sit on it where the poster was. */
+	.hero.pictured {
+		display: flex;
+		align-items: flex-end;
+		min-height: 90vh;
+		padding: 140px var(--page-pad) 56px;
+		background: transparent;
+	}
+
+	.hero.pictured .hero-inner {
+		width: 100%;
+		min-height: 0;
+	}
+
+	.hero.pictured .poster-slot {
+		display: none;
 	}
 
 	.backdrop {
@@ -920,7 +942,7 @@
 		z-index: -2;
 		/* The picture fades out itself, so its edge never shows as a line where
 		   the page begins. */
-		mask-image: linear-gradient(to top, transparent, #000 30%);
+		mask-image: linear-gradient(to top, transparent 0, #000 36%);
 		animation: backdrop-in 1100ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 	}
 
@@ -931,7 +953,7 @@
 		inset: 0;
 		overflow: hidden;
 		pointer-events: none;
-		mask-image: linear-gradient(to top, transparent, #000 30%);
+		mask-image: linear-gradient(to top, transparent 0, #000 36%);
 		/* Under the picture, never hidden itself: a browser pauses a muted
 		   video nobody can see, and YouTube flashes its button on resuming. */
 		z-index: -3;
@@ -994,22 +1016,23 @@
 		}
 	}
 
+	/* Shade behind the words, on the left where they sit, fading out with
+	   the picture: the poster's own dark colour under light words, the page's
+	   pale one under dark words. */
 	.veil {
+		--veil: var(--page-shade);
 		position: absolute;
 		inset: 0;
 		z-index: -1;
 		background:
+			linear-gradient(to right, color-mix(in srgb, var(--veil) 86%, transparent), transparent 66%),
 			linear-gradient(
 				to top,
-				var(--bg) 2%,
-				color-mix(in srgb, var(--bg) 55%, transparent) 45%,
-				transparent
-			),
-			linear-gradient(
-				to right,
-				color-mix(in srgb, var(--page-shade) 85%, transparent),
-				transparent 70%
+				color-mix(in srgb, var(--veil) 72%, transparent) 0,
+				color-mix(in srgb, var(--veil) 40%, transparent) 32%,
+				transparent 58%
 			);
+		mask-image: linear-gradient(to top, transparent 0, #000 28%);
 	}
 
 	.hero-inner {
@@ -1047,8 +1070,8 @@
 	}
 
 	.logo {
-		max-width: min(420px, 70vw);
-		max-height: 120px;
+		max-width: min(580px, 82vw);
+		max-height: 180px;
 		margin-bottom: 6px;
 		object-fit: contain;
 		object-position: left bottom;
@@ -1057,9 +1080,14 @@
 
 	/* On a dark theme a black logo would vanish into the page; a faint light
 	   halo keeps its outline without changing a coloured one. */
-	:global(:root:not([data-theme='light']):not([data-theme='pond-light'])) .logo {
+	:global(:root[data-tone='dark']) .logo {
 		filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.45))
 			drop-shadow(0 0 14px rgb(255 255 255 / 0.12)) drop-shadow(0 4px 18px rgb(0 0 0 / 0.5));
+	}
+
+	.hero h1 {
+		font-size: clamp(2.8rem, 6vw, 5rem);
+		letter-spacing: -0.045em;
 	}
 
 	.tagline {
@@ -1454,15 +1482,17 @@
 		border-color: transparent;
 	}
 
+	/* On a small dark pill, so it reads on a bright picture as well. */
 	.tkind {
 		position: absolute;
-		top: 9px;
-		left: 11px;
-		font-size: 0.66rem;
+		top: 8px;
+		left: 8px;
+		padding: 2px 8px;
+		border-radius: var(--radius-pill);
+		background: rgba(10, 10, 14, 0.7);
+		color: #fff;
+		font-size: 0.74rem;
 		font-weight: 650;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: var(--text-dim);
 	}
 
 	.tname {
@@ -1612,8 +1642,13 @@
 			padding-top: calc(var(--header-h) + 150px);
 		}
 
+		.hero.pictured {
+			min-height: 72vh;
+			padding: calc(var(--header-h) + 150px) var(--page-pad) 32px;
+		}
+
 		.logo {
-			max-height: 90px;
+			max-height: 110px;
 		}
 
 		.actions :global(.btn .label) {

@@ -172,10 +172,8 @@
 
 	.head-row {
 		padding: 0 10px 6px;
-		font-size: 0.76rem;
+		font-size: 0.78rem;
 		font-weight: 650;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
 	}
 
 	.both {

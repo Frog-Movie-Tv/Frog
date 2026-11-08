@@ -187,8 +187,12 @@ each with its own throwaway database.
 - Ratings are stored 0–100. Score formats are display only.
 - Errors: database and internal faults show a generic message and log the
   detail; anything the user can act on keeps its own message.
-- Icons come from `Icon.svelte` (Lucide paths, inlined). Never use a unicode
-  glyph as an icon; add the path to `ICONS` instead.
+- Icons come from `Icon.svelte` (Phosphor paths, inlined, regular and filled).
+  Never use a unicode glyph as an icon; add the Phosphor icon's two paths to
+  `ICONS` instead, with its Phosphor name over it.
+- A theme is only tokens. Shape and layout live in components and the shared
+  primitives in `app.css` (`.segmented`, `.list-pane`, `.card`, …), never in
+  rules keyed on `data-theme`. A menu, sheet or dialog fills with `--bg-float`.
 - Dropdowns use `Select.svelte`, not native `<select>`.
 - Destructive actions use `toasts.undoable(…)`, not a confirm dialog.
 - Empty states use `Empty` with `art`, a short title and one clear action.

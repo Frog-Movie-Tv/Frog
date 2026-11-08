@@ -137,38 +137,59 @@
 		align-items: start;
 	}
 
+	/* The groups: one pane, each group's icon on a quiet tile that turns to
+	   the page's ink on the open one. */
 	.tabs {
 		position: sticky;
-		top: calc(var(--header-h, 64px) + 16px);
+		top: calc(var(--header-h) + 16px);
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
+		padding: 6px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+		background: var(--bg-elev);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-2);
 	}
 
 	.tabs a {
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		padding: 10px 12px;
+		padding: 8px 10px;
 		border-radius: var(--radius-sm);
 		color: var(--text-dim);
 		text-decoration: none;
-		font-weight: 550;
+		font-weight: 600;
 		white-space: nowrap;
+		transition:
+			background var(--fast) var(--ease),
+			color var(--fast) var(--ease);
 	}
 
 	.tabs a:hover {
 		color: var(--text);
-		background: var(--bg-elev);
+		background: color-mix(in srgb, var(--bg-hover) 55%, transparent);
 	}
 
 	.tabs a.on {
 		color: var(--text);
+		background: var(--bg-hover);
+	}
+
+	.tabs a :global(.icon) {
+		box-sizing: content-box;
+		padding: 5px;
+		border-radius: 8px;
 		background: var(--bg-elev-2);
+		color: var(--text-dim);
 	}
 
 	.tabs a.on :global(.icon) {
-		color: var(--accent);
+		background: var(--text);
+		color: var(--bg);
 	}
 
 	.intro {
@@ -182,21 +203,20 @@
 			gap: 18px;
 		}
 
-		/* A row of chips that scrolls sideways, so every group is one tap away. */
+		/* One capsule that scrolls sideways, so every group is one tap away. */
 		.tabs {
 			position: static;
 			flex-direction: row;
 			overflow-x: auto;
-			gap: 6px;
 			min-width: 0;
-			padding-bottom: 4px;
+			padding: 4px;
+			border-radius: var(--radius-pill);
 			scrollbar-width: none;
 		}
 
 		.tabs a {
-			padding: 8px 12px;
-			border: 1px solid var(--line);
-			border-radius: 999px;
+			padding: 6px 14px 6px 6px;
+			border-radius: var(--radius-pill);
 		}
 	}
 

@@ -660,7 +660,7 @@
 		</div>
 	{/if}
 
-	<div class="tabbar" role="tablist" aria-label="What to search">
+	<div class="tabbar segmented" role="tablist" aria-label="What to search">
 		{#each TABS as t (t.id)}
 			<button
 				class="tab"
@@ -694,7 +694,7 @@
 				<div class:dim={asking || switching}>
 					{#if trendingShown.length}
 						<div class="section-head lists">
-							<div class="switch" role="tablist" aria-label="What to show">
+							<div class="segmented" role="tablist" aria-label="What to show">
 								<button
 									role="tab"
 									class:on={list === 'trending'}
@@ -777,66 +777,18 @@
 	}
 
 	.title {
-		font-size: clamp(1.7rem, 3vw, 2.25rem);
-		letter-spacing: -0.025em;
+		/* The large title every page opens with. */
+		font-size: clamp(2.4rem, 4.8vw, 3.6rem);
+		letter-spacing: -0.04em;
 		margin-bottom: 20px;
 	}
 
 	.tabbar {
-		display: flex;
-		gap: 4px;
 		margin-bottom: 24px;
-		border-bottom: 1px solid var(--line);
-		overflow-x: auto;
-		scrollbar-width: none;
-	}
-
-	.tabbar::-webkit-scrollbar {
-		display: none;
-	}
-
-	.tab {
-		position: relative;
-		display: inline-flex;
-		align-items: center;
-		gap: 7px;
-		flex: none;
-		padding: 10px 12px 12px;
-		border: 0;
-		background: none;
-		color: var(--text-faint);
-		font-size: 0.92rem;
-		font-weight: 600;
-		cursor: pointer;
-		transition: color var(--fast) var(--ease);
-	}
-
-	.tab:hover {
-		color: var(--text);
-	}
-
-	.tab.on {
-		color: var(--text);
-	}
-
-	.tab:disabled {
-		opacity: 0.45;
-		cursor: default;
-	}
-
-	.tab.on::after {
-		content: '';
-		position: absolute;
-		left: 10px;
-		right: 10px;
-		bottom: -1px;
-		height: 2px;
-		border-radius: 2px;
-		background: var(--accent);
 	}
 
 	.tab .count {
-		font-size: 0.74rem;
+		font-size: 0.76rem;
 		font-weight: 600;
 		color: var(--text-faint);
 		font-variant-numeric: tabular-nums;
@@ -979,40 +931,6 @@
 		min-width: 0;
 	}
 
-	/* Trending or the best of all time: two words, one of them lit. */
-	.switch {
-		display: inline-flex;
-		gap: 4px;
-		padding: 4px;
-		border-radius: var(--radius-pill);
-		background: var(--bg-elev);
-		border: 1px solid var(--line);
-	}
-
-	.switch button {
-		min-height: 34px;
-		padding: 0 14px;
-		border: 0;
-		border-radius: var(--radius-pill);
-		background: none;
-		color: var(--text-dim);
-		font-size: 0.86rem;
-		font-weight: 650;
-		cursor: pointer;
-		transition:
-			background var(--fast) var(--ease),
-			color var(--fast) var(--ease);
-	}
-
-	.switch button:hover {
-		color: var(--text);
-	}
-
-	.switch button.on {
-		background: var(--text);
-		color: var(--bg);
-	}
-
 	.searchbar {
 		display: flex;
 		align-items: center;
@@ -1052,15 +970,6 @@
 
 	.clear:hover {
 		color: var(--text);
-	}
-
-	@media (max-width: 760px) {
-		/* Bled to the phone's edge like a rail, so the last tab scrolls into
-		   view instead of being cut off at the gutter. */
-		.tabbar {
-			margin-inline: calc(var(--page-pad) * -1);
-			padding-inline: calc(var(--page-pad) - 10px);
-		}
 	}
 
 	.notice {

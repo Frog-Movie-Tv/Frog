@@ -279,8 +279,10 @@
 		padding: 10px 12px;
 		border-radius: var(--radius);
 		border: 1px solid var(--line-strong);
-		background: var(--bg-elev);
-		box-shadow: var(--shadow-3);
+		background: var(--bg-float);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-3);
 	}
 
 	.top {
@@ -371,8 +373,10 @@
 		padding: 6px;
 		border-radius: var(--radius);
 		border: 1px solid var(--line-strong);
-		background: var(--bg-elev-2);
-		box-shadow: var(--shadow-3);
+		background: var(--bg-float);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-3);
 	}
 
 	.menu button {

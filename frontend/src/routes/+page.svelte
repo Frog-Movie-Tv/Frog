@@ -156,7 +156,11 @@
 {:else if data}
 	<div class="home">
 		{#if heroItem && heroStyle !== 'off'}
-			<header class="hero" style:--tint={heroItem.accent.shade}>
+			<header
+				class="hero"
+				class:pictured={(heroStyle === 'backdrop' && !!heroItem.backdrop_path) ||
+					(heroStyle === 'poster' && !!heroItem.poster_path)}
+			>
 				{#if heroStyle === 'backdrop' && heroItem.backdrop_path}
 					<img
 						class="backdrop"
@@ -370,15 +374,21 @@
 		padding: 0 2px;
 	}
 
+	/* The screen belongs to one title: its picture fills it and fades into
+	   the light behind the page, so the hero has no bottom edge. */
 	.hero {
 		position: relative;
 		isolation: isolate;
 		min-height: min(56vh, 480px);
 		display: flex;
 		align-items: flex-end;
-		padding: calc(var(--header-h) + 48px) var(--page-pad) 36px;
-		background: linear-gradient(to bottom, var(--tint, var(--bg-elev)) 40%, var(--bg));
+		padding: calc(var(--header-h) + 48px) var(--page-pad) 56px;
 		overflow: hidden;
+	}
+
+	.hero.pictured {
+		min-height: 88vh;
+		padding-bottom: 72px;
 	}
 
 	.hero-skeleton {
@@ -397,41 +407,35 @@
 		z-index: -2;
 		/* The picture fades out itself, so its edge never shows as a line where
 		   the page begins. */
-		mask-image: linear-gradient(to top, transparent, #000 30%);
+		mask-image: linear-gradient(to top, transparent 0, #000 34%);
 	}
 
 	.backdrop.poster {
 		object-position: center 12%;
 	}
 
+	/* Shade behind the words, on the left where they sit, fading out with
+	   the picture. */
 	.veil {
 		position: absolute;
 		inset: 0;
 		z-index: -1;
 		background:
+			linear-gradient(to right, color-mix(in srgb, var(--bg) 84%, transparent), transparent 64%),
 			linear-gradient(
 				to top,
-				var(--bg) 0%,
-				color-mix(in srgb, var(--bg) 82%, transparent) 26%,
-				color-mix(in srgb, var(--bg) 30%, transparent) 62%,
-				transparent 100%
-			),
-			linear-gradient(
-				to right,
-				color-mix(in srgb, var(--bg) 94%, transparent) 0%,
-				color-mix(in srgb, var(--bg) 72%, transparent) 38%,
-				transparent 72%
+				color-mix(in srgb, var(--bg) 70%, transparent) 0,
+				color-mix(in srgb, var(--bg) 38%, transparent) 32%,
+				transparent 56%
 			);
+		mask-image: linear-gradient(to top, transparent 0, #000 28%);
 	}
 
-	/* Accent and bold: the old faint caption was close to invisible over
-	   artwork, and outright invisible on Pond Light. */
 	.hero-label {
-		font-size: 0.74rem;
-		font-weight: 750;
-		letter-spacing: 0.11em;
-		text-transform: uppercase;
-		color: var(--accent);
+		font-size: 1rem;
+		font-weight: 700;
+		color: var(--text);
+		opacity: 0.85;
 	}
 
 	.hero .facts,
@@ -450,8 +454,8 @@
 	}
 
 	.logo {
-		max-width: min(460px, 76vw);
-		max-height: 140px;
+		max-width: min(620px, 82vw);
+		max-height: 200px;
 		object-fit: contain;
 		object-position: left bottom;
 		filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.65));
@@ -459,15 +463,14 @@
 
 	/* On a dark theme a black logo would vanish into the page; a faint light
 	   halo keeps its outline without changing a coloured one. */
-	:global(:root:not([data-theme='light']):not([data-theme='pond-light'])) .logo {
+	:global(:root[data-tone='dark']) .logo {
 		filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.45))
 			drop-shadow(0 0 14px rgb(255 255 255 / 0.12)) drop-shadow(0 4px 18px rgb(0 0 0 / 0.5));
 	}
 
 	/* On a light theme the hero fades to a pale page, where a white logo
 	   would lose its edges: a dark outline and a closer shadow keep them. */
-	:global(:root[data-theme='light']) .logo,
-	:global(:root[data-theme='pond-light']) .logo {
+	:global(:root[data-tone='light']) .logo {
 		filter: drop-shadow(0 0 1px rgb(0 0 0 / 0.6)) drop-shadow(0 1px 3px rgb(0 0 0 / 0.45))
 			drop-shadow(0 6px 22px rgb(0 0 0 / 0.55));
 	}
@@ -491,14 +494,29 @@
 		margin-right: 6px;
 	}
 
+	.hero h1 {
+		font-size: clamp(3rem, 7vw, 5.6rem);
+		letter-spacing: -0.045em;
+	}
+
 	.hero-actions {
 		display: flex;
 		gap: 10px;
 		margin-top: 6px;
 	}
 
-	.rows {
-		padding-top: 32px;
+	/* The one thing to do, in the page's own ink, as a TV app's Play is. */
+	.hero-actions .btn.primary {
+		min-height: 50px;
+		padding: 0 30px;
+		background: var(--text);
+		color: var(--bg);
+		font-size: 1rem;
+		box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6);
+	}
+
+	.hero + .rows {
+		padding-top: 8px;
 	}
 
 	.week {
@@ -564,11 +582,15 @@
 	}
 
 	.when {
-		font-size: 0.72rem;
+		/* A block of its own, so its first letter can be a capital. */
+		display: inline-block;
+		font-size: 0.78rem;
 		font-weight: 700;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
 		color: var(--accent);
+	}
+
+	.when::first-letter {
+		text-transform: uppercase;
 	}
 
 	@media (max-width: 720px) {
@@ -577,8 +599,13 @@
 			padding-top: calc(var(--header-h) + 24px);
 		}
 
+		.hero.pictured {
+			min-height: 72vh;
+			padding-bottom: 40px;
+		}
+
 		.logo {
-			max-height: 96px;
+			max-height: 120px;
 		}
 	}
 </style>

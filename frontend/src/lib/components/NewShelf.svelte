@@ -140,9 +140,11 @@
 		gap: 16px;
 		padding: 22px;
 		border-radius: var(--radius-lg);
-		background: var(--bg-elev);
+		background: var(--bg-float);
 		border: 1px solid var(--line-strong);
-		box-shadow: var(--shadow-3);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-3);
 	}
 
 	h2 {

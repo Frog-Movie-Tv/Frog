@@ -280,7 +280,7 @@
 				</p>
 			{/if}
 		</div>
-		<div class="switch" role="group" aria-label="Which titles">
+		<div class="segmented" role="group" aria-label="Which titles">
 			<button class:on={scope === 'finished'} onclick={() => deal('finished')}>Finished</button>
 			<button class:on={scope === 'all'} onclick={() => deal('all')}>Everything</button>
 		</div>
@@ -433,31 +433,6 @@
 		font-size: 0.92rem;
 	}
 
-	.switch {
-		display: flex;
-		gap: 2px;
-		padding: 3px;
-		border: 1px solid var(--line);
-		border-radius: var(--radius-pill);
-		background: var(--bg-elev);
-	}
-
-	.switch button {
-		padding: 6px 14px;
-		border: 0;
-		border-radius: var(--radius-pill);
-		background: transparent;
-		color: var(--text-dim);
-		font-size: 0.84rem;
-		font-weight: 600;
-		cursor: pointer;
-	}
-
-	.switch button.on {
-		background: var(--accent);
-		color: var(--accent-ink);
-	}
-
 	.progress {
 		height: 4px;
 		margin: 4px 0 22px;
@@ -488,7 +463,9 @@
 		overflow: hidden;
 		border-radius: var(--radius-lg);
 		border: 1px solid var(--line);
-		background: color-mix(in srgb, var(--tint, var(--bg-elev)) 55%, var(--bg-elev));
+		/* Solid: the cards are stacked, and the next one must never read
+		   through the one on top. */
+		background: color-mix(in srgb, var(--tint, var(--bg-float)) 55%, var(--bg-float));
 		box-shadow: var(--shadow-3);
 		touch-action: pan-y;
 		user-select: none;
@@ -498,6 +475,11 @@
 		transition:
 			transform 340ms cubic-bezier(0.2, 0.8, 0.2, 1),
 			opacity 340ms ease;
+	}
+
+	/* Under dark words on a light theme, only a hint of the poster's shade. */
+	:global(:root[data-tone='light']) .card {
+		background: color-mix(in srgb, var(--tint, var(--bg-float)) 14%, var(--bg-float));
 	}
 
 	.card {
