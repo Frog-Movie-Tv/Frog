@@ -3,7 +3,8 @@
 
    Bundled, not fetched: these are OFL faces shipped as woff2 inside the app,
    so every device renders the same letterforms and nothing is requested from
-   a font CDN. Outfit sets the brand and the headings, Inter does the reading.
+   a font CDN. Frog's own face asks for Apple's system face first, which only
+   a Mac, iPhone or iPad has; everything else draws Inter.
    --------------------------------------------------------------------------- */
 @import '@fontsource-variable/outfit';
 @import '@fontsource-variable/inter';
@@ -13,33 +14,174 @@
 /* ---------------------------------------------------------------------------
    Frog design tokens.
 
-   Every colour, radius and spacing step the app uses is declared here as a
-   custom property. The theme editor is then a matter of writing a few of
-   these onto :root at runtime, with no component changes at all. Title pages
-   additionally override --accent locally from the poster palette, which is why
-   components must never hardcode a colour.
+   Frog is drawn as glass: panes over a soft light that sits behind the page.
+   Every appearance is the same glass in its own colours, so a theme is only a
+   set of the tokens below, and a component never names a colour of its own.
+   The theme editor writes a few of these onto :root at runtime, and a title
+   page overrides --accent locally from its poster.
+
+   What a theme sets:
+     --bg                the page, under the light
+     --room-1, -2, -3    the three glows of that light
+     --bg-elev, -2       panes, translucent so the light shows through
+     --bg-hover          a pane under the pointer
+     --bg-float          anything that opens over the page: solid, so what is
+                         under a menu never reads through its words
+     --bg-bar            the bars that float over scrolling content
+     --seg-on            the chosen option of a segmented control
+     --shine             the bright top edge where light catches a pane
+   plus text, lines, accent, the five statuses and the shadows.
    --------------------------------------------------------------------------- */
 
 :root {
+	/* --- Glass: the default, frosted after dark ------------------------ */
 	color-scheme: dark;
 
-	/* --- Pond: the default, built from the logo ------------------------
-	   Lily-pad green on a deep pond green-black, cream text, blush pink for
-	   anything negative and soft teal for anything positive. Contrast was
-	   checked against the background: cream 16:1, dim 8:1, faint 6:1,
-	   accent 8.6:1. Every theme keeps faint text at 4.5:1 or better on its
-	   background and its cards. */
+	--bg: #05060b;
+	--room-1: rgba(64, 120, 255, 0.4);
+	--room-2: rgba(170, 92, 255, 0.3);
+	--room-3: rgba(40, 190, 170, 0.24);
+	--bg-elev: rgba(40, 42, 54, 0.4);
+	--bg-elev-2: rgba(72, 74, 90, 0.36);
+	--bg-hover: rgba(110, 112, 130, 0.34);
+	--bg-float: rgba(27, 28, 37, 0.98);
+	--bg-bar: rgba(22, 23, 31, 0.74);
+	--seg-on: rgba(128, 130, 148, 0.42);
+	--shine: rgba(255, 255, 255, 0.04);
+	--scrim: rgba(3, 4, 8, 0.6);
+
+	--text: #f5f5f7;
+	--text-dim: #c3c3cc;
+	--text-faint: #9a9aa6;
+	--line: rgba(255, 255, 255, 0.11);
+	--line-strong: rgba(255, 255, 255, 0.2);
+
+	--accent: #3d9bff;
+	--accent-ink: #ffffff;
+	--accent-soft: rgba(61, 155, 255, 0.2);
+
+	--good: #32d74b;
+	--warn: #ffb340;
+	--bad: #ff6961;
+	--bad-ink: #1a0508;
+
+	/* One colour per status, used by cards, stats and filters alike. Five
+	   distinct hues, so Watching and Completed never read as the same green. */
+	--status-watching: #64d2ff;
+	--status-completed: #32d74b;
+	--status-planned: #bf5af2;
+	--status-paused: #ffb340;
+	--status-dropped: #ff6961;
+
+	--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+	--shadow-2: 0 18px 40px -16px rgba(0, 0, 0, 0.7);
+	--shadow-3: 0 40px 80px -28px rgba(0, 0, 0, 0.85);
+
+	/* --- the light behind the page, from the theme's three glows -------- */
+	--room:
+		radial-gradient(60vmax 50vmax at 12% -8%, var(--room-1), transparent 62%),
+		radial-gradient(52vmax 46vmax at 96% 8%, var(--room-2), transparent 60%),
+		radial-gradient(70vmax 56vmax at 70% 108%, var(--room-3), transparent 62%), var(--bg);
+
+	/* --- shape, type and motion, all adjustable in Settings ----------- */
+	--radius: 22px;
+	--radius-sm: 14px;
+	--radius-lg: 30px;
+	--radius-pill: 999px;
+
+	--gap: 16px;
+	--page-pad: 32px;
+	/* The bar floats 14px down from the top, so pages start below it. */
+	--header-h: 84px;
+	/* --poster-size is the Poster size setting; each screen scales it. */
+	--poster-min: var(--poster-size, 132px);
+
+	/* Frosting for the two bars. Only those: a blurred pane makes the browser
+	   draw again whatever scrolls under it, and full-width blurred bars once
+	   showed as blank tiles while scrolling. The bars are small, and their
+	   fill is nearly opaque, so with blur turned off they still read. */
+	--frost: blur(24px) saturate(150%);
+
+	--font: -apple-system, BlinkMacSystemFont, 'Inter Variable', system-ui, sans-serif;
+	--font-display: -apple-system, BlinkMacSystemFont, 'Inter Variable', system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+
+	--ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+	/* A little past the mark and back, for things that spring into place. */
+	--spring: cubic-bezier(0.3, 1.5, 0.5, 1);
+	--fast: 140ms;
+	--slow: 320ms;
+}
+
+/* Glass Light: the same panes in daylight. */
+:root[data-theme='glass-light'] {
+	color-scheme: light;
+
+	--bg: #eef1f7;
+	--room-1: rgba(120, 170, 255, 0.55);
+	--room-2: rgba(220, 170, 255, 0.45);
+	--room-3: rgba(140, 230, 210, 0.45);
+	--bg-elev: rgba(255, 255, 255, 0.5);
+	--bg-elev-2: rgba(255, 255, 255, 0.46);
+	--bg-hover: rgba(255, 255, 255, 0.72);
+	--bg-float: rgba(250, 250, 253, 0.98);
+	--bg-bar: rgba(250, 251, 255, 0.78);
+	--seg-on: #ffffff;
+	--shine: rgba(255, 255, 255, 0.5);
+	--scrim: rgba(226, 231, 242, 0.6);
+
+	--text: #111216;
+	--text-dim: #43454f;
+	--text-faint: #5c5f6b;
+	--line: rgba(20, 24, 40, 0.1);
+	--line-strong: rgba(20, 24, 40, 0.18);
+
+	--accent: #0a6fe0;
+	--accent-ink: #ffffff;
+	--accent-soft: rgba(10, 111, 224, 0.14);
+
+	--good: #1a7f37;
+	--warn: #9a5b00;
+	--bad: #c9302c;
+	--bad-ink: #ffffff;
+
+	--status-watching: #0a6fe0;
+	--status-completed: #1a7f37;
+	--status-planned: #8944c8;
+	--status-paused: #9a5b00;
+	--status-dropped: #c9302c;
+
+	--shadow-1: 0 1px 2px rgba(30, 40, 80, 0.12);
+	--shadow-2: 0 18px 40px -18px rgba(30, 40, 80, 0.28);
+	--shadow-3: 0 40px 80px -30px rgba(30, 40, 80, 0.35);
+}
+
+/* Pond: built from the logo. Lily-pad green on a deep pond green-black, cream
+   text, blush pink for anything negative and soft teal for anything positive.
+   A pond at night: lily-pad light from above, water below, and panes of deep
+   pond green, so every page reads as Frog's own. Every theme keeps faint text
+   at 4.5:1 or better on its background and on its panes. */
+:root[data-theme='pond'] {
+	color-scheme: dark;
+
 	--bg: #07120e;
-	--bg-elev: #0e1f19;
-	--bg-elev-2: #16302a;
-	--bg-hover: #1e3d34;
+	--room-1: rgba(108, 196, 107, 0.36);
+	--room-2: rgba(52, 168, 140, 0.3);
+	--room-3: rgba(150, 214, 96, 0.18);
+	--bg-elev: rgba(32, 76, 58, 0.46);
+	--bg-elev-2: rgba(58, 108, 86, 0.4);
+	--bg-hover: rgba(86, 142, 116, 0.38);
+	--bg-float: rgba(14, 36, 28, 0.98);
+	--bg-bar: rgba(10, 30, 22, 0.78);
+	--seg-on: rgba(108, 196, 107, 0.3);
+	--shine: rgba(214, 240, 200, 0.06);
 	--scrim: rgba(7, 18, 14, 0.74);
 
 	--text: #f2efe3;
 	--text-dim: #a9bdb0;
-	--text-faint: #7d978a;
-	--line: rgba(242, 239, 227, 0.1);
-	--line-strong: rgba(242, 239, 227, 0.19);
+	--text-faint: #8aa396;
+	--line: rgba(190, 230, 190, 0.12);
+	--line-strong: rgba(190, 230, 190, 0.22);
 
 	--accent: #6cc46b;
 	--accent-ink: #06130d;
@@ -50,55 +192,31 @@
 	--bad: #f4738f;
 	--bad-ink: #1a0508;
 
-	/* One colour per status, used by badges, stats and filters alike. Five
-	   distinct hues, so Watching and Completed never read as the same green. */
 	--status-watching: #5aa7ff;
 	--status-completed: #4cc38a;
 	--status-planned: #b39cff;
 	--status-paused: #f0a73a;
 	--status-dropped: #f06a7d;
 
-	/* --- shape, type and motion, all adjustable in Settings ----------- */
-	--radius: 16px;
-	--radius-sm: 10px;
-	--radius-lg: 24px;
-	--radius-pill: 999px;
-
 	--shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
-	--shadow-2: 0 10px 30px -10px rgba(0, 0, 0, 0.7);
-	--shadow-3: 0 30px 60px -20px rgba(0, 0, 0, 0.8);
-
-	--gap: 16px;
-	--page-pad: 32px;
-	--header-h: 64px;
-	/* The bars sit a step below the page, so the artwork on a page is what
-	   catches the eye. */
-	--bg-bar: color-mix(in srgb, var(--bg) 55%, var(--bg-elev));
-	/* --poster-size is the Poster size setting; each screen scales it. */
-	--poster-min: var(--poster-size, 132px);
-
-	/* Glass strength. Zero by default: a blurred fixed bar makes Chrome
-	   re-raster the whole scrolling document underneath it, which shows up
-	   as blank tiles while you scroll. Turn it up in Settings if your
-	   machine handles it. */
-	--blur: 0px;
-
-	--font: 'Inter Variable', system-ui, sans-serif;
-	--font-display: 'Outfit Variable', 'Inter Variable', system-ui, sans-serif;
-	--font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
-
-	--ease: cubic-bezier(0.22, 0.61, 0.36, 1);
-	--fast: 140ms;
-	--slow: 320ms;
+	--shadow-2: 0 18px 40px -16px rgba(0, 0, 0, 0.7);
+	--shadow-3: 0 40px 80px -28px rgba(0, 0, 0, 0.8);
 }
 
 :root[data-theme='pond-light'] {
 	color-scheme: light;
 
 	--bg: #f1eee1;
-	--bg-elev: #fbf9f1;
-	--bg-elev-2: #e8e4d4;
-	--bg-hover: #ded9c6;
+	--room-1: rgba(108, 196, 107, 0.42);
+	--room-2: rgba(100, 196, 170, 0.34);
+	--room-3: rgba(196, 226, 120, 0.34);
+	--bg-elev: rgba(253, 252, 240, 0.6);
+	--bg-elev-2: rgba(253, 252, 240, 0.52);
+	--bg-hover: rgba(255, 253, 246, 0.8);
+	--bg-float: rgba(252, 250, 243, 0.98);
+	--bg-bar: rgba(250, 248, 240, 0.8);
+	--seg-on: #fdfcf0;
+	--shine: rgba(255, 255, 255, 0.5);
 	--scrim: rgba(241, 238, 225, 0.8);
 
 	--text: #16261e;
@@ -116,28 +234,37 @@
 	--bad: #b53a57;
 	--bad-ink: #ffffff;
 
-	--shadow-2: 0 10px 30px -14px rgba(16, 40, 28, 0.3);
-	--shadow-3: 0 30px 60px -24px rgba(16, 40, 28, 0.35);
-
 	--status-watching: #1f63c6;
 	--status-completed: #1c8452;
 	--status-planned: #6b4fd1;
 	--status-paused: #a4620c;
 	--status-dropped: #c2364f;
+
+	--shadow-1: 0 1px 2px rgba(16, 40, 28, 0.12);
+	--shadow-2: 0 18px 40px -18px rgba(16, 40, 28, 0.3);
+	--shadow-3: 0 40px 80px -30px rgba(16, 40, 28, 0.35);
 }
 
+/* Dark: deep charcoal under a violet light. */
 :root[data-theme='dark'] {
 	color-scheme: dark;
 
 	--bg: #08080c;
-	--bg-elev: #111118;
-	--bg-elev-2: #191922;
-	--bg-hover: #22222d;
+	--room-1: rgba(122, 92, 255, 0.32);
+	--room-2: rgba(70, 110, 255, 0.22);
+	--room-3: rgba(200, 90, 255, 0.14);
+	--bg-elev: rgba(44, 40, 66, 0.46);
+	--bg-elev-2: rgba(70, 64, 100, 0.4);
+	--bg-hover: rgba(100, 92, 140, 0.36);
+	--bg-float: rgba(22, 20, 32, 0.98);
+	--bg-bar: rgba(16, 16, 22, 0.76);
+	--seg-on: rgba(122, 92, 255, 0.3);
+	--shine: rgba(255, 255, 255, 0.04);
 	--scrim: rgba(8, 8, 12, 0.72);
 
 	--text: #f3f2f7;
 	--text-dim: #a9a7b8;
-	--text-faint: #85839a;
+	--text-faint: #8e8ca2;
 	--line: rgba(255, 255, 255, 0.09);
 	--line-strong: rgba(255, 255, 255, 0.16);
 
@@ -151,33 +278,49 @@
 	--bad-ink: #1a0508;
 }
 
+/* AMOLED: true black, with no light behind it, so the screen stays dark. */
 :root[data-theme='amoled'] {
 	color-scheme: dark;
 
 	--bg: #000000;
-	--bg-elev: #0a0a0e;
-	--bg-elev-2: #121217;
-	--bg-hover: #1b1b22;
+	--room-1: transparent;
+	--room-2: transparent;
+	--room-3: transparent;
+	--bg-elev: rgba(255, 255, 255, 0.05);
+	--bg-elev-2: rgba(255, 255, 255, 0.08);
+	--bg-hover: rgba(255, 255, 255, 0.12);
+	--bg-float: rgba(14, 14, 18, 0.98);
+	--bg-bar: rgba(0, 0, 0, 0.8);
+	--seg-on: rgba(255, 255, 255, 0.16);
+	--shine: rgba(255, 255, 255, 0.04);
 	--scrim: rgba(0, 0, 0, 0.82);
 
 	--text: #f3f2f7;
 	--text-dim: #a9a7b8;
-	--text-faint: #85839a;
-	--line: rgba(255, 255, 255, 0.09);
-	--line-strong: rgba(255, 255, 255, 0.16);
+	--text-faint: #8e8ca2;
+	--line: rgba(255, 255, 255, 0.1);
+	--line-strong: rgba(255, 255, 255, 0.17);
 
 	--accent: #7a5cff;
 	--accent-ink: #ffffff;
 	--accent-soft: rgba(122, 92, 255, 0.16);
 }
 
+/* Light: paper, under a soft lilac light. */
 :root[data-theme='light'] {
 	color-scheme: light;
 
 	--bg: #f6f5f8;
-	--bg-elev: #ffffff;
-	--bg-elev-2: #f0eff4;
-	--bg-hover: #e7e6ed;
+	--room-1: rgba(150, 130, 255, 0.34);
+	--room-2: rgba(120, 180, 255, 0.28);
+	--room-3: rgba(255, 170, 210, 0.26);
+	--bg-elev: rgba(255, 255, 255, 0.62);
+	--bg-elev-2: rgba(255, 255, 255, 0.52);
+	--bg-hover: rgba(255, 255, 255, 0.82);
+	--bg-float: rgba(255, 255, 255, 0.98);
+	--bg-bar: rgba(252, 251, 255, 0.8);
+	--seg-on: #ffffff;
+	--shine: rgba(255, 255, 255, 0.55);
 	--scrim: rgba(246, 245, 248, 0.8);
 
 	--text: #14131a;
@@ -195,14 +338,15 @@
 	--bad: #c62f4d;
 	--bad-ink: #ffffff;
 
-	--shadow-2: 0 10px 30px -14px rgba(20, 16, 40, 0.3);
-	--shadow-3: 0 30px 60px -24px rgba(20, 16, 40, 0.35);
-
 	--status-watching: #1f63c6;
 	--status-completed: #1c8452;
 	--status-planned: #6b4fd1;
 	--status-paused: #a4620c;
 	--status-dropped: #c2364f;
+
+	--shadow-1: 0 1px 2px rgba(20, 16, 40, 0.12);
+	--shadow-2: 0 18px 40px -18px rgba(20, 16, 40, 0.3);
+	--shadow-3: 0 40px 80px -30px rgba(20, 16, 40, 0.35);
 }
 
 /* Animation level, set from Settings. */
@@ -227,12 +371,17 @@ html,
 body {
 	margin: 0;
 	padding: 0;
-	background: var(--bg);
 	color: var(--text);
 	font-family: var(--font);
 	-webkit-font-smoothing: antialiased;
 	text-rendering: optimizeLegibility;
 	overscroll-behavior-y: none;
+}
+
+/* The page colour belongs to the root, under the light. A body background
+   would be painted over the light, so the body has none. */
+html {
+	background: var(--bg);
 }
 
 body {
@@ -246,15 +395,34 @@ body {
 		'ss03' 1;
 }
 
+/* The light. Fixed behind everything, so it stays put while the page scrolls
+   and costs nothing to scroll over. */
+body::before {
+	content: '';
+	position: fixed;
+	inset: 0;
+	z-index: -1;
+	background: var(--room);
+	pointer-events: none;
+	/* A layer of its own: drawn once, never again while the page scrolls. */
+	will-change: transform;
+}
+
 h1,
 h2,
 h3,
 h4 {
 	margin: 0;
 	font-family: var(--font-display);
-	font-weight: 600;
-	letter-spacing: -0.02em;
+	font-weight: 700;
+	letter-spacing: -0.015em;
 	line-height: 1.15;
+}
+
+h1,
+h2 {
+	font-weight: 800;
+	letter-spacing: -0.032em;
 }
 
 h1 {
@@ -286,7 +454,8 @@ textarea {
    let a tight row stand them on end. */
 kbd,
 .btn,
-.pill {
+.pill,
+.segmented {
 	overflow-wrap: normal;
 }
 
@@ -325,9 +494,9 @@ kbd,
 	padding: calc(var(--header-h) + 24px) var(--page-pad) 96px;
 }
 
-/* The head of every page: a title, a line under it, actions on the right.
-   One shape everywhere, so moving between pages never feels like moving
-   between apps. */
+/* The head of every page: a large title, the way an app opens a page, a line
+   under it, actions on the right. One shape everywhere, so moving between
+   pages never feels like moving between apps. */
 .page-head {
 	display: flex;
 	align-items: flex-end;
@@ -337,9 +506,10 @@ kbd,
 	margin-bottom: 28px;
 }
 
-.page-head h1 {
-	font-size: clamp(1.7rem, 3vw, 2.25rem);
-	letter-spacing: -0.025em;
+.page-head h1,
+.page > h1 {
+	font-size: clamp(2.4rem, 4.8vw, 3.6rem);
+	letter-spacing: -0.04em;
 }
 
 .page-head .sub {
@@ -355,17 +525,12 @@ kbd,
 	gap: 8px;
 }
 
-/* Filter chips: a row of pill toggles that scrolls sideways on a phone. */
+/* Toggle chips: pills that switch on and off, any number at once, wrapping
+   onto as many lines as they need. Choosing one of a few is `.segmented`. */
 .chips {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 7px;
-	overflow-x: auto;
-	scrollbar-width: none;
-	padding-bottom: 2px;
-}
-
-.chips::-webkit-scrollbar {
-	display: none;
 }
 
 .chip {
@@ -376,6 +541,7 @@ kbd,
 	border-radius: var(--radius-pill);
 	border: 1px solid var(--line);
 	background: var(--bg-elev);
+	box-shadow: inset 0 1px 0 var(--shine);
 	color: var(--text-dim);
 	font-size: 0.82rem;
 	font-weight: 600;
@@ -383,61 +549,123 @@ kbd,
 	white-space: nowrap;
 	transition:
 		background var(--fast) var(--ease),
-		color var(--fast) var(--ease);
+		color var(--fast) var(--ease),
+		transform var(--fast) var(--ease);
 }
 
 .chip:hover {
 	color: var(--text);
-	background: var(--bg-elev-2);
+	background: var(--bg-hover);
 }
 
 .chip.on {
 	background: var(--accent);
 	border-color: transparent;
 	color: var(--accent-ink);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.3),
+		0 6px 16px -8px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
+/* One of a few: a track, and the chosen option as a raised capsule on it.
+   Search's tabs, Library's statuses, a profile's tabs and every two-way
+   switch read the same. The chosen child has `.on`. */
+.segmented {
+	display: flex;
+	/* Never squeezed by a row beside it: past the row's width it scrolls. */
+	flex: none;
+	width: fit-content;
+	max-width: 100%;
+	gap: 2px;
+	padding: 3px;
+	border: 1px solid var(--line);
+	border-radius: var(--radius-pill);
+	background: var(--bg-elev);
+	box-shadow: inset 0 1px 0 var(--shine);
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+
+.segmented::-webkit-scrollbar {
+	display: none;
+}
+
+.segmented > * {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 7px;
+	min-height: 32px;
+	padding: 6px 14px;
+	border: 0;
+	border-radius: var(--radius-pill);
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-dim);
+	font-size: 0.84rem;
+	font-weight: 600;
+	white-space: nowrap;
+	cursor: pointer;
+	transition:
+		background 220ms var(--ease),
+		color 220ms var(--ease),
+		box-shadow 220ms var(--ease),
+		transform var(--fast) var(--ease);
+}
+
+.segmented > :hover {
+	color: var(--text);
+	background: transparent;
+}
+
+.segmented > .on {
+	background: var(--seg-on);
+	color: var(--text);
+	box-shadow:
+		0 1px 4px rgba(0, 0, 0, 0.22),
+		inset 0 1px 0 var(--shine);
+}
+
+.segmented > :disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+/* An on/off setting reads better as a switch than a tick box, and a drawn one
+   looks the same in every browser. Green when on, the way a phone draws it. */
 .toggle-switch {
-	/* An on/off setting reads better as a switch than a tick box, and a
-	   drawn one looks the same in every browser and every theme. */
 	appearance: none;
 	position: relative;
 	flex: none;
-	width: 44px;
-	height: 26px;
+	width: 48px;
+	height: 29px;
 	margin: 0;
 	border-radius: 999px;
-	background: var(--bg-elev-2);
-	box-shadow: inset 0 0 0 1px var(--line-strong);
+	background: color-mix(in srgb, var(--text) 16%, transparent);
 	cursor: pointer;
-	transition:
-		background var(--fast) var(--ease),
-		box-shadow var(--fast) var(--ease);
+	transition: background var(--fast) var(--ease);
 }
 
 .toggle-switch::after {
 	content: '';
 	position: absolute;
-	top: 3px;
-	left: 3px;
-	width: 20px;
-	height: 20px;
+	top: 2px;
+	left: 2px;
+	width: 25px;
+	height: 25px;
 	border-radius: 50%;
-	background: var(--text-dim);
-	box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
-	transition:
-		transform var(--fast) var(--ease),
-		background var(--fast) var(--ease);
+	background: #fff;
+	box-shadow: 0 2px 6px rgb(0 0 0 / 0.3);
+	transition: transform 300ms var(--spring);
 }
 
 .toggle-switch:checked {
-	background: var(--accent);
-	box-shadow: inset 0 0 0 1px var(--accent);
+	background: var(--good);
 }
 
 .toggle-switch:checked::after {
-	transform: translateX(18px);
-	background: var(--accent-ink);
+	transform: translateX(19px);
 }
 
 .toggle-switch:focus-visible {
@@ -457,14 +685,16 @@ kbd,
 	color: var(--text-faint);
 }
 
+/* A label over a section. Sentence case at its natural spacing, the way it is
+   written: only its size and weight say what kind of label it is. */
 .eyebrow {
-	font-size: 0.72rem;
+	font-size: 0.92rem;
 	font-weight: 650;
-	letter-spacing: 0.1em;
-	text-transform: uppercase;
-	color: var(--text-faint);
+	color: var(--text-dim);
 }
 
+/* Buttons: filled for the one thing to do, a quiet pane for the rest, tinted
+   when a toggle is on. One height, one shape. */
 .btn {
 	display: inline-flex;
 	align-items: center;
@@ -475,6 +705,9 @@ kbd,
 	border: 1px solid transparent;
 	border-radius: var(--radius-pill);
 	background: var(--bg-elev-2);
+	box-shadow:
+		inset 0 1px 0 var(--shine),
+		var(--shadow-1);
 	color: var(--text);
 	font-weight: 600;
 	font-size: 0.9rem;
@@ -489,25 +722,35 @@ kbd,
 .btn:hover {
 	background: var(--bg-hover);
 }
-.btn:active {
-	transform: scale(0.97);
+.btn:active,
+.chip:active,
+.segmented > :active {
+	transform: scale(0.96);
 }
 
 .btn.primary {
 	background: var(--accent);
 	border-color: transparent;
 	color: var(--accent-ink);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.35),
+		0 8px 20px -8px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 .btn.primary:hover {
 	filter: brightness(1.08);
 }
 
 .btn.ghost {
-	background: transparent;
-	border-color: var(--line-strong);
+	background: var(--bg-elev);
+	border-color: var(--line);
 }
 .btn.ghost:hover {
-	background: var(--bg-elev-2);
+	background: var(--bg-hover);
+}
+
+.btn.on {
+	background: var(--accent-soft);
+	color: var(--accent);
 }
 
 .btn:disabled {
@@ -535,6 +778,7 @@ textarea.input {
 	background: var(--bg-elev-2);
 	border: 1px solid var(--line);
 	border-radius: var(--radius-sm);
+	box-shadow: inset 0 1px 0 var(--shine);
 	transition: border-color var(--fast) var(--ease);
 }
 
@@ -543,10 +787,34 @@ textarea.input {
 	outline: none;
 }
 
+/* A pane: translucent, with light caught along its top edge. Never blurred,
+   since only the light is behind it. */
 .card {
 	background: var(--bg-elev);
-	border: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+	border: 1px solid var(--line);
 	border-radius: var(--radius);
+	box-shadow:
+		inset 0 1px 0 var(--shine),
+		var(--shadow-2);
+}
+
+/* Rows grouped in one pane with hairlines between them, the way a phone's
+   settings are: Settings, Administration and any list of rows that belong
+   together. */
+.list-pane {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--bg-elev);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	box-shadow:
+		inset 0 1px 0 var(--shine),
+		var(--shadow-2);
+}
+
+.list-pane > * + * {
+	border-top: 1px solid var(--line);
 }
 
 .pill {
@@ -571,6 +839,23 @@ textarea.input {
 	margin-bottom: 14px;
 }
 
+.section-head h2 {
+	font-size: 1.35rem;
+}
+
+/* A heading that stays put while its list scrolls under it (Diary, Activity,
+   the Calendar's days): a strip of the bars' fill, so the list never reads
+   through it. */
+.sticky-head {
+	position: sticky;
+	top: var(--header-h);
+	z-index: 5;
+	background: var(--bg-bar);
+	border: 1px solid var(--line);
+	border-radius: var(--radius-sm);
+	box-shadow: inset 0 1px 0 var(--shine);
+}
+
 .skeleton {
 	background: linear-gradient(100deg, var(--bg-elev) 30%, var(--bg-elev-2) 50%, var(--bg-elev) 70%);
 	background-size: 220% 100%;
@@ -581,6 +866,14 @@ textarea.input {
 @keyframes shimmer {
 	to {
 		background-position: -220% 0;
+	}
+}
+
+/* Menus and lists grow out of what opened them. */
+@keyframes pop {
+	from {
+		opacity: 0;
+		transform: scale(0.96) translateY(-4px);
 	}
 }
 
@@ -630,7 +923,7 @@ textarea.input {
 
 @media (max-width: 759px) {
 	:root {
-		--header-h: 56px;
+		--header-h: 72px;
 	}
 }
 
@@ -646,7 +939,8 @@ textarea.input {
    Buttons simply grow; small round controls keep their look and get an
    invisible hit area of that size around them. */
 @media (max-width: 760px) {
-	.chips > .chip {
+	.chips > .chip,
+	.segmented > * {
 		min-height: 44px;
 	}
 

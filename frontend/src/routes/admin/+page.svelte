@@ -224,9 +224,9 @@
 		<div class="sections">
 			<section class="block">
 				<h2>People</h2>
-				<ul class="users">
+				<ul class="users list-pane">
 					{#each users as user (user.id)}
-						<li class="card" class:off={user.disabled}>
+						<li class:off={user.disabled}>
 							<div class="who">
 								<span class="avatar" aria-hidden="true"
 									>{user.username.slice(0, 1).toUpperCase()}</span
@@ -304,7 +304,7 @@
 						A link that works once and then stops. Nobody can create an account without one.
 					</p>
 
-					<div class="row">
+					<div class="row card">
 						<label class="field">
 							<span>Role</span>
 							<Select
@@ -358,9 +358,9 @@
 					{:else if invites.length === 0}
 						<Empty art="none" title="No invites yet" hint="Make one above to let somebody in." />
 					{:else}
-						<ul class="invites">
+						<ul class="invites list-pane">
 							{#each invites as invite (invite.id)}
-								<li class="card">
+								<li>
 									<div>
 										<strong>{invite.role === 'admin' ? 'Administrator' : 'Member'}</strong>
 										<span class="state {invite.state}">{invite.state}</span>
@@ -522,9 +522,14 @@
 		gap: 12px;
 	}
 
+	/* A quiet label over each group, the way a phone's settings name theirs. */
 	.block h2 {
 		margin: 0;
-		font-size: 1.05rem;
+		padding-left: 4px;
+		font-size: 0.95rem;
+		font-weight: 650;
+		letter-spacing: normal;
+		color: var(--text-dim);
 	}
 
 	.block > p {
@@ -537,6 +542,7 @@
 		flex-wrap: wrap;
 		gap: 12px;
 		align-items: end;
+		padding: 16px 18px;
 	}
 
 	.fresh {
@@ -570,12 +576,10 @@
 		list-style: none;
 		margin: 0;
 		padding: 0;
-		display: grid;
-		gap: 10px;
 	}
 
 	.invites li {
-		padding: 14px 16px;
+		padding: 14px 18px;
 		display: grid;
 		gap: 4px;
 	}
@@ -597,12 +601,15 @@
 	}
 
 	.state {
-		font-size: 0.75rem;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
+		display: inline-block;
+		font-size: 0.78rem;
 		padding: 2px 8px;
 		border-radius: 999px;
 		background: var(--bg-elev-2);
+	}
+
+	.state::first-letter {
+		text-transform: uppercase;
 	}
 
 	.state.open {
@@ -647,9 +654,6 @@
 		list-style: none;
 		margin: 0;
 		padding: 0;
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		gap: 10px;
 	}
 
 	.users li {
@@ -658,7 +662,7 @@
 		justify-content: space-between;
 		flex-wrap: wrap;
 		gap: 12px;
-		padding: 12px 16px;
+		padding: 14px 18px;
 	}
 
 	.users li.off {
@@ -673,13 +677,13 @@
 	}
 
 	.avatar {
-		width: 36px;
-		height: 36px;
+		width: 40px;
+		height: 40px;
 		border-radius: 50%;
 		display: grid;
 		place-items: center;
-		background: var(--accent-soft);
-		color: var(--accent);
+		background: var(--bg-elev-2);
+		color: var(--text);
 		font-weight: 700;
 		flex: none;
 	}
@@ -699,11 +703,36 @@
 		color: var(--bad);
 	}
 
+	/* A person's controls: small and quiet; deleting is red words, not a box. */
 	.controls {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 8px;
+		gap: 6px;
+	}
+
+	.controls .btn {
+		min-height: 32px;
+		padding: 0 13px;
+		font-size: 0.8rem;
+		border-color: transparent;
+		background: var(--bg-elev-2);
+	}
+
+	.controls .btn.danger {
+		background: transparent;
+		box-shadow: none;
+	}
+
+	.controls .btn.danger:hover {
+		background: color-mix(in srgb, var(--bad) 14%, transparent);
+	}
+
+	/* Still a finger's width on a phone. */
+	@media (max-width: 760px) {
+		.controls .btn {
+			min-height: 44px;
+		}
 	}
 
 	.facts dd a {

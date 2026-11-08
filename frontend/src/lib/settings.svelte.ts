@@ -2,7 +2,8 @@ import { browser } from '$app/env';
 import type { ScoreFormat } from './format';
 import type { Status } from './types';
 
-export type ThemeName = 'pond' | 'pond-light' | 'dark' | 'amoled' | 'light';
+export type ThemeName =
+	'glass' | 'glass-light' | 'pond' | 'pond-light' | 'dark' | 'amoled' | 'light';
 export type MascotName =
 	'classic' | 'sleepy' | 'popcorn' | 'cinema' | 'starry' | 'bow' | 'delighted' | 'sprout';
 export type CardStyle = 'poster' | 'landscape' | 'list' | 'compact';
@@ -10,22 +11,67 @@ export type HeroStyle = 'backdrop' | 'poster' | 'off';
 export type FontName = 'system' | 'humanist' | 'grotesque' | 'serif' | 'mono';
 export type AnimationLevel = 'full' | 'reduced' | 'off';
 
-export const THEMES: { id: ThemeName; label: string; hint: string; swatches: string[] }[] = [
-	{ id: 'pond', label: 'Pond', hint: 'The default', swatches: ['#07120e', '#16302a', '#6cc46b'] },
+/**
+ * Every appearance is the same glass in its own colours (`app.css`). `tone`
+ * says whether it is drawn light or dark, for the few places that change with
+ * that: a pale poster colour, a logo's halo.
+ */
+export const THEMES: {
+	id: ThemeName;
+	label: string;
+	hint: string;
+	tone: 'dark' | 'light';
+	swatches: string[];
+}[] = [
+	{
+		id: 'glass',
+		label: 'Glass',
+		hint: 'The default',
+		tone: 'dark',
+		swatches: ['#05060b', '#2a3b6e', '#3d9bff']
+	},
+	{
+		id: 'glass-light',
+		label: 'Glass Light',
+		hint: 'Frosted, in daylight',
+		tone: 'light',
+		swatches: ['#eef1f7', '#ffffff', '#0a6fe0']
+	},
+	{
+		id: 'pond',
+		label: 'Pond',
+		hint: 'Built from the logo',
+		tone: 'dark',
+		swatches: ['#07120e', '#16302a', '#6cc46b']
+	},
 	{
 		id: 'pond-light',
 		label: 'Pond Light',
 		hint: 'Cream and green',
+		tone: 'light',
 		swatches: ['#f1eee1', '#fbf9f1', '#2a7247']
 	},
-	{ id: 'dark', label: 'Dark', hint: 'Deep charcoal', swatches: ['#08080c', '#191922', '#7a5cff'] },
+	{
+		id: 'dark',
+		label: 'Dark',
+		hint: 'Deep charcoal',
+		tone: 'dark',
+		swatches: ['#08080c', '#191922', '#7a5cff']
+	},
 	{
 		id: 'amoled',
 		label: 'AMOLED',
 		hint: 'True black',
+		tone: 'dark',
 		swatches: ['#000000', '#121217', '#7a5cff']
 	},
-	{ id: 'light', label: 'Light', hint: 'Paper', swatches: ['#f6f5f8', '#ffffff', '#5b3fd6'] }
+	{
+		id: 'light',
+		label: 'Light',
+		hint: 'Paper',
+		tone: 'light',
+		swatches: ['#f6f5f8', '#ffffff', '#5b3fd6']
+	}
 ];
 
 export const MASCOTS: { id: MascotName; label: string; hint: string }[] = [
@@ -42,10 +88,10 @@ export const MASCOTS: { id: MascotName; label: string; hint: string }[] = [
 /** Bundled with the app, so every device renders them identically. */
 export const FONTS: { id: FontName; label: string; stack: string; display?: string }[] = [
 	{
+		// Apple's system face where a device has it, Inter everywhere else.
 		id: 'system',
 		label: 'Frog',
-		stack: "'Inter Variable', system-ui, sans-serif",
-		display: "'Outfit Variable', 'Inter Variable', system-ui, sans-serif"
+		stack: "-apple-system, BlinkMacSystemFont, 'Inter Variable', system-ui, sans-serif"
 	},
 	{ id: 'humanist', label: 'Inter', stack: "'Inter Variable', system-ui, sans-serif" },
 	{ id: 'grotesque', label: 'Outfit', stack: "'Outfit Variable', system-ui, sans-serif" },
@@ -136,7 +182,7 @@ export const GO_KEYS: Record<string, string> = {
 };
 
 export const DEFAULTS: Settings = {
-	theme: 'pond',
+	theme: 'glass',
 	mascot: 'classic',
 	customTheme: null,
 	savedThemes: [],
@@ -392,6 +438,7 @@ class SettingsStore {
 		const root = document.documentElement;
 
 		root.dataset.theme = s.theme;
+		root.dataset.tone = THEMES.find((t) => t.id === s.theme)?.tone ?? 'dark';
 		root.dataset.animations = s.animations;
 		root.dataset.card = s.cardStyle;
 

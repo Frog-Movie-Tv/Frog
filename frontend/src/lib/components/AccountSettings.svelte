@@ -130,8 +130,8 @@
 	}
 </script>
 
-<div class="account">
-	<div class="row card">
+<div class="account list-pane">
+	<div class="row">
 		<span class="who">
 			<span class="avatar" aria-hidden="true"
 				>{(account?.username ?? '?').slice(0, 1).toUpperCase()}</span
@@ -149,7 +149,7 @@
 		</button>
 	</div>
 
-	<div class="row card column">
+	<div class="row column">
 		<div class="top">
 			<span class="label">
 				<strong>Username</strong>
@@ -194,7 +194,7 @@
 		{/if}
 	</div>
 
-	<div class="row card column">
+	<div class="row column">
 		<div class="top">
 			<span class="label">
 				<strong>Password</strong>
@@ -237,7 +237,7 @@
 		{/if}
 	</div>
 
-	<div class="row card column">
+	<div class="row column">
 		<div class="top">
 			<span class="label">
 				<strong>Signed-in devices</strong>
@@ -271,7 +271,7 @@
 	</div>
 
 	{#if account && account.role !== 'owner'}
-		<div class="row card column">
+		<div class="row column">
 			<div class="top">
 				<span class="label">
 					<strong>Delete account</strong>
@@ -310,12 +310,6 @@
 </div>
 
 <style>
-	.account {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
 	.row {
 		display: flex;
 		flex-wrap: wrap;

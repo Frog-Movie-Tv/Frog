@@ -129,24 +129,12 @@
 	>
 		{#each { length: STARS }, i (i)}
 			<span class="star" class:lit={fill(i) > 0}>
-				<svg class="outline" viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
-					<path
-						d={ICONS.star}
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.5"
-						stroke-linejoin="round"
-					/>
+				<svg class="outline" viewBox="0 0 256 256" width={size} height={size} aria-hidden="true">
+					<path d={ICONS.star[0]} fill="currentColor" />
 				</svg>
 				<span class="fill" style:width="{fill(i) * 100}%">
-					<svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
-						<path
-							d={ICONS.star}
-							fill="currentColor"
-							stroke="currentColor"
-							stroke-width="1.5"
-							stroke-linejoin="round"
-						/>
+					<svg viewBox="0 0 256 256" width={size} height={size} aria-hidden="true">
+						<path d={ICONS.star[1]} fill="currentColor" />
 					</svg>
 				</span>
 			</span>

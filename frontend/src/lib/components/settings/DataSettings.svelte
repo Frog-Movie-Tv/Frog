@@ -23,8 +23,8 @@
 <section class="block">
 	<div class="section-head"><h2>Your data</h2></div>
 
-	<div class="rows">
-		<a class="row card link-row" href="/import">
+	<div class="rows list-pane">
+		<a class="row link-row" href="/import">
 			<span class="label">
 				<strong>Import</strong>
 				<span class="faint">
@@ -33,21 +33,21 @@
 			</span>
 			<Icon name="chevron-right" size={18} />
 		</a>
-		<a class="row card link-row" href="/api/export/library.json" download>
+		<a class="row link-row" href="/api/export/library.json" download>
 			<span class="label">
 				<strong>Download backup</strong>
 				<span class="faint">Everything, as JSON</span>
 			</span>
 			<Icon name="download" size={18} />
 		</a>
-		<a class="row card link-row" href="/api/export/library.csv" download>
+		<a class="row link-row" href="/api/export/library.csv" download>
 			<span class="label">
 				<strong>Download spreadsheet</strong>
 				<span class="faint">Your library, as CSV</span>
 			</span>
 			<Icon name="download" size={18} />
 		</a>
-		<label class="row card">
+		<label class="row">
 			<span class="label">
 				<strong>Data saver</strong>
 				<span class="faint">Smaller artwork everywhere</span>
@@ -72,12 +72,6 @@
 
 	.block {
 		margin-bottom: 44px;
-	}
-
-	.rows {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
 	}
 
 	.row {

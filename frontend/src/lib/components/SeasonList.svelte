@@ -471,7 +471,7 @@
 								title={unaired(ep) ? 'Not out yet' : 'Mark watched'}
 								onclick={() => toggle(ep)}
 							>
-								<Icon name="check" size={14} strokeWidth={2.8} />
+								<Icon name="check" size={14} />
 							</button>
 							<span class="code">{ep.episode_number}</span>
 							<div class="row-body">
@@ -537,7 +537,7 @@
 									title={unaired(ep) ? 'Not out yet' : 'Mark watched'}
 									onclick={() => toggle(ep)}
 								>
-									<Icon name="check" size={16} strokeWidth={2.6} />
+									<Icon name="check" size={16} />
 								</button>
 								{#if ep.watch_count > 1}<span class="times">×{ep.watch_count}</span>{/if}
 							</div>

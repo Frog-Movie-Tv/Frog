@@ -209,7 +209,7 @@
 		{:else}
 			{#each months as month (month.key)}
 				<section class="month">
-					<h2>{month.label}</h2>
+					<h2 class="sticky-head">{month.label}</h2>
 					<ol class="entries">
 						{#each month.entries as entry, i (keyOf(entry))}
 							{@const key = keyOf(entry)}
@@ -327,14 +327,19 @@
 		margin-bottom: 36px;
 	}
 
+	/* Out by its padding, so the month's name lines up with the days under it. */
 	.month h2 {
-		position: sticky;
-		top: var(--header-h);
-		z-index: 5;
-		padding: 12px 0 10px;
-		background: var(--bg);
-		border-bottom: 1px solid var(--line);
+		margin-inline: -15px;
+		padding: 10px 14px;
 		font-size: 1.05rem;
+	}
+
+	/* A phone's margin is narrower: the strip steps out only part of it. */
+	@media (max-width: 720px) {
+		.month h2 {
+			margin-inline: -8px;
+			padding-inline: 8px;
+		}
 	}
 
 	.entries {
@@ -374,10 +379,8 @@
 	}
 
 	.date small {
-		font-size: 0.7rem;
+		font-size: 0.78rem;
 		font-weight: 600;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
 		color: var(--text-faint);
 	}
 
@@ -449,10 +452,8 @@
 
 	.tag {
 		flex: none;
-		font-size: 0.68rem;
+		font-size: 0.78rem;
 		font-weight: 600;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
 		color: var(--text-faint);
 	}
 

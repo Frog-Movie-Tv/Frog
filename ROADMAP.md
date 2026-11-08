@@ -7,8 +7,8 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 1.3.1 "Horned Frog"; manga next (a `feat`, so 1.4.0) |
-| **Next codenames** | Wood Frog, Goliath |
+| **Release** | 1.3.1 "Horned Frog"; 1.4.0 "Wood Frog" (manga and Glass) is in review |
+| **Next codenames** | Goliath |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
 | **Updates** | by itself: a timer pulls the newest release every 15 minutes, backs up first, rolls back on an unhealthy `/healthz` |
@@ -21,8 +21,9 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 ## Next
 
-0. **Ship the 6 November batch, manga first.** Built and tested, not yet
-   committed: manga (search, pages, chapters read, the AniList manga list,
+0. **Ship 1.4.0 Wood Frog: the 6 November batch, then Glass.** Two pull
+   requests, `feat/manga` then `feat/glass` on top of it; merge them in that
+   order. The batch: manga (search, pages, chapters read, the AniList manga list,
    backups), reading in the diary, Activity, Continue watching and profiles,
    Stats in two halves, stars filled in and always five, the 10 point
    slider, the deck dealing finished titles and its swipe, AniList syncs in
@@ -31,9 +32,10 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    layout button, Trakt history, backups' film watches, Letterboxd's
    deleted films, MyAnimeList's manga list, renamed and recoloured
    statuses, shortcut letters, trailers behind a title, a shelf's own poster
-   size, Play's search, new screenshots, and the fixes in Upcoming. Manga is a `feat`, so
-   release-please makes it 1.4.0, which takes the next codename, Wood Frog,
-   through `/release`. Before it reaches the server:
+   size, Play's search, new screenshots, and the fixes in its notes. Both
+   are `feat`, so release-please makes 1.4.0; its section is already written
+   as Wood Frog in `RELEASE-NOTES.md`, which keeps the codename. Before it
+   reaches the server:
    - the first start rebuilds `title` once so it can hold manga
      (`db::rebuild_title`, the same rebuild the catalog release used), and
      adds `chapter_read` (additive). The release before runs on both, so a
@@ -43,8 +45,13 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
      Chromium, not by a finger: try both on the Android phone;
    - try a manga search, a manga page and Settings → Connections against the
      live AniList once deployed. Back closing menus (1.3.1) also still
-     wants a try on the phone. The Glass appearance waits on its own branch,
-     `feat/glass-appearance`, unpushed until the owner has looked at it.
+     wants a try on the phone.
+   - **Glass is the base design** (decided 2026-11-06). Every appearance is
+     a colour set over one glass design; `feat/glass-appearance` is
+     superseded by it and can be deleted. Checked in Chromium at phone size
+     with touch, not on the Android phone itself: try the floating tab bar,
+     the full-screen heroes and the frosted bars while scrolling there, and
+     an iPhone or Mac, where Frog's own face is Apple's system face.
 1. **AniList sign-in on a laptop, once by hand.** The Frog-Dev client
    (redirect `http://127.0.0.1:8080/api/anilist/callback`) is in the local
    `.env`, and AniList accepts its id and secret (checked against its token
@@ -97,11 +104,10 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    `routes/browse.rs`, `routes/admin.rs`, `routes/invites.rs`,
    `routes/auth.rs`, `routes/push.rs`, `routes/settings.rs`. Persistence is
    not centralised yet.
-8. **Carry the 1.0 design to the pages it has not reached.** Settings,
-   People and profiles, a person's page, the Calendar and Stats bodies,
-   What's new and About still have their earlier layout. Then one pass over
-   dialogs, menus and toasts so they share a surface. Home, Search, title
-   pages, the Diary, Shelves and Administration show the way.
+8. **The rest of the Glass pass.** Every page, dialog, menu and toast now
+   shares the glass surfaces (2026-11-07). Still in their earlier shape: the
+   Calendar's month grid and day panel, Stats' charts, a person's page and the
+   import review's rows. They read well on glass but were not redrawn.
 9. **Netflix: try the threshold on more than one file.** 3 was judged on one
    export. The menu in the review moves it for one import; if another person's
    file says 2 or 4, change `SHOW_THRESHOLD`.

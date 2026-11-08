@@ -34,8 +34,6 @@
 </svelte:head>
 
 <div class="screen">
-	<div class="glow" aria-hidden="true"></div>
-
 	<form class="card panel" onsubmit={submit}>
 		<div class="head">
 			<span class="mark" aria-hidden="true"><Logo size={44} /></span>
@@ -92,20 +90,6 @@
 		overflow: hidden;
 	}
 
-	.glow {
-		position: absolute;
-		width: min(90vw, 760px);
-		aspect-ratio: 1;
-		border-radius: 50%;
-		background: radial-gradient(
-			circle,
-			color-mix(in srgb, var(--accent) 26%, transparent),
-			transparent 62%
-		);
-		filter: blur(30px);
-		pointer-events: none;
-	}
-
 	.panel {
 		position: relative;
 		width: min(100%, 390px);
@@ -113,9 +97,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 16px;
-		box-shadow: var(--shadow-3);
-		background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
-		backdrop-filter: blur(14px);
 	}
 
 	.head {

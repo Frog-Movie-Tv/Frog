@@ -470,7 +470,7 @@
 		</div>
 
 		{#if flagged.length || shortRows.length}
-			<div class="chips" role="group" aria-label="Show">
+			<div class="segmented" role="group" aria-label="Show">
 				<button
 					class="chip"
 					class:on={active === 'all'}
@@ -808,7 +808,7 @@
 		margin-top: 10px;
 	}
 
-	.chips + .rows,
+	.segmented + .rows,
 	.bulk + .rows {
 		margin-top: 14px;
 	}
@@ -938,10 +938,8 @@
 	}
 
 	dt {
-		font-size: 0.74rem;
+		font-size: 0.78rem;
 		color: var(--text-faint);
-		text-transform: uppercase;
-		letter-spacing: 0.07em;
 	}
 
 	dd {

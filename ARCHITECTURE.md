@@ -271,14 +271,31 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
   (Settings' groups are in `src/lib/components/settings/`). Shared logic is
   a module in `src/lib/`.
 - **Design tokens in `app.css`.** Every colour, radius and spacing step is a
-  custom property. Light, dark and AMOLED are three token sets. A title page
-  overrides `--accent` locally from its poster, and the theme editor writes
-  custom properties at runtime with no component changes.
+  custom property. Frog is drawn as glass: translucent panes over a light that
+  sits fixed behind the page (`body::before`, built from three glows). Every
+  appearance (Glass, the default, Glass Light, Pond, Pond Light, Dark, AMOLED,
+  Light) is only a token set over the same components; the token contract is
+  at the top of `app.css`. Panes (`--bg-elev`) are translucent and never
+  blurred, since only the light is behind them. Anything that opens over the
+  page uses `--bg-float`, which is solid, so a menu never shows what is under
+  its words. Only the two bars are frosted (`--frost`): a blurred pane makes
+  the browser draw again whatever scrolls under it. Each theme names its tone
+  (`THEMES` in `settings.svelte.ts`), set as `data-tone` on the root for the
+  few rules that differ between light and dark. A title page overrides
+  `--accent` locally from its poster, and the theme editor writes custom
+  properties at runtime with no component changes.
+- **Shared primitives in `app.css`.** `.btn`, `.chip`/`.chips` (toggles that
+  wrap), `.segmented` (one of a few, the chosen child `.on`), `.toggle-switch`,
+  `.card` (a pane), `.list-pane` (rows in one pane with hairlines between),
+  `.sticky-head` and `.page-head`. A page reaches for these before writing its
+  own; what is only that page's stays in its component.
 - **A long word cannot widen a page.** `app.css` sets `overflow-wrap: anywhere`
   on `body`, so a name with no spaces wraps wherever it lands, in flex and grid
   rows too. Rows of Frog's own words opt out where they would stack letters.
-- **Fonts and icons are bundled.** Fontsource packages and Lucide paths
-  inlined in `Icon.svelte`; nothing is fetched from a CDN at runtime.
+- **Fonts and icons are bundled.** Fontsource packages and Phosphor paths
+  inlined in `Icon.svelte`, each as [regular, filled] with the Phosphor name
+  over it; nothing is fetched from a CDN at runtime. Frog's own face asks for
+  Apple's system face first, which only Apple devices have, then Inter.
 - **View Transitions.** Cross-route fades plus a real shared-element morph: a
   poster in the library grid carries `view-transition-name`, and the same name
   lands on the hero poster of the title page.

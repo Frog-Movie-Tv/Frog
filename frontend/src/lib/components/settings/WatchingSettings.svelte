@@ -55,8 +55,8 @@
 		{/each}
 	</div>
 
-	<div class="rows">
-		<label class="row card">
+	<div class="rows list-pane">
+		<label class="row">
 			<span class="label">
 				<strong>Half stars</strong>
 			</span>
@@ -68,7 +68,7 @@
 			/>
 		</label>
 
-		<div class="row card">
+		<div class="row">
 			<span class="label"><strong>Preview</strong></span>
 			<Rating value={preview} onchange={(v) => (preview = v)} />
 		</div>
@@ -78,8 +78,8 @@
 <section class="block">
 	<div class="section-head"><h2>Watching</h2></div>
 
-	<div class="rows">
-		<div class="row card">
+	<div class="rows list-pane">
+		<div class="row">
 			<span class="label">
 				<strong>Default status</strong>
 			</span>
@@ -91,7 +91,7 @@
 			/>
 		</div>
 
-		<label class="row card">
+		<label class="row">
 			<span class="label">
 				<strong>Spoiler protection</strong>
 				<span class="faint">Blur unwatched episode stills</span>
@@ -104,7 +104,7 @@
 			/>
 		</label>
 
-		<label class="row card">
+		<label class="row">
 			<span class="label">
 				<strong>Hide animation</strong>
 				<span class="faint">Leave animated titles out of search</span>
@@ -117,7 +117,7 @@
 			/>
 		</label>
 
-		<label class="row card">
+		<label class="row">
 			<span class="label">
 				<strong>Complete automatically</strong>
 				<span class="faint">When the last episode is ticked</span>
@@ -130,7 +130,7 @@
 			/>
 		</label>
 
-		<div class="row card">
+		<div class="row">
 			<span class="label"><strong>Dates</strong></span>
 			<Select
 				label="Dates"
@@ -144,7 +144,7 @@
 			/>
 		</div>
 
-		<label class="row card">
+		<label class="row">
 			<span class="label"><strong>24-hour clock</strong></span>
 			<input
 				type="checkbox"
@@ -154,7 +154,7 @@
 			/>
 		</label>
 
-		<label class="row card">
+		<label class="row">
 			<span class="label">
 				<strong>Play trailers</strong>
 				<span class="faint">Without sound, behind a title's page</span>
@@ -173,10 +173,10 @@
 	<div class="section-head"><h2>Statuses</h2></div>
 	<p class="faint lead">Call a status what you like and give it its own colour.</p>
 
-	<div class="rows">
+	<div class="rows list-pane">
 		{#each STATUSES as st (st)}
 			{@const own = s.statusNames?.[st] ?? ''}
-			<div class="row card status-row">
+			<div class="row status-row">
 				<span class="swatch" data-status={st} aria-hidden="true"></span>
 				<input
 					class="input name"
@@ -212,15 +212,20 @@
 		margin-bottom: 44px;
 	}
 
+	/* Score formats: one pane of choices, the chosen one a raised capsule
+	   ringed in the accent, as in a segmented control. */
 	.tiles {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
-		gap: 12px;
-		margin-bottom: 14px;
-	}
-
-	.tiles.small {
 		grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+		gap: 6px;
+		margin-bottom: 14px;
+		padding: 8px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+		background: var(--bg-elev);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-2);
 	}
 
 	.tile {
@@ -228,28 +233,27 @@
 		flex-direction: column;
 		align-items: flex-start;
 		gap: 4px;
-		padding: 14px;
-		border-radius: var(--radius);
-		border: 1px solid var(--line);
-		background: var(--bg-elev);
+		padding: 10px 12px;
+		border: 0;
+		border-radius: var(--radius-sm);
+		background: none;
+		color: inherit;
 		cursor: pointer;
 		text-align: left;
-		transition: border-color var(--fast) var(--ease);
+		transition: background var(--fast) var(--ease);
+	}
+
+	.tile:hover {
+		background: var(--bg-hover);
 	}
 
 	.tile.on {
-		border-color: var(--accent);
-		box-shadow: 0 0 0 1px var(--accent) inset;
+		background: var(--seg-on);
+		box-shadow: inset 0 0 0 1.5px var(--accent);
 	}
 
 	.tile .faint {
 		font-size: 0.76rem;
-	}
-
-	.rows {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
 	}
 
 	.row {

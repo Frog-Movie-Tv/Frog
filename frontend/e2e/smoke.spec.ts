@@ -287,9 +287,9 @@ test('the about page credits its sources', async ({ page }) => {
 	await page.goto('/about');
 
 	await expect(page.getByRole('heading', { name: 'Frog', level: 1 })).toBeVisible();
-	await expect(page.getByText('Spring Peeper')).toBeVisible();
+	await expect(page.getByText('Wood Frog')).toBeVisible();
 	await expect(page.getByRole('link', { name: /TMDB/ }).first()).toBeVisible();
-	await expect(page.getByRole('link', { name: /Lucide/ })).toBeVisible();
+	await expect(page.getByRole('link', { name: /Phosphor/ })).toBeVisible();
 });
 
 test('the instance asks not to be indexed', async ({ request }) => {
@@ -323,8 +323,8 @@ test('settings shows the instance facts and switches theme', async ({ page }) =>
 		.getByRole('link', { name: 'Appearance' })
 		.click();
 
-	// Pond is the default now.
-	await expect(page.locator('html')).toHaveAttribute('data-theme', 'pond');
+	// Glass is the default.
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'glass');
 
 	await page.getByRole('button', { name: /AMOLED/ }).click();
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'amoled');
@@ -1045,16 +1045,16 @@ test('the next account on this device starts from its own preferences', async ({
 	await page.getByRole('button', { name: 'Create my account' }).click();
 	await expect(page.getByRole('heading', { name: `Welcome, ${name}` })).toBeVisible();
 
-	await expect(page.locator('html')).toHaveAttribute('data-theme', 'pond');
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'glass');
 	const theirs = await (await page.request.get('/api/settings')).json();
-	expect(theirs.theme ?? 'pond').toBe('pond');
+	expect(theirs.theme ?? 'glass').toBe('glass');
 
 	// Back to the first account, as it was.
 	await page.request.post('/api/auth/logout', { data: {} });
 	await signIn(page);
 	const mine = await (await page.request.get('/api/settings')).json();
 	expect(mine.theme).toBe('light');
-	await page.request.put('/api/settings', { data: { ...mine, theme: 'pond' } });
+	await page.request.put('/api/settings', { data: { ...mine, theme: 'glass' } });
 });
 
 test('controls are big enough to touch on a phone', async ({ page, isMobile }) => {
@@ -1532,10 +1532,13 @@ test('Home shows what your people watched, and a profile how alike you rate', as
 	await expect(page.getByRole('heading', { name: 'Activity' })).toHaveCount(0);
 	await friend.put('/api/account/profile', { data: { public: true } });
 
-	// Switched off in Settings, and nothing is asked for.
+	// Switched off in Settings, and nothing is asked for. The Home page before
+	// still had the row and may still be asking for it; leave it first, so only
+	// the new page's requests are counted.
 	await page.request.put('/api/settings', {
 		data: { ...saved, homeRows: ['continue'], homeRowsSeen: seen }
 	});
+	await page.goto('about:blank');
 	const asked: string[] = [];
 	page.on('request', (r) => asked.push(new URL(r.url()).pathname));
 	await page.goto('/');

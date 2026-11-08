@@ -134,13 +134,13 @@
 		{:else}
 			{#if members.length}
 				{#if q}<h2>On this Frog</h2>{/if}
-				<ul class="people">
+				<ul class="people list-pane">
 					{#each members as person (person.username)}{@render member(person)}{/each}
 				</ul>
 			{/if}
 			{#if crew.length}
 				<h2>Film and TV</h2>
-				<ul class="people">
+				<ul class="people list-pane">
 					{#each crew as p (p.id)}
 						{@const src = img(p.profile_path, 'w185')}
 						<li>
@@ -181,6 +181,7 @@
 		background: var(--bg-elev);
 		border: 1px solid var(--line-strong);
 		border-radius: var(--radius-pill);
+		box-shadow: inset 0 1px 0 var(--shine);
 		transition: border-color var(--fast) var(--ease);
 	}
 
@@ -210,14 +211,16 @@
 	}
 
 	h2 {
-		margin: 22px 0 6px;
-		font-size: 0.86rem;
+		margin: 22px 0 8px;
+		padding-left: 4px;
+		font-size: 0.95rem;
+		font-weight: 650;
+		letter-spacing: normal;
 		color: var(--text-dim);
 	}
 
+	/* Everyone in one pane, a hairline between each. */
 	.people {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
 		margin: 0;
 		padding: 0;
 		list-style: none;
@@ -227,14 +230,14 @@
 		display: flex;
 		align-items: center;
 		gap: 12px;
-		padding: 9px 8px;
-		border-radius: var(--radius-sm);
+		padding: 10px 14px;
 		color: inherit;
 		text-decoration: none;
+		transition: background var(--fast) var(--ease);
 	}
 
 	.person:hover {
-		background: var(--bg-elev);
+		background: var(--bg-hover);
 	}
 
 	.face {

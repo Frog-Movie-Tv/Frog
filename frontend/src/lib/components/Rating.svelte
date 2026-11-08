@@ -275,10 +275,14 @@
 		right: 0;
 		padding: 10px;
 		border-radius: var(--radius);
-		background: var(--bg-elev-2);
+		background: var(--bg-float);
 		border: 1px solid var(--line-strong);
-		box-shadow: var(--shadow-3);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-3);
 		min-width: max-content;
+		/* Grows out of what opened it. */
+		animation: pop 180ms var(--spring) backwards;
 	}
 
 	/* Held at the top of the page (see `lift`): placed against the window. */

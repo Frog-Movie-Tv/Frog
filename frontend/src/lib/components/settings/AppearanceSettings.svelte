@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Select from '#lib/components/Select.svelte';
+	import ThemePreview from '#lib/components/ThemePreview.svelte';
 	import ThemeEditor from '#lib/components/settings/ThemeEditor.svelte';
 	import {
 		FONTS,
@@ -18,7 +19,7 @@
 	const s = $derived(settings.current);
 
 	const cardToggles = [
-		['showBadge', 'Status badge'],
+		['showBadge', 'Status'],
 		['showRating', 'My rating'],
 		['showProgress', 'Progress bar'],
 		['showYear', 'Year']
@@ -37,11 +38,9 @@
 				aria-pressed={s.theme === t.id}
 				onclick={() => settings.patch({ theme: t.id as ThemeName, customTheme: null })}
 			>
-				<span class="swatches" aria-hidden="true">
-					{#each t.swatches as c (c)}<i style:background={c}></i>{/each}
-				</span>
+				<ThemePreview swatches={t.swatches} on={s.theme === t.id} />
 				<strong>{t.label}</strong>
-				<span class="faint">{t.hint}</span>
+				<span class="faint hint">{t.hint}</span>
 			</button>
 		{/each}
 	</div>
@@ -72,8 +71,8 @@
 <section class="block">
 	<div class="section-head"><h2>Type and shape</h2></div>
 
-	<div class="rows">
-		<div class="row card">
+	<div class="rows list-pane">
+		<div class="row">
 			<span class="label"><strong>Font</strong></span>
 			<Select
 				label="Font"
@@ -83,7 +82,7 @@
 			/>
 		</div>
 
-		<label class="row card">
+		<label class="row">
 			<span class="label">
 				<strong>Text size</strong><span class="faint">{Math.round(s.textScale * 100)}%</span>
 			</span>
@@ -97,7 +96,7 @@
 			/>
 		</label>
 
-		<div class="row card">
+		<div class="row">
 			<span class="label">
 				<strong>Animation</strong>
 			</span>
@@ -118,8 +117,8 @@
 <section class="block">
 	<div class="section-head"><h2>Cards and grid</h2></div>
 
-	<div class="rows">
-		<div class="row card">
+	<div class="rows list-pane">
+		<div class="row">
 			<span class="label">
 				<strong>Card style</strong>
 			</span>
@@ -136,7 +135,7 @@
 			/>
 		</div>
 
-		<label class="row card">
+		<label class="row">
 			<span class="label">
 				<strong>Poster size</strong><span class="faint">{s.posterSize}px columns</span>
 			</span>
@@ -151,7 +150,7 @@
 		</label>
 
 		{#each cardToggles as [key, label] (key)}
-			<label class="row card">
+			<label class="row">
 				<span class="label"><strong>{label}</strong></span>
 				<input
 					type="checkbox"
@@ -167,8 +166,8 @@
 <section class="block">
 	<div class="section-head"><h2>Title pages</h2></div>
 
-	<div class="rows">
-		<div class="row card">
+	<div class="rows list-pane">
+		<div class="row">
 			<span class="label">
 				<strong>Hero</strong>
 			</span>
@@ -184,7 +183,7 @@
 			/>
 		</div>
 
-		<label class="row card">
+		<label class="row">
 			<span class="label">
 				<strong>Follow the poster</strong>
 				<span class="faint">Colour each title page from its artwork</span>
@@ -204,57 +203,75 @@
 		margin-bottom: 44px;
 	}
 
+	/* Choices you look at rather than read: one pane of previews, each with
+	   its name under it, the one in use ringed. */
 	.tiles {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
-		gap: 12px;
+		grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+		gap: 18px 14px;
 		margin-bottom: 14px;
+		padding: 20px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+		background: var(--bg-elev);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-2);
 	}
 
 	.tile {
 		display: flex;
 		flex-direction: column;
-		align-items: flex-start;
-		gap: 4px;
-		padding: 14px;
-		border-radius: var(--radius);
-		border: 1px solid var(--line);
-		background: var(--bg-elev);
+		align-items: center;
+		gap: 7px;
+		padding: 6px 4px;
+		border: 0;
+		background: none;
+		color: inherit;
+		text-align: center;
 		cursor: pointer;
-		text-align: left;
-		transition: border-color var(--fast) var(--ease);
 	}
 
-	.tile.on {
-		border-color: var(--accent);
-		box-shadow: 0 0 0 1px var(--accent) inset;
+	.tile strong {
+		font-size: 0.82rem;
+		font-weight: 600;
 	}
 
-	.tile .faint {
-		font-size: 0.76rem;
+	.tile:not(.on) strong {
+		color: var(--text-dim);
 	}
 
-	.swatches {
-		display: flex;
-		gap: 4px;
-		margin-bottom: 6px;
-	}
-
-	.swatches i {
-		width: 20px;
-		height: 20px;
-		border-radius: 6px;
-		border: 1px solid var(--line);
+	.tile .hint {
+		margin-top: -4px;
+		font-size: 0.72rem;
+		line-height: 1.3;
 	}
 
 	.mascots img {
-		margin-bottom: 4px;
+		transition:
+			box-shadow 200ms var(--ease),
+			transform 200ms var(--ease);
 	}
 
-	.rows {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
+	.tile:hover :global(.preview),
+	.tile:hover img {
+		transform: translateY(-2px);
+	}
+
+	.tile.on img {
+		box-shadow:
+			0 0 0 2px var(--bg),
+			0 0 0 4px var(--accent);
+	}
+
+	/* Mascots: round, on a quiet disc. */
+	.mascots img {
+		box-sizing: content-box;
+		width: 46px;
+		height: 46px;
+		padding: 9px;
+		border-radius: 50%;
+		background: var(--bg-elev-2);
 	}
 
 	.row {

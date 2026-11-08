@@ -9,9 +9,13 @@ people working on Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Horned Frog —
+## Upcoming — Wood Frog —
 
-Manga, read and counted like everything you watch.
+In progress.
+
+## [1.4.0] — Wood Frog — 2026-11-08
+
+Manga, read and counted like everything you watch, and a new look over all of Frog.
 
 ### Highlights
 
@@ -24,6 +28,12 @@ Manga, read and counted like everything you watch.
   Activity, a manga you are reading sits in Continue watching, and your
   profile counts your chapters. Stats has a Manga half beside Films & shows:
   chapters read by month, genres, authors, ratings and your top manga.
+- **Glass.** Frog has a new look: frosted panes over a soft light, a bar that
+  floats as a capsule, and a title's picture filling the screen. Choices sit on
+  one track, settings are grouped the way a phone groups them, and a card says
+  where it stands in your library under its name. Glass and Glass Light are
+  new, and every other appearance wears its own colours on the same glass:
+  Pond is a pond at night, green from top to bottom.
 
 ### Improvements
 
@@ -64,6 +74,8 @@ Manga, read and counted like everything you watch.
   screen until the other one arrives.
 - Edit mode's menus open above the bar on a phone, clear of Done.
 - A white title logo keeps its edges on the Light themes.
+- On a phone, a title's status menu opens above the tab bar, with every
+  choice in reach.
 
 ## [1.3.1] — Horned Frog — 2026-11-03
 
@@ -790,6 +802,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.4.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.4.0
 [1.3.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.3.1
 [1.3.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.3.0
 [1.2.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.2.0

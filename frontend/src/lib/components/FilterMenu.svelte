@@ -115,8 +115,12 @@
 		padding: 12px;
 		border: 1px solid var(--line-strong);
 		border-radius: var(--radius);
-		background: var(--bg-elev);
-		box-shadow: var(--shadow-3);
+		background: var(--bg-float);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-3);
+		/* Grows out of what opened it. */
+		animation: pop 180ms var(--spring) backwards;
 	}
 
 	.panel.wide {

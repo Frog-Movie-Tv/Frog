@@ -70,7 +70,7 @@
 		</p>
 	{/if}
 
-	<nav class="tabs" aria-label="Profile">
+	<nav class="tabs segmented" aria-label="Profile">
 		{#each tabs as t (t.id)}
 			<a href={t.href} class:on={tab === t.id} aria-current={tab === t.id ? 'page' : undefined}>
 				{t.label}
@@ -197,8 +197,7 @@
 	}
 
 	.bio,
-	.private,
-	.tabs {
+	.private {
 		max-width: 1440px;
 		margin-left: auto;
 		margin-right: auto;
@@ -228,51 +227,10 @@
 		color: var(--accent);
 	}
 
+	/* The shared segmented control, on the page's own column. */
 	.tabs {
-		display: flex;
-		gap: 4px;
-		margin-top: 22px;
-		border-bottom: 1px solid var(--line);
-		overflow-x: auto;
-		scrollbar-width: none;
-	}
-
-	.tabs a {
-		position: relative;
-		flex: none;
-		padding: 12px 14px;
-		color: var(--text-dim);
-		font-weight: 650;
-		font-size: 0.92rem;
-		text-decoration: none;
-		transition: color var(--fast) var(--ease);
-	}
-
-	.tabs a:hover {
-		color: var(--text);
-	}
-
-	.tabs a.on {
-		color: var(--text);
-	}
-
-	.tabs a.on::after {
-		content: '';
-		position: absolute;
-		left: 10px;
-		right: 10px;
-		bottom: -1px;
-		height: 2px;
-		border-radius: 2px;
-		background: var(--accent);
-		animation: grow 260ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
-	}
-
-	@keyframes grow {
-		from {
-			transform: scaleX(0.3);
-			opacity: 0;
-		}
+		margin: 22px 0 0 max(var(--page-pad), calc((100% - 1440px) / 2 + var(--page-pad)));
+		max-width: calc(100% - 2 * var(--page-pad));
 	}
 
 	/* A phone: the picture and name centred under the banner, large enough
@@ -305,20 +263,19 @@
 		}
 
 		.tabs {
-			justify-content: space-between;
+			width: auto;
+			margin-inline: var(--page-pad);
 		}
 
 		.tabs a {
 			flex: 1;
-			text-align: center;
-			padding: 12px 6px;
+			padding-inline: 6px;
 		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
 		.hero,
-		.banner img,
-		.tabs a.on::after {
+		.banner img {
 			animation: none;
 		}
 	}

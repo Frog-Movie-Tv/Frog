@@ -95,8 +95,8 @@
 <section class="block">
 	<div class="section-head"><h2>Home</h2></div>
 
-	<div class="rows">
-		<div class="row card">
+	<div class="rows list-pane">
+		<div class="row">
 			<span class="label">
 				<strong>Open on</strong>
 			</span>
@@ -117,7 +117,7 @@
 	</div>
 
 	<h3 class="sub">Home rows</h3>
-	<ul class="builder">
+	<ul class="builder list-pane">
 		{#each s.homeRows as id, i (id)}
 			{@const row = rowInfo(id)}
 			{#if row}
@@ -171,7 +171,7 @@
 		<span class="faint">{s.navTabs.length} of {MAX_TABS} in the phone tab bar</span>
 	</div>
 
-	<ul class="builder">
+	<ul class="builder list-pane">
 		{#each navPages as navPage, i (navPage.href)}
 			{@const inBar = !s.navHidden.includes(navPage.href)}
 			{@const inTabs = s.navTabs.includes(navPage.href)}
@@ -239,12 +239,6 @@
 		margin: 22px 0 10px;
 	}
 
-	.rows {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
 	.row {
 		display: flex;
 		align-items: center;
@@ -288,9 +282,6 @@
 		list-style: none;
 		padding: 0;
 		margin: 0 0 12px;
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
 	}
 
 	.builder li {
@@ -298,9 +289,6 @@
 		align-items: center;
 		gap: 12px;
 		padding: 11px 14px;
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--line);
-		background: var(--bg-elev);
 	}
 
 	.builder .label {

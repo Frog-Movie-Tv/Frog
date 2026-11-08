@@ -93,13 +93,13 @@ their own. It costs nothing at all.
 
 <br><br>
 
-### Four themes, or build your own
+### Seven appearances, or build your own
 
 <img src="docs/screenshots/home-desktop-dark.png" alt="Frog in the dark theme" width="420">
 &nbsp;
 <img src="docs/screenshots/library-desktop-light.png" alt="Frog in the light Pond theme" width="420">
 
-<sub>Pond, Pond Light, Dark and AMOLED — or pick every colour yourself.</sub>
+<sub>Glass, Glass Light, Pond, Pond Light, Dark, AMOLED and Light: the same frosted glass in each one's own colours, or pick every colour yourself.</sub>
 
 </div>
 
@@ -161,7 +161,7 @@ mouse.
 stars, or three smileys. Switch whenever you like: the number underneath never
 changes, so nothing is ever rounded away.
 
-**Make it look how you want.** Four themes plus a colour editor, six fonts,
+**Make it look how you want.** Seven appearances plus a colour editor, six fonts,
 text size, how much animation, four card styles, poster size, what appears on a
 card, and which rows show on Home and in what order.
 

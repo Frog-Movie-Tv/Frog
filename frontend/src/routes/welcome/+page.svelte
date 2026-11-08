@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ThemePreview from '#lib/components/ThemePreview.svelte';
 	import { goto } from '$app/navigation';
 	import Icon from '#lib/components/Icon.svelte';
 	import { session } from '#lib/session.svelte';
@@ -45,9 +46,7 @@
 						aria-pressed={s.theme === t.id}
 						onclick={() => settings.set('theme', t.id as ThemeName)}
 					>
-						<span class="swatches" aria-hidden="true">
-							{#each t.swatches as c (c)}<i style:background={c}></i>{/each}
-						</span>
+						<ThemePreview swatches={t.swatches} />
 						<strong>{t.label}</strong>
 						<span class="faint">{t.hint}</span>
 					</button>
@@ -185,17 +184,8 @@
 		font-size: 0.76rem;
 	}
 
-	.swatches {
-		display: flex;
-		gap: 4px;
-		margin-bottom: 4px;
-	}
-
-	.swatches i {
-		width: 18px;
-		height: 18px;
-		border-radius: 50%;
-		border: 1px solid var(--line-strong);
+	.tile :global(.preview) {
+		margin-bottom: 6px;
 	}
 
 	.choices {

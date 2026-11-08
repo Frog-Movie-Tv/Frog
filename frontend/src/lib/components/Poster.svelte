@@ -30,7 +30,7 @@
 		fallbackPath?: string | null;
 		/** Library's edit mode: ticked or not. Unset, the card has no tick. */
 		selected?: boolean;
-		/** Watched again this many times, marked under the status. */
+		/** Watched again this many times, said beside the status. */
 		rewatches?: number;
 	}
 
@@ -112,23 +112,9 @@
 			{/if}
 		{/if}
 
-		{#if status && show.showBadge}
-			<div class="badges">
-				<span class="badge" data-status={status}>{statusLabel(status, kind)}</span>
-				{#if rewatches > 0}
-					<span
-						class="badge again"
-						title={rewatches === 1 ? 'Watched again' : `Watched again ${rewatches} times`}
-					>
-						<Icon name="repeat" size={10} />
-						{rewatches}×
-					</span>
-				{/if}
-			</div>
-		{/if}
 		{#if kindBadge}
-			<!-- Film or show as a mark in the other corner, so it never pushes
-			     the library label down on a narrow card. -->
+			<!-- Film or show as a mark in the corner, so the picture keeps its
+			     face and the words stay under it. -->
 			<span class="kind" title={KIND_LABEL[kind]}>
 				<Icon name={KIND_ICON[kind]} size={12} />
 				<span class="sr">{KIND_LABEL[kind]}</span>
@@ -153,6 +139,20 @@
 	<div class="meta">
 		<span class="name">{name}</span>
 		{#if year && show.showYear}<span class="year">{year}</span>{/if}
+		<!-- Where it stands in your library, in words under its name, so
+		     nothing covers the picture. The dot keeps the status's colour. -->
+		{#if status && show.showBadge}
+			<span class="state" data-status={status}>
+				<i aria-hidden="true"></i>{statusLabel(status, kind)}
+				{#if rewatches > 0}
+					<span
+						class="again"
+						title={rewatches === 1 ? 'Watched again' : `Watched again ${rewatches} times`}
+						>· <Icon name="repeat" size={11} />{rewatches}×</span
+					>
+				{/if}
+			</span>
+		{/if}
 	</div>
 </a>
 
@@ -170,16 +170,21 @@
 		border-radius: var(--radius-sm);
 		overflow: hidden;
 		background: var(--bg-elev-2);
+		/* A small shadow at rest: a deep blurred one under every card of a
+		   library cost frames while scrolling. Lifted, it gets the deep one. */
 		box-shadow: var(--shadow-1);
 		transition:
-			transform var(--slow) var(--ease),
-			box-shadow var(--slow) var(--ease);
+			transform 260ms var(--ease),
+			box-shadow 260ms var(--ease);
 	}
 
+	/* A card lifts toward you, as one does under a TV remote. */
 	.poster:hover .art,
 	.poster:focus-visible .art {
-		transform: translateY(-4px) scale(1.015);
-		box-shadow: var(--shadow-2);
+		transform: scale(1.04);
+		box-shadow:
+			0 24px 50px -18px rgba(0, 0, 0, 0.75),
+			0 0 0 1px var(--line-strong);
 	}
 
 	.art-img {
@@ -258,17 +263,6 @@
 		overflow: hidden;
 	}
 
-	.badges {
-		position: absolute;
-		top: 7px;
-		left: 7px;
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 4px;
-		max-width: calc(100% - 44px);
-	}
-
 	.kind {
 		position: absolute;
 		top: 7px;
@@ -291,38 +285,7 @@
 		clip-path: inset(50%);
 	}
 
-	.badge {
-		max-width: 100%;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		padding: 3px 8px;
-		border-radius: var(--radius-pill);
-		font-size: 0.64rem;
-		font-weight: 700;
-		letter-spacing: 0.03em;
-		text-transform: uppercase;
-		/* No backdrop blur: on a library of hundreds it halved the frame rate
-		   while scrolling. A darker fill keeps the text as legible. */
-		background: rgba(10, 10, 14, 0.78);
-		color: #fff;
-		border: 1px solid rgba(255, 255, 255, 0.14);
-	}
-
-	/* Dark enough under white text in every theme, still clearly its hue. */
-	.badge[data-status] {
-		background: color-mix(in srgb, var(--status) 72%, black);
-		border-color: color-mix(in srgb, var(--status) 60%, white 10%);
-	}
-
-	.badge.again {
-		display: inline-flex;
-		align-items: center;
-		gap: 3px;
-		text-transform: none;
-	}
-
-	/* Library's edit mode. Bottom left: the badges keep the top, the score
+	/* Library's edit mode. Bottom left: the kind keeps the top, the score
 	   the bottom right. */
 	.tick {
 		position: absolute;
@@ -383,7 +346,7 @@
 
 	.name {
 		font-size: 0.82rem;
-		font-weight: 550;
+		font-weight: 600;
 		line-height: 1.3;
 		overflow: hidden;
 		display: -webkit-box;
@@ -394,6 +357,33 @@
 
 	.year {
 		font-size: 0.72rem;
+		color: var(--text-faint);
+	}
+
+	.state {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: var(--text-dim);
+	}
+
+	.state i {
+		flex: none;
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--status);
+	}
+
+	.again {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
 		color: var(--text-faint);
 	}
 </style>

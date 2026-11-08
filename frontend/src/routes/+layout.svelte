@@ -188,9 +188,13 @@
 				{#if session.status && !session.status.tmdb_configured}
 					<a class="pill warn" href="/about">Metadata not connected</a>
 				{/if}
-				<button class="find" onclick={() => palette?.show()} aria-label="Search and commands">
-					<Icon name="search" size={17} />
-					<span>Search</span>
+				<button
+					class="find"
+					onclick={() => palette?.show()}
+					aria-label="Search and commands"
+					title="Search and commands ({shortcut})"
+				>
+					<Icon name="search" size={19} />
 					<kbd>{shortcut}</kbd>
 				</button>
 				<AccountMenu />
@@ -206,7 +210,7 @@
 		<nav class="tabs" aria-label="Sections">
 			{#each tabs as link (link.href)}
 				<a href={link.href} class:active={isActive(link.href)}>
-					<Icon name={link.icon as IconName} size={21} />
+					<Icon name={link.icon as IconName} size={22} filled={isActive(link.href)} />
 					<small>{link.label}</small>
 					{#if link.href === '/settings' && updated}<i class="dot" aria-hidden="true"></i>{/if}
 				</a>
@@ -218,7 +222,7 @@
 				aria-haspopup="menu"
 				onclick={() => (moreOpen = !moreOpen)}
 			>
-				<Icon name="more" size={21} />
+				<Icon name="more" size={22} />
 				<small>More</small>
 				{#if updated && !tabs.some((t) => t.href === '/settings')}
 					<i class="dot" aria-hidden="true"></i>
@@ -272,17 +276,29 @@
 		place-items: center;
 	}
 
+	/* The bar is a capsule floating over the page: the logo, the sections,
+	   search and you, and nothing else. */
 	.bar {
 		position: fixed;
-		inset: 0 0 auto 0;
-		height: var(--header-h);
+		inset: 14px 0 auto;
+		width: max-content;
+		max-width: calc(100% - 28px);
+		height: 58px;
+		margin-inline: auto;
 		z-index: 40;
 		display: flex;
 		align-items: center;
-		gap: 28px;
-		padding: 0 var(--page-pad);
+		gap: 14px;
+		/* The account button (36px) ends the capsule as far from its right
+		   edge as from its top and bottom, so it sits in the round end. */
+		padding: 0 10px 0 18px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-pill);
 		background: var(--bg-bar);
-		border-bottom: 1px solid var(--line);
+		backdrop-filter: var(--frost);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-3);
 		/* On its own compositor layer, so it does not repaint with the content
 		   scrolling underneath it. */
 		isolation: isolate;
@@ -300,7 +316,7 @@
 	   give way (scrolling sideways at worst); search and the account never do. */
 	.links {
 		display: flex;
-		align-self: stretch;
+		align-items: center;
 		gap: 2px;
 		min-width: 0;
 		overflow-x: auto;
@@ -316,37 +332,39 @@
 		flex: none;
 		display: flex;
 		align-items: center;
-		padding: 0 12px;
+		height: 40px;
+		padding: 0 16px;
+		border-radius: var(--radius-pill);
 		font-size: 0.9rem;
-		font-weight: 550;
+		font-weight: 600;
 		color: var(--text-dim);
-		transition: color var(--fast) var(--ease);
+		transition:
+			background var(--fast) var(--ease),
+			color var(--fast) var(--ease);
 	}
 
 	.links a:hover {
 		color: var(--text);
+		background: color-mix(in srgb, var(--bg-hover) 55%, transparent);
 	}
 
+	/* Where you are: the page's name on a raised capsule. */
 	.links a.active {
 		color: var(--text);
+		background: var(--seg-on);
+		box-shadow:
+			0 1px 4px rgba(0, 0, 0, 0.2),
+			inset 0 1px 0 var(--shine);
 	}
 
-	/* Where you are: a short accent line on the bar's edge, nothing louder. */
-	.links a.active::after {
-		content: '';
-		position: absolute;
-		left: 12px;
-		right: 12px;
-		bottom: -1px;
-		height: 2px;
-		border-radius: 2px;
-		background: var(--accent);
+	.links a:active {
+		transform: scale(0.96);
 	}
 
 	.dot {
 		position: absolute;
-		top: 16px;
-		right: 4px;
+		top: 6px;
+		right: 6px;
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
@@ -355,56 +373,57 @@
 
 	.right {
 		min-width: 0;
-		margin-left: auto;
+		margin-left: 6px;
 		flex: 0 1 auto;
 		display: flex;
 		align-items: center;
-		gap: 12px;
+		gap: 8px;
 	}
 
-	/* Search looks like a field, because that is what it is. */
+	/* Search is a round button, as it is in a phone's toolbar. Where there is
+	   a keyboard and room, its shortcut sits beside the glass. */
 	.find {
 		flex: none;
-		display: flex;
-		align-items: center;
-		gap: 9px;
-		width: 240px;
-		height: 38px;
-		padding: 0 8px 0 13px;
-		border: 1px solid var(--line);
-		border-radius: var(--radius-pill);
-		background: var(--bg-elev);
-		color: var(--text-faint);
-		font-size: 0.88rem;
+		display: grid;
+		place-items: center;
+		width: 42px;
+		height: 42px;
+		padding: 0;
+		border: 0;
+		border-radius: 50%;
+		background: var(--bg-elev-2);
+		color: var(--text);
 		cursor: pointer;
-		transition:
-			border-color var(--fast) var(--ease),
-			color var(--fast) var(--ease);
+		transition: background var(--fast) var(--ease);
 	}
 
 	.find:hover {
-		border-color: var(--line-strong);
-		color: var(--text-dim);
-	}
-
-	.find span {
-		flex: 1;
-		text-align: left;
+		background: var(--bg-hover);
 	}
 
 	kbd {
+		display: none;
 		padding: 2px 7px;
 		border-radius: var(--radius-pill);
 		border: 1px solid var(--line);
-		background: var(--bg-elev-2);
+		background: var(--bg-elev);
+		color: var(--text-dim);
 		font-family: var(--font-mono);
 		font-size: 0.68rem;
 	}
 
-	/* A keyboard hint is no use without a keyboard, whatever the screen's size. */
-	@media (hover: none) and (pointer: coarse) {
+	@media (hover: hover) and (pointer: fine) and (min-width: 1101px) {
+		.find {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			width: auto;
+			padding: 0 8px 0 12px;
+			border-radius: var(--radius-pill);
+		}
+
 		kbd {
-			display: none;
+			display: inline-block;
 		}
 	}
 
@@ -423,54 +442,31 @@
 		display: none;
 	}
 
+	/* The footer: a small matte capsule, centred under the page. */
 	.attribution {
-		padding: 0 var(--page-pad) 40px;
-		text-align: center;
+		padding: 32px var(--page-pad) 36px;
 	}
 
 	.attribution p {
-		font-size: 0.72rem;
-		max-width: 60ch;
+		width: fit-content;
+		max-width: min(64ch, 100%);
 		margin: 0 auto;
+		padding: 10px 20px;
+		border: 1px solid var(--line);
+		border-radius: 18px;
+		background: var(--bg-elev);
+		font-size: 0.7rem;
+		line-height: 1.5;
+		text-align: center;
 	}
 
 	.attribution a {
 		text-decoration: underline;
 	}
 
-	@media (max-width: 1280px) {
-		.bar {
-			gap: 18px;
-		}
-
+	@media (max-width: 1100px) {
 		.links a {
-			padding: 0 9px;
-		}
-
-		.links a.active::after {
-			left: 9px;
-			right: 9px;
-		}
-
-		.find {
-			width: auto;
-		}
-
-		.find kbd {
-			display: none;
-		}
-	}
-
-	@media (max-width: 960px) {
-		.find span {
-			display: none;
-		}
-
-		.find {
-			width: 40px;
-			height: 40px;
-			padding: 0;
-			justify-content: center;
+			padding: 0 11px;
 		}
 	}
 
@@ -479,32 +475,38 @@
 			display: none;
 		}
 
+		/* On a phone the capsule spans the screen: the logo at one end, search
+		   and you at the other. */
 		.bar {
-			padding-right: 10px;
-		}
-
-		.find {
-			width: 44px;
-			height: 44px;
-			border: 0;
-			background: none;
-			color: var(--text-dim);
+			inset: 10px 10px auto;
+			width: auto;
+			max-width: none;
+			height: 54px;
+			margin: 0;
+			padding-right: 8px;
+			justify-content: space-between;
 		}
 
 		main.with-chrome {
-			padding-bottom: 72px;
+			padding-bottom: calc(92px + env(safe-area-inset-bottom));
 		}
 
+		/* The tab bar floats as a capsule above the bottom edge. */
 		.tabs {
 			position: fixed;
-			inset: auto 0 0 0;
+			inset: auto 12px calc(10px + env(safe-area-inset-bottom));
 			z-index: 40;
 			display: grid;
 			grid-auto-flow: column;
 			grid-auto-columns: 1fr;
+			overflow: hidden;
+			border: 1px solid var(--line);
+			border-radius: 30px;
 			background: var(--bg-bar);
-			border-top: 1px solid var(--line);
-			padding-bottom: env(safe-area-inset-bottom);
+			backdrop-filter: var(--frost);
+			box-shadow:
+				inset 0 1px 0 var(--shine),
+				var(--shadow-3);
 			backface-visibility: hidden;
 			transform: translateZ(0);
 			contain: layout style;
@@ -547,24 +549,28 @@
 			position: fixed;
 			inset: 0;
 			z-index: 38;
-			background: rgba(0, 0, 0, 0.5);
+			background: var(--scrim);
 		}
 
 		.more-sheet {
 			overflow-wrap: normal;
 			position: fixed;
 			z-index: 39;
-			left: 10px;
-			right: 10px;
-			bottom: calc(68px + env(safe-area-inset-bottom));
+			left: 12px;
+			right: 12px;
+			bottom: calc(80px + env(safe-area-inset-bottom));
 			display: grid;
 			grid-template-columns: 1fr 1fr;
 			gap: 6px;
 			padding: 10px;
 			border-radius: var(--radius-lg);
-			background: var(--bg-elev);
-			border: 1px solid var(--line-strong);
-			box-shadow: var(--shadow-3);
+			background: var(--bg-float);
+			border: 1px solid var(--line);
+			box-shadow:
+				inset 0 1px 0 var(--shine),
+				var(--shadow-3);
+			transform-origin: bottom center;
+			animation: pop 180ms var(--spring) backwards;
 		}
 
 		.more-sheet a {
@@ -573,15 +579,16 @@
 			align-items: center;
 			gap: 11px;
 			padding: 13px 14px;
-			border-radius: var(--radius);
+			border-radius: var(--radius-sm);
 			background: var(--bg-elev-2);
 			color: var(--text-dim);
 			font-size: 0.88rem;
-			font-weight: 550;
+			font-weight: 600;
 		}
 
 		.more-sheet a.active {
 			color: var(--text);
+			background: var(--seg-on);
 		}
 
 		.more-sheet a.active :global(svg) {
@@ -594,7 +601,7 @@
 		}
 
 		.attribution {
-			padding-bottom: 96px;
+			padding-bottom: calc(104px + env(safe-area-inset-bottom));
 		}
 	}
 </style>

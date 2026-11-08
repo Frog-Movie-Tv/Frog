@@ -50,14 +50,16 @@
 		padding: 11px 11px 11px 15px;
 		border-radius: var(--radius-sm);
 		border: 1px solid var(--line-strong);
-		background: var(--bg-elev-2);
-		box-shadow: var(--shadow-3);
+		background: var(--bg-float);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-3);
 		font-size: 0.86rem;
 	}
 
 	.toast[data-tone='error'] {
 		border-color: color-mix(in srgb, var(--bad) 55%, transparent);
-		background: color-mix(in srgb, var(--bad) 14%, var(--bg-elev-2));
+		background: color-mix(in srgb, var(--bad) 16%, var(--bg-float));
 	}
 
 	.message {

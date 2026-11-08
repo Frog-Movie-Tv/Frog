@@ -130,9 +130,13 @@
 		overflow-y: auto;
 		padding: 6px;
 		border-radius: var(--radius);
-		background: var(--bg-elev);
+		background: var(--bg-float);
 		border: 1px solid var(--line-strong);
-		box-shadow: var(--shadow-3);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-3);
+		/* Grows out of what opened it. */
+		animation: pop 180ms var(--spring) backwards;
 	}
 
 	.item {

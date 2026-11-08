@@ -48,9 +48,11 @@
 		gap: 12px;
 		padding: 11px 13px;
 		border-radius: var(--radius);
-		background: var(--bg-elev-2);
+		background: var(--bg-float);
 		border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-		box-shadow: var(--shadow-3);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-3);
 	}
 
 	span {

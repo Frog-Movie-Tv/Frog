@@ -371,10 +371,12 @@
 		left: 50%;
 		transform: translateX(-50%);
 		width: min(620px, calc(100vw - 28px));
-		background: var(--bg-elev);
+		background: var(--bg-float);
 		border: 1px solid var(--line-strong);
 		border-radius: var(--radius);
-		box-shadow: var(--shadow-3);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-3);
 		overflow: hidden;
 	}
 
@@ -419,10 +421,8 @@
 
 	.group-label {
 		padding: 10px 10px 4px;
-		font-size: 0.68rem;
+		font-size: 0.78rem;
 		font-weight: 650;
-		letter-spacing: 0.09em;
-		text-transform: uppercase;
 		color: var(--text-faint);
 	}
 

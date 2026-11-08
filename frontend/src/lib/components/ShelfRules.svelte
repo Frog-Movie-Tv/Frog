@@ -270,24 +270,10 @@
 		gap: 14px;
 	}
 
-	.chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-	}
-
-	.chip {
-		padding: 6px 12px;
-		border-radius: var(--radius-pill);
-		border: 1px solid var(--line);
-		background: var(--bg-elev-2);
-		color: var(--text-dim);
-		font-size: 0.82rem;
-		font-weight: 600;
-		cursor: pointer;
-	}
-
+	/* A chosen status is ringed in its own colour rather than filled, so a
+	   rule of several statuses still reads as their colours. */
 	.chip.on {
+		background: var(--bg-hover);
 		border-color: var(--status, var(--accent));
 		color: var(--text);
 		box-shadow: 0 0 0 1px var(--status, var(--accent)) inset;
