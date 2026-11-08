@@ -15,13 +15,21 @@
 	import { failure, type Failure } from '#lib/failure';
 	import { formatScore, longRuntime, plural, runtime } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
-	import type { FullStats, Stats, StatsPerson, StatsTitle, Status } from '#lib/types';
-	import { STATUS_LABEL, STATUSES } from '#lib/types';
+	import type { FullStats, MangaStats, StatsPerson, StatsTitle, Status } from '#lib/types';
+	import { STATUSES, statusLabel } from '#lib/types';
+
+	/*
+	 * Two halves, as AniList keeps its own: films and shows, from what was
+	 * watched, and manga, from what was read. Each has its own years.
+	 */
+	type Half = 'watching' | 'manga';
 
 	const yearParam = $derived(Number(page.url.searchParams.get('year')) || null);
+	const half = $derived<Half>(page.url.searchParams.get('half') === 'manga' ? 'manga' : 'watching');
 
 	let stats = $state<FullStats | null>(null);
-	let library = $state<Stats | null>(null);
+	let manga = $state<MangaStats | null>(null);
+	let mangaFailed = $state<Failure | null>(null);
 	let loading = $state(true);
 	let failed = $state<Failure | null>(null);
 	/** Pressing Try again asks for the same year again. */
@@ -50,30 +58,65 @@
 		return () => (stale = true);
 	});
 
-	// Status counts describe the library as it stands, not a year.
 	$effect(() => {
-		if (!session.authenticated) return;
+		if (!session.authenticated || half !== 'manga') return;
+		const year = yearParam;
+		void tries;
+		let stale = false;
+		mangaFailed = null;
 		void api
-			.stats()
-			.then((s) => (library = s))
-			.catch(() => undefined);
+			.mangaStats(year ?? undefined)
+			.then((m) => {
+				if (!stale) manga = m;
+			})
+			.catch((e) => {
+				if (stale) return;
+				mangaFailed = failure(e, { title: 'Could not load stats', hint: 'Try again in a minute.' });
+			});
+		return () => (stale = true);
 	});
+
+	/** The library as it stands, films and shows. */
+	const library = $derived(stats?.library ?? null);
+	/** Manga get a half of their own once there are any. */
+	const hasManga = $derived((stats?.manga ?? 0) > 0 || half === 'manga');
 
 	const yearOptions = $derived([
 		{ value: 'all', label: 'All time' },
-		...(stats?.years ?? []).map((y) => ({ value: String(y), label: String(y) }))
+		...((half === 'manga' ? manga?.years : stats?.years) ?? []).map((y) => ({
+			value: String(y),
+			label: String(y)
+		}))
 	]);
+	const shownYear = $derived(half === 'manga' ? (manga?.year ?? null) : (stats?.year ?? null));
+
+	function address(nextHalf: Half, year: string | null): string {
+		const parts: string[] = [];
+		if (nextHalf === 'manga') parts.push('half=manga');
+		if (year && year !== 'all') parts.push(`year=${encodeURIComponent(year)}`);
+		return parts.length ? `/stats?${parts.join('&')}` : '/stats';
+	}
 
 	function pickYear(value: string) {
-		void goto(value === 'all' ? '/stats' : `/stats?year=${value}`, { replace: true, reset: false });
+		void goto(address(half, value), { replace: true, reset: false });
 	}
+
+	function pickHalf(next: Half) {
+		// Each half has its own years: a year one has, the other may not.
+		void goto(address(next, null), { replace: true, reset: false });
+	}
+
+	const chaptersMax = $derived(Math.max(1, ...(manga?.timeline ?? []).map((t) => t.chapters)));
+	const mangaGenreMax = $derived(Math.max(1, ...(manga?.genres ?? []).map((g) => g.titles)));
+	const mangaRatingMax = $derived(Math.max(1, ...(manga?.ratings ?? [])));
+	const mangaStatusTotal = $derived(
+		STATUSES.reduce((sum, s) => sum + (manga?.by_status[s as Status] ?? 0), 0)
+	);
 
 	/** The year the review button makes: the one in view, else the latest. */
 	const reviewTarget = $derived(stats?.year ?? stats?.years[0] ?? null);
 
-	const statusTotal = $derived(
-		STATUSES.reduce((sum, s) => sum + (library?.by_status[s as Status] ?? 0), 0)
-	);
+	const statusTotal = $derived(STATUSES.reduce((sum, s) => sum + (library?.[s as Status] ?? 0), 0));
 
 	const MONTHS = Array.from({ length: 12 }, (_, i) =>
 		new Date(2000, i, 1).toLocaleDateString(undefined, { month: 'short' })
@@ -168,19 +211,176 @@
 	{/if}
 {/snippet}
 
+{#snippet mangaHalf()}
+	{#if mangaFailed}
+		<LoadFailed failed={mangaFailed} onretry={() => tries++} />
+	{:else if !manga}
+		<Spinner label="Counting" />
+	{:else if manga.totals.manga === 0}
+		<Empty
+			title={manga.year ? `Nothing read in ${manga.year}` : 'No manga yet'}
+			hint="Count the chapters you read and they show up here."
+		>
+			<a class="btn primary" href="/search">Find a manga</a>
+		</Empty>
+	{:else}
+		<div class="body">
+			<div class="tiles">
+				<div class="tile card hero">
+					<span class="eyebrow">Chapters read</span>
+					<strong>{manga.totals.chapters.toLocaleString()}</strong>
+					<span class="faint">{plural(manga.totals.manga, 'manga', 'manga')}</span>
+				</div>
+				<div class="tile card">
+					<span class="eyebrow">Completed</span>
+					<strong>{manga.totals.completed.toLocaleString()}</strong>
+				</div>
+				<div class="tile card">
+					<span class="eyebrow">Days reading</span>
+					<strong>{manga.totals.days.toLocaleString()}</strong>
+				</div>
+				<div class="tile card">
+					<span class="eyebrow">Mean rating</span>
+					<strong><Score value={manga.totals.mean_rating} /></strong>
+					{#if manga.totals.rated}<span class="faint">{plural(manga.totals.rated, 'rating')}</span
+						>{/if}
+				</div>
+			</div>
+
+			{#if manga.timeline.some((t) => t.chapters > 0)}
+				<section class="block card panel">
+					<h2>{manga.year ? 'Chapters by month' : 'Chapters by year'}</h2>
+					<div
+						class="columns"
+						class:wide={!manga.year}
+						role="img"
+						aria-label="Chapters read over time"
+					>
+						{#each manga.timeline as point (point.unit)}
+							<div
+								class="column"
+								title="{unitLabel(point.unit)}: {plural(point.chapters, 'chapter')}"
+							>
+								<span class="value faint">{point.chapters || ''}</span>
+								<span class="bar-v" style:height="{(point.chapters / chaptersMax) * 100}%"></span>
+								<span class="label faint">{unitLabel(point.unit)}</span>
+							</div>
+						{/each}
+					</div>
+				</section>
+			{/if}
+
+			{#if manga.top.length}
+				<section class="block">
+					<Rail title="Top manga" width="112px">
+						{#each manga.top as t, i (t.id)}
+							{@const src = img(t.poster_path, 'w185')}
+							<a href={titleHref(t)} class="top">
+								<span class="cover">
+									{#if src}<img {src} alt="" loading="lazy" />{/if}
+									<span class="badge">{i + 1}</span>
+								</span>
+								<span class="top-name">{t.name}</span>
+								<span class="faint top-meta">
+									{#if t.rating !== null}<Score value={t.rating} />{/if}
+									{#if t.rating !== null && t.chapters}·{/if}
+									{#if t.chapters}{plural(t.chapters, 'chapter')}{/if}
+								</span>
+							</a>
+						{/each}
+					</Rail>
+				</section>
+			{/if}
+
+			<div class="grid">
+				{#if manga.genres.length}
+					<section class="block card panel">
+						<h2>Genres</h2>
+						<ul class="hbars">
+							{#each manga.genres.slice(0, 10) as g (g.name)}
+								<li>
+									<span class="hname">{g.name}</span>
+									<span class="track"
+										><span class="fill" style:width="{(g.titles / mangaGenreMax) * 100}%"
+										></span></span
+									>
+									<span class="faint hcount">{g.titles}</span>
+								</li>
+							{/each}
+						</ul>
+					</section>
+				{/if}
+
+				{#if manga.totals.rated}
+					<section class="block card panel">
+						<h2>Ratings</h2>
+						<div class="columns" role="img" aria-label="How you rate manga">
+							{#each manga.ratings as n, i (i)}
+								<div
+									class="column"
+									title="{formatScore((i + 1) * 10, settings.current.scoreFormat)}: {n}"
+								>
+									<span class="value faint">{n || ''}</span>
+									<span class="bar-v" style:height="{(n / mangaRatingMax) * 100}%"></span>
+									<span class="label faint"><Score value={(i + 1) * 10} /></span>
+								</div>
+							{/each}
+						</div>
+					</section>
+				{/if}
+
+				{#if mangaStatusTotal > 0}
+					<section class="block card panel">
+						<h2>Status</h2>
+						<div class="bar" role="img" aria-label="Manga by status">
+							{#each STATUSES as s (s)}
+								{@const n = manga.by_status[s] ?? 0}
+								{#if n > 0}
+									<span
+										class="seg"
+										data-status={s}
+										style:flex-grow={n}
+										title="{statusLabel(s, 'manga')}: {n}"
+									></span>
+								{/if}
+							{/each}
+						</div>
+						<ul class="legend">
+							{#each STATUSES as s (s)}
+								{@const n = manga.by_status[s] ?? 0}
+								{#if n > 0}
+									<li>
+										<span class="swatch" data-status={s}></span>
+										{statusLabel(s, 'manga')}
+										<span class="faint">{n}</span>
+									</li>
+								{/if}
+							{/each}
+						</ul>
+					</section>
+				{/if}
+			</div>
+
+			<div class="grid people-row">
+				{@render people('Authors', manga.authors, '/person')}
+			</div>
+		</div>
+	{/if}
+{/snippet}
+
 <div class="page">
 	<div class="head page-head">
 		<h1>Stats</h1>
 		<div class="controls actions">
-			{#if stats && stats.years.length}
+			{#if yearOptions.length > 1}
 				<Select
 					label="Period"
-					value={stats.year ? String(stats.year) : 'all'}
+					value={shownYear ? String(shownYear) : 'all'}
 					options={yearOptions}
 					onchange={pickYear}
 				/>
 			{/if}
-			{#if reviewTarget}
+			{#if reviewTarget && half === 'watching'}
 				<button class="btn primary" onclick={() => (reviewYear = reviewTarget)}>
 					<Icon name="sparkle" size={17} />
 					{reviewTarget} in review
@@ -189,7 +389,26 @@
 		</div>
 	</div>
 
-	{#if loading && !stats}
+	{#if hasManga}
+		<div class="halves" role="tablist" aria-label="What to count">
+			<button
+				role="tab"
+				aria-selected={half === 'watching'}
+				class:on={half === 'watching'}
+				onclick={() => pickHalf('watching')}>Films &amp; shows</button
+			>
+			<button
+				role="tab"
+				aria-selected={half === 'manga'}
+				class:on={half === 'manga'}
+				onclick={() => pickHalf('manga')}>Manga</button
+			>
+		</div>
+	{/if}
+
+	{#if half === 'manga'}
+		{@render mangaHalf()}
+	{:else if loading && !stats}
 		<Spinner label="Counting" />
 	{:else if failed || !stats}
 		{#if failed}<LoadFailed {failed} onretry={() => tries++} />{/if}
@@ -355,20 +574,20 @@
 					<h2>Library</h2>
 					<div class="bar" role="img" aria-label="Library by status">
 						{#each STATUSES as s (s)}
-							{@const n = library.by_status[s] ?? 0}
+							{@const n = library[s] ?? 0}
 							{#if n > 0}
-								<span class="seg" data-status={s} style:flex-grow={n} title="{STATUS_LABEL[s]}: {n}"
+								<span class="seg" data-status={s} style:flex-grow={n} title="{statusLabel(s)}: {n}"
 								></span>
 							{/if}
 						{/each}
 					</div>
 					<ul class="legend">
 						{#each STATUSES as s (s)}
-							{@const n = library.by_status[s] ?? 0}
+							{@const n = library[s] ?? 0}
 							{#if n > 0}
 								<li>
 									<span class="swatch" data-status={s}></span>
-									{STATUS_LABEL[s]}
+									{statusLabel(s)}
 									<span class="faint">{n}</span>
 								</li>
 							{/if}
@@ -396,6 +615,33 @@
 		flex-wrap: wrap;
 		gap: 14px;
 		margin-bottom: 22px;
+	}
+
+	/* Films and shows, or manga: two halves, as AniList keeps them. */
+	.halves {
+		display: inline-flex;
+		gap: 2px;
+		padding: 3px;
+		margin-bottom: 22px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-pill);
+		background: var(--bg-elev);
+	}
+
+	.halves button {
+		padding: 7px 16px;
+		border: 0;
+		border-radius: var(--radius-pill);
+		background: transparent;
+		color: var(--text-dim);
+		font-size: 0.86rem;
+		font-weight: 650;
+		cursor: pointer;
+	}
+
+	.halves button.on {
+		background: var(--accent);
+		color: var(--accent-ink);
 	}
 
 	.controls {

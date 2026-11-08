@@ -269,7 +269,8 @@ pub(super) async fn apply(
     match target {
         Target::Movie(_) => {
             if a.status == "COMPLETED" {
-                film_watch(&state.pool, user_id, title_id).await?;
+                let undated = !reconcile::film_seen_now(mode, before);
+                film_watch(&state.pool, user_id, title_id, undated).await?;
             }
         }
         Target::Show { season, offset, .. } => {
@@ -290,11 +291,14 @@ pub(super) async fn apply(
             let upto = a.progress.max(0) as usize;
             // Only what has come out: progress never ticks an episode that
             // has not aired.
-            let tick: Vec<i64> = run
+            let history = reconcile::undated_upto(mode, before);
+            // (episode, undated)
+            let tick: Vec<(i64, bool)> = run
                 .iter()
                 .take(upto)
-                .filter(|(_, released)| *released)
-                .map(|(id, _)| *id)
+                .enumerate()
+                .filter(|(_, (_, released))| *released)
+                .map(|(i, (id, _))| (*id, i < history))
                 .collect();
             if upto > run.len() {
                 tracing::info!(
@@ -304,17 +308,19 @@ pub(super) async fn apply(
                     "AniList progress is past the episodes TMDB lists"
                 );
             }
-            for id in &tick {
+            let now = Utc::now().to_rfc3339();
+            for (id, undated) in &tick {
                 sqlx::query(
                     "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
                                               source, undated)
-                     SELECT ?, ?, ?, ?, 0, 'anilist', 1
+                     SELECT ?, ?, ?, ?, 0, 'anilist', ?
                       WHERE NOT EXISTS (SELECT 1 FROM watch_event WHERE user_id = ? AND episode_id = ?)",
                 )
                 .bind(user_id)
                 .bind(title_id)
                 .bind(id)
-                .bind(Utc::now().to_rfc3339())
+                .bind(&now)
+                .bind(undated)
                 .bind(user_id)
                 .bind(id)
                 .execute(&state.pool)
@@ -340,18 +346,26 @@ pub(super) async fn apply(
     Ok(existing.is_none())
 }
 
-/// A film AniList says was seen gets one undated watch, unless it has one.
-pub(super) async fn film_watch(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppResult<()> {
+/// A film AniList says was seen gets one watch, unless it has one: undated
+/// when it is history, dated today when it was seen since the last sync
+/// (`reconcile::film_seen_now`).
+pub(super) async fn film_watch(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    undated: bool,
+) -> AppResult<()> {
     sqlx::query(
         "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
                                   source, undated)
-         SELECT ?, ?, NULL, ?, 0, 'anilist', 1
+         SELECT ?, ?, NULL, ?, 0, 'anilist', ?
           WHERE NOT EXISTS (SELECT 1 FROM watch_event
                              WHERE user_id = ? AND title_id = ? AND episode_id IS NULL)",
     )
     .bind(user_id)
     .bind(title_id)
     .bind(Utc::now().to_rfc3339())
+    .bind(undated)
     .bind(user_id)
     .bind(title_id)
     .execute(pool)

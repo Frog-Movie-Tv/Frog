@@ -549,8 +549,23 @@ pub(super) async fn sync_failed(
 
 // --- one entry, as a sync and Settings change it ------------------------------
 
-/// The show an unplaced entry belongs to, when that much is known.
-pub(super) async fn set_show(
+/// Whether an entry is a manga, which is kept as AniList has it and never
+/// matched to anything else.
+pub async fn is_manga(pool: &SqlitePool, user_id: i64, media_id: i64) -> AppResult<bool> {
+    let (manga,): (bool,) = sqlx::query_as(
+        "SELECT EXISTS (SELECT 1 FROM anilist_entry
+                         WHERE user_id = ? AND media_id = ? AND method = 'manga')",
+    )
+    .bind(user_id)
+    .bind(media_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(manga)
+}
+
+/// The title an entry is kept in: the show an unplaced entry belongs to,
+/// when that much is known, or a manga's own title.
+pub(super) async fn set_title(
     pool: &SqlitePool,
     user_id: i64,
     media_id: i64,

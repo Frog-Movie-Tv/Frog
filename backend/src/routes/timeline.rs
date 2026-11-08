@@ -234,13 +234,14 @@ type DiaryGroupRow = (
 /// (season, episode, name, rating, rewatch)
 type DiaryEpisodeRow = (i64, i64, Option<String>, Option<f64>, i64);
 
-/// Everything watched, newest first, one entry per title per day.
+/// Everything watched and read, newest first, one entry per title per day.
 ///
 /// Ticking eight episodes in an evening is one thing that happened, not
 /// eight, so episodes of the same show on the same day come back as a single
 /// group carrying its episodes. Grouping here rather than in the browser keeps
 /// pagination honest: a 135-episode catch-up is one entry, never split across
-/// pages. Watches recorded without a date are counted but not listed.
+/// pages. Watches recorded without a date are counted but not listed. A
+/// manga's day is its chapters read (`chapter_read`), grouped the same way.
 pub async fn diary(
     auth: Auth,
     State(state): State<AppState>,
@@ -250,24 +251,34 @@ pub async fn diary(
     let offset = q.offset.unwrap_or(0).max(0);
 
     let groups: Vec<DiaryGroupRow> = sqlx::query_as(
-        "SELECT substr(w.watched_at, 1, 10) AS day,
-                MAX(w.watched_at) AS latest,
-                t.kind, t.id, t.name, t.poster_path,
-                COUNT(*),
-                MAX(w.is_rewatch),
-                MAX(w.source = 'import'),
-                w.episode_id IS NULL AS film,
-                l.rating
-           FROM watch_event w
-           JOIN title t ON t.id = w.title_id
-           -- Only what is in the library: a title taken out leaves the diary.
-           JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?
-          WHERE w.user_id = ? AND w.undated = 0
-          GROUP BY day, t.id, film
+        "SELECT * FROM (
+            SELECT substr(w.watched_at, 1, 10) AS day,
+                   MAX(w.watched_at) AS latest,
+                   t.kind, t.id, t.name, t.poster_path,
+                   COUNT(*),
+                   MAX(w.is_rewatch),
+                   MAX(w.source = 'import'),
+                   w.episode_id IS NULL AS film,
+                   l.rating
+              FROM watch_event w
+              JOIN title t ON t.id = w.title_id
+              -- Only what is in the library: a title taken out leaves the diary.
+              JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?1
+             WHERE w.user_id = ?1 AND w.undated = 0
+             GROUP BY day, t.id, film
+            UNION ALL
+            SELECT substr(r.read_at, 1, 10) AS day,
+                   MAX(r.read_at) AS latest,
+                   t.kind, t.id, t.name, t.poster_path,
+                   COUNT(*), 0, MAX(r.source = 'import'), 0, l.rating
+              FROM chapter_read r
+              JOIN title t ON t.id = r.title_id
+              JOIN library_entry l ON l.title_id = t.id AND l.user_id = r.user_id
+             WHERE r.user_id = ?1
+             GROUP BY day, t.id)
           ORDER BY day DESC, latest DESC
-          LIMIT ? OFFSET ?",
+          LIMIT ?2 OFFSET ?3",
     )
-    .bind(auth.user_id())
     .bind(auth.user_id())
     .bind(limit)
     .bind(offset)
@@ -278,7 +289,22 @@ pub async fn diary(
     for (day, latest, kind, title_id, name, poster_path, count, rewatch, imported, film, rating) in
         groups
     {
-        let episodes: Vec<DiaryEpisodeRow> = if film == 1 {
+        let manga = kind == "manga";
+        let chapters: Vec<(i64,)> = if manga {
+            sqlx::query_as(
+                "SELECT DISTINCT chapter FROM chapter_read
+                  WHERE user_id = ? AND title_id = ? AND substr(read_at, 1, 10) = ?
+                  ORDER BY chapter",
+            )
+            .bind(auth.user_id())
+            .bind(title_id)
+            .bind(&day)
+            .fetch_all(&state.pool)
+            .await?
+        } else {
+            Vec::new()
+        };
+        let episodes: Vec<DiaryEpisodeRow> = if film == 1 || manga {
             Vec::new()
         } else {
             sqlx::query_as(
@@ -311,7 +337,8 @@ pub async fn diary(
             "count": count,
             "rewatch": rewatch == 1,
             "imported": imported == 1,
-            "rating": if film == 1 { rating } else { None },
+            "rating": if film == 1 || manga { rating } else { None },
+            "chapters": chapters.into_iter().map(|c| c.0).collect::<Vec<_>>(),
             "episodes": episodes
                 .into_iter()
                 .map(|(s, e, ep_name, ep_rating, ep_rewatch)| json!({
@@ -329,8 +356,12 @@ pub async fn diary(
         "SELECT COUNT(*) FROM (
             SELECT 1 FROM watch_event w
              JOIN library_entry l ON l.title_id = w.title_id AND l.user_id = w.user_id
-             WHERE w.user_id = ? AND w.undated = 0
-             GROUP BY substr(w.watched_at, 1, 10), w.title_id, w.episode_id IS NULL)",
+             WHERE w.user_id = ?1 AND w.undated = 0
+             GROUP BY substr(w.watched_at, 1, 10), w.title_id, w.episode_id IS NULL
+            UNION ALL
+            SELECT 1 FROM chapter_read r
+             WHERE r.user_id = ?1
+             GROUP BY substr(r.read_at, 1, 10), r.title_id)",
     )
     .bind(auth.user_id())
     .fetch_one(&state.pool)
@@ -430,7 +461,37 @@ pub async fn redate(
         }
     };
 
-    Ok(Json(json!({ "changed": changed.rows_affected() })))
+    // A manga's day of reading moves the same way. Chapters have no release
+    // dates, so that choice leaves them where they are; a day not known takes
+    // them out of the diary, and the count stays.
+    let day_reads = "WHERE user_id = ?1 AND title_id = ?2 AND substr(read_at, 1, 10) = ?3";
+    let (sql, stamp) = match body.when {
+        When::Release => (None, None),
+        When::Unknown => (Some(format!("DELETE FROM chapter_read {day_reads}")), None),
+        When::Date => (
+            Some(format!("UPDATE chapter_read SET read_at = ?4 {day_reads}")),
+            Some(evening_of(body.date.as_deref().unwrap_or(""))?),
+        ),
+        When::Today => (
+            Some(format!("UPDATE chapter_read SET read_at = ?4 {day_reads}")),
+            Some(chrono::Utc::now().to_rfc3339()),
+        ),
+    };
+    let read = match sql {
+        Some(sql) => {
+            let mut q = sqlx::query(&sql)
+                .bind(auth.user_id())
+                .bind(title_id)
+                .bind(&body.day);
+            if let Some(stamp) = stamp {
+                q = q.bind(stamp);
+            }
+            q.execute(&state.pool).await?.rows_affected()
+        }
+        None => 0,
+    };
+
+    Ok(Json(json!({ "changed": changed.rows_affected() + read })))
 }
 
 #[cfg(test)]

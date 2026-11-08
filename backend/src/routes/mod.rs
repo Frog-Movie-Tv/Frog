@@ -69,6 +69,7 @@ pub fn router(state: AppState) -> Router {
             post(library::bulk).layer(DefaultBodyLimit::max(library::BULK_MAX_BYTES)),
         )
         .route("/stats", get(stats::stats))
+        .route("/stats/manga", get(stats::manga))
         .route("/shelves", get(shelves::list).post(shelves::create))
         .route("/shelves/order", put(shelves::reorder))
         .route(

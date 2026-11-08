@@ -1,5 +1,5 @@
-//! Searching for more than titles: people, characters and studios, and a page
-//! for each studio. Members are searched in the browser from the profiles list,
+//! Searching for more than films and shows: people, characters, studios and
+//! manga, and a page for each studio. Members are searched in the browser from the profiles list,
 //! which already holds only the people who chose to be seen.
 
 use std::time::Duration;
@@ -29,10 +29,13 @@ pub struct MoreQuery {
 /// and a search should not wait behind a sync.
 const ANIME_CHARACTERS_WAIT: Duration = Duration::from_millis(1200);
 
-/// People, characters and studios for one search, each list on its own so a
-/// slow or failing source leaves the others standing.
+/// How long a search waits for AniList's manga, which only AniList has.
+const MANGA_WAIT: Duration = Duration::from_millis(2500);
+
+/// People, characters, studios and manga for one search, each list on its own
+/// so a slow or failing source leaves the others standing.
 pub async fn more(
-    _: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Query(q): Query<MoreQuery>,
 ) -> AppResult<Json<Value>> {
@@ -42,10 +45,11 @@ pub async fn more(
             "give me something to search for".into(),
         ));
     }
-    let (people, studios, characters) = tokio::join!(
+    let (people, studios, characters, manga) = tokio::join!(
         people(&state, term),
         studios(&state, term),
-        characters(&state, term)
+        characters(&state, term),
+        manga(&state, auth.user_id(), term)
     );
     let quiet = |r: AppResult<Vec<Value>>, what: &str| {
         r.unwrap_or_else(|e| {
@@ -57,7 +61,27 @@ pub async fn more(
         "people": quiet(people, "people"),
         "studios": quiet(studios, "studios"),
         "characters": quiet(characters, "characters"),
+        "manga": quiet(manga, "manga"),
     })))
+}
+
+/// Manga by name from AniList, marked with what is in the library already.
+async fn manga(state: &AppState, user_id: i64, term: &str) -> AppResult<Vec<Value>> {
+    if term.chars().count() < 2 {
+        return Ok(Vec::new());
+    }
+    let mut found = match timeout(MANGA_WAIT, anilist::media::search_manga(state, term)).await {
+        Ok(found) => found?,
+        Err(_) => {
+            tracing::debug!("AniList manga search skipped: too slow");
+            Vec::new()
+        }
+    };
+    annotate_library(state, user_id, &mut found).await?;
+    Ok(found
+        .into_iter()
+        .map(|m| serde_json::to_value(m).unwrap_or(Value::Null))
+        .collect())
 }
 
 /// TMDB finds people by every name they have ever gone by, so "Tom & Jerry"

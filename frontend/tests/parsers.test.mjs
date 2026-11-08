@@ -212,6 +212,31 @@ test('a backup names titles by provider ids, never by the Frog id it carries', a
 	]);
 });
 
+test('a manga in a Frog backup comes back as a manga, chapters and all', async () => {
+	const backup = {
+		format: 'frog-library',
+		version: 2,
+		titles: [
+			{
+				kind: 'manga',
+				ids: { tmdb: null, anilist: [30002], imdb: [] },
+				tmdb_id: null,
+				name: 'Berserk',
+				status: 'watching',
+				progress: 131,
+				episodes: [],
+				watches: []
+			}
+		]
+	};
+	const [berserk] = await rows('frog', 'frog-library.json', JSON.stringify(backup));
+	assert.equal(berserk.kind, 'manga');
+	assert.equal(berserk.anilist_id, 30002);
+	assert.equal(berserk.tmdb_id, null);
+	assert.equal(berserk.progress, 131);
+	assert.equal(berserk.status, 'watching');
+});
+
 test('anime titles split into the show and the season they mean', () => {
 	const cases = [
 		[
@@ -287,8 +312,8 @@ class MalParser {
 		});
 		return {
 			querySelector: () => (text.includes('<myanimelist>') ? null : {}),
-			getElementsByTagName: () =>
-				[...text.matchAll(/<anime>(.*?)<\/anime>/gs)].map((m) => element(m[1]))
+			getElementsByTagName: (name) =>
+				[...text.matchAll(new RegExp(`<${name}>(.*?)</${name}>`, 'gs'))].map((m) => element(m[1]))
 		};
 	}
 }
@@ -455,7 +480,7 @@ test('MyAnimeList: a part of unknown length leaves the next one in doubt', async
 });
 
 test('MyAnimeList: a file that is not one says so', async () => {
-	await assert.rejects(malRows(), /No anime found/);
+	await assert.rejects(malRows(), /No anime or manga found/);
 	globalThis.DOMParser = MalParser;
 	try {
 		await assert.rejects(rows('mal', 'x.xml', '<other/>'), /not a MyAnimeList export/);
@@ -480,7 +505,7 @@ test('a gzipped export is unpacked first', async () => {
 	}
 });
 
-test('a Letterboxd ZIP reads its library and leaves its comments and lists', async () => {
+test('a Letterboxd ZIP reads its library and leaves its comments, lists and deleted films', async () => {
 	const header = 'Date,Name,Year,Letterboxd URI\n';
 	const zip = zipSync({
 		'watched.csv': strToU8(`${header}2024-01-01,Heat,1995,https://boxd.it/1\n`),
@@ -489,6 +514,7 @@ test('a Letterboxd ZIP reads its library and leaves its comments and lists', asy
 		'comments.csv': strToU8(`${header}2024-01-04,Not a film,2000,x\n`),
 		'reviews.csv': strToU8(`${header}2024-01-05,Not a film,2000,x\n`),
 		'lists/best.csv': strToU8(`${header}2024-01-06,Not a film,2000,x\n`),
+		'deleted/watched.csv': strToU8(`${header}2024-01-07,Taken Out,2001,x\n`),
 		'profile.txt': strToU8('hello')
 	});
 	const files = await readFile('letterboxd', new File([zip], 'letterboxd-export.zip'));
@@ -732,4 +758,85 @@ test('an imported score is a whole number on the scale, and 0 is none', () => {
 	assert.equal(cleanRating(-4), null);
 	assert.equal(cleanRating(Number.NaN), null);
 	assert.equal(cleanRating(null), null);
+});
+
+test('a film watched three times comes back three times from a Frog backup', async () => {
+	const backup = {
+		format: 'frog-library',
+		version: 2,
+		titles: [
+			{
+				kind: 'movie',
+				tmdb_id: 949,
+				name: 'Heat',
+				status: 'completed',
+				episodes: [],
+				watches: [
+					{ watched_at: '2020-01-01T20:00:00Z', rewatch: false, source: 'manual' },
+					{ watched_at: '2022-05-05T20:00:00Z', rewatch: true, source: 'manual' },
+					{ watched_at: '2024-09-09T20:00:00Z', rewatch: true, source: 'manual' }
+				]
+			}
+		]
+	};
+	const [heat] = await rows('frog', 'frog-library.json', JSON.stringify(backup));
+	assert.equal(heat.watched_at, '2020-01-01T20:00:00Z');
+	assert.deepEqual(heat.film_watches, [
+		{ watched_at: '2022-05-05T20:00:00Z', rewatch: true },
+		{ watched_at: '2024-09-09T20:00:00Z', rewatch: true }
+	]);
+});
+
+test('Trakt history ticks each episode it names, on its day', async () => {
+	const show = { title: 'Dark', year: 2017, ids: { tmdb: 70523 } };
+	const history = [
+		{ watched_at: '2024-03-01T21:00:00.000Z', show, episode: { season: 1, number: 1 } },
+		{ watched_at: '2024-03-02T21:00:00.000Z', show, episode: { season: 1, number: 2 } },
+		{ watched_at: '2024-03-02T22:00:00.000Z', show, episode: { season: 1, number: 2 } }
+	];
+	const [dark] = dedupe(await rows('trakt', 'history.json', JSON.stringify(history)));
+	assert.equal(dark.status, 'watching');
+	assert.deepEqual(dark.watches, [
+		{ season: 1, episode: 1, watched_at: '2024-03-01T20:00:00Z' },
+		{ season: 1, episode: 2, watched_at: '2024-03-02T20:00:00Z' }
+	]);
+	assert.equal(dark.progress, 2);
+});
+
+test('MyAnimeList: a manga list comes in as manga, by its MyAnimeList id', async () => {
+	const xml = `<?xml version="1.0" encoding="UTF-8" ?>
+<myanimelist>
+	<myinfo><user_export_type>2</user_export_type></myinfo>
+	<manga>
+		<manga_mangadb_id>2</manga_mangadb_id>
+		<manga_title><![CDATA[Berserk]]></manga_title>
+		<my_read_chapters>131</my_read_chapters>
+		<my_start_date>2020-01-05</my_start_date>
+		<my_finish_date>0000-00-00</my_finish_date>
+		<my_score>10</my_score>
+		<my_status>Reading</my_status>
+		<my_times_read>0</my_times_read>
+	</manga>
+	<manga>
+		<manga_mangadb_id>21</manga_mangadb_id>
+		<manga_title><![CDATA[Pluto]]></manga_title>
+		<my_read_chapters>0</my_read_chapters>
+		<my_status>Plan to Read</my_status>
+		<my_score>0</my_score>
+	</manga>
+</myanimelist>`;
+	globalThis.DOMParser = MalParser;
+	let list;
+	try {
+		list = await rows('mal', 'mangalist.xml', xml);
+	} finally {
+		delete globalThis.DOMParser;
+	}
+	assert.deepEqual(
+		list.map((r) => [r.title, r.kind, r.mal_id, r.status, r.progress, r.rating, r.started_at]),
+		[
+			['Berserk', 'manga', 2, 'watching', 131, 100, '2020-01-05T20:00:00Z'],
+			['Pluto', 'manga', 21, 'planned', null, null, null]
+		]
+	);
 });

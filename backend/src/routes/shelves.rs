@@ -149,20 +149,28 @@ pub async fn evaluate(pool: &SqlitePool, user_id: i64, rules: &Rules) -> AppResu
         q.push(" AND CAST(substr(t.release_date, 1, 4) AS INTEGER) <= ")
             .push_bind(to);
     }
+    // A manga goes by its chapters read: a count, against a total that is
+    // often not known while it is still coming out.
+    let read = "COALESCE(l.progress, 0)";
+    let chapters = "COALESCE(t.episode_count, 0)";
     match rules.progress.as_deref() {
         Some("unstarted") => q.push(format!(
-            " AND ((t.kind = 'movie' AND NOT {film_seen}) OR (t.kind = 'tv' AND {watched_eps} = 0))"
+            " AND ((t.kind = 'movie' AND NOT {film_seen}) OR (t.kind = 'tv' AND {watched_eps} = 0)
+                OR (t.kind = 'manga' AND {read} = 0))"
         )),
         Some("started") => q.push(format!(
-            " AND t.kind = 'tv' AND {watched_eps} > 0 AND {watched_eps} < {TOTAL_EPS}"
+            " AND ((t.kind = 'tv' AND {watched_eps} > 0 AND {watched_eps} < {TOTAL_EPS})
+                OR (t.kind = 'manga' AND {read} > 0 AND ({chapters} = 0 OR {read} < {chapters})))"
         )),
         Some("unfinished") => q.push(format!(
             " AND ((t.kind = 'movie' AND NOT {film_seen})
-                OR (t.kind = 'tv' AND ({TOTAL_EPS} = 0 OR {watched_eps} < {TOTAL_EPS})))"
+                OR (t.kind = 'tv' AND ({TOTAL_EPS} = 0 OR {watched_eps} < {TOTAL_EPS}))
+                OR (t.kind = 'manga' AND ({chapters} = 0 OR {read} < {chapters})))"
         )),
         Some("finished") => q.push(format!(
             " AND ((t.kind = 'movie' AND {film_seen})
-                OR (t.kind = 'tv' AND {TOTAL_EPS} > 0 AND {watched_eps} >= {TOTAL_EPS}))"
+                OR (t.kind = 'tv' AND {TOTAL_EPS} > 0 AND {watched_eps} >= {TOTAL_EPS})
+                OR (t.kind = 'manga' AND {chapters} > 0 AND {read} >= {chapters}))"
         )),
         _ => &mut q,
     };

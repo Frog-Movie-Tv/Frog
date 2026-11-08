@@ -108,6 +108,25 @@ pub fn incoming_rating(
     }
 }
 
+/// How many of an entry's episodes, from the start of its run, are history
+/// rather than news. A first sync or a fresh layout is catching up on a
+/// list, so every tick it makes is undated. Following a change, the episodes
+/// past the progress AniList had last time were watched since then: they are
+/// dated to this sync, so they reach the diary and Activity like a tick in
+/// Frog would.
+pub fn undated_upto(mode: Mode, before: Option<&View>) -> usize {
+    match (mode, before) {
+        (Mode::Follow, Some(b)) => b.progress.max(0) as usize,
+        _ => usize::MAX,
+    }
+}
+
+/// Whether a film AniList now has as completed was seen since the last sync,
+/// rather than long ago: the same rule as `undated_upto`, for a film.
+pub fn film_seen_now(mode: Mode, before: Option<&View>) -> bool {
+    mode == Mode::Follow && before.is_some_and(|b| b.status != "COMPLETED")
+}
+
 /// A film's (or AniList-only title's) status from AniList's word: new to the
 /// library takes it outright, a merge only moves forward, following takes it.
 pub fn incoming_status(existing: Option<&str>, incoming: &str, mode: Mode) -> String {
@@ -262,6 +281,24 @@ mod tests {
             None
         );
         assert_eq!(incoming_rating(None, 0, Mode::Follow, None), None);
+    }
+
+    #[test]
+    fn only_what_was_watched_since_the_last_sync_is_dated() {
+        // A first sync is a backlog: nothing in it has a day.
+        assert_eq!(undated_upto(Mode::Merge, None), usize::MAX);
+        assert_eq!(
+            undated_upto(Mode::Merge, Some(&v("CURRENT", 3, 0))),
+            usize::MAX
+        );
+        // AniList went from 3 to more: episode 4 on is news.
+        assert_eq!(undated_upto(Mode::Follow, Some(&v("CURRENT", 3, 0))), 3);
+        assert_eq!(undated_upto(Mode::Follow, None), usize::MAX);
+
+        assert!(film_seen_now(Mode::Follow, Some(&v("PLANNING", 0, 0))));
+        assert!(!film_seen_now(Mode::Follow, Some(&v("COMPLETED", 1, 0))));
+        assert!(!film_seen_now(Mode::Merge, Some(&v("PLANNING", 0, 0))));
+        assert!(!film_seen_now(Mode::Follow, None));
     }
 
     #[test]

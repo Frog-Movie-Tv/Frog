@@ -231,8 +231,8 @@ fn answer_error(status: reqwest::StatusCode, message: &str) -> AppError {
     AppError::AniList(format!("{status}: {message}"))
 }
 
-const LIST_QUERY: &str = "query ($userId: Int, $chunk: Int, $perChunk: Int) {
-  MediaListCollection(userId: $userId, type: ANIME, chunk: $chunk, perChunk: $perChunk) {
+const LIST_QUERY: &str = "query ($userId: Int, $type: MediaType, $chunk: Int, $perChunk: Int) {
+  MediaListCollection(userId: $userId, type: $type, chunk: $chunk, perChunk: $perChunk) {
     hasNextChunk
     lists { entries {
       status
@@ -242,7 +242,7 @@ const LIST_QUERY: &str = "query ($userId: Int, $chunk: Int, $perChunk: Int) {
       startedAt { year month day }
       completedAt { year month day }
       media {
-        id format status episodes seasonYear countryOfOrigin synonyms
+        id type format status episodes chapters seasonYear countryOfOrigin synonyms
         startDate { year month day }
         nextAiringEpisode { episode airingAt }
         title { english romaji native }
@@ -266,6 +266,9 @@ pub struct Remote {
     /// Other names it goes by, for comparing against TMDB's.
     pub synonyms: Vec<String>,
     pub format: Option<String>,
+    /// A manga: Frog keeps it as AniList's own title and never places it on
+    /// TMDB. Its `episodes` are chapters, and its progress counts them.
+    pub manga: bool,
     pub episodes: Option<i64>,
     pub year: Option<i64>,
     /// yyyy-mm-dd, when AniList knows the whole date.
@@ -344,6 +347,7 @@ pub fn parse_list(data: &Value) -> Vec<Remote> {
                 continue;
             }
             let status = e["status"].as_str().unwrap_or("PLANNING");
+            let manga = media["type"].as_str() == Some("MANGA");
             out.push(Remote {
                 media_id,
                 name: media_name(media),
@@ -355,7 +359,10 @@ pub fn parse_list(data: &Value) -> Vec<Remote> {
                     .filter_map(|s| s.as_str().map(str::to_string))
                     .collect(),
                 format: media["format"].as_str().map(str::to_string),
-                episodes: media["episodes"].as_i64().filter(|n| *n > 0),
+                manga,
+                episodes: media[if manga { "chapters" } else { "episodes" }]
+                    .as_i64()
+                    .filter(|n| *n > 0),
                 // The year it started, which for a film is the year it came
                 // out; seasonYear is missing for most films.
                 year: media["startDate"]["year"]
@@ -386,13 +393,18 @@ pub fn parse_list(data: &Value) -> Vec<Remote> {
     out
 }
 
-/// One account's whole list, read with its own token.
+/// One account's whole list, anime and then manga, read with its own token.
 pub(super) async fn read_list(
     api: &Api<'_>,
     token: &str,
     anilist_user_id: i64,
 ) -> AppResult<Vec<Remote>> {
-    fetch_list(api, token, LIST_QUERY, json!({ "userId": anilist_user_id })).await
+    let mut all = Vec::new();
+    for kind in ["ANIME", "MANGA"] {
+        let who = json!({ "userId": anilist_user_id, "type": kind });
+        all.extend(fetch_list(api, token, LIST_QUERY, who).await?);
+    }
+    Ok(all)
 }
 
 /// A whole list, chunk by chunk. Any chunk that fails fails the lot: a list
@@ -422,13 +434,19 @@ async fn fetch_list(api: &Api<'_>, token: &str, query: &str, who: Value) -> AppR
     ))
 }
 
-/// Somebody's AniList list by name, read anonymously. Public lists only.
+/// Somebody's anime list by name, read anonymously. Public lists only.
 pub async fn public_list(state: &AppState, user_name: &str) -> AppResult<Vec<Remote>> {
     let api = Api::new(state)?;
     let query = LIST_QUERY
         .replace("$userId: Int", "$userName: String")
         .replace("userId: $userId", "userName: $userName");
-    fetch_list(&api, "", &query, json!({ "userName": user_name })).await
+    fetch_list(
+        &api,
+        "",
+        &query,
+        json!({ "userName": user_name, "type": "ANIME" }),
+    )
+    .await
 }
 
 /// Whether a GraphQL document only reads. One with no operation word is a

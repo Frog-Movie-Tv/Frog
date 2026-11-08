@@ -10,7 +10,7 @@ use super::client::{Remote, View};
 use super::library::{self, film_watch, frog_view, run_ids, settle_show};
 use super::place::Target;
 use super::reconcile::{self, Changes, Mode};
-use super::records::{save_snapshots, Known};
+use super::records::{self, save_snapshots, Known};
 use super::Account;
 use crate::catalog::{self, ExternalId};
 use crate::error::AppResult;
@@ -41,22 +41,6 @@ async fn local_title_of(pool: &SqlitePool, media_id: i64) -> AppResult<Option<i6
     Ok(row.map(|r| r.0))
 }
 
-/// The episodes kept as a count for an AniList-only title of this account,
-/// when it has no episodes to tick.
-async fn counted_progress(
-    pool: &SqlitePool,
-    user_id: i64,
-    title_id: i64,
-) -> AppResult<Option<i64>> {
-    let row: Option<(Option<i64>,)> =
-        sqlx::query_as("SELECT progress FROM library_entry WHERE user_id = ? AND title_id = ?")
-            .bind(user_id)
-            .bind(title_id)
-            .fetch_optional(pool)
-            .await?;
-    Ok(row.and_then(|r| r.0))
-}
-
 /// The entry as Frog has it while it is AniList-only: progress is a count,
 /// since there are no episodes to tick.
 async fn local_view(
@@ -78,7 +62,7 @@ async fn local_view(
     }
     Ok(Some(View {
         status: reconcile::frog_to_anilist(&entry.status).into(),
-        progress: counted_progress(pool, user_id, title_id)
+        progress: store::counted_progress(pool, user_id, title_id)
             .await?
             .unwrap_or(0),
         score: reconcile::score_of(entry.rating),
@@ -97,8 +81,12 @@ pub(super) async fn sync_local(
     prior: Option<&Known>,
 ) -> AppResult<bool> {
     let (state, user_id) = (acct.state, acct.user_id);
-    let film = remote.format.as_deref() == Some("MOVIE");
-    let kind = if film { "movie" } else { "tv" };
+    let film = !remote.manga && remote.format.as_deref() == Some("MOVIE");
+    let kind = match (remote.manga, film) {
+        (true, _) => "manga",
+        (_, true) => "movie",
+        _ => "tv",
+    };
     let original = remote
         .titles
         .iter()
@@ -117,6 +105,9 @@ pub(super) async fn sync_local(
         },
     )
     .await?;
+    if remote.manga {
+        records::set_title(&state.pool, user_id, remote.media_id, title_id).await?;
+    }
     // The full picture from AniList, once; the worker keeps it fresh after.
     let (fresh,): (Option<String>,) = sqlx::query_as("SELECT refreshed_at FROM title WHERE id = ?")
         .bind(title_id)
@@ -137,9 +128,10 @@ pub(super) async fn sync_local(
     }
 
     let a = &remote.view;
-    // Snapshots of an entry that was placed before belong to that place.
+    // Snapshots of an entry that was placed before belong to that place. A
+    // manga is only ever kept here, so its snapshots are its own.
     let (snap_al, snap_frog) = match prior {
-        Some(k) if k.state == "unsure" => (k.al.clone(), k.frog.clone()),
+        Some(k) if k.state == "unsure" || remote.manga => (k.al.clone(), k.frog.clone()),
         _ => (None, None),
     };
     let f = local_view(&state.pool, user_id, title_id, film).await?;
@@ -182,7 +174,8 @@ pub(super) async fn sync_local(
         .await?;
         if film {
             if a.status == "COMPLETED" {
-                film_watch(&state.pool, user_id, title_id).await?;
+                let undated = !reconcile::film_seen_now(mode, snap_al.as_ref());
+                film_watch(&state.pool, user_id, title_id, undated).await?;
             }
         } else {
             // A count, not history: it follows AniList down as well as up.
@@ -193,6 +186,33 @@ pub(super) async fn sync_local(
                 a.progress
             };
             store::set_local_progress(&state.pool, user_id, title_id, progress).await?;
+            if remote.manga {
+                // The chapters read since the last sync are the day's reading;
+                // a first sync is where someone is, not what they read today.
+                let history = reconcile::undated_upto(mode, snap_al.as_ref());
+                let after = have.max(i64::try_from(history).unwrap_or(i64::MAX));
+                if progress > after {
+                    let now = Utc::now().to_rfc3339();
+                    store::record_reads(
+                        &state.pool,
+                        user_id,
+                        title_id,
+                        (after, progress),
+                        &now,
+                        "anilist",
+                    )
+                    .await?;
+                } else if mode == Mode::Follow && progress < have {
+                    store::take_back_reads(
+                        &state.pool,
+                        user_id,
+                        title_id,
+                        progress,
+                        Some("anilist"),
+                    )
+                    .await?;
+                }
+            }
         }
     }
     let f_now = local_view(&state.pool, user_id, title_id, film).await?;
@@ -218,7 +238,7 @@ async fn sync_local_episodes(
         offset: 0,
     };
     // Kept as a count before its episodes were known: laid out afresh, once.
-    let counted = counted_progress(&state.pool, user_id, title_id).await?;
+    let counted = store::counted_progress(&state.pool, user_id, title_id).await?;
     let (snap_al, snap_frog) = match prior {
         Some(k) if k.state == "unsure" && counted.is_none() => (k.al.clone(), k.frog.clone()),
         _ => (None, None),

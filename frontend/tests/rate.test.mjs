@@ -11,23 +11,25 @@ const item = (id, status, rating, lastWatched = null, added = '2026-01-01') => (
 	last_watched_at: lastWatched
 });
 
-test('the deck holds what is unrated, what you watched lately first', () => {
+test('the deck holds what is finished and unrated, what you watched lately first', () => {
 	const items = [
 		item(1, 'completed', 80),
 		item(2, 'completed', null, '2026-03-01'),
 		item(3, 'planned', null),
 		item(4, 'watching', null, '2026-05-01'),
 		item(5, 'dropped', null, null, '2026-04-01'),
-		item(6, 'paused', null, null, '2026-02-01')
+		item(6, 'paused', null, null, '2026-02-01'),
+		item(7, 'completed', null, '2026-04-01'),
+		item(8, 'completed', null, null, '2026-06-01')
 	];
 	assert.deepEqual(
-		deckOf(items, 'seen').map((i) => i.id),
-		[4, 2, 5, 6],
-		'rated titles and the watchlist stay out; never-watched by when added'
+		deckOf(items, 'finished').map((i) => i.id),
+		[7, 2, 8],
+		'only finished titles; never-watched by when added'
 	);
 	assert.deepEqual(
 		deckOf(items, 'all').map((i) => i.id),
-		[4, 2, 5, 6, 3]
+		[4, 7, 2, 8, 5, 6, 3]
 	);
 });
 

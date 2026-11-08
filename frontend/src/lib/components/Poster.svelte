@@ -8,7 +8,7 @@
 	import { titleHref, type TitleRef } from '#lib/titles';
 	import type { HTMLAnchorAttributes } from 'svelte/elements';
 	import type { Kind, Status } from '#lib/types';
-	import { STATUS_LABEL } from '#lib/types';
+	import { KIND_ICON, KIND_LABEL, statusLabel } from '#lib/types';
 
 	interface Props extends HTMLAnchorAttributes {
 		kind: Kind;
@@ -106,7 +106,7 @@
 			{:else}
 				<!-- No artwork anywhere: a drawn card rather than an empty box. -->
 				<div class="placeholder">
-					<Icon name={kind === 'tv' ? 'tv' : 'film'} size={26} />
+					<Icon name={KIND_ICON[kind]} size={26} />
 					<span>{name}</span>
 				</div>
 			{/if}
@@ -114,7 +114,7 @@
 
 		{#if status && show.showBadge}
 			<div class="badges">
-				<span class="badge" data-status={status}>{STATUS_LABEL[status]}</span>
+				<span class="badge" data-status={status}>{statusLabel(status, kind)}</span>
 				{#if rewatches > 0}
 					<span
 						class="badge again"
@@ -129,9 +129,9 @@
 		{#if kindBadge}
 			<!-- Film or show as a mark in the other corner, so it never pushes
 			     the library label down on a narrow card. -->
-			<span class="kind" title={kind === 'tv' ? 'Show' : 'Film'}>
-				<Icon name={kind === 'tv' ? 'tv' : 'film'} size={12} />
-				<span class="sr">{kind === 'tv' ? 'Show' : 'Film'}</span>
+			<span class="kind" title={KIND_LABEL[kind]}>
+				<Icon name={KIND_ICON[kind]} size={12} />
+				<span class="sr">{KIND_LABEL[kind]}</span>
 			</span>
 		{/if}
 

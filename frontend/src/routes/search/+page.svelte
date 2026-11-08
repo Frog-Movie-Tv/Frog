@@ -28,18 +28,19 @@
 		Status,
 		StudioResult
 	} from '#lib/types';
-	import { STATUS_LABEL, STATUSES } from '#lib/types';
+	import { STATUSES, statusLabel } from '#lib/types';
 
-	type Tab = 'all' | 'movies' | 'shows' | 'people' | 'characters' | 'studios';
+	type Tab = 'all' | 'movies' | 'shows' | 'manga' | 'people' | 'characters' | 'studios';
 	const TABS: { id: Tab; label: string }[] = [
 		{ id: 'all', label: 'All' },
 		{ id: 'movies', label: 'Films' },
 		{ id: 'shows', label: 'Shows' },
+		{ id: 'manga', label: 'Manga' },
 		{ id: 'people', label: 'People' },
 		{ id: 'characters', label: 'Characters' },
 		{ id: 'studios', label: 'Studios' }
 	];
-	const NONE: MoreResults = { people: [], studios: [], characters: [] };
+	const NONE: MoreResults = { people: [], studios: [], characters: [], manga: [] };
 	const SORTS = [
 		{ value: 'best', label: 'Best match' },
 		{ value: 'popular', label: 'Popular' },
@@ -57,7 +58,7 @@
 	];
 	const WHERE: { id: Status | 'none'; label: string }[] = [
 		{ id: 'none', label: 'Not in my library' },
-		...STATUSES.map((s) => ({ id: s, label: STATUS_LABEL[s] }))
+		...STATUSES.map((s) => ({ id: s, label: statusLabel(s) }))
 	];
 
 	// The query, the tab and the filters live in the address, so Back from a
@@ -148,30 +149,34 @@
 		return () => clearTimeout(timer);
 	});
 
-	// The list before anything is typed, again whenever it is switched.
+	// The list before anything is typed, again whenever it is switched. The
+	// list on screen stays until the other one replaces it, so switching never
+	// passes through an empty page.
 	$effect(() => {
 		const which = list;
-		trending = [];
-		trendingNext = null;
-		void loadTrending(which, 1);
+		untrack(() => void loadTrending(which, 1));
 	});
 
 	let trendingToken = 0;
+	/** The other list is on its way; the one on screen is dimmed meanwhile. */
+	let switching = $state(false);
 
 	async function loadTrending(which: 'trending' | 'top', pageNo: number) {
 		const mine = ++trendingToken;
 		trendingLoading = true;
+		switching = pageNo === 1 && trending.length > 0;
 		try {
 			const r = await api.trending(which, pageNo);
 			if (mine !== trendingToken) return;
-			const seen = new Set(trending.map(titleKey));
-			trending = [...trending, ...r.results.filter((t) => !seen.has(titleKey(t)))];
+			const kept = pageNo === 1 ? [] : trending;
+			const seen = new Set(kept.map(titleKey));
+			trending = [...kept, ...r.results.filter((t) => !seen.has(titleKey(t)))];
 			trendingNext = r.next_page ?? null;
 		} catch {
 			// A nicety: a missing key or no network just means the empty state
 			// stays plain.
 		} finally {
-			if (mine === trendingToken) trendingLoading = false;
+			if (mine === trendingToken) trendingLoading = switching = false;
 		}
 	}
 
@@ -261,7 +266,8 @@
 							more = {
 								...res,
 								people: uniqueBy(res.people, (p) => p.id),
-								studios: uniqueBy(res.studios, (s) => s.id)
+								studios: uniqueBy(res.studios, (s) => s.id),
+								manga: uniqueBy(res.manga ?? [], titleKey)
 							};
 						}
 					})
@@ -310,7 +316,8 @@
 				list.map((r) => (sameTitle(r, item) ? { ...r, id, in_library: status } : r));
 			results = mark(results);
 			trending = mark(trending);
-			toasts.push(`Added ${item.name} to ${STATUS_LABEL[status]}`);
+			more = { ...more, manga: mark(more.manga) };
+			toasts.push(`Added ${item.name} to ${statusLabel(status, item.kind)}`);
 			// Completed is watched: every aired episode, as on the show's page.
 			if (status === 'completed' && added.kind === 'tv' && added.total_episodes > 0) {
 				await completeShow(id, added.name);
@@ -330,12 +337,13 @@
 		all: 0,
 		movies: films.length,
 		shows: shows.length,
+		manga: more.manga.length,
 		people: more.people.length,
 		characters: more.characters.length,
 		studios: more.studios.length
 	});
 	const asking = $derived(!!q || filterCount > 0);
-	/** People, characters and studios are found by name; filters
+	/** Manga, people, characters and studios are found by name; filters
 	 *  alone only find films and shows. */
 	const byName = (t: Tab) => !['all', 'movies', 'shows'].includes(t);
 	$effect(() => {
@@ -440,8 +448,8 @@
 				<button
 					class="q secondary"
 					disabled={adding === key}
-					title="Mark as watching"
-					aria-label="Mark {item.name} as watching"
+					title={item.kind === 'manga' ? 'Mark as reading' : 'Mark as watching'}
+					aria-label="Mark {item.name} as {item.kind === 'manga' ? 'reading' : 'watching'}"
 					onclick={() => add(item, 'watching')}
 				>
 					<Icon name="play" size={13} filled />
@@ -497,6 +505,8 @@
 				{#each films.slice(0, 12) as item (titleKey(item))}{@render titleCard(item)}{/each}
 			{:else if id === 'shows'}
 				{#each shows.slice(0, 12) as item (titleKey(item))}{@render titleCard(item)}{/each}
+			{:else if id === 'manga'}
+				{#each more.manga.slice(0, 12) as item (titleKey(item))}{@render titleCard(item)}{/each}
 			{:else if id === 'people'}
 				{#each more.people.slice(0, 12) as p (p.id)}{@render personCard(p)}{/each}
 			{:else if id === 'characters'}
@@ -681,7 +691,7 @@
 			{#if !asking || !searched}
 				<!-- What was on screen stays until the first answer replaces it, so a
 		     search starting moves nothing. -->
-				<div class:dim={asking}>
+				<div class:dim={asking || switching}>
 					{#if trendingShown.length}
 						<div class="section-head lists">
 							<div class="switch" role="tablist" aria-label="What to show">
@@ -709,7 +719,7 @@
 						/>
 					{:else if asking}
 						<Spinner label="Searching" />
-					{:else}
+					{:else if !trendingLoading}
 						<Empty art="search" title="Find something to watch" hint="Start typing." />
 					{/if}
 				</div>
@@ -725,6 +735,7 @@
 				{#if personFirst}{@render section('people', 'People')}{/if}
 				{@render section('movies', 'Films')}
 				{@render section('shows', 'Shows')}
+				{@render section('manga', 'Manga')}
 				{#if !personFirst && q}{@render section('people', 'People')}{/if}
 				{@render section('characters', 'Characters')}
 				{@render section('studios', 'Studios')}
@@ -740,6 +751,10 @@
 					{/each}
 				</Grid>
 				{@render showMore()}
+			{:else if tab === 'manga'}
+				<Grid>
+					{#each more.manga as item (titleKey(item))}{@render titleCard(item)}{/each}
+				</Grid>
 			{:else}
 				<div class="cards">
 					{#if tab === 'people'}

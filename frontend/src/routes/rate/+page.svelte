@@ -6,6 +6,7 @@
 	import ScoreSlider from '#lib/components/ScoreSlider.svelte';
 	import Scores from '#lib/components/Scores.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
+	import StarPicker from '#lib/components/StarPicker.svelte';
 	import Stars from '#lib/components/Stars.svelte';
 	import { failure, type Failure } from '#lib/failure';
 	import { formatScore, fromDisplay, toDisplay } from '#lib/format';
@@ -14,7 +15,7 @@
 	import { settings } from '#lib/settings.svelte';
 	import { titleHref } from '#lib/titles';
 	import { toasts } from '#lib/toast.svelte';
-	import { STATUS_LABEL, type LibraryItem, type TitleScore } from '#lib/types';
+	import { KIND_LABEL, statusLabel, type LibraryItem, type TitleScore } from '#lib/types';
 
 	/*
 	 * A library rated one card at a time: the title, what it was about and what
@@ -24,7 +25,7 @@
 
 	let items = $state<LibraryItem[] | null>(null);
 	let failed = $state<Failure | null>(null);
-	let scope = $state<DeckScope>('seen');
+	let scope = $state<DeckScope>('finished');
 	let deck = $state<LibraryItem[]>([]);
 	let at = $state(0);
 	let rated = $state(0);
@@ -184,7 +185,7 @@
 	function onKey(e: KeyboardEvent) {
 		if (e.ctrlKey || e.metaKey || e.altKey) return;
 		const target = e.target as HTMLElement | null;
-		if (target?.closest('input, textarea, select, [role="dialog"]')) return;
+		if (target?.closest('input, textarea, select, [role="dialog"], [role="slider"]')) return;
 		const pick = slide ? null : choiceForKey(e.key, options.length);
 		if (pick !== null) {
 			e.preventDefault();
@@ -201,26 +202,40 @@
 		}
 	}
 
-	// Drag a card sideways and let go past the line to skip it.
+	// Drag a card sideways and let go past the line to skip it. A pointer
+	// reports far more often than the screen draws, so the card moves once a
+	// frame, to where the pointer last was.
 	const THROW = 110;
 	let startX = 0;
+	let lastX = 0;
+	let frame = 0;
 
 	function down(e: PointerEvent) {
-		if (busy || (e.target as HTMLElement).closest('a, button')) return;
+		if (busy || e.button !== 0 || (e.target as HTMLElement).closest('a, button')) return;
 		dragging = true;
-		startX = e.clientX;
+		startX = lastX = e.clientX;
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 	}
 
 	function move(e: PointerEvent) {
-		if (dragging) drag = e.clientX - startX;
+		if (!dragging) return;
+		lastX = e.clientX;
+		frame ||= requestAnimationFrame(() => {
+			frame = 0;
+			if (dragging) drag = lastX - startX;
+		});
 	}
 
 	function up() {
 		if (!dragging) return;
 		dragging = false;
-		if (Math.abs(drag) > THROW) skip(drag < 0 ? -1 : 1);
-		else drag = 0;
+		cancelAnimationFrame(frame);
+		frame = 0;
+		const moved = lastX - startX;
+		if (Math.abs(moved) > THROW) {
+			drag = moved;
+			skip(moved < 0 ? -1 : 1);
+		} else drag = 0;
 	}
 
 	/** Where a card in the pile sits: the top one follows the hand. */
@@ -240,10 +255,10 @@
 	const year = (d: string | null) => (d ? d.slice(0, 4) : null);
 
 	function facts(it: LibraryItem): string {
-		const bits = [it.kind === 'tv' ? 'Show' : 'Film'];
+		const bits = [KIND_LABEL[it.kind]];
 		const y = year(it.release_date);
 		if (y) bits.push(y);
-		if (it.entry) bits.push(STATUS_LABEL[it.entry.status]);
+		if (it.entry) bits.push(statusLabel(it.entry.status, it.kind));
 		return bits.join(' · ');
 	}
 </script>
@@ -266,7 +281,7 @@
 			{/if}
 		</div>
 		<div class="switch" role="group" aria-label="Which titles">
-			<button class:on={scope === 'seen'} onclick={() => deal('seen')}>Seen</button>
+			<button class:on={scope === 'finished'} onclick={() => deal('finished')}>Finished</button>
 			<button class:on={scope === 'all'} onclick={() => deal('all')}>Everything</button>
 		</div>
 	</div>
@@ -279,8 +294,8 @@
 		<Empty
 			art="done"
 			title={rated ? 'All rated' : 'Nothing to rate'}
-			hint={scope === 'seen'
-				? 'Every title you have seen has a rating.'
+			hint={scope === 'finished'
+				? 'Every title you finished has a rating.'
 				: 'Every title in your library has a rating.'}
 		>
 			{#if steps.length}
@@ -332,6 +347,10 @@
 									<span class="watched">
 										Watched {it.watched_episodes} of {it.total_episodes} episodes
 									</span>
+								{:else if it.kind === 'manga' && it.watched_episodes}
+									<span class="watched">
+										Read {it.watched_episodes}{it.total_episodes ? ` of ${it.total_episodes}` : ''} chapters
+									</span>
 								{/if}
 							</div>
 						</div>
@@ -373,21 +392,20 @@
 			<div class="typed">
 				<ScoreSlider {format} autofocus reset={card.id} onsubmit={(v) => rate(v)} />
 			</div>
+		{:else if format === 'star5'}
+			<div class="filled">
+				<StarPicker
+					halves={settings.current.halfStars}
+					size={44}
+					reset={card.id}
+					onpick={(stars) => rate(fromDisplay(stars, format) ?? 0)}
+				/>
+			</div>
 		{:else}
-			<div
-				class="choices"
-				role="group"
-				aria-label="Your rating"
-				data-count={options.length}
-				data-format={format}
-			>
+			<div class="choices" role="group" aria-label="Your rating">
 				{#each options as option, i (option)}
 					<button class="choice" onclick={() => rate(fromDisplay(option, format) ?? 0)}>
-						{#if format === 'star5'}
-							<Stars value={option} label={formatScore(fromDisplay(option, format), format)} />
-						{:else}
-							<span>{formatScore(fromDisplay(option, format), format)}</span>
-						{/if}
+						<span>{formatScore(fromDisplay(option, format), format)}</span>
 						{#if i < 10}<kbd>{i === 9 ? 0 : i + 1}</kbd>{/if}
 					</button>
 				{/each}
@@ -475,6 +493,8 @@
 		touch-action: pan-y;
 		user-select: none;
 		transform-origin: 50% 90%;
+		/* Each card is its own layer, so moving one never repaints it. */
+		will-change: transform;
 		transition:
 			transform 340ms cubic-bezier(0.2, 0.8, 0.2, 1),
 			opacity 340ms ease;
@@ -662,13 +682,9 @@
 
 	.choices {
 		display: grid;
-		grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 8px;
 		margin-bottom: 14px;
-	}
-
-	.choices[data-count='3'] {
-		--cols: 3;
 	}
 
 	.choice {
@@ -699,14 +715,14 @@
 		transform: scale(0.95);
 	}
 
-	/* Stars are drawn, half stars too, and stay on one line whatever their
-	   count; smileys are big enough to tell apart at a glance. */
-	.choices[data-format='star5'] .choice :global(.stars svg) {
-		width: 14px;
-		height: 14px;
+	.filled {
+		display: flex;
+		justify-content: center;
+		margin-bottom: 10px;
 	}
 
-	.choices[data-format='smiley3'] .choice span {
+	/* Smileys are big enough to tell apart at a glance. */
+	.choice span {
 		font-size: 1.9rem;
 		line-height: 1;
 	}
@@ -770,11 +786,6 @@
 		.choice {
 			min-height: 46px;
 			font-size: 0.95rem;
-		}
-
-		.choices[data-format='star5'] .choice :global(.stars svg) {
-			width: 11px;
-			height: 11px;
 		}
 
 		.stamp {

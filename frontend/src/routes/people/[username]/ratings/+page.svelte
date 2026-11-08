@@ -6,12 +6,12 @@
 	import ProfileShell from '#lib/components/ProfileShell.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { titleHref } from '#lib/titles';
-	import { STATUS_LABEL, type RatedTitle } from '#lib/types';
+	import { statusLabel, type Kind, type RatedTitle } from '#lib/types';
 	import { uniqueBy } from '#lib/unique';
 
 	const username = $derived(page.params.username ?? '');
 	let ratings = $state<RatedTitle[] | null>(null);
-	let kind = $state<'all' | 'movie' | 'tv'>('all');
+	let kind = $state<'all' | Kind>('all');
 
 	$effect(() => {
 		const name = username;
@@ -25,6 +25,7 @@
 	});
 
 	const shown = $derived((ratings ?? []).filter((t) => kind === 'all' || t.kind === kind));
+	const hasManga = $derived((ratings ?? []).some((t) => t.kind === 'manga'));
 	const partName = (s: { season: number; first_episode: number }) =>
 		(s.season === 0 ? 'Specials' : `S${s.season}`) +
 		(s.first_episode > 1 ? ` from E${s.first_episode}` : '');
@@ -42,6 +43,11 @@
 				>Films</button
 			>
 			<button class="chip" class:on={kind === 'tv'} onclick={() => (kind = 'tv')}>Shows</button>
+			{#if hasManga}
+				<button class="chip" class:on={kind === 'manga'} onclick={() => (kind = 'manga')}
+					>Manga</button
+				>
+			{/if}
 		</div>
 		<ol class="rated">
 			{#each shown as t, i (t.id)}
@@ -54,7 +60,7 @@
 						>
 						<span class="body">
 							<strong>{t.name}</strong>
-							<span class="faint status">{STATUS_LABEL[t.status]}</span>
+							<span class="faint status">{statusLabel(t.status, t.kind)}</span>
 							{#if t.seasons.length}
 								<span class="seasons">
 									{#each t.seasons as s (`${s.season}-${s.first_episode}`)}

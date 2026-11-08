@@ -35,6 +35,9 @@ pub struct Incoming {
     /// AniList's id, from a Frog backup of an anime TMDB lacks.
     #[serde(default)]
     pub anilist_id: Option<i64>,
+    /// MyAnimeList's id, from its manga list.
+    #[serde(default)]
+    pub mal_id: Option<i64>,
     pub kind: Option<String>,
     /// 0..100 after the client has rescaled whatever the source used.
     pub rating: Option<f64>,
@@ -275,6 +278,10 @@ async fn resolve(state: &AppState, row: &Incoming) -> Resolved {
             return Resolved::exact(found);
         }
     }
+    // Only AniList has manga: a name searched on TMDB would find a film.
+    if row.kind.as_deref() == Some("manga") {
+        return manga(state, row).await;
+    }
 
     let (mut found, searched) = match search(state, row).await {
         Ok(hit) => hit,
@@ -285,6 +292,38 @@ async fn resolve(state: &AppState, row: &Incoming) -> Resolved {
     // the one meant has the season the row is about.
     let by_season = pick_by_season(state, &found, &searched, row).await;
     choose(found, row, &searched, by_season)
+}
+
+/// A manga row: by MyAnimeList's id when the row has one, else by name on
+/// AniList, whose search is ranked so only what a title answers comes back.
+/// Found by name, the first is offered and the rest are its alternatives.
+async fn manga(state: &AppState, row: &Incoming) -> Resolved {
+    if let Some(mal) = row.mal_id.filter(|id| *id > 0) {
+        if let Ok(found) = crate::anilist::media::manga_by_mal(state, mal).await {
+            return Resolved::exact(found);
+        }
+    }
+    let names =
+        std::iter::once(row.title.as_str()).chain(row.alt_titles.iter().map(String::as_str));
+    for name in names.filter(|n| !n.trim().is_empty()) {
+        let Ok(mut found) = crate::anilist::media::search_manga(state, name).await else {
+            return Resolved::missing("AniList did not answer");
+        };
+        if found.is_empty() {
+            continue;
+        }
+        let first = found.remove(0);
+        let exact = crate::text::closeness(&first.name, &crate::text::words(name))
+            == crate::text::Closeness::Exact;
+        found.truncate(5);
+        return Resolved {
+            matched: Some(first),
+            candidates: found,
+            note: (!exact).then(|| "Closest match by name".into()),
+            searched: (name != row.title).then(|| name.to_string()),
+        };
+    }
+    Resolved::missing("No match found")
 }
 
 /// Search by each of the row's names in turn: English, romaji and synonyms

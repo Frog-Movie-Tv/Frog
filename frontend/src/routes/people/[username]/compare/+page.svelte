@@ -8,7 +8,7 @@
 	import Rail from '#lib/components/Rail.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { titleHref } from '#lib/titles';
-	import { STATUS_LABEL, type Comparison, type Profile } from '#lib/types';
+	import { type Comparison, type Profile, statusLabel } from '#lib/types';
 
 	const username = $derived(page.params.username ?? '');
 	let compared = $state<Comparison | null>(null);
@@ -93,11 +93,11 @@
 									</span>
 									<span class="side">
 										<b><Score value={b.mine.rating} empty="—" /></b>
-										<span class="faint">{STATUS_LABEL[b.mine.status]}</span>
+										<span class="faint">{statusLabel(b.mine.status)}</span>
 									</span>
 									<span class="side">
 										<b><Score value={b.theirs.rating} empty="—" /></b>
-										<span class="faint">{STATUS_LABEL[b.theirs.status]}</span>
+										<span class="faint">{statusLabel(b.theirs.status)}</span>
 									</span>
 								</a>
 							</li>
@@ -236,6 +236,12 @@
 		font-variant-numeric: tabular-nums;
 	}
 
+	/* Five stars fit their column on any screen, a little smaller than text. */
+	.side b :global(.score-stars svg) {
+		width: 14px;
+		height: 14px;
+	}
+
 	@media (max-width: 600px) {
 		.summary {
 			grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -256,8 +262,13 @@
 
 		.head-row,
 		.pair {
-			grid-template-columns: minmax(0, 1fr) 64px 64px;
+			grid-template-columns: minmax(0, 1fr) 72px 72px;
 			gap: 8px;
+		}
+
+		.side b :global(.score-stars svg) {
+			width: 12px;
+			height: 12px;
 		}
 	}
 </style>

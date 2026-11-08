@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 /// Tables that gained a `user_id` in migration 0008, and personal tables
 /// added since.
-const PERSONAL: [&str; 16] = [
+const PERSONAL: [&str; 17] = [
     "password_reset",
     "season_rating",
     "title_merge",
@@ -33,17 +33,19 @@ const PERSONAL: [&str; 16] = [
     "push_subscription",
     "push_sent",
     "recovery_code",
+    "chapter_read",
 ];
 
 /// Fragments that are pasted into a statement and carry the account
 /// themselves, so the statement around them does not repeat it.
-const SCOPED_FRAGMENTS: [&str; 6] = [
+const SCOPED_FRAGMENTS: [&str; 7] = [
     "{filter}",
     "{rated}",
     "{mine}",
     "{scope}",
     "{watched_eps}",
     "{film_seen}",
+    "{day_reads}",
 ];
 
 /// Statements that are global on purpose, each with its reason.

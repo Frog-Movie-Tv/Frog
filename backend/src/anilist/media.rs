@@ -1,4 +1,5 @@
-//! A title TMDB does not have, drawn from AniList instead.
+//! A title TMDB does not have, drawn from AniList instead: an anime TMDB
+//! lacks, and every manga, which only AniList has.
 //!
 //! AniList knows most of what TMDB does about an anime: the cover, a banner,
 //! the synopsis, genres, a score, episode length, studios, staff, the voice
@@ -22,8 +23,8 @@ use crate::state::AppState;
 use crate::tmdb::models::{EpisodeInfo, SearchItem};
 
 const MEDIA_QUERY: &str = "query ($id: Int) {
-  Media(id: $id, type: ANIME) {
-    id format status episodes duration countryOfOrigin
+  Media(id: $id) {
+    id type format status episodes chapters volumes duration countryOfOrigin
     title { english romaji native }
     description(asHtml: false)
     startDate { year month day }
@@ -47,7 +48,7 @@ const MEDIA_QUERY: &str = "query ($id: Int) {
     recommendations(sort: RATING_DESC, perPage: 18) { nodes { mediaRecommendation {
       id type format title { english romaji } coverImage { extraLarge } bannerImage
       startDate { year month day } averageScore popularity } } }
-    externalLinks { id site url type icon }
+    externalLinks { id site url type icon color language }
     streamingEpisodes { title thumbnail }
   }
 }";
@@ -92,6 +93,44 @@ fn name_of(media: &Value) -> Option<String> {
 
 fn date_of(d: &Value) -> Option<String> {
     super::client::full_date(d)
+}
+
+/// Where it streams, or for a manga where it is read, linked straight to the
+/// page AniList knows: one link a service. AniList lists a service once for
+/// each language it has the title in; the English one is kept, else the
+/// first. It does not say in which countries, so they are listed for every
+/// one.
+fn where_to(links: &Value) -> Vec<Value> {
+    let mut kept: Vec<&Value> = Vec::new();
+    for link in links.as_array().into_iter().flatten() {
+        if link["type"].as_str() != Some("STREAMING") || link["site"].as_str().is_none() {
+            continue;
+        }
+        let english = matches!(link["language"].as_str(), None | Some("English"));
+        match kept.iter().position(|k| k["site"] == link["site"]) {
+            Some(at)
+                if english
+                    && kept[at]["language"]
+                        .as_str()
+                        .is_some_and(|l| l != "English") =>
+            {
+                kept[at] = link;
+            }
+            Some(_) => {}
+            None => kept.push(link),
+        }
+    }
+    kept.into_iter()
+        .filter_map(|l| {
+            Some(json!({
+                "provider_id": -l["id"].as_i64()?,
+                "provider_name": l["site"].as_str()?,
+                "logo_path": image_path(l["icon"].as_str()),
+                "url": l["url"].as_str()?,
+                "color": l["color"].as_str(),
+            }))
+        })
+        .collect()
 }
 
 /// AniList writes its synopses with a little HTML and a source line; TMDB's
@@ -188,9 +227,14 @@ fn unmark(text: &str) -> String {
 }
 
 /// TMDB's genre names, where AniList's differ, so filters and Stats group
-/// AniList titles with everything else. Every anime is Animation on TMDB.
+/// AniList titles with everything else. Every anime is Animation on TMDB; a
+/// manga keeps AniList's own words.
 fn genres(kind: &str, list: &Value) -> Vec<Value> {
-    let mut names: Vec<String> = vec!["Animation".into()];
+    let mut names: Vec<String> = if kind == "manga" {
+        Vec::new()
+    } else {
+        vec!["Animation".into()]
+    };
     for g in list
         .as_array()
         .into_iter()
@@ -214,38 +258,46 @@ fn genres(kind: &str, list: &Value) -> Vec<Value> {
         .collect()
 }
 
+/// How Frog files an AniList media: a manga, a film, or a show. A media with
+/// no type is an anime, which is all AniList was read for before manga.
+pub fn kind_of(media: &Value) -> &'static str {
+    match (media["type"].as_str(), media["format"].as_str()) {
+        (Some("MANGA"), _) => "manga",
+        (_, Some("MOVIE")) => "movie",
+        _ => "tv",
+    }
+}
+
 /// A related or recommended work as a TMDB list item: the TMDB title when
-/// the anime lists say which, else the AniList title Frog can show.
+/// the anime lists say which, else the AniList title Frog can show. A manga
+/// is always AniList's.
 async fn as_item(state: &AppState, media: &Value) -> AppResult<Option<Value>> {
-    if media["type"].as_str() != Some("ANIME") {
+    if !matches!(media["type"].as_str(), Some("ANIME" | "MANGA")) {
         return Ok(None);
     }
     let (Some(id), Some(name)) = (media["id"].as_i64(), name_of(media)) else {
         return Ok(None);
     };
-    let mapped: Option<(String, i64)> = sqlx::query_as(
-        "SELECT tmdb_kind, tmdb_id FROM anime_map
-          WHERE anilist_id = ? AND tmdb_kind IN ('movie', 'tv') AND tmdb_id IS NOT NULL",
-    )
-    .bind(id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let mapped: Option<(String, i64)> = if kind_of(media) == "manga" {
+        None
+    } else {
+        sqlx::query_as(
+            "SELECT tmdb_kind, tmdb_id FROM anime_map
+              WHERE anilist_id = ? AND tmdb_kind IN ('movie', 'tv') AND tmdb_id IS NOT NULL",
+        )
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+    };
     let (kind, item_id, source) = match mapped {
         Some((kind, tmdb_id)) => (kind, tmdb_id, "tmdb"),
-        None => (
-            if media["format"].as_str() == Some("MOVIE") {
-                "movie".to_string()
-            } else {
-                "tv".to_string()
-            },
-            id,
-            "anilist",
-        ),
+        None => (kind_of(media).to_string(), id, "anilist"),
     };
     let date = date_of(&media["startDate"])
         .or_else(|| media["startDate"]["year"].as_i64().map(|y| format!("{y}")));
     let mut item = json!({
         "id": item_id,
+        "media_type": kind,
         "source": source,
         "poster_path": image_path(media["coverImage"]["extraLarge"].as_str()),
         "backdrop_path": image_path(media["bannerImage"].as_str()),
@@ -262,27 +314,27 @@ async fn as_item(state: &AppState, media: &Value) -> AppResult<Option<Value>> {
     Ok(Some(item))
 }
 
-/// An anime by its AniList id as a list item: the TMDB title when the anime
-/// lists know it, else AniList's own. For an import that names it that way.
+/// An anime or manga by its AniList id as a list item: for an anime, the
+/// TMDB title when the anime lists know it, else AniList's own. For an
+/// import that names it that way.
 pub async fn search_item(state: &AppState, media_id: i64) -> AppResult<SearchItem> {
     let mut media = fetch(state, media_id).await?;
-    // The detail query does not ask for the type; it only reads anime.
-    media["type"] = json!("ANIME");
-    let kind = if media["format"].as_str() == Some("MOVIE") {
-        "movie"
-    } else {
-        "tv"
-    };
+    // An answer kept from before the query asked for the type is an anime.
+    if media["type"].is_null() {
+        media["type"] = json!("ANIME");
+    }
+    let kind = kind_of(&media);
     as_item(state, &media)
         .await?
         .and_then(|v| SearchItem::from_value(&v, Some(kind)))
-        .ok_or_else(|| AppError::NotFound("AniList has no such anime".into()))
+        .ok_or_else(|| AppError::NotFound("AniList has no such title".into()))
 }
 
-/// One anime from AniList, cached like TMDB's answers: half a day while it
-/// is airing or yet to air, a week once it has finished.
+/// One anime or manga from AniList, cached like TMDB's answers: half a day
+/// while it is airing or yet to air, a week once it has finished.
 pub async fn fetch(state: &AppState, media_id: i64) -> AppResult<Value> {
-    let key = format!("anilist:media:1:{media_id}");
+    // 2: the answer names its type and its links' colours and languages.
+    let key = format!("anilist:media:2:{media_id}");
     let cached: Option<(String,)> =
         sqlx::query_as("SELECT body FROM tmdb_cache WHERE cache_key = ? AND expires_at > ?")
             .bind(&key)
@@ -300,10 +352,16 @@ pub async fn fetch(state: &AppState, media_id: i64) -> AppResult<Value> {
         .await?;
     let mut media = data["Media"].clone();
     if media["id"].as_i64() != Some(media_id) {
-        return Err(AppError::NotFound("AniList has no such anime".into()));
+        return Err(AppError::NotFound("AniList has no such title".into()));
     }
     let mut schedule: Vec<Value> = Vec::new();
-    for page in 1..=MAX_SCHEDULE_PAGES {
+    // A manga has chapters, not an airing schedule.
+    let pages = if kind_of(&media) == "manga" {
+        0
+    } else {
+        MAX_SCHEDULE_PAGES
+    };
+    for page in 1..=pages {
         let data = api
             .graphql("", SCHEDULE_QUERY, json!({ "id": media_id, "page": page }))
             .await?;
@@ -435,8 +493,9 @@ pub fn episodes(media: &Value) -> Vec<EpisodeInfo> {
         .collect()
 }
 
-/// The anime in the shape of a TMDB detail answer, with `kind` the way Frog
-/// files it (a film, or a show of one season).
+/// The anime or manga in the shape of a TMDB detail answer, with `kind` the
+/// way Frog files it: a film, a show of one season, or a manga, whose
+/// chapters and volumes stand where a show's episodes and seasons do.
 pub async fn as_tmdb(state: &AppState, kind: &str, media: &Value) -> AppResult<Value> {
     let media_id = media["id"].as_i64().unwrap_or_default();
     let name = name_of(media).unwrap_or_else(|| "Untitled".into());
@@ -486,7 +545,8 @@ pub async fn as_tmdb(state: &AppState, kind: &str, media: &Value) -> AppResult<V
         let role = edge["role"].as_str().unwrap_or("");
         let picture = image_path(edge["node"]["image"]["large"].as_str());
         let base = role.split(" (").next().unwrap_or(role).trim();
-        if base == "Original Creator" || base == "Original Story" {
+        let author = kind == "manga" && matches!(base, "Story & Art" | "Story" | "Art");
+        if author || base == "Original Creator" || base == "Original Story" {
             created_by.push(json!({ "id": -id, "name": person, "profile_path": picture }));
             continue;
         }
@@ -517,22 +577,7 @@ pub async fn as_tmdb(state: &AppState, kind: &str, media: &Value) -> AppResult<V
         _ => Vec::new(),
     };
 
-    // Where it streams, linked straight to the page AniList knows. AniList
-    // does not say in which countries, so they are listed for every one.
-    let streaming: Vec<Value> = media["externalLinks"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|l| l["type"].as_str() == Some("STREAMING"))
-        .filter_map(|l| {
-            Some(json!({
-                "provider_id": -l["id"].as_i64()?,
-                "provider_name": l["site"].as_str()?,
-                "logo_path": image_path(l["icon"].as_str()),
-                "url": l["url"].as_str()?,
-            }))
-        })
-        .collect();
+    let streaming = where_to(&media["externalLinks"]);
 
     let mut recommendations = Vec::new();
     for node in media["recommendations"]["nodes"]
@@ -579,6 +624,13 @@ pub async fn as_tmdb(state: &AppState, kind: &str, media: &Value) -> AppResult<V
         raw["original_title"] = json!(original);
         raw["release_date"] = json!(start);
         raw["runtime"] = json!(duration);
+    } else if kind == "manga" {
+        raw["name"] = json!(name);
+        raw["first_air_date"] = json!(start);
+        raw["last_air_date"] = json!(end);
+        raw["number_of_episodes"] = json!(media["chapters"].as_i64().filter(|n| *n > 0));
+        raw["number_of_seasons"] = json!(media["volumes"].as_i64().filter(|n| *n > 0));
+        raw["seasons"] = json!([]);
     } else {
         raw["name"] = json!(name);
         raw["first_air_date"] = json!(start);
@@ -651,12 +703,102 @@ async fn work(state: &AppState, media: &Value) -> AppResult<Option<SearchItem>> 
     let Some(item) = as_item(state, media).await? else {
         return Ok(None);
     };
-    let kind = if item.get("title").is_some() {
-        "movie"
-    } else {
-        "tv"
+    Ok(SearchItem::from_value(&item, None))
+}
+
+/// Manga by name, best match first, as list items. AniList is the only
+/// place Frog finds manga; adult titles stay out, as TMDB's do, and so do
+/// light novels, which AniList files with manga. AniList's own search also
+/// answers by synonym and description, so what it gives is ranked here
+/// (`rank_manga`) and only what a name of it answers is kept.
+pub async fn search_manga(state: &AppState, term: &str) -> AppResult<Vec<SearchItem>> {
+    let query = "query ($search: String) {
+  Page(perPage: 30) {
+    media(search: $search, type: MANGA, format_in: [MANGA, ONE_SHOT], isAdult: false,
+          sort: [SEARCH_MATCH, POPULARITY_DESC]) {
+      id type format title { english romaji native } synonyms
+      coverImage { extraLarge } bannerImage startDate { year month day }
+      averageScore popularity
+    }
+  }
+}";
+    // 2: novels left out, and every name read for ranking.
+    let key = format!("anilist:manga-search:2:{}", term.trim().to_lowercase());
+    let data = cached(state, &key, query, json!({ "search": term.trim() })).await?;
+    let found: Vec<Value> = data["Page"]["media"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for media in rank_manga(found, &crate::text::words(term)) {
+        if let Some(item) = work(state, &media).await? {
+            out.push(item);
+        }
+    }
+    Ok(out)
+}
+
+/// A manga by its MyAnimeList id, as AniList knows it, for an import from
+/// MyAnimeList's manga list.
+pub async fn manga_by_mal(state: &AppState, mal_id: i64) -> AppResult<SearchItem> {
+    let query = format!("query ($id: Int) {{ Media(idMal: $id, type: MANGA) {{ {WORK} }} }}");
+    let data = cached(
+        state,
+        &format!("anilist:manga-mal:1:{mal_id}"),
+        &query,
+        json!({ "id": mal_id }),
+    )
+    .await?;
+    work(state, &data["Media"])
+        .await?
+        .ok_or_else(|| AppError::NotFound("AniList has no such manga".into()))
+}
+
+/// AniList's answers to a manga search, closest first, and only those a name
+/// of theirs answers. Its English, romaji and native titles come first; a
+/// manga found by a synonym alone comes after all of them. Within the same
+/// closeness, AniList's own order (best match, then most popular) stands. A
+/// synonym only counts when it is exactly what was typed.
+pub fn rank_manga(found: Vec<Value>, typed: &[String]) -> Vec<Value> {
+    use crate::text::{closeness, Closeness};
+    if typed.is_empty() {
+        return Vec::new();
+    }
+    let best = |names: Vec<&str>| {
+        names
+            .into_iter()
+            .map(|n| closeness(n, typed))
+            .filter(|c| *c != Closeness::Loose)
+            .min()
     };
-    Ok(SearchItem::from_value(&item, Some(kind)))
+    let mut ranked: Vec<(u8, usize, Value)> = found
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, media)| {
+            let titles: Vec<&str> = ["english", "romaji", "native"]
+                .iter()
+                .filter_map(|k| media["title"][*k].as_str())
+                .collect();
+            let synonyms: Vec<&str> = media["synonyms"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect();
+            // A synonym is often a loose translation: it counts only as
+            // exactly what was typed.
+            let rank = match (best(titles), best(synonyms)) {
+                (Some(Closeness::Exact), _) => 0,
+                (Some(Closeness::Starts), _) => 1,
+                (Some(_), _) => 2,
+                (None, Some(Closeness::Exact)) => 3,
+                _ => return None,
+            };
+            Some((rank, i, media))
+        })
+        .collect();
+    ranked.sort_by_key(|(rank, i, _)| (*rank, *i));
+    ranked.into_iter().map(|(_, _, media)| media).collect()
 }
 
 /// One credit on a person page: the work, cast or crew, and the part.
@@ -676,13 +818,14 @@ pub async fn person(state: &AppState, staff_id: i64) -> AppResult<(Value, Vec<Cr
           homeTown primaryOccupations
           characterMedia(sort: START_DATE_DESC, perPage: 50) {{
             edges {{ characters {{ name {{ full }} }} node {{ {WORK} }} }} }}
-          staffMedia(sort: START_DATE_DESC, perPage: 50, type: ANIME) {{
+          staffMedia(sort: START_DATE_DESC, perPage: 50) {{
             edges {{ staffRole node {{ {WORK} }} }} }}
         }} }}"
     );
     let data = cached(
         state,
-        &format!("anilist:staff:1:{staff_id}"),
+        // 2: their manga too, not only their anime.
+        &format!("anilist:staff:2:{staff_id}"),
         &query,
         json!({ "id": staff_id }),
     )
@@ -858,6 +1001,64 @@ mod tests {
         assert!(episodes(&split).iter().all(|e| e.name.is_none()));
         // Not out yet and nothing known: no episodes at all.
         assert!(episodes(&json!({ "status": "NOT_YET_RELEASED", "episodes": null })).is_empty());
+    }
+
+    #[test]
+    fn manga_search_keeps_what_a_name_answers_closest_first() {
+        let m = |id: i64, english: Option<&str>, romaji: &str, synonyms: &[&str]| {
+            json!({ "id": id, "title": { "english": english, "romaji": romaji },
+                    "synonyms": synonyms })
+        };
+        let found = vec![
+            m(1, Some("Tough Love at the Office"), "Shanai Jijou", &[]),
+            m(2, None, "Tong Lei", &["Monster"]),
+            m(
+                3,
+                Some("Monster Musume"),
+                "Monster Musume no Iru Nichijou",
+                &[],
+            ),
+            m(4, Some("Monster"), "Monster", &[]),
+            m(
+                5,
+                Some("A Business Proposal"),
+                "Sanaegeul",
+                &["The Office Proposal"],
+            ),
+        ];
+        let ids = |list: Vec<Value>| {
+            list.iter()
+                .map(|v| v["id"].as_i64().unwrap())
+                .collect::<Vec<_>>()
+        };
+        let typed = crate::text::words("monster");
+        assert_eq!(ids(rank_manga(found.clone(), &typed)), vec![4, 3, 2]);
+        // A name searched for a film finds no manga that does not carry it.
+        let typed = crate::text::words("interstellar");
+        assert!(rank_manga(found.clone(), &typed).is_empty());
+        // A synonym that only starts with it is a loose translation.
+        let typed = crate::text::words("the office");
+        assert_eq!(ids(rank_manga(found, &typed)), vec![1]);
+    }
+
+    #[test]
+    fn a_service_listed_in_many_languages_is_one_link() {
+        let links = json!([
+            { "id": 1, "site": "MANGA Plus", "type": "STREAMING", "language": "Spanish",
+              "url": "https://mangaplus.example/es", "icon": null, "color": "#E40C1D" },
+            { "id": 2, "site": "MANGA Plus", "type": "STREAMING", "language": "English",
+              "url": "https://mangaplus.example/en", "icon": null, "color": "#E40C1D" },
+            { "id": 3, "site": "MANGA Plus", "type": "STREAMING", "language": "Thai",
+              "url": "https://mangaplus.example/th" },
+            { "id": 4, "site": "Twitter", "type": "SOCIAL", "url": "https://x.example" },
+            { "id": 5, "site": "Shonen Jump", "type": "STREAMING", "language": null,
+              "url": "https://sj.example" }
+        ]);
+        let kept = where_to(&links);
+        assert_eq!(kept.len(), 2, "{kept:?}");
+        assert_eq!(kept[0]["url"], json!("https://mangaplus.example/en"));
+        assert_eq!(kept[0]["color"], json!("#E40C1D"));
+        assert_eq!(kept[1]["provider_name"], json!("Shonen Jump"));
     }
 
     #[test]

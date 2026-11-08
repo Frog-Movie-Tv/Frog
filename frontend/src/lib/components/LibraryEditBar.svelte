@@ -6,7 +6,7 @@
 	import { toasts } from '#lib/toast.svelte';
 	import { whenWatched, type WhenAnswer } from '#lib/when.svelte';
 	import type { EntryRecord, SharedItem, Shelf, Status } from '#lib/types';
-	import { STATUS_LABEL, STATUSES } from '#lib/types';
+	import { STATUSES, statusLabel } from '#lib/types';
 
 	interface Props {
 		/** The titles ticked, among those on screen. */
@@ -55,11 +55,18 @@
 		}
 	}
 
-	/** Undo for an action that said what the titles held before it. */
-	function undoable(message: string, before: EntryRecord[]) {
+	/**
+	 * Undo for an action that said what the titles held before it. Marking
+	 * watched also takes back the watches and chapters it added.
+	 */
+	function undoable(
+		message: string,
+		before: EntryRecord[],
+		action: 'restore' | 'unmark' = 'restore'
+	) {
 		toasts.undoable(message, async () => {
 			try {
-				await api.bulk({ action: 'restore', entries: before });
+				await api.bulk({ action, entries: before });
 				await onchanged();
 			} catch (e) {
 				toasts.error(e);
@@ -75,17 +82,25 @@
 	/** Asked once, and the answer goes for all of them. */
 	function askWhen(): Promise<WhenAnswer | null> {
 		const shows = chosen.some((i) => i.kind === 'tv');
-		return whenWatched.ask(naming, shows ? 'Every aired episode' : 'Marked as watched', {
-			film: !shows
-		});
+		// Manga alone have no release dates to offer.
+		const reading = chosen.every((i) => i.kind === 'manga');
+		return whenWatched.ask(
+			naming,
+			reading ? 'Every chapter' : shows ? 'Every aired episode' : 'Marked as watched',
+			{ film: !shows && !reading, reading }
+		);
 	}
 
 	async function markWatched() {
 		const answer = await askWhen();
 		if (!answer) return;
 		await act(async () => {
-			const { marked, skipped } = await api.bulk({ action: 'watched', title_ids: ids, ...answer });
-			toasts.push(saidOfMarking(marked, skipped));
+			const { marked, skipped, before } = await api.bulk({
+				action: 'watched',
+				title_ids: ids,
+				...answer
+			});
+			undoable(saidOfMarking(marked, skipped), before, 'unmark');
 		});
 	}
 
@@ -95,19 +110,19 @@
 			const answer = await askWhen();
 			if (!answer) return;
 			await act(async () => {
-				const { marked, skipped } = await api.bulk({
+				const { marked, skipped, before } = await api.bulk({
 					action: 'status',
 					status,
 					title_ids: ids,
 					...answer
 				});
-				toasts.push(saidOfMarking(marked, skipped));
+				undoable(saidOfMarking(marked, skipped), before, 'unmark');
 			});
 			return;
 		}
 		await act(async () => {
 			const { before } = await api.bulk({ action: 'status', status, title_ids: ids });
-			undoable(`Moved ${naming} to ${STATUS_LABEL[status]}`, before);
+			undoable(`Moved ${naming} to ${statusLabel(status)}`, before);
 		});
 	}
 
@@ -192,7 +207,7 @@
 					{#each STATUSES as s (s)}
 						<button role="menuitem" data-status={s} onclick={() => setStatus(s)}>
 							<i class="sdot" aria-hidden="true"></i>
-							{STATUS_LABEL[s]}
+							{statusLabel(s)}
 						</button>
 					{/each}
 				</div>
@@ -406,15 +421,17 @@
 			border-width: 1px 0 0;
 		}
 
-		/* The outer two stay on screen. */
-		.has-menu:nth-child(2) .menu {
-			left: 0;
-			transform: none;
+		/* A menu opens above the whole bar, the width of the screen, so it
+		   never covers the bar's own row with Done in it. */
+		.has-menu {
+			position: static;
 		}
 
-		.has-menu:nth-child(4) .menu {
-			left: auto;
-			right: 0;
+		.menu {
+			left: 12px;
+			right: 12px;
+			bottom: calc(100% + 8px);
+			max-width: none;
 			transform: none;
 		}
 	}

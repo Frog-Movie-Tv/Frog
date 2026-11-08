@@ -12,6 +12,7 @@
 	import SeasonList from '#lib/components/SeasonList.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import TrackControls from '#lib/components/TrackControls.svelte';
+	import ChapterCount from '#lib/components/ChapterCount.svelte';
 	import { failure, idParam, type Failure } from '#lib/failure';
 	import { localDay } from '#lib/day';
 	import Avatar from '#lib/components/Avatar.svelte';
@@ -23,7 +24,7 @@
 	import { uniqueBy } from '#lib/unique';
 	import { whenWatched } from '#lib/when.svelte';
 	import type { LibraryItem, TitleDetail, TitleScore, TitleScores } from '#lib/types';
-	import { STATUS_LABEL } from '#lib/types';
+	import { statusLabel } from '#lib/types';
 
 	let detail = $state<TitleDetail | null>(null);
 	let loading = $state(true);
@@ -178,19 +179,36 @@
 		}
 		if (item.kind === 'tv' && item.episode_count) bits.push(`${item.episode_count} episodes`);
 		if (item.tmdb_status && item.kind === 'tv') bits.push(item.tmdb_status);
-		if (detail?.anilist_only) bits.push('From AniList');
+		if (item.kind === 'manga') {
+			if (item.season_count) {
+				bits.push(`${item.season_count} volume${item.season_count === 1 ? '' : 's'}`);
+			}
+			if (item.episode_count) bits.push(`${item.episode_count} chapters`);
+			const state = item.tmdb_status ? PUBLISHING[item.tmdb_status] : null;
+			if (state) bits.push(state);
+		} else if (detail?.anilist_only) bits.push('From AniList');
 		return [...new Set(bits)];
 	});
+
+	/** A manga's state, in a reader's words rather than TMDB's for a show. */
+	const PUBLISHING: Record<string, string> = {
+		Ended: 'Finished',
+		'Returning Series': 'Publishing',
+		Planned: 'Not yet published',
+		Canceled: 'Cancelled'
+	};
 
 	/** One card per person: a writer-director reads as one name, not two. */
 	const crew = $derived.by(() => {
 		const people: { id: number; name: string; jobs: string[] }[] = [];
+		// Whoever made a manga wrote it.
+		const job = (j: string) => (item?.kind === 'manga' && j === 'Creator' ? 'Author' : j);
 		for (const c of detail?.crew ?? []) {
 			const known = people.find((p) => p.id === c.id);
 			if (known) {
-				if (!known.jobs.includes(c.job)) known.jobs.push(c.job);
+				if (!known.jobs.includes(job(c.job))) known.jobs.push(job(c.job));
 			} else {
-				people.push({ id: c.id, name: c.name, jobs: [c.job] });
+				people.push({ id: c.id, name: c.name, jobs: [job(c.job)] });
 			}
 		}
 		return people;
@@ -203,11 +221,70 @@
 
 	const playing = $derived(trailers.find((t) => t.key === trailerOpen) ?? null);
 
+	/**
+	 * The trailer playing without sound behind the hero, when Settings asks
+	 * for it: a moment after the page has drawn, never on data saver or with
+	 * motion reduced, and not while the trailer itself is open. It starts
+	 * under the title's picture, which lifts once it has played a moment, so
+	 * a title with no picture has nothing to start it under and plays none.
+	 */
+	let ambient = $state<string | null>(null);
+	let ambientFrame: HTMLIFrameElement | undefined = $state();
+	/** The player says it is playing: until then nothing of it shows. */
+	let ambientPlaying = $state(false);
+	/** Trailers open on studio logos and credits; this is where the film starts. */
+	const AMBIENT_FROM = 12;
+	/**
+	 * YouTube draws its own controls over a player that has just started, for
+	 * a moment: the trailer shows only once it has played this long.
+	 */
+	const AMBIENT_SETTLE = 3000;
+	let settling: ReturnType<typeof setTimeout> | undefined;
+
+	/** Tell the trailer behind the page to do something, as YouTube's script would. */
+	function command(func: string, args: unknown[] = []) {
+		ambientFrame?.contentWindow?.postMessage(
+			JSON.stringify({ event: 'command', func, args, id: 1 }),
+			'https://www.youtube-nocookie.com'
+		);
+	}
+
+	/** The trailer behind the page changed state: -1 to 5, YouTube's numbers. */
+	function ambientState(state: number) {
+		clearTimeout(settling);
+		if (state === 1) {
+			// Playing: shown once YouTube has put its controls away.
+			settling = setTimeout(() => (ambientPlaying = true), AMBIENT_SETTLE);
+			return;
+		}
+		// Anything else (buffering, paused, ended) and it goes, so nothing of
+		// the player itself is ever seen.
+		ambientPlaying = false;
+		if (state === 0) {
+			// At the end: round again from past the credits.
+			command('seekTo', [AMBIENT_FROM, true]);
+			command('playVideo');
+		}
+	}
+	$effect(() => {
+		ambient = null;
+		ambientPlaying = false;
+		clearTimeout(settling);
+		const key = trailers[0]?.key;
+		if (!key || !settings.current.trailerAutoplay || settings.current.dataSaver) return;
+		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+		const timer = setTimeout(() => (ambient = key), 1500);
+		return () => clearTimeout(timer);
+	});
+
 	const providers = $derived(detail?.providers);
 	const providerGroups = $derived(
 		providers
 			? [
-					{ label: 'Stream', list: uniqueBy(providers.flatrate, (p) => p.id) },
+					{
+						label: item?.kind === 'manga' ? 'Read' : 'Stream',
+						list: uniqueBy(providers.flatrate, (p) => p.id)
+					},
 					{ label: 'Rent', list: uniqueBy(providers.rent, (p) => p.id) },
 					{ label: 'Buy', list: uniqueBy(providers.buy, (p) => p.id) }
 				].filter((g) => g.list.length)
@@ -266,22 +343,37 @@
 			} catch {
 				return;
 			}
-			if (data?.event === 'onError' && trailerOpen) blocked = trailerOpen;
+			const behind = !!ambientFrame && e.source === ambientFrame.contentWindow;
+			// The player's state, said either way it reports it.
+			const info = data?.info as { playerState?: number } | number | undefined;
+			const state = typeof info === 'number' ? info : info?.playerState;
+			if (behind && data?.event === 'onStateChange' && typeof state === 'number') {
+				ambientState(state);
+			}
+			if (data?.event !== 'onError') return;
+			// The trailer behind the page goes quietly; the one opened says so.
+			if (behind) ambient = null;
+			else if (trailerOpen) blocked = trailerOpen;
 		};
 		window.addEventListener('message', onMessage);
 		return () => window.removeEventListener('message', onMessage);
 	});
 
-	/** Ask the player to report its errors, as YouTube's own script would. */
-	function listen() {
-		const target = frame?.contentWindow;
+	/**
+	 * Ask the player to report its errors, as YouTube's own script would, and
+	 * for the trailer behind the page, when it starts playing.
+	 */
+	function listen(player: HTMLIFrameElement | undefined = frame) {
+		const target = player?.contentWindow;
 		if (!target) return;
 		const origin = 'https://www.youtube-nocookie.com';
 		target.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), origin);
-		target.postMessage(
-			JSON.stringify({ event: 'command', func: 'addEventListener', args: ['onError'], id: 1 }),
-			origin
-		);
+		for (const name of player === ambientFrame ? ['onError', 'onStateChange'] : ['onError']) {
+			target.postMessage(
+				JSON.stringify({ event: 'command', func: 'addEventListener', args: [name], id: 1 }),
+				origin
+			);
+		}
 	}
 
 	function play(key: string) {
@@ -366,7 +458,28 @@
 	>
 		<header class="hero">
 			{#if item.backdrop_path}
-				<img class="backdrop" src={img(item.backdrop_path, 'w1280')} alt="" fetchpriority="high" />
+				<img
+					class="backdrop"
+					class:under={ambientPlaying}
+					src={img(item.backdrop_path, 'w1280')}
+					alt=""
+					fetchpriority="high"
+				/>
+			{/if}
+			{#if ambient && !trailerOpen && item.backdrop_path}
+				<div class="ambient" aria-hidden="true">
+					<!-- YouTube plays most trailers only for a page that says where it
+					     is, as the trailer player below does. -->
+					<iframe
+						bind:this={ambientFrame}
+						onload={() => listen(ambientFrame)}
+						src="https://www.youtube-nocookie.com/embed/{ambient}?autoplay=1&mute=1&controls=0&playsinline=1&rel=0&disablekb=1&iv_load_policy=3&fs=0&start={AMBIENT_FROM}&enablejsapi=1"
+						title="Trailer"
+						tabindex="-1"
+						referrerpolicy="strict-origin-when-cross-origin"
+						allow="autoplay; encrypted-media"
+					></iframe>
+				</div>
 			{/if}
 			<div class="veil" aria-hidden="true"></div>
 
@@ -426,7 +539,7 @@
 							</button>
 						{/if}
 						<AddToShelf titleId={item.id} name={item.name} />
-						{#if item.entry?.status === 'completed'}
+						{#if item.entry?.status === 'completed' && item.kind !== 'manga'}
 							<button
 								class="btn icon"
 								title="Watched it again"
@@ -438,7 +551,9 @@
 						{/if}
 					</div>
 
-					{#if item.total_episodes > 0 && item.entry}
+					{#if item.kind === 'manga' && item.entry}
+						<div class="reading"><ChapterCount {item} onchange={updateItem} /></div>
+					{:else if item.total_episodes > 0 && item.entry}
 						<a class="progress-line hit" href="#seasons">
 							<span class="bar">
 								<i style:width="{(item.watched_episodes / item.total_episodes) * 100}%"></i>
@@ -523,7 +638,7 @@
 												<strong>{o.display_name ?? o.username}</strong>
 												<span class="what">
 													<i class="dot-status" style:background="var(--status-{o.status})"></i>
-													{STATUS_LABEL[o.status]}
+													{statusLabel(o.status)}
 													{#if o.rating !== null}
 														· <Icon name="star" size={11} filled />
 														<Score value={o.rating} />
@@ -543,7 +658,7 @@
 					{#if hasProviders && providers}
 						<section class="block">
 							<div class="section-head">
-								<h2>Where to watch</h2>
+								<h2>{item.kind === 'manga' ? 'Where to read' : 'Where to watch'}</h2>
 								{#if !detail.anilist_only}<span class="faint">{detail.provider_region}</span>{/if}
 							</div>
 							<div class="providers">
@@ -558,6 +673,9 @@
 													{@const href = p.url ?? providerLink(p.name, item.name)}
 													<a
 														class="plogo"
+														class:mark={!!p.color && !!p.logo_path}
+														class:named={!p.logo_path}
+														style:--brand={p.color}
 														{href}
 														target="_blank"
 														rel="noreferrer noopener"
@@ -566,7 +684,7 @@
 														{#if p.logo_path}
 															<img src={img(p.logo_path, 'w92')} alt={p.name} loading="lazy" />
 														{:else}
-															{p.name}
+															<span>{p.name}</span>
 														{/if}
 													</a>
 												{/each}
@@ -664,7 +782,7 @@
 								{#key playing.key}
 									<iframe
 										bind:this={frame}
-										onload={listen}
+										onload={() => listen()}
 										src="https://www.youtube-nocookie.com/embed/{playing.key}?autoplay=1&enablejsapi=1"
 										title={playing.name}
 										referrerpolicy="strict-origin-when-cross-origin"
@@ -804,6 +922,41 @@
 		   the page begins. */
 		mask-image: linear-gradient(to top, transparent, #000 30%);
 		animation: backdrop-in 1100ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+	}
+
+	/* The trailer behind the hero: cut to cover like the picture, faded the
+	   same way at the bottom, out of reach of the pointer. */
+	.ambient {
+		position: absolute;
+		inset: 0;
+		overflow: hidden;
+		pointer-events: none;
+		mask-image: linear-gradient(to top, transparent, #000 30%);
+		/* Under the picture, never hidden itself: a browser pauses a muted
+		   video nobody can see, and YouTube flashes its button on resuming. */
+		z-index: -3;
+	}
+
+	/* The picture lifts off once the trailer has played a moment, so the
+	   player's own buttons and its loading screen are never seen. */
+	.backdrop {
+		transition: opacity 1200ms ease;
+	}
+
+	.backdrop.under {
+		opacity: 0;
+	}
+
+	/* Larger than the hero on every side: YouTube's title along the top and
+	   its mark in the corner fall outside it. */
+	.ambient iframe {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		width: max(100%, 177.78vh);
+		height: max(100%, 56.25vw);
+		border: 0;
+		transform: translate(-50%, -50%) scale(1.3);
 	}
 
 	@keyframes backdrop-in {
@@ -990,6 +1143,10 @@
 		min-width: 140px;
 	}
 
+	.reading {
+		margin-top: 6px;
+	}
+
 	.progress-line {
 		display: flex;
 		flex-wrap: wrap;
@@ -1121,6 +1278,37 @@
 		border-radius: 11px;
 		object-fit: cover;
 		border: 1px solid var(--line);
+	}
+
+	/* A white mark (AniList's link icons) on the service's own colour. */
+	.plogo.mark {
+		background: var(--brand);
+	}
+
+	.plogo.mark img {
+		padding: 9px;
+		object-fit: contain;
+		border-color: transparent;
+	}
+
+	/* No logo anywhere: the name, in a tile as tall as the logos. */
+	.plogo.named {
+		align-items: center;
+		height: 44px;
+		max-width: 160px;
+		padding: 0 14px;
+		border: 1px solid var(--line);
+		background: var(--bg-elev);
+		color: var(--text);
+		font-size: 0.8rem;
+		font-weight: 650;
+		text-decoration: none;
+	}
+
+	.plogo.named span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.person {

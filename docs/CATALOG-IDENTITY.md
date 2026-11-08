@@ -1,15 +1,15 @@
 # A catalog Frog owns
 
-Every film and show is Frog's own title, with Frog's own id. Providers —
+Every film, show and manga is Frog's own title, with Frog's own id. Providers —
 TMDB, AniList, IMDb — are names the title is known by, kept beside it.
 `backend/src/catalog.rs` is the code; this is the reasoning.
 
 ## The model
 
 ```
-title                        one row per film or show Frog knows
+title                        one row per film, show or manga Frog knows
   id            INTEGER PK   Frog's id; never reused, never changes
-  kind          'movie'|'tv'
+  kind          'movie'|'tv'|'manga'
   name, dates, artwork …     the metadata Frog shows, from the primary provider
   merged_into   → title.id   set when the title turned out to be another one
 
@@ -30,8 +30,13 @@ title_external               who else knows a title, and as what
 - **One provider id names one title.** It is the table's key. `catalog::link`
   refuses to point an id somewhere else; it never moves one silently.
 - **One primary provider per title**, chosen by Frog: the one the title was
-  made from. Today that is TMDB for everything TMDB has and AniList for anime
-  TMDB lacks. A title with no provider at all is allowed by the schema and
+  made from. Today that is TMDB for everything TMDB has, and AniList for anime
+  TMDB lacks and for every manga, which only AniList has. A manga keeps its
+  chapters in `episode_count` and its volumes in `season_count`, and how far
+  in someone is as a count (`library_entry.progress`), like an AniList-only
+  show with no episode list (`store::is_counted`). The table took manga
+  through the same rebuild that dropped the old provider ids
+  (`db::rebuild_title`); the release before runs on it unchanged. A title with no provider at all is allowed by the schema and
   opens with what Frog kept; nothing creates one yet.
 - **TMDB ids are only unique per kind**, so they are written as TMDB's own
   path: `movie/550`, `tv/1399`.

@@ -1,5 +1,6 @@
-//! What other people here have been watching, for a row on Home and the
-//! Activity page behind it.
+//! What other people here have been watching and reading, for a row on Home
+//! and the Activity page behind it. A manga's chapters read (`chapter_read`)
+//! come in as its episodes do: one with no season, its number the chapter.
 //!
 //! This reads one account's diary for another, so what it may touch is narrow on
 //! purpose. Only accounts that are switched on and have their profile on
@@ -102,7 +103,8 @@ pub fn summarise(watches: &[Watch]) -> Vec<Summary> {
 fn summary(group: &[&Watch]) -> Summary {
     let newest = group[0];
     let episodes = group.iter().filter(|w| w.episode.is_some()).count();
-    let is_show = newest.kind == "tv";
+    // A manga is finished by its last chapter as a show is by its last episode.
+    let is_show = newest.kind != "movie";
     let did = if group.iter().all(|w| w.is_rewatch) {
         Did::Rewatched
     } else if is_show && newest.completed && group.iter().any(|w| w.last_episode) {
@@ -161,7 +163,7 @@ type WatchRow = (
 async fn recent_watches(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Watch>> {
     let now = Utc::now();
     let rows: Vec<WatchRow> = sqlx::query_as(
-        "SELECT w.title_id, t.name, t.kind, t.poster_path, w.watched_at, w.is_rewatch,
+        "SELECT w.title_id, t.name, t.kind, t.poster_path, w.watched_at AS at, w.is_rewatch,
                 e.season_number, e.episode_number,
                 COALESCE(e.id = (SELECT f.id FROM episode f
                                   WHERE f.title_id = w.title_id AND f.season_number > 0
@@ -172,8 +174,16 @@ async fn recent_watches(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Watch>
            JOIN title t ON t.id = w.title_id
            JOIN library_entry l ON l.title_id = w.title_id AND l.user_id = w.user_id
            LEFT JOIN episode e ON e.id = w.episode_id
-          WHERE w.user_id = ? AND w.undated = 0 AND w.watched_at >= ? AND w.watched_at <= ?
-          ORDER BY w.watched_at DESC",
+          WHERE w.user_id = ?1 AND w.undated = 0 AND w.watched_at >= ?2 AND w.watched_at <= ?3
+         UNION ALL
+         SELECT r.title_id, t.name, t.kind, t.poster_path, r.read_at AS at, 0,
+                NULL, r.chapter, COALESCE(r.chapter = t.episode_count, 0),
+                l.status = 'completed'
+           FROM chapter_read r
+           JOIN title t ON t.id = r.title_id
+           JOIN library_entry l ON l.title_id = r.title_id AND l.user_id = r.user_id
+          WHERE r.user_id = ?1 AND r.read_at >= ?2 AND r.read_at <= ?3
+          ORDER BY at DESC",
     )
     .bind(user_id)
     .bind((now - Duration::days(WINDOW_DAYS)).to_rfc3339())
@@ -265,10 +275,21 @@ pub async fn everything(
                JOIN title t ON t.id = w.title_id
                JOIN library_entry l ON l.title_id = w.title_id AND l.user_id = w.user_id
                LEFT JOIN episode e ON e.id = w.episode_id
-              WHERE w.user_id = ? AND w.undated = 0 AND w.watched_at < ?
+              WHERE w.user_id = ?1 AND w.undated = 0 AND w.watched_at < ?2
               GROUP BY day, w.title_id
+             UNION ALL
+             SELECT substr(r.read_at, 1, 10) AS day, MAX(r.read_at) AS latest,
+                    r.title_id, t.name, t.kind, t.poster_path,
+                    COUNT(*), 0, l.status = 'completed',
+                    MAX(COALESCE(r.chapter = t.episode_count, 0)),
+                    NULL, MIN(r.chapter)
+               FROM chapter_read r
+               JOIN title t ON t.id = r.title_id
+               JOIN library_entry l ON l.title_id = r.title_id AND l.user_id = r.user_id
+              WHERE r.user_id = ?1 AND r.read_at < ?2
+              GROUP BY day, r.title_id
               ORDER BY latest DESC
-              LIMIT ?",
+              LIMIT ?3",
         )
         .bind(person.id)
         .bind(before)
@@ -292,7 +313,7 @@ pub async fn everything(
         {
             let did = if rewatch {
                 Did::Rewatched
-            } else if kind == "tv" && completed && last {
+            } else if kind != "movie" && completed && last {
                 Did::Finished
             } else {
                 Did::Watched

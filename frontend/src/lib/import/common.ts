@@ -2,7 +2,7 @@
  * What every import reader shares: the row shape, reading CSV, and the small
  * conversions between a tracker's fields and Frog's.
  */
-import type { Status } from '#lib/types';
+import type { Kind, Status } from '#lib/types';
 import type { NetflixMeta } from './netflix';
 
 /**
@@ -20,7 +20,9 @@ export interface Incoming {
 	tmdb_id: number | null;
 	/** AniList's id, for an anime TMDB lacks (from a Frog backup). */
 	anilist_id?: number | null;
-	kind: 'movie' | 'tv' | null;
+	/** MyAnimeList's id, from its manga list. */
+	mal_id?: number | null;
+	kind: Kind | null;
 	rating: number | null;
 	status: Status | null;
 	watched_at: string | null;
@@ -29,6 +31,10 @@ export interface Incoming {
 	finished_at?: string | null;
 	/** How many times the tracker says it was watched again. */
 	rewatches?: number;
+	/** A film's watches after the first, each on its day (a Frog backup). */
+	film_watches?: { watched_at: string; rewatch: boolean }[];
+	/** A manga's chapters, each on the day it was read (a Frog backup). */
+	reads?: { chapter: number; read_at: string }[];
 	favourite: boolean;
 	rewatch: boolean;
 	/** Which file inside the export this came from, shown in the preview. */

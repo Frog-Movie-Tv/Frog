@@ -34,6 +34,7 @@ import type {
 	SearchItem,
 	SeasonDetail,
 	FullStats,
+	MangaStats,
 	EntryRecord,
 	Shelf,
 	ShelfRules,
@@ -150,9 +151,18 @@ export interface LibraryQuery {
 type Picked = { title_ids: number[] };
 
 /** What Library's edit mode can do to the titles it has ticked. */
+/** One watch of an episode as unticking it cleared it. */
+export interface ClearedWatch {
+	watched_at: string;
+	undated: boolean;
+	is_rewatch: boolean;
+	source: string;
+}
+
 export type BulkAction =
 	| ({ action: 'remove' } & Picked)
 	| { action: 'restore'; entries: EntryRecord[] }
+	| { action: 'unmark'; entries: EntryRecord[] }
 	| ({ action: 'watched' } & Picked & WhenAnswer)
 	| ({ action: 'status'; status: 'completed' } & Picked & WhenAnswer)
 	| ({ action: 'status'; status: Exclude<Status, 'completed'> } & Picked)
@@ -163,6 +173,8 @@ interface Marked {
 	marked: number;
 	/** Nothing out yet to have watched. */
 	skipped: number;
+	/** The titles as they were, for `unmark`. */
+	before: EntryRecord[];
 }
 
 /** What each action answers. `before` is what undo sends back. */
@@ -172,7 +184,7 @@ type BulkAnswer<A extends BulkAction['action'], Finishing extends boolean> = A e
 		? Finishing extends true
 			? Marked
 			: { before: EntryRecord[] }
-		: A extends 'restore'
+		: A extends 'restore' | 'unmark'
 			? { restored: number }
 			: A extends 'shelf'
 				? { added: number }
@@ -362,6 +374,7 @@ export const api = {
 	pushTest: () =>
 		send<{ sent: number; gone: number; failed: number }>('POST', '/api/push/test', {}),
 	fullStats: (year?: number) => get<FullStats>(`/api/stats${qs({ year })}`),
+	mangaStats: (year?: number) => get<MangaStats>(`/api/stats/manga${qs({ year })}`),
 
 	/** A title as a provider names it (`tv/1399`, `anilist/21`): opens it, and the answer carries Frog's id. */
 	titleAt: (kind: Kind | 'anilist', id: number) => get<TitleDetail>(`/api/titles/${kind}/${id}`),
@@ -379,6 +392,8 @@ export const api = {
 			favourite?: boolean;
 			notes?: string | null;
 			notify?: boolean;
+			/** Chapters read, for a manga. */
+			progress?: number;
 		}
 	) => send<{ item: LibraryItem }>('PUT', `/api/t/${titleId}/library`, patch),
 
@@ -388,19 +403,28 @@ export const api = {
 	rewatch: (titleId: number, body: { watched_at?: string; undated?: boolean }) =>
 		send<{ history: TitleHistory | null }>('POST', `/api/t/${titleId}/rewatch`, body),
 
-	/** `at` puts back a watch exactly as it was, for undo. */
+	/**
+	 * `at` puts back a watch exactly as it was, for undo; `restore` puts back
+	 * every watch an untick cleared, which it answers with.
+	 */
 	setEpisodeWatched: (
 		titleId: number,
 		season: number,
 		episode: number,
 		watched: boolean,
-		at?: { watched_at: string | null; undated: boolean }
+		at?: { watched_at: string | null; undated: boolean },
+		restore?: ClearedWatch[]
 	) =>
-		send<{ item: LibraryItem }>('POST', `/api/t/${titleId}/episodes/${season}/${episode}/watch`, {
-			watched,
-			watched_at: at?.watched_at ?? undefined,
-			undated: at?.undated ?? false
-		}),
+		send<{ item: LibraryItem; cleared?: ClearedWatch[] }>(
+			'POST',
+			`/api/t/${titleId}/episodes/${season}/${episode}/watch`,
+			{
+				watched,
+				watched_at: at?.watched_at ?? undefined,
+				undated: at?.undated ?? false,
+				restore: restore ?? []
+			}
+		),
 
 	setSeasonWatched: (titleId: number, season: number, watched: boolean, when?: WhenAnswer) =>
 		send<{ item: LibraryItem }>('POST', `/api/t/${titleId}/episodes/${season}/watch`, {

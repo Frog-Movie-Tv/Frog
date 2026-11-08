@@ -7,8 +7,11 @@ import type { LibraryItem } from './types';
  * tested without a page.
  */
 
-/** Titles you have seen, or everything in the library including the watchlist. */
-export type DeckScope = 'seen' | 'all';
+/**
+ * Titles you finished, or everything in the library including the watchlist.
+ * A show still being watched is not finished: it is rated once it is done.
+ */
+export type DeckScope = 'finished' | 'all';
 
 /**
  * The titles still waiting for a rating. What you watched most recently comes
@@ -17,7 +20,8 @@ export type DeckScope = 'seen' | 'all';
 export function deckOf(items: LibraryItem[], scope: DeckScope): LibraryItem[] {
 	return items
 		.filter(
-			(i) => i.entry && i.entry.rating === null && (scope === 'all' || i.entry.status !== 'planned')
+			(i) =>
+				i.entry && i.entry.rating === null && (scope === 'all' || i.entry.status === 'completed')
 		)
 		.sort(
 			(a, b) =>

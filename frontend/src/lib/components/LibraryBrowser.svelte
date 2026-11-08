@@ -39,7 +39,7 @@
 	import { toasts } from '#lib/toast.svelte';
 	import { uniqueBy } from '#lib/unique';
 	import type { Kind, SharedItem, Status } from '#lib/types';
-	import { STATUS_LABEL, STATUSES } from '#lib/types';
+	import { KIND_LABEL, STATUSES, statusLabel } from '#lib/types';
 
 	interface Props {
 		/** Whose library, read only. Left out, it is your own. */
@@ -90,7 +90,7 @@
 
 	function kindFrom(params: Query): Kind | 'all' {
 		const k = params.get('kind');
-		return k === 'tv' || k === 'movie' ? k : 'all';
+		return k === 'tv' || k === 'movie' || k === 'manga' ? k : 'all';
 	}
 
 	function orderFrom(params: Query, s: Sort): Order {
@@ -120,9 +120,10 @@
 	);
 
 	const kindOptions = [
-		{ value: 'all', label: 'Films & shows' },
+		{ value: 'all', label: 'Everything' },
 		{ value: 'movie', label: 'Films' },
-		{ value: 'tv', label: 'Shows' }
+		{ value: 'tv', label: 'Shows' },
+		{ value: 'manga', label: 'Manga' }
 	];
 
 	const genreOptions = $derived([
@@ -418,7 +419,7 @@
 			{#each STATUSES as s (s)}
 				<button class="chip" data-status={s} class:on={status === s} onclick={() => (status = s)}>
 					<i class="sdot" aria-hidden="true"></i>
-					{STATUS_LABEL[s]}
+					{statusLabel(s, kind === 'manga' ? 'manga' : null)}
 					{#if counts[s]}<span class="n">{counts[s]}</span>{/if}
 				</button>
 			{/each}
@@ -511,7 +512,7 @@
 							onclick={() => (status = s)}
 						>
 							<i class="sdot" aria-hidden="true"></i>
-							{STATUS_LABEL[s]}
+							{statusLabel(s, kind === 'manga' ? 'manga' : null)}
 							{#if counts[s]}<span class="n">{counts[s]}</span>{/if}
 						</button>
 					{/each}
@@ -661,7 +662,7 @@
 						<strong>{item.name}</strong>
 						<span class="faint">
 							{year(item.release_date)}
-							{#if item.entry?.status}· {STATUS_LABEL[item.entry.status]}{/if}
+							{#if item.entry?.status}· {statusLabel(item.entry.status, item.kind)}{/if}
 						</span>
 					</div>
 				</a>
@@ -679,7 +680,7 @@
 						<span class="who">
 							<strong>{item.name}</strong>
 							<span class="faint">
-								{year(item.release_date)} · {item.kind === 'tv' ? 'Show' : 'Film'}
+								{year(item.release_date)} · {KIND_LABEL[item.kind]}
 								{#if item.genres.length}· {item.genres.slice(0, 2).join(', ')}{/if}
 							</span>
 						</span>
@@ -717,8 +718,8 @@
 							{#if editing}<td>{@render tick(item.id)}</td>{/if}
 							<td><a href={titleHref(item)} {...pickable(item.id)}>{item.name}</a></td>
 							<td class="num">{year(item.release_date)}</td>
-							<td>{item.kind === 'tv' ? 'Show' : 'Film'}</td>
-							<td>{item.entry ? STATUS_LABEL[item.entry.status] : '—'}</td>
+							<td>{KIND_LABEL[item.kind]}</td>
+							<td>{item.entry ? statusLabel(item.entry.status, item.kind) : '—'}</td>
 							<td class="num">
 								{item.total_episodes > 0 ? `${item.watched_episodes}/${item.total_episodes}` : '—'}
 							</td>

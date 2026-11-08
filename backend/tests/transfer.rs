@@ -849,13 +849,15 @@ async fn both_exports_keep_their_shape() {
                 "kind": "tv", "tmdb_id": 70523, "name": "Dark", "release_date": "2015-01-01",
                 "status": "watching", "rating": null, "favourite": false, "notes": null,
                 "added_at": null, "started_at": null, "finished_at": null, "rewatch_count": 0,
+                "progress": null,
                 "episodes": [
                     { "season": 1, "episode": 1, "rating": null, "notes": null, "watched": true,
                       "watched_at": null },
                     { "season": 1, "episode": 2, "rating": null, "notes": null, "watched": true,
                       "watched_at": null }
                 ],
-                "watches": []
+                "watches": [],
+                "reads": []
             },
             {
                 "id": heat,
@@ -863,8 +865,10 @@ async fn both_exports_keep_their_shape() {
                 "kind": "movie", "tmdb_id": 949, "name": "Heat, the film", "release_date": "1995-05-01",
                 "status": "completed", "rating": 85.0, "favourite": true, "notes": "Diner scene",
                 "added_at": null, "started_at": null, "finished_at": null, "rewatch_count": 0,
+                "progress": null,
                 "episodes": [],
-                "watches": [{ "watched_at": "2023-03-03T20:00:00Z", "rewatch": false, "source": "import" }]
+                "watches": [{ "watched_at": "2023-03-03T20:00:00Z", "rewatch": false, "source": "import" }],
+                "reads": []
             }
         ])
     );

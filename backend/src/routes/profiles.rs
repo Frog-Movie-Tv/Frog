@@ -57,7 +57,8 @@ fn cards(rows: Vec<CardRow>) -> Vec<Value> {
 }
 
 /// What someone is watching, each show with where they are in it: how many
-/// episodes of how many, and the one they are on.
+/// episodes of how many, and the one they are on. A manga they are reading
+/// says how many chapters.
 async fn watching_cards(
     pool: &sqlx::SqlitePool,
     user_id: i64,
@@ -75,6 +76,16 @@ async fn watching_cards(
                                        "episode": next.episode_number,
                                        "name": next.name });
             }
+        } else if kind == "manga" {
+            let read = store::counted_progress(pool, user_id, id)
+                .await?
+                .unwrap_or(0);
+            let (total,): (Option<i64>,) =
+                sqlx::query_as("SELECT episode_count FROM title WHERE id = ?")
+                    .bind(id)
+                    .fetch_one(pool)
+                    .await?;
+            card["progress"] = json!({ "watched": read, "total": total.unwrap_or(0) });
         }
         out.push(card);
     }
@@ -307,6 +318,15 @@ pub async fn get(
     .bind(user_id)
     .fetch_one(pool)
     .await?;
+    // Chapters read, of every manga in the library.
+    let (chapters,): (i64,) = sqlx::query_as(
+        "SELECT COALESCE(SUM(l.progress), 0) FROM library_entry l
+           JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = ? AND t.kind = 'manga'",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
     let (in_library, completed, favourite_count, mean_rating): LibraryRow = sqlx::query_as(
         "SELECT COUNT(*), COALESCE(SUM(status = 'completed'), 0), COALESCE(SUM(favourite), 0),
                 AVG(rating)
@@ -373,6 +393,7 @@ pub async fn get(
             "films": films,
             "episodes": episodes,
             "shows": shows,
+            "chapters": chapters,
             "minutes": minutes.round() as i64,
             "library": in_library,
             "completed": completed,

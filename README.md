@@ -60,11 +60,21 @@ their own. It costs nothing at all.
 <tr>
 <td>
 <img src="docs/screenshots/search-desktop-pond.png" alt="Search results for a name, with a tab for each kind of result and a row of filters">
-<p align="center"><b>Search everything</b><br><sub>Films, shows, people, characters and studios, with filters to browse by</sub></p>
+<p align="center"><b>Search everything</b><br><sub>Films, shows, manga, people, characters and studios, with filters to browse by</sub></p>
 </td>
 <td>
 <img src="docs/screenshots/calendar-desktop-pond.png" alt="The calendar of upcoming episodes">
 <p align="center"><b>What airs next</b><br><sub>The month ahead for every show you follow</sub></p>
+</td>
+</tr>
+<tr>
+<td>
+<img src="docs/screenshots/manga-desktop-pond.png" alt="A manga page with its chapters and volumes, the chapter you are on, and where to read it">
+<p align="center"><b>Manga too</b><br><sub>Count chapters as you read; your AniList manga come in by themselves</sub></p>
+</td>
+<td>
+<img src="docs/screenshots/shelves-desktop-pond.png" alt="Shelves, each shown by the posters on it">
+<p align="center"><b>Shelves</b><br><sub>Your library grouped your way, by hand or by rules</sub></p>
 </td>
 </tr>
 </table>

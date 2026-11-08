@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { KIND_LABEL, statusLabel } from '#lib/types';
 	import { img } from '#lib/api';
 	import Icon from '#lib/components/Icon.svelte';
 	import Select from '#lib/components/Select.svelte';
@@ -6,7 +7,7 @@
 	import { titleKey } from '#lib/titles';
 	import { uniqueBy } from '#lib/unique';
 	import type { SearchItem, Status } from '#lib/types';
-	import { STATUS_LABEL, STATUSES } from '#lib/types';
+	import { STATUSES } from '#lib/types';
 
 	interface Props {
 		row: ReviewRow;
@@ -46,7 +47,7 @@
 				<strong>{row.chosen?.name ?? row.incoming.title}</strong>
 				{#if row.chosen?.year}<span class="faint">{row.chosen.year}</span>{/if}
 				{#if row.chosen}
-					<span class="pill tiny">{row.chosen.kind === 'tv' ? 'Show' : 'Film'}</span>
+					<span class="pill tiny">{KIND_LABEL[row.chosen.kind]}</span>
 				{/if}
 			</div>
 		{/if}
@@ -99,7 +100,7 @@
 			value={row.incoming.status ?? 'completed'}
 			label="Status"
 			compact
-			options={STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
+			options={STATUSES.map((s) => ({ value: s, label: statusLabel(s) }))}
 			onchange={(v) => onstatus(row, v as Status)}
 		/>
 	</div>

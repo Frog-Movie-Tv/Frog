@@ -40,3 +40,13 @@ test('what got no card is counted', () => {
 	assert.equal(alsoLine(1), 'and 1 other title');
 	assert.equal(alsoLine(58), 'and 58 other titles');
 });
+
+test('a manga is read, by the chapter', () => {
+	const berserk = { id: 2, kind: 'manga', name: 'Berserk', poster_path: null };
+	assert.equal(activityLine(item({ title: berserk, episodes: 4 })), 'read 4 chapters of Berserk');
+	assert.equal(
+		activityLine(item({ title: berserk, episodes: 1, episode: 132 })),
+		'read chapter 132 of Berserk'
+	);
+	assert.equal(activityLine(item({ title: berserk, did: 'finished' })), 'finished Berserk');
+});

@@ -18,6 +18,9 @@
 				value: String(p.stats.episodes),
 				sub: plural(p.stats.shows, 'show')
 			},
+			...(p.stats.chapters
+				? [{ label: 'Chapters', value: p.stats.chapters.toLocaleString() }]
+				: []),
 			{
 				label: 'Library',
 				value: String(p.stats.library),
@@ -118,11 +121,14 @@
 										</span>
 									{:else if card.kind === 'movie'}
 										<span class="ep faint">Film</span>
+									{:else if card.kind === 'manga' && card.progress}
+										<span class="ep">Chapter {card.progress.watched + 1}</span>
 									{/if}
 									{#if card.progress && card.progress.total > 0}
 										<span class="bar"><i style:width="{done}%"></i></span>
 										<span class="faint count">
-											{card.progress.watched} of {card.progress.total} episodes
+											{card.progress.watched} of {card.progress.total}
+											{card.kind === 'manga' ? 'chapters' : 'episodes'}
 										</span>
 									{/if}
 								</span>

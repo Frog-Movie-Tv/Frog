@@ -457,13 +457,13 @@ pub async fn person(
     let mut credits: Vec<Value> = credits_by_title
         .into_iter()
         .map(|(mut credit, roles)| {
-            // "Self", "Self - Guest", "Himself": a talk show or an awards
-            // night rather than a part, which the page shows apart.
-            let appearance = !roles.is_empty()
-                && roles.iter().all(|r| {
-                    let r = r.to_ascii_lowercase();
-                    r.starts_with("self") || r.starts_with("himself") || r.starts_with("herself")
-                });
+            let genres: Vec<i64> = credit["item"]["genre_ids"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_i64)
+                .collect();
+            let appearance = is_appearance(credit["department"].as_str(), &roles, &genres);
             if let Some(obj) = credit.as_object_mut() {
                 let role = (!roles.is_empty()).then(|| roles.join(" / "));
                 obj.insert("role".into(), json!(role));
@@ -504,6 +504,31 @@ pub async fn person(
         "known_for_department": models::str_at(&raw, "known_for_department"),
         "credits": credits,
     })))
+}
+
+/// TMDB's genres for talk shows, news and reality television.
+const NOT_A_PART: [i64; 3] = [10767, 10763, 10764];
+/// TMDB's documentary genre.
+const DOCUMENTARY: i64 = 99;
+
+/// Whether a credit is someone appearing as themselves rather than playing a
+/// part or making the thing: "Self", "Himself", a talk show, a reality show,
+/// or being in a documentary without a character. The person page shows
+/// these apart, after the work, so a filmography leads with the work.
+fn is_appearance(department: Option<&str>, roles: &[String], genres: &[i64]) -> bool {
+    let as_themselves = !roles.is_empty()
+        && roles.iter().all(|r| {
+            let r = r.to_ascii_lowercase();
+            r.starts_with("self") || r.starts_with("himself") || r.starts_with("herself")
+        });
+    if as_themselves {
+        return true;
+    }
+    if department != Some("cast") {
+        return false;
+    }
+    genres.iter().any(|g| NOT_A_PART.contains(g))
+        || (genres.contains(&DOCUMENTARY) && roles.is_empty())
 }
 
 #[derive(Deserialize)]
@@ -599,4 +624,32 @@ pub async fn rate_season(
     Ok(Json(json!({
         "ratings": crate::release::rating_units(&state.pool, auth.user_id(), title_id).await?
     })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_appearance;
+
+    #[test]
+    fn talk_shows_and_playing_yourself_are_appearances_and_parts_are_not() {
+        let r = |s: &str| vec![s.to_string()];
+        assert!(is_appearance(Some("cast"), &r("Self - Guest"), &[35]));
+        assert!(
+            is_appearance(Some("cast"), &r("Guest"), &[10767]),
+            "a talk show"
+        );
+        assert!(
+            is_appearance(Some("cast"), &[], &[99]),
+            "a documentary, no part"
+        );
+        assert!(
+            !is_appearance(Some("cast"), &r("Narrator"), &[99]),
+            "a documentary's narrator"
+        );
+        assert!(!is_appearance(Some("cast"), &r("Walter White"), &[18]));
+        assert!(
+            !is_appearance(Some("crew"), &r("Producer"), &[10767]),
+            "making one is work"
+        );
+    }
 }

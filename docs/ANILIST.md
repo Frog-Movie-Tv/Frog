@@ -1,7 +1,8 @@
 # AniList
 
-How Frog reads each account's AniList list into its Frog library. AniList is
-only ever read: Frog has no write to it, and `Api::graphql` refuses one.
+How Frog reads each account's AniList lists, anime and manga, into its Frog
+library. AniList is only ever read: Frog has no write to it, and
+`Api::graphql` refuses one.
 For where it sits in the whole system, see [ARCHITECTURE.md](../ARCHITECTURE.md).
 
 ## The modules
@@ -11,13 +12,13 @@ back up, and only `sync` and `local` talk to AniList on a sync's behalf.
 
 | Module | Owns | Talks to |
 | --- | --- | --- |
-| `client.rs` | Sign-in (authorize URL, code exchange, viewer), the paced and retried GraphQL call, reading a list, `Remote` and `View` | AniList |
+| `client.rs` | Sign-in (authorize URL, code exchange, viewer), the paced and retried GraphQL call, reading the anime and manga lists, `Remote` and `View` | AniList |
 | `idmap.rs` | The two community id lists in `anime_map`, and `anilist_media` | GitHub raw files, SQLite |
 | `place.rs` | Where an entry belongs on TMDB and how sure that is: `Target`, `Placement`, `RESOLVER`, `CONFIDENT` | TMDB (through `state.tmdb`), AniList relations, SQLite caches |
 | `reconcile.rs` | **Who wins.** Change detection between snapshots, the mode (merge or follow), incoming status and rating, a show's one status. Pure: no I/O | nothing |
 | `library.rs` | Frog's side of an entry: which episodes it covers (`run_ids`), how Frog sees it (`frog_view`), writing AniList's side into a title the caller already has (`apply`), taking back a wrong placement (`unplace`), settling a show | SQLite through `store`, `catalog` and `release` |
 | `local.rs` | Entries TMDB lacks, kept as AniList-only titles, and moving them across once TMDB has them (`adopt_local`) | `library`, `client` |
-| `media.rs` | An AniList-only title's details rewritten into TMDB's shape, people and studios | AniList |
+| `media.rs` | An AniList-only title's details (anime or manga) rewritten into TMDB's shape, manga search, people and studios | AniList |
 | `records.rs` | Every read and write of `anilist_link`, `anilist_oauth` and `anilist_entry` | SQLite |
 | `sync.rs` | One sync of one account (`sync_user`), the worker's `due` list, `diagnose` | all of the above |
 
@@ -28,11 +29,15 @@ and `sync_user`.
 
 1. `records::link_token` — whose list, with which token.
 2. `idmap::ensure_map` — the id lists, at most a week old.
-3. `client::read_list` — the whole list, 500 at a time; any failed chunk
-   fails the sync, because a list read halfway looks like entries removed.
+3. `client::read_list` — the whole anime list, then the manga list, 500 at a
+   time; any failed chunk fails the sync, because a list read halfway looks
+   like entries removed.
 4. `records::mark_gone` — entries no longer on the list get `gone_at`.
 5. For each entry (`sync::Run::entry`):
    - ignored ("Not in Frog") → nothing;
+   - a manga → `Run::manga`: listed as matched (method `manga`) to its own
+     title and kept like an AniList-only title by `local::sync_local`, its
+     chapters a count. Nothing is placed, and Settings offers no Change;
    - not placed, nothing new, not due for another look → kept as it is
      (`local::sync_local`);
    - `decide`: a manual or current placement stays; otherwise `place::place`.
@@ -103,6 +108,26 @@ failed for it, and it is tried again with backoff.
   Frog's; a day AniList lacks leaves Frog's, and the rewatch count only goes
   up, so one logged in Frog survives. Days are plain `yyyy-mm-dd`. Imports go
   through `store::set_known_dates` instead, which only widens what is there.
+- **Manga** (`Remote.manga`, `media::kind_of`). AniList is the only place
+  Frog finds manga: search reads it (`media::search_manga`, through
+  `/api/search/more`), and the sync reads each account's manga list. A
+  manga is a title of kind `manga` whose primary provider is AniList; its
+  chapters stand where a show's episodes do (`Remote.episodes`,
+  `title.episode_count`) and its volumes in `season_count`. Progress is a
+  count, moved in Frog by `release::set_count`, whose status rule is
+  `release::counted_status`: the first chapter starts it, the last chapter
+  of a finished one completes it, paused and dropped stay. Its authors
+  ("Story & Art", "Story", "Art") are its creators. Ratings never ask
+  MDBList about a manga: AniList's own score is its score. Chapters read
+  after the first sync are `chapter_read` rows dated to the sync (source
+  `anilist`), by the same rule as `undated_upto`; AniList lowering its count
+  takes back only its own. Search is ranked by `media::rank_manga`.
+- **Which ticks have a day** (`reconcile::undated_upto`, `film_seen_now`). A
+  first sync or a fresh layout is a backlog, so its ticks are undated. Once an
+  entry has a snapshot, episodes past the progress AniList had last time, and
+  a film that has just become completed, were watched since the last sync:
+  they are dated to that sync, so they reach the diary and Home's Activity
+  like a tick in Frog.
 - **A title AniList does not have** (removed, or kept from view) answers 404
   "Not Found". `client::answer_error` makes that `NotFound`, so the one entry
   fails and the rest of the list syncs; read as an outage, it stopped a whole

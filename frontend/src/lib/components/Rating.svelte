@@ -7,6 +7,7 @@
 	import Icon from './Icon.svelte';
 	import Score from './Score.svelte';
 	import ScoreSlider from './ScoreSlider.svelte';
+	import StarPicker from './StarPicker.svelte';
 	import Stars from './Stars.svelte';
 
 	interface Props {
@@ -35,25 +36,18 @@
 	const bounds = $derived(scale(format));
 	const shown = $derived(toDisplay(value, format));
 	const label = $derived(value === null ? 'Rate' : formatScore(value, format));
+	/** Picked from a few buttons (smileys), rather than slid or filled in. */
+	const picked = $derived(!sliding(format) && format !== 'star5');
 
-	/**
-	 * The choices offered in the popover, in display units: ten at most, one
-	 * comfortable tap each. A hundred points, or ten with a decimal, are slid
-	 * to instead.
-	 */
+	/** Smileys are picked from buttons, one each; numbers slide and stars fill. */
 	const steps = $derived.by(() => {
-		// The fine-grained formats slide instead (`ScoreSlider`).
-		let step = bounds.step;
-		if (format === 'star5') step = settings.current.halfStars ? 0.5 : 1;
-
 		const out: number[] = [];
-		for (let v = step; v <= bounds.max + 1e-9; v += step) out.push(Math.round(v * 10) / 10);
+		for (let v = bounds.step; v <= bounds.max + 1e-9; v += bounds.step) out.push(v);
 		return out;
 	});
 
 	function choose(display: number) {
-		const same = shown !== null && Math.abs(shown - display) < 1e-6;
-		onchange(same ? null : fromDisplay(display, format));
+		onchange(fromDisplay(display, format));
 		open = false;
 	}
 
@@ -122,7 +116,7 @@
 		class="chip hit"
 		class:rated={value !== null}
 		{disabled}
-		aria-haspopup={sliding(format) ? 'dialog' : 'menu'}
+		aria-haspopup={picked ? 'menu' : 'dialog'}
 		aria-expanded={open}
 		aria-label={value === null ? 'Rate this' : `Rated ${label}`}
 		title={value === null ? 'Rate this' : `Rated ${label}`}
@@ -132,7 +126,7 @@
 		}}
 	>
 		{#if format === 'star5' && value !== null}
-			<span class="meter"><Stars value={shown ?? 0} outOf={5} size={14} /></span>
+			<span class="meter"><Stars value={shown ?? 0} size={14} /></span>
 			<span class="sr">{label}</span>
 		{:else}
 			{#if !compact}<Icon name="star" size={15} filled={value !== null} />{/if}
@@ -150,7 +144,7 @@
 					class:nested
 					class:lifted={!nested}
 					bind:this={pop}
-					role={sliding(format) ? 'dialog' : 'menu'}
+					role={picked ? 'menu' : 'dialog'}
 					aria-label="Choose a rating"
 				>
 					<div class="head">
@@ -177,8 +171,17 @@
 								open = false;
 							}}
 						/>
+					{:else if format === 'star5'}
+						<div class="stars">
+							<StarPicker
+								value={shown}
+								halves={settings.current.halfStars}
+								autofocus
+								onpick={(stars) => choose(stars)}
+							/>
+						</div>
 					{:else}
-						<div class="grid" data-format={format}>
+						<div class="grid">
 							{#each steps as step (step)}
 								<button
 									class="opt"
@@ -307,16 +310,13 @@
 	.grid {
 		display: grid;
 		gap: 4px;
-		grid-template-columns: repeat(5, minmax(34px, 1fr));
+		grid-template-columns: repeat(3, minmax(48px, 1fr));
 	}
 
-	.grid[data-format='pt100'],
-	.grid[data-format='pt10dec'] {
-		grid-template-columns: repeat(5, minmax(42px, 1fr));
-	}
-
-	.grid[data-format='smiley3'] {
-		grid-template-columns: repeat(3, 1fr);
+	.stars {
+		display: flex;
+		justify-content: center;
+		padding: 2px 4px 0;
 	}
 
 	.opt {

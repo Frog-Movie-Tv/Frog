@@ -43,10 +43,11 @@ pub async fn connect(database_url: &str) -> anyhow::Result<SqlitePool> {
 /// The `title` table as Frog keeps it: its own id and the metadata it shows.
 /// Which provider knows it lives in `title_external`. The column names
 /// `tmdb_status` and `tmdb_vote` are kept from when TMDB was the only
-/// source; they hold the primary provider's values.
+/// source; they hold the primary provider's values. A manga keeps its
+/// chapters in `episode_count` and its volumes in `season_count`.
 const TITLE_TABLE: &str = "CREATE TABLE title_rebuilt (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind             TEXT    NOT NULL CHECK (kind IN ('movie', 'tv')),
+    kind             TEXT    NOT NULL CHECK (kind IN ('movie', 'tv', 'manga')),
     name             TEXT    NOT NULL,
     original_name    TEXT,
     overview         TEXT,
@@ -78,9 +79,10 @@ const TITLE_COLUMNS: &str = "id, kind, name, original_name, overview, poster_pat
     genres_json, tmdb_vote, collection_id, accent_json, refreshed_at, people_synced_at,
     search_name, next_air_date, next_air_season, next_air_episode, merged_into";
 
-/// Drop the provider ids `title` used to carry (`tmdb_id`, `anilist_id`,
-/// `imdb_id`) once `202610301000_catalog_identity` has copied them into
-/// `title_external`.
+/// Bring `title` to `TITLE_TABLE`: drop the provider ids it used to carry
+/// (`tmdb_id`, `anilist_id`, `imdb_id`) once `202610301000_catalog_identity`
+/// has copied them into `title_external`, and let it hold manga, which a
+/// CHECK constraint only allows by rebuilding the table too.
 ///
 /// This is a migration that SQLite cannot run inside sqlx's migration
 /// transaction: a column in a UNIQUE constraint only goes by rebuilding the
@@ -88,22 +90,31 @@ const TITLE_COLUMNS: &str = "id, kind, name, original_name, overview, poster_pat
 /// which SQLite ignores inside a transaction. With them on, the old table's
 /// drop would cascade into every library, watch and episode. So it runs here,
 /// on one connection with foreign keys off, in its own transaction, and only
-/// while `title` still has `tmdb_id`: running it again does nothing, and an
-/// interrupted run leaves the old table as it was. Ids are copied as they
+/// while `title` is not yet `TITLE_TABLE`: running it again does nothing, and
+/// an interrupted run leaves the old table as it was. Ids are copied as they
 /// are and the id sequence is carried over, so no Frog id is ever reused.
+///
+/// The release before manga runs on the rebuilt table as it is: the columns
+/// are the same, and only a newer binary writes a manga.
 pub async fn rebuild_title(pool: &SqlitePool) -> anyhow::Result<()> {
-    let (pending,): (i64,) =
+    let (old_ids,): (i64,) =
         sqlx::query_as("SELECT COUNT(*) FROM pragma_table_info('title') WHERE name = 'tmdb_id'")
             .fetch_one(pool)
             .await?;
-    if pending == 0 {
+    let (no_manga,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM sqlite_master
+          WHERE type = 'table' AND name = 'title' AND sql NOT LIKE '%''manga''%'",
+    )
+    .fetch_one(pool)
+    .await?;
+    if old_ids == 0 && no_manga == 0 {
         return Ok(());
     }
     let mut conn = pool.acquire().await?;
     sqlx::query("PRAGMA foreign_keys = OFF")
         .execute(&mut *conn)
         .await?;
-    let result = rebuild_title_on(&mut conn).await;
+    let result = rebuild_title_on(&mut conn, old_ids > 0).await;
     // Back on before the connection returns to the pool, whatever happened.
     sqlx::query("PRAGMA foreign_keys = ON")
         .execute(&mut *conn)
@@ -167,24 +178,28 @@ const CATCH_UP: [&str; 5] = [
                      WHERE json_extract(p.value, '$.tmdb_id') IS NOT NULL)",
 ];
 
-async fn rebuild_title_on(conn: &mut sqlx::SqliteConnection) -> anyhow::Result<()> {
+/// `old_ids`: `title` still has the provider ids, which go now.
+async fn rebuild_title_on(conn: &mut sqlx::SqliteConnection, old_ids: bool) -> anyhow::Result<()> {
     use sqlx::Connection;
     let mut tx = conn.begin().await?;
-    for sql in CATCH_UP {
-        sqlx::query(sql).execute(&mut *tx).await?;
-    }
-    // Every title must have its provider before the ids go: a title an
-    // older binary wrote under an id another title already holds is not
-    // one this can settle by itself.
-    let (unmapped,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM title t
-          WHERE (t.tmdb_id IS NOT NULL AND t.tmdb_id != 0)
-            AND NOT EXISTS (SELECT 1 FROM title_external x WHERE x.title_id = t.id AND x.is_primary = 1)",
-    )
-    .fetch_one(&mut *tx)
-    .await?;
-    if unmapped > 0 {
-        anyhow::bail!("{unmapped} titles have no provider mapping; title was not rebuilt");
+    if old_ids {
+        for sql in CATCH_UP {
+            sqlx::query(sql).execute(&mut *tx).await?;
+        }
+        // Every title must have its provider before the ids go: a title an
+        // older binary wrote under an id another title already holds is not
+        // one this can settle by itself.
+        let (unmapped,): (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM title t
+              WHERE (t.tmdb_id IS NOT NULL AND t.tmdb_id != 0)
+                AND NOT EXISTS (SELECT 1 FROM title_external x
+                                 WHERE x.title_id = t.id AND x.is_primary = 1)",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        if unmapped > 0 {
+            anyhow::bail!("{unmapped} titles have no provider mapping; title was not rebuilt");
+        }
     }
     let (sequence,): (Option<i64>,) =
         sqlx::query_as("SELECT MAX(seq) FROM sqlite_sequence WHERE name = 'title'")
@@ -226,7 +241,7 @@ async fn rebuild_title_on(conn: &mut sqlx::SqliteConnection) -> anyhow::Result<(
         );
     }
     tx.commit().await?;
-    tracing::info!(titles = after, "title rebuilt without provider ids");
+    tracing::info!(titles = after, "title rebuilt");
     Ok(())
 }
 

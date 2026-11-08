@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use crate::catalog::{self, ExternalId};
 use crate::error::AppResult;
 use crate::state::AppState;
+use crate::store;
 
 /// (title id, kind, TMDB id as `title_external` holds it, name, release
 ///  date, status, rating, favourite, notes, added, watches)
@@ -36,6 +37,9 @@ type EpisodeExportRow = (i64, i64, Option<f64>, Option<String>, i64, Option<Stri
 
 /// (watched_at, is_rewatch, source)
 type WatchExportRow = (String, i64, String);
+
+/// (started, finished, rewatches, counted progress)
+type KeptRow = (Option<String>, Option<String>, i64, Option<i64>);
 
 async fn export_rows(state: &AppState, user_id: i64) -> AppResult<Vec<ExportRow>> {
     Ok(sqlx::query_as(
@@ -99,15 +103,20 @@ pub async fn library_json(state: &AppState, user_id: i64) -> AppResult<Value> {
         .fetch_all(&state.pool)
         .await?;
 
-        let (started_at, finished_at, rewatch_count): (Option<String>, Option<String>, i64) =
-            sqlx::query_as(
-                "SELECT started_at, finished_at, rewatch_count FROM library_entry
+        let (started_at, finished_at, rewatch_count, progress): KeptRow = sqlx::query_as(
+            "SELECT started_at, finished_at, rewatch_count, progress FROM library_entry
                   WHERE user_id = ? AND title_id = ?",
-            )
-            .bind(user_id)
-            .bind(title_id)
-            .fetch_one(&state.pool)
-            .await?;
+        )
+        .bind(user_id)
+        .bind(title_id)
+        .fetch_one(&state.pool)
+        .await?;
+
+        let reads = if kind == "manga" {
+            store::held_reads(&state.pool, user_id, title_id).await?
+        } else {
+            Vec::new()
+        };
 
         titles.push(json!({
             "id": title_id,
@@ -128,6 +137,8 @@ pub async fn library_json(state: &AppState, user_id: i64) -> AppResult<Value> {
             "started_at": started_at,
             "finished_at": finished_at,
             "rewatch_count": rewatch_count,
+            // How far into a title followed as a count: a manga's chapters.
+            "progress": progress,
             "episodes": episodes
                 .into_iter()
                 .map(|(s, e, rating, notes, watched, watched_at)| json!({
@@ -141,6 +152,8 @@ pub async fn library_json(state: &AppState, user_id: i64) -> AppResult<Value> {
                     "watched_at": at, "rewatch": rewatch == 1, "source": source,
                 }))
                 .collect::<Vec<_>>(),
+            // A manga's chapters, each on the day it was read.
+            "reads": reads,
         }));
     }
 
@@ -189,7 +202,11 @@ pub async fn library_csv(state: &AppState, user_id: i64) -> AppResult<String> {
         let year = year.get(0..4).unwrap_or("");
         out.push_str(&format!(
             "{},{},{},{},{},{},{},{},{},{},{}\n",
-            if kind == "tv" { "Show" } else { "Film" },
+            match kind.as_str() {
+                "tv" => "Show",
+                "manga" => "Manga",
+                _ => "Film",
+            },
             tmdb_id_of(tmdb.as_deref())
                 .map(|id| id.to_string())
                 .unwrap_or_default(),

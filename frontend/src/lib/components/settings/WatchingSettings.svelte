@@ -3,13 +3,38 @@
 	import Select from '#lib/components/Select.svelte';
 	import { SCORE_FORMATS, type ScoreFormat } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
-	import { STATUSES, STATUS_LABEL, type Status } from '#lib/types';
+	import { STATUS_LABEL, STATUSES, type Status, statusLabel } from '#lib/types';
 
 	/** Watching: how ratings read, and what tracking does by default. */
 	const s = $derived(settings.current);
 
 	/** A rating to try the chosen format on; not saved anywhere. */
 	let preview = $state<number | null>(78);
+
+	/** A status's colour as the page draws it now, for the picker to start on. */
+	function colourOf(status: Status): string {
+		const own = s.statusColors?.[status];
+		if (own) return own;
+		const drawn = getComputedStyle(document.documentElement)
+			.getPropertyValue(`--status-${status}`)
+			.trim();
+		return /^#[0-9a-f]{6}$/i.test(drawn) ? drawn : '#888888';
+	}
+
+	function rename(status: Status, name: string) {
+		const names = { ...s.statusNames };
+		const trimmed = name.trim().slice(0, 24);
+		if (trimmed && trimmed !== STATUS_LABEL[status]) names[status] = trimmed;
+		else delete names[status];
+		settings.set('statusNames', names);
+	}
+
+	function recolour(status: Status, colour: string | null) {
+		const colours = { ...s.statusColors };
+		if (colour) colours[status] = colour;
+		else delete colours[status];
+		settings.set('statusColors', colours);
+	}
 </script>
 
 <section class="block">
@@ -61,7 +86,7 @@
 			<Select
 				label="Default status"
 				value={s.defaultStatus}
-				options={STATUSES.map((st) => ({ value: st, label: STATUS_LABEL[st] }))}
+				options={STATUSES.map((st) => ({ value: st, label: statusLabel(st) }))}
 				onchange={(v) => settings.set('defaultStatus', v as Status)}
 			/>
 		</div>
@@ -128,6 +153,57 @@
 				onchange={(e) => settings.set('clock24', e.currentTarget.checked)}
 			/>
 		</label>
+
+		<label class="row card">
+			<span class="label">
+				<strong>Play trailers</strong>
+				<span class="faint">Without sound, behind a title's page</span>
+			</span>
+			<input
+				type="checkbox"
+				class="toggle-switch"
+				checked={s.trailerAutoplay ?? false}
+				onchange={(e) => settings.set('trailerAutoplay', e.currentTarget.checked)}
+			/>
+		</label>
+	</div>
+</section>
+
+<section class="block">
+	<div class="section-head"><h2>Statuses</h2></div>
+	<p class="faint lead">Call a status what you like and give it its own colour.</p>
+
+	<div class="rows">
+		{#each STATUSES as st (st)}
+			{@const own = s.statusNames?.[st] ?? ''}
+			<div class="row card status-row">
+				<span class="swatch" data-status={st} aria-hidden="true"></span>
+				<input
+					class="input name"
+					value={own}
+					maxlength="24"
+					placeholder={STATUS_LABEL[st]}
+					aria-label="Name for {STATUS_LABEL[st]}"
+					onchange={(e) => rename(st, e.currentTarget.value)}
+				/>
+				<input
+					type="color"
+					class="colour"
+					value={colourOf(st)}
+					aria-label="Colour for {statusLabel(st)}"
+					onchange={(e) => recolour(st, e.currentTarget.value)}
+				/>
+				{#if own || s.statusColors?.[st]}
+					<button
+						class="btn ghost small"
+						onclick={() => {
+							rename(st, '');
+							recolour(st, null);
+						}}>Reset</button
+					>
+				{/if}
+			</div>
+		{/each}
 	</div>
 </section>
 
@@ -196,8 +272,44 @@
 		font-size: 0.78rem;
 	}
 
+	.lead {
+		margin: -4px 0 14px;
+		font-size: 0.86rem;
+	}
+
+	.status-row {
+		justify-content: flex-start;
+		gap: 12px;
+		cursor: default;
+	}
+
+	.swatch {
+		flex: none;
+		width: 14px;
+		height: 14px;
+		border-radius: 50%;
+		background: var(--status);
+	}
+
+	.status-row .name {
+		flex: 1;
+		min-width: 0;
+		max-width: 260px;
+	}
+
+	.colour {
+		flex: none;
+		width: 40px;
+		height: 32px;
+		padding: 0;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-sm);
+		background: none;
+		cursor: pointer;
+	}
+
 	@media (max-width: 720px) {
-		.row {
+		.row:not(.status-row) {
 			align-items: flex-start;
 			flex-direction: column;
 			gap: 10px;

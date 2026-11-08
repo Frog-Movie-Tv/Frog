@@ -84,6 +84,26 @@ pub struct ApplyItem {
     /// How many times the tracker says it was watched again.
     #[serde(default)]
     pub rewatches: i64,
+    /// A manga's chapters, each on the day it was read (a Frog backup).
+    #[serde(default)]
+    pub reads: Vec<ChapterRead>,
+    /// A film's other watches, after `watched_at` (a Frog backup keeps them
+    /// all).
+    #[serde(default)]
+    pub film_watches: Vec<FilmWatch>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FilmWatch {
+    pub watched_at: String,
+    #[serde(default)]
+    pub rewatch: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChapterRead {
+    pub chapter: i64,
+    pub read_at: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -113,7 +133,7 @@ pub async fn apply_items(
     let mut out = Applied::default();
     for item in items {
         let Some(source) = source_of(&item) else {
-            let why = if item.kind == "movie" || item.kind == "tv" {
+            let why = if matches!(item.kind.as_str(), "movie" | "tv" | "manga") {
                 "no TMDB or AniList id"
             } else {
                 "unknown kind"
@@ -126,14 +146,14 @@ pub async fn apply_items(
     Ok(out)
 }
 
-/// Which title a row names: TMDB's id first, else AniList's. A kind that is
-/// neither a film nor a show, or no id at all, names nothing.
+/// Which title a row names: TMDB's id first, else AniList's, which is the
+/// only one a manga has. Any other kind, or no id at all, names nothing.
 fn source_of(item: &ApplyItem) -> Option<ExternalId> {
-    if item.kind != "movie" && item.kind != "tv" {
+    if !matches!(item.kind.as_str(), "movie" | "tv" | "manga") {
         return None;
     }
     match (item.tmdb_id, item.anilist_id) {
-        (Some(id), _) if id > 0 => Some(ExternalId::tmdb(&item.kind, id)),
+        (Some(id), _) if id > 0 && item.kind != "manga" => Some(ExternalId::tmdb(&item.kind, id)),
         (_, Some(id)) if id > 0 => Some(ExternalId::AniList(id)),
         _ => None,
     }
@@ -250,6 +270,33 @@ async fn apply_one(
         film_watches(state, user_id, title_id, &item, completed).await?;
     }
 
+    // A title followed as a count, as every manga is: the row's count, which
+    // never lowers one already further along.
+    if let Some(count) = item.progress.filter(|n| *n > 0) {
+        if store::is_counted(pool, title_id).await? {
+            let have = store::counted_progress(pool, user_id, title_id)
+                .await?
+                .unwrap_or(0);
+            store::set_local_progress(pool, user_id, title_id, count.max(have)).await?;
+        }
+    }
+    if kind == "manga" {
+        for read in item.reads.iter().filter(|r| r.chapter > 0) {
+            if chrono::DateTime::parse_from_rfc3339(&read.read_at).is_err() {
+                continue;
+            }
+            store::record_reads(
+                pool,
+                user_id,
+                title_id,
+                (read.chapter - 1, read.chapter),
+                &read.read_at,
+                "import",
+            )
+            .await?;
+        }
+    }
+
     if kind == "tv" {
         // A row with nothing to tick still has a show behind it. Without its
         // episodes it has no next one, and only TMDB's count to go by.
@@ -358,7 +405,18 @@ async fn film_watches(
         .await?;
     }
 
-    if let Some(watched_at) = item.watched_at.as_deref() {
+    let more = item
+        .film_watches
+        .iter()
+        .filter(|w| chrono::DateTime::parse_from_rfc3339(&w.watched_at).is_ok())
+        .map(|w| (w.watched_at.as_str(), w.rewatch));
+    for (watched_at, rewatch) in item
+        .watched_at
+        .as_deref()
+        .map(|w| (w, item.rewatch))
+        .into_iter()
+        .chain(more)
+    {
         let exists: (i64,) = sqlx::query_as(
             "SELECT COUNT(*) FROM watch_event
               WHERE user_id = ? AND title_id = ? AND episode_id IS NULL
@@ -379,7 +437,7 @@ async fn film_watches(
             .bind(user_id)
             .bind(title_id)
             .bind(watched_at)
-            .bind(i64::from(item.rewatch))
+            .bind(i64::from(rewatch))
             .execute(&state.pool)
             .await?;
         }

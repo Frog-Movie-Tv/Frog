@@ -1,7 +1,15 @@
 <script lang="ts">
 	import Icon, { type IconName } from '#lib/components/Icon.svelte';
 	import Select from '#lib/components/Select.svelte';
-	import { HOME_ROWS, MAX_TABS, NAV_PAGES, settings } from '#lib/settings.svelte';
+	import {
+		GO_KEYS,
+		HOME_LAYOUT,
+		HOME_ROWS,
+		MAX_TABS,
+		NAV_PAGES,
+		settings
+	} from '#lib/settings.svelte';
+	import { toasts } from '#lib/toast.svelte';
 
 	/** Home and menus: where Frog opens, the rows on Home, and the navigation. */
 	const s = $derived(settings.current);
@@ -23,6 +31,17 @@
 	}
 
 	const hiddenRows = $derived(HOME_ROWS.filter((r) => !s.homeRows.includes(r.id)));
+
+	/** A layout kept from before has rows a new one leaves off. */
+	const isLayout = $derived(
+		s.homeRows.length === HOME_LAYOUT.length && s.homeRows.every((id, i) => id === HOME_LAYOUT[i])
+	);
+
+	function useLayout() {
+		const before = [...s.homeRows];
+		settings.set('homeRows', [...HOME_LAYOUT]);
+		toasts.undoable('Home uses the new layout', () => settings.set('homeRows', before));
+	}
 
 	function rowInfo(id: string): { label: string; hint: string } | undefined {
 		return HOME_ROWS.find((r) => r.id === id);
@@ -50,6 +69,21 @@
 			'navHidden',
 			hide ? [...s.navHidden, href] : s.navHidden.filter((h) => h !== href)
 		);
+	}
+
+	/** The letter after G for each page, as set or as Frog has them. */
+	const goKeys = $derived(s.goKeys ?? GO_KEYS);
+
+	/** One letter a page; a letter taken by another page moves here. */
+	function setGoKey(href: string, raw: string) {
+		const letter = raw.trim().toLowerCase().slice(-1);
+		const keys = { ...goKeys };
+		for (const [page, key] of Object.entries(keys)) {
+			if (key === letter) delete keys[page];
+		}
+		if (/^[a-z0-9]$/.test(letter) && letter !== 'g') keys[href] = letter;
+		else delete keys[href];
+		settings.set('goKeys', keys);
 	}
 
 	function toggleTab(href: string, on: boolean) {
@@ -116,7 +150,7 @@
 		{/each}
 	</ul>
 
-	{#if hiddenRows.length}
+	{#if hiddenRows.length || !isLayout}
 		<div class="actions">
 			{#each hiddenRows as row (row.id)}
 				<button class="btn ghost small" onclick={() => toggleRow(row.id)}>
@@ -124,6 +158,9 @@
 					{row.label}
 				</button>
 			{/each}
+			{#if !isLayout}
+				<button class="btn small" onclick={useLayout}>Use the new layout</button>
+			{/if}
 		</div>
 	{/if}
 </section>
@@ -149,6 +186,16 @@
 						onchange={(e) => toggleHidden(navPage.href, !e.currentTarget.checked)}
 					/>
 					Menu
+				</label>
+				<label class="mini key" title="Press G, then this letter, to go there">
+					G
+					<input
+						class="input"
+						value={goKeys[navPage.href] ?? ''}
+						maxlength="1"
+						aria-label="Shortcut letter for {navPage.label}"
+						onchange={(e) => setGoKey(navPage.href, e.currentTarget.value)}
+					/>
 				</label>
 				<label class="mini" title="Show in the phone tab bar">
 					<input
@@ -316,5 +363,21 @@
 			width: 44px;
 			height: 44px;
 		}
+	}
+
+	/* Shortcuts are for a keyboard: a phone has no room for them, and no use. */
+	@media (max-width: 760px), (hover: none) {
+		.key {
+			display: none;
+		}
+	}
+
+	/* G, then a letter: the page's keyboard shortcut. */
+	.key input {
+		width: 2.2em;
+		padding: 2px 4px;
+		text-align: center;
+		text-transform: lowercase;
+		font-family: var(--font-mono);
 	}
 </style>

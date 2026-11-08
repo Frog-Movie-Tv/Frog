@@ -2572,6 +2572,62 @@ async fn a_second_account_sees_none_of_the_first_accounts_data() {
     assert_eq!(body["devices"], json!(0));
 }
 
+/// Unticking an episode watched three times clears all three, and undo puts
+/// all three back on their own days, rewatches still rewatches.
+#[tokio::test]
+async fn undoing_an_untick_puts_back_every_watch() {
+    let h = Harness::new().await;
+    let (owner, _) = two_accounts(&h).await;
+    seed_owner_history(&h).await;
+    let show = h.tid("tv", 2).await;
+    let path = format!("/api/t/{show}/episodes/1/1/watch");
+    for day in ["2024-01-01", "2025-01-01"] {
+        let (code, _, _) = h
+            .post(
+                &path,
+                json!({ "watched": true, "watched_at": format!("{day}T20:00:00Z") }),
+                Some(&owner),
+            )
+            .await;
+        assert_eq!(code, StatusCode::OK);
+    }
+    let held = |h: &Harness| {
+        let pool = h.state.pool.clone();
+        async move {
+            let rows: Vec<(String, bool)> = sqlx::query_as(
+                "SELECT watched_at, is_rewatch FROM watch_event w JOIN episode e ON e.id = w.episode_id
+                  WHERE w.user_id = 1 AND e.title_id = ? AND e.season_number = 1
+                    AND e.episode_number = 1
+                  ORDER BY watched_at",
+            )
+            .bind(show)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+            rows
+        }
+    };
+    let before = held(&h).await;
+    assert!(before.len() >= 2, "{before:?}");
+
+    let (code, answer, _) = h
+        .post(&path, json!({ "watched": false }), Some(&owner))
+        .await;
+    assert_eq!(code, StatusCode::OK);
+    assert!(held(&h).await.is_empty());
+    assert_eq!(answer["cleared"].as_array().unwrap().len(), before.len());
+
+    let (code, _, _) = h
+        .post(
+            &path,
+            json!({ "watched": true, "restore": answer["cleared"] }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(held(&h).await, before);
+}
+
 #[tokio::test]
 async fn a_second_account_cannot_change_the_first_accounts_data() {
     let h = Harness::new().await;
@@ -5171,7 +5227,11 @@ async fn marking_watched_ticks_aired_episodes_and_never_what_is_not_out() {
         &owner,
     )
     .await;
-    assert_eq!(answer, json!({ "marked": 2, "skipped": 2 }));
+    assert_eq!(
+        (&answer["marked"], &answer["skipped"]),
+        (&json!(2), &json!(2))
+    );
+    assert_eq!(answer["before"].as_array().unwrap().len(), 4, "for undo");
 
     let film = watches_of(&h, 1).await;
     assert_eq!(film.len(), 1);
@@ -5219,6 +5279,24 @@ async fn marking_watched_ticks_aired_episodes_and_never_what_is_not_out() {
     .await;
     assert_eq!(watches_of(&h, 1).await.len(), 1);
     assert_eq!(watches_of(&h, 3).await.len(), 2);
+
+    // Undo puts the titles back as they were before the first marking: the
+    // watches it added go, and so do the statuses.
+    bulk(
+        &h,
+        json!({ "action": "unmark", "entries": answer["before"] }),
+        &owner,
+    )
+    .await;
+    assert!(watches_of(&h, 1).await.is_empty());
+    assert!(watches_of(&h, 3).await.is_empty());
+    for id in [1, 3] {
+        let entry = frog::store::get_entry(&h.state.pool, 1, id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(entry.status, "planned", "title {id}");
+    }
 }
 
 #[tokio::test]
@@ -5415,7 +5493,8 @@ async fn status_favourite_and_shelf_go_in_one_request() {
         &owner,
     )
     .await;
-    assert_eq!(done, json!({ "marked": 2, "skipped": 0 }));
+    assert_eq!((&done["marked"], &done["skipped"]), (&json!(2), &json!(0)));
+    assert_eq!(done["before"].as_array().unwrap().len(), 2, "for undo");
     assert_eq!(watches_of(&h, 1).await.len(), 1);
     assert!(watches_of(&h, 3).await.iter().all(|w| w.2), "undated");
 

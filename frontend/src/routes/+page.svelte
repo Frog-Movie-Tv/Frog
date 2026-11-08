@@ -74,10 +74,12 @@
 			? 'Caught up'
 			: heroFresh
 				? 'Start watching'
-				: heroNext || heroItem?.entry?.status === 'watching'
-					? 'Continue watching'
-					: // Nothing in progress: the hero is simply the newest addition.
-						'Recently added'
+				: heroItem?.kind === 'manga' && heroItem.entry?.status === 'watching'
+					? 'Continue reading'
+					: heroNext || heroItem?.entry?.status === 'watching'
+						? 'Continue watching'
+						: // Nothing in progress: the hero is simply the newest addition.
+							'Recently added'
 	);
 	const heroStyle = $derived(settings.current.heroStyle);
 
@@ -206,7 +208,13 @@
 						{:else}
 							<a class="btn primary" href={titleHref(heroItem)}>
 								<Icon name="play" size={14} filled />
-								{heroFresh ? 'Start watching' : heroNext ? 'Next episode' : 'Open'}
+								{heroFresh
+									? 'Start watching'
+									: heroItem.kind === 'manga'
+										? `Chapter ${heroItem.watched_episodes + 1}`
+										: heroNext
+											? 'Next episode'
+											: 'Open'}
 							</a>
 						{/if}
 					</div>
@@ -454,6 +462,14 @@
 	:global(:root:not([data-theme='light']):not([data-theme='pond-light'])) .logo {
 		filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.45))
 			drop-shadow(0 0 14px rgb(255 255 255 / 0.12)) drop-shadow(0 4px 18px rgb(0 0 0 / 0.5));
+	}
+
+	/* On a light theme the hero fades to a pale page, where a white logo
+	   would lose its edges: a dark outline and a closer shadow keep them. */
+	:global(:root[data-theme='light']) .logo,
+	:global(:root[data-theme='pond-light']) .logo {
+		filter: drop-shadow(0 0 1px rgb(0 0 0 / 0.6)) drop-shadow(0 1px 3px rgb(0 0 0 / 0.45))
+			drop-shadow(0 6px 22px rgb(0 0 0 / 0.55));
 	}
 
 	.facts {

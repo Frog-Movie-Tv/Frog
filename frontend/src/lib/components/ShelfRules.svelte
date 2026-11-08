@@ -3,8 +3,8 @@
 	import { api } from '#lib/api';
 	import { formatScore } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
-	import type { ShelfRules, Status } from '#lib/types';
-	import { STATUS_LABEL, STATUSES } from '#lib/types';
+	import type { Kind, ShelfRules, Status } from '#lib/types';
+	import { STATUSES, statusLabel } from '#lib/types';
 
 	interface Props {
 		rules: ShelfRules;
@@ -93,11 +93,12 @@
 				full
 				value={str(draft.kind)}
 				options={[
-					{ value: ANY, label: 'Films and shows' },
+					{ value: ANY, label: 'Anything' },
 					{ value: 'movie', label: 'Films' },
-					{ value: 'tv', label: 'Shows' }
+					{ value: 'tv', label: 'Shows' },
+					{ value: 'manga', label: 'Manga' }
 				]}
-				onchange={(v) => (draft.kind = v === ANY ? null : (v as 'movie' | 'tv'))}
+				onchange={(v) => (draft.kind = v === ANY ? null : (v as Kind))}
 			/>
 		</div>
 
@@ -214,7 +215,7 @@
 					aria-pressed={!!draft.statuses?.includes(s as Status)}
 					onclick={() => (draft.statuses = toggle(draft.statuses, s as Status))}
 				>
-					{STATUS_LABEL[s]}
+					{statusLabel(s)}
 				</button>
 			{/each}
 		</div>

@@ -6,6 +6,8 @@
 	import Grid from '#lib/components/Grid.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import Poster from '#lib/components/Poster.svelte';
+	import Select from '#lib/components/Select.svelte';
+	import { settings } from '#lib/settings.svelte';
 	import ShelfRules from '#lib/components/ShelfRules.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { failure, type Failure } from '#lib/failure';
@@ -16,6 +18,22 @@
 	import type { LibraryItem, Shelf, ShelfRules as Rules } from '#lib/types';
 
 	const id = $derived(Number(page.params.id));
+
+	/** This shelf's own poster size, over the one in Settings. */
+	const SIZES = [
+		{ value: '', label: 'Posters as in Settings' },
+		{ value: '104', label: 'Small posters' },
+		{ value: '150', label: 'Medium posters' },
+		{ value: '196', label: 'Large posters' }
+	];
+	const ownSize = $derived(settings.current.shelfPosterSize?.[String(id)] ?? null);
+
+	function pickSize(value: string) {
+		const sizes = { ...settings.current.shelfPosterSize };
+		if (value) sizes[String(id)] = Number(value);
+		else delete sizes[String(id)];
+		settings.set('shelfPosterSize', sizes);
+	}
 
 	let shelf = $state<Shelf | null>(null);
 	let items = $state<LibraryItem[]>([]);
@@ -232,6 +250,14 @@
 						</button>
 					{/if}
 				{/if}
+				{#if items.length && !editing}
+					<Select
+						label="Poster size"
+						value={ownSize ? String(ownSize) : ''}
+						options={SIZES}
+						onchange={pickSize}
+					/>
+				{/if}
 				<button class="btn ghost icon" aria-label="Rename" title="Rename" onclick={startRename}>
 					<Icon name="pencil" size={16} />
 				</button>
@@ -327,23 +353,25 @@
 				{/each}
 			</ol>
 		{:else}
-			<Grid>
-				{#each items as item (item.id)}
-					<Poster
-						morph
-						kind={item.kind}
-						ref={item}
-						name={item.name}
-						posterPath={item.poster_path}
-						year={year(item.release_date)}
-						status={item.entry?.status ?? null}
-						rating={item.entry?.rating ?? null}
-						watched={item.watched_episodes}
-						total={item.total_episodes}
-						rewatches={item.rewatches}
-					/>
-				{/each}
-			</Grid>
+			<div class="sized" class:own={ownSize !== null} style:--shelf-size="{ownSize ?? 0}px">
+				<Grid>
+					{#each items as item (item.id)}
+						<Poster
+							morph
+							kind={item.kind}
+							ref={item}
+							name={item.name}
+							posterPath={item.poster_path}
+							year={year(item.release_date)}
+							status={item.entry?.status ?? null}
+							rating={item.entry?.rating ?? null}
+							watched={item.watched_episodes}
+							total={item.total_episodes}
+							rewatches={item.rewatches}
+						/>
+					{/each}
+				</Grid>
+			</div>
 		{/if}
 	{/if}
 </div>
@@ -393,8 +421,10 @@
 
 	.controls {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 8px;
 		align-items: center;
+		min-width: 0;
 	}
 
 	.icon {
@@ -557,5 +587,17 @@
 	.adder p {
 		font-size: 0.86rem;
 		padding: 4px 2px;
+	}
+
+	/* A shelf with a size of its own: its columns, three-quarters of it on a
+	   phone, as the size in Settings does. */
+	.sized.own {
+		--poster-min: var(--shelf-size);
+	}
+
+	@media (max-width: 720px) {
+		.sized.own {
+			--poster-min: calc(var(--shelf-size) * 0.79);
+		}
 	}
 </style>
