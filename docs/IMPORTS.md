@@ -92,9 +92,12 @@ a new source is a new reader and nothing else.
   `ids` (`tmdb`, `anilist`, `imdb`) to every version 1 field; `tmdb_id` is
   null for an anime TMDB lacks. The CSV added `Frog ID` and `AniList ID` as
   its last columns. Backups now also carry `started_at`, `finished_at`,
-  `rewatch_count` and each episode's `watched_at` (its latest dated watch). A
-  Frog backup of any version is read back by `parsers.ts` (`readFrogJson`),
-  each episode on its day when the file has one, undated when it does not.
+  `rewatch_count` and each episode's `watched_at` (its latest dated watch),
+  and `progress`, the count of a title followed as one: a manga's chapters
+  read. A Frog backup of any version is read back by `parsers.ts`
+  (`readFrogJson`), each episode on its day when the file has one, undated
+  when it does not. A manga row is matched by its AniList id only, never by
+  name on TMDB, and its count never lowers one already further along.
 
 ## Tests
 

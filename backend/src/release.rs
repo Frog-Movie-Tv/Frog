@@ -8,7 +8,7 @@
 use serde::Serialize;
 use sqlx::SqlitePool;
 
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::store;
 
 /// Whether a show's coming episodes belong in front of this library row `l`
@@ -241,6 +241,17 @@ pub fn continues(watched: i64, total: i64, has_next: bool) -> bool {
     total > 0 && (watched > 0 || has_next)
 }
 
+/// `continues` for any title marked Watching. A manga is under way once a
+/// chapter is read: its chapters are often not counted while it is still
+/// coming out, and nothing about it airs.
+pub fn in_progress(kind: &str, watched: i64, total: i64, has_next: bool) -> bool {
+    if kind == "manga" {
+        watched > 0
+    } else {
+        continues(watched, total, has_next)
+    }
+}
+
 /// Something that can be rated on its own: a season, or one AniList entry
 /// where AniList splits a TMDB season into several (or runs one entry across
 /// many TMDB seasons, as a long series does).
@@ -403,9 +414,123 @@ pub async fn reconcile(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppRes
     Ok(())
 }
 
+/// The status a title kept as a count should take once the count moves: a
+/// manga's chapters, or an AniList-only show with no episode list. Paused and
+/// dropped are the person's word. The end of something that has finished is
+/// completing it; anything begun is under way, and a finished title read
+/// back below its end is too. None when the status stands.
+pub fn counted_status(
+    current: &str,
+    count: i64,
+    total: Option<i64>,
+    finished: bool,
+) -> Option<&'static str> {
+    if matches!(current, "paused" | "dropped") || count <= 0 {
+        return None;
+    }
+    let total = total.filter(|t| *t > 0);
+    let to = if finished && total.is_some_and(|t| count >= t) {
+        "completed"
+    } else if current == "planned" || (current == "completed" && total.is_some_and(|t| count < t)) {
+        "watching"
+    } else {
+        return None;
+    };
+    (to != current).then_some(to)
+}
+
+/// Set how far into a counted title this account is (`store::is_counted`),
+/// and its status with it (`counted_status`). For a manga, the chapters this
+/// moves past are read now, and those it goes back over are read no more.
+/// The title must be in the library already.
+pub async fn set_count(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    count: i64,
+) -> AppResult<()> {
+    if !store::is_counted(pool, title_id).await? {
+        return Err(AppError::BadRequest(
+            "This title is followed by its episodes.".into(),
+        ));
+    }
+    let Some(entry) = store::get_entry(pool, user_id, title_id).await? else {
+        return Err(AppError::NotFound("not in your library".into()));
+    };
+    let count = count.max(0);
+    let before = store::counted_progress(pool, user_id, title_id)
+        .await?
+        .unwrap_or(0);
+    store::set_local_progress(pool, user_id, title_id, count).await?;
+    let (total, status, kind): (Option<i64>, Option<String>, String) =
+        sqlx::query_as("SELECT episode_count, tmdb_status, kind FROM title WHERE id = ?")
+            .bind(title_id)
+            .fetch_one(pool)
+            .await?;
+    if kind == "manga" {
+        if count > before {
+            let now = chrono::Utc::now().to_rfc3339();
+            store::record_reads(pool, user_id, title_id, (before, count), &now, "manual").await?;
+        } else {
+            store::take_back_reads(pool, user_id, title_id, count, None).await?;
+        }
+    }
+    let finished = matches!(status.as_deref(), Some("Ended" | "Canceled"));
+    if let Some(to) = counted_status(&entry.status, count, total, finished) {
+        let patch = store::LibraryPatch {
+            status: Some(to.to_string()),
+            ..Default::default()
+        };
+        store::apply_patch(pool, user_id, title_id, &patch).await?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_manga_is_under_way_from_its_first_chapter() {
+        assert!(
+            in_progress("manga", 3, 0, false),
+            "chapters not counted yet"
+        );
+        assert!(!in_progress("manga", 0, 120, false));
+        assert!(!in_progress("tv", 3, 0, false), "a show needs its episodes");
+        assert!(in_progress("tv", 0, 10, true));
+    }
+
+    #[test]
+    fn a_count_moves_the_status_the_way_a_reader_would() {
+        // The first chapter starts it.
+        assert_eq!(
+            counted_status("planned", 1, Some(40), true),
+            Some("watching")
+        );
+        // The last chapter of a finished manga completes it.
+        assert_eq!(
+            counted_status("watching", 40, Some(40), true),
+            Some("completed")
+        );
+        assert_eq!(
+            counted_status("planned", 40, Some(40), true),
+            Some("completed")
+        );
+        // Caught up with one still coming out is still reading it.
+        assert_eq!(counted_status("watching", 120, Some(120), false), None);
+        assert_eq!(counted_status("watching", 120, None, false), None);
+        // Read back below the end: under way again.
+        assert_eq!(
+            counted_status("completed", 30, Some(40), true),
+            Some("watching")
+        );
+        assert_eq!(counted_status("completed", 30, None, false), None);
+        // Paused and dropped are the person's word; nothing read moves nothing.
+        assert_eq!(counted_status("paused", 40, Some(40), true), None);
+        assert_eq!(counted_status("dropped", 3, Some(40), true), None);
+        assert_eq!(counted_status("planned", 0, Some(40), true), None);
+    }
 
     fn state(released: i64, watched: i64, ongoing: bool) -> ShowState {
         ShowState {

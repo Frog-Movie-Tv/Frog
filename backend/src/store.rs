@@ -190,7 +190,25 @@ pub struct EntryRecord {
     #[sqlx(skip)]
     #[serde(default)]
     pub episode_notes: Vec<EpisodeNoteRecord>,
+    /// A manga's chapters as they were read, likewise.
+    #[sqlx(skip)]
+    #[serde(default)]
+    pub reads: Vec<ReadRecord>,
 }
+
+/// One chapter of a manga read on a day (`chapter_read`).
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ReadRecord {
+    pub chapter: i64,
+    pub read_at: String,
+    pub source: String,
+}
+
+/// Where a read can have come from.
+const READ_SOURCES: [&str; 3] = ["manual", "anilist", "import"];
+
+/// The most chapters one change records: more than any manga has.
+const MOST_CHAPTERS: i64 = 5000;
 
 /// One watch, by episode number rather than Frog's row ids, so that what comes
 /// back from the browser can only ever name an episode of the same title.
@@ -686,9 +704,85 @@ pub async fn held_watches(
     Ok((watches, notes))
 }
 
+/// A manga's reads in this account, to keep for undo and backups.
+pub async fn held_reads(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+) -> AppResult<Vec<ReadRecord>> {
+    Ok(sqlx::query_as(
+        "SELECT chapter, read_at, source FROM chapter_read
+          WHERE user_id = ? AND title_id = ? ORDER BY chapter",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Chapters `after + 1` to `upto` of a manga, read at `at`. The entry must be
+/// in the library; a chapter already read at that moment is not read twice.
+pub async fn record_reads(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    (after, upto): (i64, i64),
+    at: &str,
+    source: &str,
+) -> AppResult<()> {
+    let from = after.max(0) + 1;
+    let upto = upto.min(after.max(0) + MOST_CHAPTERS);
+    if upto < from {
+        return Ok(());
+    }
+    let mut tx = pool.begin().await?;
+    for chapter in from..=upto {
+        sqlx::query(
+            "INSERT INTO chapter_read (user_id, title_id, chapter, read_at, source)
+             SELECT ?1, ?2, ?3, ?4, ?5
+              WHERE NOT EXISTS (SELECT 1 FROM chapter_read
+                                 WHERE user_id = ?1 AND title_id = ?2 AND chapter = ?3
+                                   AND read_at = ?4)",
+        )
+        .bind(user_id)
+        .bind(title_id)
+        .bind(chapter)
+        .bind(at)
+        .bind(source)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Take back the reads of chapters past `upto`: from one source, or from
+/// every source when it is None.
+pub async fn take_back_reads(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    upto: i64,
+    source: Option<&str>,
+) -> AppResult<()> {
+    sqlx::query(
+        "DELETE FROM chapter_read
+          WHERE user_id = ? AND title_id = ? AND chapter > ? AND (? IS NULL OR source = ?)",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .bind(upto)
+    .bind(source)
+    .bind(source)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Remove these titles from this account's library, all or none, and with
 /// them what was watched of them: a title taken out is no longer watched, in
-/// its episodes, the diary or the stats.
+/// its episodes, the diary or the stats. A manga's reads go with its entry,
+/// on the foreign key.
 pub async fn remove_entries(pool: &SqlitePool, user_id: i64, title_ids: &[i64]) -> AppResult<()> {
     let mut tx = pool.begin().await?;
     for ids in title_ids.chunks(IDS_AT_ONCE) {
@@ -727,10 +821,13 @@ pub async fn remove_entries(pool: &SqlitePool, user_id: i64, title_ids: &[i64]) 
 /// Put entries back exactly as `entry_records` read them, all or none. They
 /// come back from the browser, so each is checked, it lands in this account
 /// whatever it says, and a title that has gone from the catalog is passed over.
+/// With `replace`, the watches and reads a title has now go first, so what
+/// was added since (by marking it watched) is taken back.
 pub async fn restore_entries(
     pool: &SqlitePool,
     user_id: i64,
     entries: &[EntryRecord],
+    replace: bool,
 ) -> AppResult<u64> {
     for e in entries {
         if !STATUSES.contains(&e.status.as_str()) {
@@ -745,6 +842,18 @@ pub async fn restore_entries(
     let mut restored = 0;
     let mut tx = pool.begin().await?;
     for e in entries {
+        if replace {
+            for sql in [
+                "DELETE FROM watch_event WHERE user_id = ? AND title_id = ?",
+                "DELETE FROM chapter_read WHERE user_id = ? AND title_id = ?",
+            ] {
+                sqlx::query(sql)
+                    .bind(user_id)
+                    .bind(e.title_id)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+        }
         restored += sqlx::query(
             "INSERT INTO library_entry (user_id, title_id, status, rating, favourite, notes,
                                         started_at, finished_at, rewatch_count, added_at,
@@ -809,6 +918,28 @@ pub async fn restore_entries(
             .bind(w.is_rewatch)
             .bind(source)
             .bind(w.undated)
+            .execute(&mut *tx)
+            .await?;
+        }
+        for r in e.reads.iter().filter(|r| r.chapter > 0) {
+            let source = if READ_SOURCES.contains(&r.source.as_str()) {
+                r.source.as_str()
+            } else {
+                "manual"
+            };
+            sqlx::query(
+                "INSERT INTO chapter_read (user_id, title_id, chapter, read_at, source)
+                 SELECT ?1, ?2, ?3, ?4, ?5
+                  WHERE EXISTS (SELECT 1 FROM library_entry WHERE user_id = ?1 AND title_id = ?2)
+                    AND NOT EXISTS (SELECT 1 FROM chapter_read
+                                     WHERE user_id = ?1 AND title_id = ?2 AND chapter = ?3
+                                       AND read_at = ?4)",
+            )
+            .bind(user_id)
+            .bind(e.title_id)
+            .bind(r.chapter)
+            .bind(&r.read_at)
+            .bind(source)
             .execute(&mut *tx)
             .await?;
         }
@@ -1275,10 +1406,14 @@ pub async fn last_watched_at(
     // An aggregate always returns exactly one row, and that row holds NULL
     // when nothing matched -- so this has to be Option-inside-the-row, not
     // fetch_optional, or a title with no watches fails to decode. An undated
-    // watch holds the day it was recorded, which is not when it was seen.
+    // watch holds the day it was recorded, which is not when it was seen. A
+    // manga was last read when a chapter was.
     let (last,): (Option<String>,) = sqlx::query_as(
-        "SELECT MAX(watched_at) FROM watch_event
-          WHERE user_id = ? AND title_id = ? AND undated = 0",
+        "SELECT MAX(at) FROM (
+            SELECT MAX(watched_at) AS at FROM watch_event
+             WHERE user_id = ?1 AND title_id = ?2 AND undated = 0
+            UNION ALL
+            SELECT MAX(read_at) FROM chapter_read WHERE user_id = ?1 AND title_id = ?2)",
     )
     .bind(user_id)
     .bind(title_id)
@@ -1346,7 +1481,39 @@ async fn local_progress(
     Ok(rows.into_iter().collect())
 }
 
-/// Set the count of episodes watched of a title with no episode list.
+/// Whether a title's progress is a count rather than its ticked episodes: a
+/// title from AniList with no episode list, which every manga is.
+pub async fn is_counted(pool: &SqlitePool, title_id: i64) -> AppResult<bool> {
+    let (counted,): (bool,) = sqlx::query_as(
+        "SELECT EXISTS (SELECT 1 FROM title_external x
+                         WHERE x.title_id = ?1 AND x.provider = 'anilist' AND x.is_primary = 1)
+            AND NOT EXISTS (SELECT 1 FROM episode e
+                             WHERE e.title_id = ?1 AND e.season_number > 0)",
+    )
+    .bind(title_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(counted)
+}
+
+/// The count kept for a title followed as one (`is_counted`), when this
+/// account has one.
+pub async fn counted_progress(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+) -> AppResult<Option<i64>> {
+    let row: Option<(Option<i64>,)> =
+        sqlx::query_as("SELECT progress FROM library_entry WHERE user_id = ? AND title_id = ?")
+            .bind(user_id)
+            .bind(title_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.and_then(|r| r.0))
+}
+
+/// Set the count of episodes watched of a title with no episode list, or of
+/// a manga's chapters read.
 pub async fn set_local_progress(
     pool: &SqlitePool,
     user_id: i64,
@@ -1452,8 +1619,10 @@ pub fn order_clause(sort: Option<&str>, order: Option<&str>, user_id: i64) -> St
         "release" => "COALESCE(t.release_date, '')".into(),
         "updated" => "l.updated_at".into(),
         "last_watched" => format!(
-            "(SELECT MAX(w.watched_at) FROM watch_event w
-                WHERE w.title_id = t.id AND w.user_id = {user_id} AND w.undated = 0)"
+            "COALESCE((SELECT MAX(w.watched_at) FROM watch_event w
+                WHERE w.title_id = t.id AND w.user_id = {user_id} AND w.undated = 0),
+              (SELECT MAX(r.read_at) FROM chapter_read r
+                WHERE r.title_id = t.id AND r.user_id = {user_id}))"
         ),
         _ => "l.added_at".into(),
     };
@@ -1595,8 +1764,12 @@ impl ItemFacts {
         .collect();
 
         let last: HashMap<i64, Option<String>> = sqlx::query_as::<_, (i64, Option<String>)>(
-            "SELECT title_id, MAX(watched_at) FROM watch_event
-              WHERE user_id = ? AND undated = 0 GROUP BY title_id",
+            "SELECT title_id, MAX(at) FROM (
+                SELECT title_id, watched_at AS at FROM watch_event
+                 WHERE user_id = ?1 AND undated = 0
+                UNION ALL
+                SELECT title_id, read_at FROM chapter_read WHERE user_id = ?1)
+              GROUP BY title_id",
         )
         .bind(user_id)
         .fetch_all(pool)

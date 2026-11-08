@@ -906,6 +906,8 @@ fn as_remote(id: i64, link: &Link, like: &Remote) -> Remote {
         titles: link.titles.clone(),
         synonyms: Vec::new(),
         format: link.format.clone(),
+        // Relations are followed between anime only.
+        manga: false,
         episodes: link.episodes,
         year: link.year,
         start: link.start.clone(),

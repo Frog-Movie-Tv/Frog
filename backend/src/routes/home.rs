@@ -50,8 +50,11 @@ pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
                FROM library_entry l
                JOIN title t ON t.id = l.title_id
               WHERE l.user_id = ?1 AND l.status = 'watching'
-              ORDER BY (SELECT MAX(w.watched_at) FROM watch_event w
-                         WHERE w.user_id = ?1 AND w.title_id = t.id AND w.undated = 0) DESC,
+              ORDER BY COALESCE(
+                         (SELECT MAX(w.watched_at) FROM watch_event w
+                           WHERE w.user_id = ?1 AND w.title_id = t.id AND w.undated = 0),
+                         (SELECT MAX(r.read_at) FROM chapter_read r
+                           WHERE r.user_id = ?1 AND r.title_id = t.id)) DESC,
                        l.updated_at DESC
               LIMIT 24"
         ),
@@ -74,7 +77,12 @@ pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
         .into_iter()
         .filter(|u| {
             let item = &u.item;
-            crate::release::continues(item.watched_episodes, item.total_episodes, u.next.is_some())
+            crate::release::in_progress(
+                &item.title.kind,
+                item.watched_episodes,
+                item.total_episodes,
+                u.next.is_some(),
+            )
         })
         .partition(|u| matches!(&u.next, Some(n) if !n.aired));
 

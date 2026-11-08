@@ -534,7 +534,13 @@ test('the rating deck takes a slid score, skips, and takes both back', async ({
 	const togo = page.getByText(/\d+ to go/);
 	await expect(togo).toBeVisible();
 	const start = Number((await togo.innerText()).match(/(\d+) to go/)?.[1]);
-	expect(start).toBeGreaterThanOrEqual(4);
+	// The deck deals what was finished: Arcane, still being watched, and
+	// Severance, on the watchlist, wait for Everything.
+	expect(start).toBeGreaterThanOrEqual(3);
+	await page.getByRole('button', { name: 'Everything', exact: true }).click();
+	await expect(page.getByText(`${start + 2} to go`)).toBeVisible();
+	await page.getByRole('button', { name: 'Finished', exact: true }).click();
+	await expect(page.getByText(`${start} to go`)).toBeVisible();
 
 	const card = page.locator('.card.top h2');
 	const first = await card.innerText();
@@ -1141,6 +1147,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/export/library.json',
 		'/api/auth/two-factor',
 		'/api/stats',
+		'/api/stats/manga',
 		'/api/stats?year=2025',
 		'/api/push',
 		'/api/shelves',

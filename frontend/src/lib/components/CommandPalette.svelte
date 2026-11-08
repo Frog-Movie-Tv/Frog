@@ -4,10 +4,10 @@
 	import { goto } from '$app/navigation';
 	import { api, img } from '#lib/api';
 	import Icon, { type IconName } from '#lib/components/Icon.svelte';
-	import { settings, THEMES } from '#lib/settings.svelte';
+	import { settings, THEMES, GO_KEYS } from '#lib/settings.svelte';
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
-	import { STATUS_LABEL, type LibraryItem, type SearchItem } from '#lib/types';
+	import { KIND_LABEL, statusLabel, type LibraryItem, type SearchItem } from '#lib/types';
 
 	interface Command {
 		id: string;
@@ -191,7 +191,7 @@
 			id: `l-${i.id}`,
 			group: 'Library',
 			label: i.name,
-			hint: i.entry ? STATUS_LABEL[i.entry.status] : undefined,
+			hint: i.entry ? statusLabel(i.entry.status, i.kind) : undefined,
 			poster: i.poster_path,
 			run: () => goto(`/t/${i.id}`)
 		}));
@@ -202,7 +202,7 @@
 				id: `r-${titleKey(r)}`,
 				group: 'On TMDB',
 				label: r.name,
-				hint: `${r.kind === 'tv' ? 'Show' : 'Film'}${r.year ? ` \u00b7 ${r.year}` : ''}`,
+				hint: `${KIND_LABEL[r.kind]}${r.year ? ` \u00b7 ${r.year}` : ''}`,
 				poster: r.poster_path,
 				run: () => goto(titleHref(r) ?? '/search')
 			}));
@@ -263,14 +263,9 @@
 			}
 			if (event.key === 'g') pendingG = true;
 			else if (pendingG) {
-				const map: Record<string, string> = {
-					h: '/',
-					l: '/library',
-					s: '/search',
-					t: '/stats',
-					c: '/settings'
-				};
-				const to = map[event.key];
+				// G then a letter goes to a page, by the letters set in Settings.
+				const keys = settings.current.goKeys ?? GO_KEYS;
+				const to = Object.keys(keys).find((href) => keys[href] === event.key.toLowerCase());
 				pendingG = false;
 				if (to) {
 					event.preventDefault();

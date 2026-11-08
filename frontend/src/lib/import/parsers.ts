@@ -23,7 +23,7 @@ export const SOURCES: SourceFormat[] = [
 	{
 		id: 'mal',
 		label: 'MyAnimeList',
-		hint: 'The XML export from Profile → Export, zipped or not.',
+		hint: 'The XML export of your anime or manga list, zipped or not.',
 		accept: '.xml,.gz'
 	},
 	{
@@ -166,6 +166,14 @@ function readTraktJson(text: string): Incoming[] {
 
 			const watched = entry.watched_at ?? entry.last_watched_at ?? entry.rated_at;
 			if (typeof watched === 'string') row.watched_at = toDate(watched);
+			// A watched episode names itself: that one is ticked, on its day.
+			const episode = entry.episode as { season?: unknown; number?: unknown } | undefined;
+			if (typeof episode?.season === 'number' && typeof episode.number === 'number') {
+				row.watches = [
+					{ season: episode.season, episode: episode.number, watched_at: row.watched_at }
+				];
+				row.progress = 1;
+			}
 			if (part) row.status = 'watching';
 			else row.status = row.watched_at || row.rating !== null ? 'completed' : 'planned';
 
@@ -233,7 +241,7 @@ function readFrogJson(text: string): Incoming[] {
 	return data.titles.map((raw) => {
 		const t = raw as Record<string, unknown>;
 		const row = newRow(String(t.name ?? 'Unknown'), 'Frog backup');
-		row.kind = t.kind === 'tv' ? 'tv' : 'movie';
+		row.kind = t.kind === 'tv' || t.kind === 'manga' ? t.kind : 'movie';
 		const ids = (t.ids ?? {}) as { anilist?: unknown[]; imdb?: unknown[] };
 		const tmdb = typeof t.tmdb_id === 'number' ? t.tmdb_id : null;
 		row.tmdb_id = tmdb !== null && tmdb > 0 ? tmdb : null;
@@ -247,8 +255,16 @@ function readFrogJson(text: string): Incoming[] {
 		row.status = (t.status as Status) ?? null;
 		row.favourite = t.favourite === true;
 
-		const watches = t.watches as { watched_at?: string }[] | undefined;
-		row.watched_at = watches?.[0]?.watched_at ?? null;
+		// A film's every watch, the first as the row's own, the rest after it.
+		const watches = (t.watches ?? []) as { watched_at?: unknown; rewatch?: unknown }[];
+		const dated = watches.filter((w) => typeof w.watched_at === 'string');
+		row.watched_at = (dated[0]?.watched_at as string | undefined) ?? null;
+		if (dated.length > 1) {
+			row.film_watches = dated.slice(1).map((w) => ({
+				watched_at: w.watched_at as string,
+				rewatch: w.rewatch === true
+			}));
+		}
 		const day = (v: unknown) => (typeof v === 'string' ? toDate(v) : null);
 		row.started_at = day(t.started_at);
 		row.finished_at = day(t.finished_at);
@@ -263,6 +279,14 @@ function readFrogJson(text: string): Incoming[] {
 			watched_at?: string | null;
 		}[];
 		const seen = episodes.filter((e) => e.watched);
+		// A manga's chapters, or any title followed as a count, and the days
+		// they were read.
+		if (typeof t.progress === 'number' && t.progress > 0) row.progress = t.progress;
+		if (Array.isArray(t.reads)) {
+			row.reads = (t.reads as { chapter?: unknown; read_at?: unknown }[])
+				.filter((r) => typeof r.chapter === 'number' && typeof r.read_at === 'string')
+				.map((r) => ({ chapter: r.chapter as number, read_at: r.read_at as string }));
+		}
 		if (seen.length) {
 			row.watches = seen.map((e) => ({
 				season: e.season,
@@ -297,8 +321,9 @@ export async function readFile(format: string, file: File): Promise<ParsedFile[]
 		for (const [path, bytes] of Object.entries(entries)) {
 			const wanted = format === 'mal' ? '.xml' : '.csv';
 			if (!path.toLowerCase().endsWith(wanted)) continue;
-			// Letterboxd also ships comments and lists, which are not a library.
-			if (/comment|review|lists?\//i.test(path)) continue;
+			// Letterboxd also ships comments and lists, which are not a library,
+			// and a deleted/ folder of what was taken out of it.
+			if (/comment|review|lists?\/|(^|\/)deleted\//i.test(path)) continue;
 			const rows = readOne(format, path, strFromU8(bytes));
 			if (rows.length) out.push({ name: path, rows });
 		}
@@ -387,6 +412,17 @@ export function dedupe(rows: Incoming[]): Incoming[] {
 		}
 		// Watched beats planned.
 		if (row.status === 'completed') existing.status = 'completed';
+		// Episodes named one row each (Trakt's history) come together.
+		if (row.watches?.length) {
+			const seen = new Set(
+				(existing.watches ?? []).map((w) => `${w.season}:${w.episode}:${w.watched_at}`)
+			);
+			existing.watches = [
+				...(existing.watches ?? []),
+				...row.watches.filter((w) => !seen.has(`${w.season}:${w.episode}:${w.watched_at}`))
+			];
+			existing.progress = new Set(existing.watches.map((w) => `${w.season}:${w.episode}`)).size;
+		}
 	}
 
 	return [...byTitle.values()];

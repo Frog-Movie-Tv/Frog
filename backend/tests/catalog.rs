@@ -578,3 +578,65 @@ async fn titles_an_older_binary_adds_after_the_migration_keep_their_provider() {
         frog::db::SCHEMA_GENERATION
     );
 }
+
+/// A catalog as the release before manga left it: rebuilt once, with a title
+/// table that holds only films and shows. Starting the new binary on it lets
+/// it hold manga, and keeps every id, row and reference as it was.
+#[tokio::test]
+async fn a_catalog_from_before_manga_takes_manga_and_loses_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let url = url_in(&dir);
+    old_database(&url).await;
+    let pool = frog::db::connect(&url).await.unwrap();
+    let before = personal(&pool).await;
+    let titles = count(&pool, "SELECT COUNT(*) FROM title").await;
+
+    // Put back the table the release before kept: the same, without manga.
+    {
+        let mut conn = pool.acquire().await.unwrap();
+        let (sql,): (String,) =
+            sqlx::query_as("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'title'")
+                .fetch_one(&mut *conn)
+                .await
+                .unwrap();
+        assert!(sql.contains("'manga'"), "{sql}");
+        let body =
+            sql[sql.find('(').unwrap()..].replace("('movie', 'tv', 'manga')", "('movie', 'tv')");
+        for step in [
+            "PRAGMA foreign_keys = OFF".to_string(),
+            format!("CREATE TABLE title_prev {body}"),
+            "INSERT INTO title_prev SELECT * FROM title".to_string(),
+            "DROP TABLE title".to_string(),
+            "ALTER TABLE title_prev RENAME TO title".to_string(),
+            // As that release's own rebuild did, the id sequence carries on.
+            "UPDATE sqlite_sequence SET seq = 12 WHERE name = 'title'".to_string(),
+            "PRAGMA foreign_keys = ON".to_string(),
+        ] {
+            sqlx::query(&step).execute(&mut *conn).await.unwrap();
+        }
+        let refused = sqlx::query("INSERT INTO title (kind, name) VALUES ('manga', 'Berserk')")
+            .execute(&mut *conn)
+            .await;
+        assert!(refused.is_err(), "the release before holds no manga");
+    }
+    pool.close().await;
+
+    let pool = frog::db::connect(&url).await.unwrap();
+    assert_eq!(personal(&pool).await, before);
+    assert_eq!(count(&pool, "SELECT COUNT(*) FROM title").await, titles);
+    assert_eq!(
+        count(&pool, "SELECT COUNT(*) FROM pragma_foreign_key_check").await,
+        0
+    );
+    let (id,): (i64,) =
+        sqlx::query_as("INSERT INTO title (kind, name) VALUES ('manga', 'Berserk') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(id > 12, "no id is used twice: {id}");
+    assert_eq!(
+        count(&pool, "SELECT user_version FROM pragma_user_version").await,
+        frog::db::SCHEMA_GENERATION,
+        "the release before still runs on it"
+    );
+}

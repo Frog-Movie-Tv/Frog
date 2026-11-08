@@ -249,8 +249,9 @@ pub async fn instance(
         .await?;
     // Every title this Frog has come to know, by its own id; one folded into
     // another is the same title and counts once.
-    let (titles, films, shows): (i64, i64, i64) = sqlx::query_as(
-        "SELECT COUNT(*), COALESCE(SUM(kind = 'movie'), 0), COALESCE(SUM(kind = 'tv'), 0)
+    let (titles, films, shows, manga): (i64, i64, i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*), COALESCE(SUM(kind = 'movie'), 0), COALESCE(SUM(kind = 'tv'), 0),
+                COALESCE(SUM(kind = 'manga'), 0)
            FROM title WHERE merged_into IS NULL",
     )
     .fetch_one(&state.pool)
@@ -261,7 +262,7 @@ pub async fn instance(
         "database_bytes": pages * page_size,
         "image_cache_bytes": images,
         "accounts": accounts,
-        "titles": { "all": titles, "films": films, "shows": shows },
+        "titles": { "all": titles, "films": films, "shows": shows, "manga": manga },
         "last_backup": last_backup(&state.config.database_url),
     })))
 }

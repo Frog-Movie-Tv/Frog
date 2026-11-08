@@ -40,14 +40,14 @@ pub fn unique_by<T, K: Eq + Hash>(items: Vec<T>, key: impl Fn(&T) -> K) -> Vec<T
         .collect()
 }
 
-/// A film or show as a provider lists it: a search result, a credit, a
-/// recommendation. Not necessarily in Frog's catalog yet.
+/// A film, show or manga as a provider lists it: a search result, a credit,
+/// a recommendation. Not necessarily in Frog's catalog yet.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchItem {
     pub kind: String,
     /// TMDB's id; none for an anime only AniList has.
     pub tmdb_id: Option<i64>,
-    /// AniList's id, for an anime TMDB lacks.
+    /// AniList's id, for an anime TMDB lacks, and for every manga.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub anilist_id: Option<i64>,
     /// Frog's id, when the title is in this account's library.
@@ -74,7 +74,7 @@ impl SearchItem {
         let kind = force_kind
             .map(str::to_string)
             .or_else(|| str_at(v, "media_type"))?;
-        if kind != "movie" && kind != "tv" {
+        if !matches!(kind.as_str(), "movie" | "tv" | "manga") {
             return None;
         }
         let name = str_at(v, "title").or_else(|| str_at(v, "name"))?;
@@ -180,7 +180,8 @@ impl Default for TitleCore {
 
 impl TitleCore {
     pub fn from_detail(kind: &str, v: &Value) -> Option<Self> {
-        let is_tv = kind == "tv";
+        // A show and a manga both run from one date to another.
+        let runs = kind != "movie";
         let genres: Vec<String> = v
             .get("genres")
             .and_then(Value::as_array)
@@ -199,7 +200,7 @@ impl TitleCore {
             backdrop_path: str_at(v, "backdrop_path"),
             logo_path: pick_logo(v),
             release_date: str_at(v, "release_date").or_else(|| str_at(v, "first_air_date")),
-            last_air_date: if is_tv {
+            last_air_date: if runs {
                 str_at(v, "last_air_date")
             } else {
                 None
@@ -392,6 +393,10 @@ pub struct Provider {
     /// (AniList does; TMDB only has its own watch page).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    /// The service's own colour, behind a logo that is only a white mark
+    /// (AniList's link icons).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -630,6 +635,8 @@ pub fn providers(v: &Value, region: &str) -> ProviderGroup {
                             name: str_at(p, "provider_name")?,
                             logo_path: str_at(p, "logo_path"),
                             url: str_at(p, "url"),
+                            color: str_at(p, "color")
+                                .filter(|c| c.starts_with('#') && c.len() <= 9),
                         })
                     })
                     .collect()

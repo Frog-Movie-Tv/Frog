@@ -222,7 +222,9 @@ async fn sync_inner(state: &AppState, user_id: i64) -> AppResult<Summary> {
     ensure_map(state, api.client).await?;
 
     let remotes = client::read_list(&api, &token, anilist_user_id).await?;
-    for r in &remotes {
+    // What the matcher knows about anime it may meet as relations; a manga
+    // is never placed, so it has no use for it.
+    for r in remotes.iter().filter(|r| !r.manga) {
         remember_media(
             &state.pool,
             r.media_id,
@@ -324,6 +326,9 @@ impl Run<'_> {
     async fn entry(&mut self, remote: &Remote, prior: Option<&Known>) -> AppResult<()> {
         if prior.is_some_and(|k| k.state == "ignored") {
             return Ok(());
+        }
+        if remote.manga {
+            return self.manga(remote, prior).await;
         }
         let prior_place =
             prior.and_then(|k| k.target.zip(k.title_id).filter(|_| k.state == "placed"));
@@ -437,7 +442,7 @@ impl Run<'_> {
         };
         save_entry(pool, user_id, remote, &verdict, None, Some(&p.candidates)).await?;
         if let Some(t) = show_title {
-            records::set_show(pool, user_id, remote.media_id, t).await?;
+            records::set_title(pool, user_id, remote.media_id, t).await?;
         }
         let tries = prior
             .filter(|k| k.meta.2 == remote.media_status)
@@ -446,6 +451,40 @@ impl Run<'_> {
         let next = next_try(tries, p.outcome == Outcome::Upcoming);
         records::schedule_look(pool, user_id, remote.media_id, tries + 1, &next).await?;
         self.keep_local(remote, prior).await
+    }
+
+    /// A manga is AniList's own title: there is nothing to place, so it is
+    /// matched as it stands and kept like an AniList-only title, its
+    /// chapters a count.
+    async fn manga(&mut self, remote: &Remote, prior: Option<&Known>) -> AppResult<()> {
+        let verdict = Verdict {
+            state: "placed",
+            outcome: "matched",
+            method: Some("manga"),
+            confidence: 100,
+            note: None,
+        };
+        save_entry(
+            &self.acct.state.pool,
+            self.acct.user_id,
+            remote,
+            &verdict,
+            None,
+            None,
+        )
+        .await?;
+        match sync_local(&self.acct, remote, prior).await {
+            Ok(to_frog) => {
+                self.summary.to_frog += i64::from(to_frog);
+                Ok(())
+            }
+            Err(e) if is_outage(&e) => Err(e),
+            Err(e) => {
+                tracing::warn!(media_id = remote.media_id, error = %e, "keeping an AniList manga failed");
+                self.summary.failed += 1;
+                Ok(())
+            }
+        }
     }
 
     /// `sync_local` for one entry, counted, with a failure that is not an

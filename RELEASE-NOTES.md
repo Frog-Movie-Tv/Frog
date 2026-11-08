@@ -11,7 +11,59 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Horned Frog —
 
-In progress.
+Manga, read and counted like everything you watch.
+
+### Highlights
+
+- **Manga.** Search has a Manga tab, and a manga has its own page: its
+  authors, chapters and volumes, where to read it and the anime it became.
+  Count chapters as you read and Frog keeps up: Reading from the first one,
+  Completed at the last chapter of a finished series. The manga on your
+  AniList come in with every sync, and Library has a Manga filter.
+- **Reading, everywhere.** The chapters you read land in your diary and in
+  Activity, a manga you are reading sits in Continue watching, and your
+  profile counts your chapters. Stats has a Manga half beside Films & shows:
+  chapters read by month, genres, authors, ratings and your top manga.
+
+### Improvements
+
+- Stars start empty and fill as you rate: tap or drag across them, the left
+  half of a star for a half. Every star rating shows all five.
+- A 10 point score slides like the others, in whole points.
+- The rating deck deals the titles you finished. Everything still deals the
+  rest.
+- Cards in the rating deck follow your finger as you swipe them.
+- Anything AniList syncs after the first time shows in Activity and your
+  diary, on the day it came in.
+- Where to read lists each service once, in its own colours.
+- An author's page lists their manga as well as their anime.
+- Marking titles watched in Library's edit mode can be undone, and undoing
+  an unticked episode brings back every time you watched it.
+- A person's page leads with their work; talk shows, reality TV and playing
+  themselves sit under Appearances.
+- Settings → Home can switch an older Home to the new layout in one tap.
+- Ratings you gave single episodes show beside them.
+- Administration counts films, shows and manga on rows of their own.
+- Trakt history ticks each episode it names, on its day; a Frog backup
+  brings back every time you watched a film; Letterboxd's deleted films stay
+  out of an import.
+- Import your MyAnimeList manga list as well as your anime.
+- Rename a status and give it your own colour, in Settings → Watching.
+- Choose the letter after G that takes you to each page, in Settings → Home.
+- Turn on Play trailers and a title's trailer plays without sound behind
+  its page.
+- Each shelf can have its own poster size.
+- Play, formerly GoPlay, opens its own search for a title.
+
+### Fixes
+
+- Manga search finds the manga you name, and nothing that only shares a
+  word with it.
+- Stars on Compare stay in their column on a phone.
+- Switching between Trending this week and Top rated keeps the list on
+  screen until the other one arrives.
+- Edit mode's menus open above the bar on a phone, clear of Done.
+- A white title logo keeps its edges on the Light themes.
 
 ## [1.3.1] — Horned Frog — 2026-11-03
 

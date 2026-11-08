@@ -1,4 +1,6 @@
-export type Kind = 'movie' | 'tv';
+import { settings } from './settings.svelte';
+
+export type Kind = 'movie' | 'tv' | 'manga';
 
 export type Status = 'watching' | 'completed' | 'planned' | 'paused' | 'dropped';
 
@@ -10,6 +12,36 @@ export const STATUS_LABEL: Record<Status, string> = {
 	planned: 'Watchlist',
 	paused: 'On hold',
 	dropped: 'Dropped'
+};
+
+/** A manga is read: the same statuses, in a reader's words. */
+const READING_LABEL: Partial<Record<Status, string>> = {
+	watching: 'Reading',
+	planned: 'Plan to read'
+};
+
+/**
+ * A status as a title of this kind says it: the person's own name for it if
+ * they chose one in Settings, a reader's word for a manga, else Frog's.
+ */
+export function statusLabel(status: Status, kind?: Kind | null): string {
+	const own = settings.current.statusNames?.[status]?.trim();
+	if (own) return own;
+	return (kind === 'manga' && READING_LABEL[status]) || STATUS_LABEL[status];
+}
+
+/** What each kind of title is called, one of them. */
+export const KIND_LABEL: Record<Kind, string> = {
+	movie: 'Film',
+	tv: 'Show',
+	manga: 'Manga'
+};
+
+/** The icon that stands for each kind of title. */
+export const KIND_ICON: Record<Kind, 'film' | 'tv' | 'book-open'> = {
+	movie: 'film',
+	tv: 'tv',
+	manga: 'book-open'
 };
 
 export interface Palette {
@@ -145,6 +177,8 @@ export interface Provider {
 	logo_path: string | null;
 	/** The title's own page on the service, when known. */
 	url?: string;
+	/** The service's colour, behind a logo that is only a white mark. */
+	color?: string;
 }
 
 export interface ProviderGroup {
@@ -371,6 +405,10 @@ export interface Streak {
 export interface FullStats {
 	year: number | null;
 	years: number[];
+	/** Films and shows in the library, by status. */
+	library: Partial<Record<Status, number>>;
+	/** Manga in the library: whether Stats has a manga half. */
+	manga: number;
 	totals: {
 		films: number;
 		episodes: number;
@@ -547,7 +585,7 @@ export interface InstanceInfo {
 	image_cache_bytes: number;
 	accounts: number;
 	/** Every title this Frog has come to know. */
-	titles?: { all: number; films: number; shows: number };
+	titles?: { all: number; films: number; shows: number; manga: number };
 	last_backup: { at: string; label: string; pushed: boolean } | null;
 }
 
@@ -700,6 +738,8 @@ export interface Profile {
 		films: number;
 		episodes: number;
 		shows: number;
+		/** Chapters read, of every manga in the library. */
+		chapters?: number;
 		minutes: number;
 		library: number;
 		completed: number;
@@ -797,6 +837,8 @@ export interface MoreResults {
 	people: PersonResult[];
 	studios: StudioResult[];
 	characters: CharacterResult[];
+	/** From AniList, the only place Frog finds manga. */
+	manga: SearchItem[];
 }
 
 export interface StudioDetail {
@@ -810,4 +852,31 @@ export interface StudioDetail {
 	titles: SearchItem[];
 	/** The page after this one, when the studio made more. */
 	next_page?: number | null;
+}
+
+/** The manga half of Stats: what was read. */
+export interface MangaStats {
+	year: number | null;
+	years: number[];
+	totals: {
+		manga: number;
+		chapters: number;
+		completed: number;
+		days: number;
+		mean_rating: number | null;
+		rated: number;
+	};
+	timeline: { unit: string; chapters: number }[];
+	by_status: Partial<Record<Status, number>>;
+	genres: { name: string; titles: number }[];
+	authors: StatsPerson[];
+	ratings: number[];
+	top: {
+		id: number;
+		kind: Kind;
+		name: string;
+		poster_path: string | null;
+		chapters: number;
+		rating: number | null;
+	}[];
 }

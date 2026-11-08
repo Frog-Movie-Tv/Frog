@@ -180,15 +180,31 @@ pub async fn tick_aired(
 }
 
 /// What marking titles watched did.
-#[derive(Debug, Default, PartialEq, serde::Serialize)]
+#[derive(Debug, Default, serde::Serialize)]
 pub struct Marked {
     pub marked: i64,
     /// Nothing out yet to have watched, or the episodes could not be listed.
     pub skipped: i64,
+    /// What the titles held before, every watch and chapter with them: what
+    /// undo sends back (`store::restore_entries` with `replace`).
+    pub before: Vec<EntryRecord>,
+}
+
+/// These titles' entries whole, with their watches, episode notes and reads.
+async fn held(pool: &SqlitePool, user_id: i64, title_ids: &[i64]) -> AppResult<Vec<EntryRecord>> {
+    let mut held = store::entry_records(pool, user_id, title_ids).await?;
+    for entry in &mut held {
+        (entry.watches, entry.episode_notes) =
+            store::held_watches(pool, user_id, entry.title_id).await?;
+        entry.reads = store::held_reads(pool, user_id, entry.title_id).await?;
+    }
+    Ok(held)
 }
 
 /// Mark titles of a library watched: a show's aired episodes, by the same
-/// rules as "Mark all watched"; a film as finished, with its first watch.
+/// rules as "Mark all watched"; a film as finished, with its first watch; a
+/// manga read to its last chapter, where that is known, the chapters it moves
+/// past read today or on the day chosen (a manga has no release dates).
 /// `finish` also says the status is Completed whatever it was, which is what
 /// choosing that status means; otherwise a paused or dropped show keeps it.
 pub async fn mark_watched(
@@ -207,7 +223,10 @@ pub async fn mark_watched(
         ..Default::default()
     };
 
-    let mut out = Marked::default();
+    let mut out = Marked {
+        before: held(pool, user_id, title_ids).await?,
+        ..Marked::default()
+    };
     for title in store::tracked_titles(pool, user_id, title_ids).await? {
         if title.kind == "movie" {
             if !film_is_out(title.release_date.as_deref(), &today) {
@@ -222,6 +241,34 @@ pub async fn mark_watched(
                 &stamp,
             );
             store::add_first_film_watch(pool, user_id, title.id, &at, undated).await?;
+            out.marked += 1;
+            continue;
+        }
+
+        if title.kind == "manga" {
+            let (chapters,): (Option<i64>,) =
+                sqlx::query_as("SELECT episode_count FROM title WHERE id = ?")
+                    .bind(title.id)
+                    .fetch_one(pool)
+                    .await?;
+            let Some(total) = chapters.filter(|n| *n > 0) else {
+                out.skipped += 1;
+                continue;
+            };
+            let before = store::counted_progress(pool, user_id, title.id)
+                .await?
+                .unwrap_or(0);
+            store::apply_patch(pool, user_id, title.id, &completed()).await?;
+            store::set_local_progress(pool, user_id, title.id, total.max(before)).await?;
+            let at = match marking.when {
+                When::Today => Some(stamp.clone()),
+                When::Date => chosen.clone(),
+                When::Release | When::Unknown => None,
+            };
+            if let Some(at) = at {
+                store::record_reads(pool, user_id, title.id, (before, total), &at, "manual")
+                    .await?;
+            }
             out.marked += 1;
             continue;
         }
@@ -253,11 +300,7 @@ pub async fn remove(
     user_id: i64,
     title_ids: &[i64],
 ) -> AppResult<Vec<EntryRecord>> {
-    let mut held = store::entry_records(pool, user_id, title_ids).await?;
-    for entry in &mut held {
-        (entry.watches, entry.episode_notes) =
-            store::held_watches(pool, user_id, entry.title_id).await?;
-    }
+    let held = held(pool, user_id, title_ids).await?;
     let ids: Vec<i64> = held.iter().map(|e| e.title_id).collect();
     store::remove_entries(pool, user_id, &ids).await?;
     Ok(held)

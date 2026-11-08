@@ -7,11 +7,12 @@
 		size?: number;
 		/** Read out instead of the stars, when they are all a control says. */
 		label?: string;
-		/** Draw this many in all, the rest as outlines: a meter, not a count. */
+		/** How many in all, the rest as outlines: a meter, not a count. */
 		outOf?: number;
 	}
 
-	let { value, size = 16, label, outOf }: Props = $props();
+	// Always the whole row: three stars read as three of five, not as three.
+	let { value, size = 16, label, outOf = 5 }: Props = $props();
 
 	// The clip that cuts the last star in half is this instance's own.
 	const uid = $props.id();
@@ -21,8 +22,9 @@
 </script>
 
 <!--
-	Stars drawn rather than typed: a whole star for each point, and a half star
-	that is the same star filled to its middle, with the rest as an outline.
+	Stars drawn rather than typed: a whole star for each point, a half star
+	that is the same star filled to its middle, and the rest of the five as
+	outlines, so every rating is drawn on the same row.
 -->
 <span
 	class="stars"

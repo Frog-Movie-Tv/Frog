@@ -329,10 +329,13 @@
 		}
 	}
 
+	/** A manga is kept as AniList has it: nothing to match it to. */
+	const isManga = (entry: AniListEntry) => entry.method === 'manga';
+
 	function where(entry: AniListEntry): string {
 		const t = entry.title;
 		if (!t) return '';
-		if (t.kind === 'movie') return t.name;
+		if (t.kind === 'movie' || t.kind === 'manga') return t.name;
 		const part = t.season === 0 ? 'Specials' : `Season ${t.season ?? 1}`;
 		return `${t.name} · ${part}${t.from_episode > 1 ? `, from episode ${t.from_episode}` : ''}`;
 	}
@@ -358,9 +361,14 @@
 
 	/** What AniList says about it: format, length, and how far you are. */
 	function about(entry: AniListEntry): string {
+		const manga = isManga(entry);
 		const bits = [entry.format?.replace('_', ' ') ?? 'Anime'];
-		if (entry.episodes) bits.push(plural(entry.episodes, 'episode'));
-		const state = entry.status ? STATUSES[entry.status] : null;
+		if (entry.episodes) bits.push(plural(entry.episodes, manga ? 'chapter' : 'episode'));
+		const state = entry.status
+			? manga && entry.status === 'CURRENT'
+				? 'Reading'
+				: STATUSES[entry.status]
+			: null;
 		if (state) {
 			const total = entry.episodes ? ` of ${entry.episodes}` : '';
 			bits.push(
@@ -652,7 +660,7 @@
 												<button class="btn ghost small" onclick={() => startChoosing(entry)}>
 													Match
 												</button>
-											{:else if openGroup !== 'later'}
+											{:else if openGroup !== 'later' && !isManga(entry)}
 												<button class="btn ghost small" onclick={() => startChoosing(entry)}>
 													Change
 												</button>

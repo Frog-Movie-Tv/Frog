@@ -24,7 +24,8 @@ const SEARCH: [RegExp, (q: string) => string][] = [
 	[/paramount/i, (q) => `https://www.paramountplus.com/search/?q=${q}`],
 	[/vrt ?max/i, (q) => `https://www.vrt.be/vrtmax/zoeken/?q=${q}`],
 	[/streamz/i, (q) => `https://www.streamz.be/streamz/zoeken?query=${q}`],
-	[/goplay/i, (q) => `https://www.goplay.be/zoeken?q=${q}`],
+	// GoPlay is called Play since 2025; its old address only redirects there.
+	[/goplay|^play$/i, (q) => `https://www.play.tv/zoeken?q=${q}`],
 	[/mubi/i, (q) => `https://mubi.com/en/search/films?query=${q}`],
 	[/plex/i, (q) => `https://watch.plex.tv/search?q=${q}`],
 	[/hidive/i, (q) => `https://www.hidive.com/search?q=${q}`],

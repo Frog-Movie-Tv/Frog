@@ -5,7 +5,7 @@
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import type { Kind, LibraryItem, Status } from '#lib/types';
-	import { STATUSES, STATUS_LABEL } from '#lib/types';
+	import { STATUSES, statusLabel } from '#lib/types';
 	import Rating from './Rating.svelte';
 	import Select from './Select.svelte';
 
@@ -29,6 +29,7 @@
 		rating?: number | null;
 		favourite?: boolean;
 		notes?: string | null;
+		progress?: number;
 	}): Promise<LibraryItem | null> {
 		saving = true;
 		try {
@@ -50,7 +51,9 @@
 	 * Completed as the default status goes the same way.
 	 */
 	async function setStatus(status: Status) {
-		const saved = await save({ status });
+		// A manga finished is read to its last chapter, where that is known.
+		const unread = kind === 'manga' && status === 'completed' && item.total_episodes > 0;
+		const saved = await save(unread ? { status, progress: item.total_episodes } : { status });
 		if (!saved) return;
 		// The answer, not the item from before: a show just added has only now
 		// had its episodes listed.
@@ -97,13 +100,13 @@
 			Add to library
 		</button>
 		<button class="btn" disabled={saving} onclick={() => save({ status: 'watching' })}>
-			Start watching
+			{kind === 'manga' ? 'Start reading' : 'Start watching'}
 		</button>
 	{:else}
 		<Select
 			label="Status"
 			value={item.entry?.status ?? 'planned'}
-			options={STATUSES.map((st) => ({ value: st, label: STATUS_LABEL[st] }))}
+			options={STATUSES.map((st) => ({ value: st, label: statusLabel(st, kind) }))}
 			onchange={(v) => setStatus(v as Status)}
 		/>
 

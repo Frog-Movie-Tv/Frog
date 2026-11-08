@@ -442,8 +442,7 @@ async fn ensure_anilist(state: &AppState, media_id: i64) -> AppResult<(i64, Valu
     let kind = match existing {
         // A kept title keeps its kind.
         Some(title_id) => get_title(pool, title_id).await?.kind,
-        None if media["format"].as_str() == Some("MOVIE") => "movie".to_string(),
-        None => "tv".to_string(),
+        None => crate::anilist::media::kind_of(&media).to_string(),
     };
     let detail = crate::anilist::media::as_tmdb(state, &kind, &media).await?;
     let core = TitleCore::from_detail(&kind, &detail)

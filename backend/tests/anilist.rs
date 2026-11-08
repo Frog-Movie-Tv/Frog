@@ -74,7 +74,14 @@ async fn graphql(State(fake): State<Shared>, Json(body): Json<Value>) -> axum::r
         }
         let chunk = body["variables"]["chunk"].as_u64().unwrap_or(1) as usize;
         let size = fake.per_chunk.unwrap_or(usize::MAX);
-        let all = &fake.entries;
+        // Anime and manga are separate lists; an entry with no type is anime.
+        let wanted = body["variables"]["type"].as_str().unwrap_or("ANIME");
+        let all: Vec<Value> = fake
+            .entries
+            .iter()
+            .filter(|e| e["media"]["type"].as_str().unwrap_or("ANIME") == wanted)
+            .cloned()
+            .collect();
         let from = (chunk - 1).saturating_mul(size).min(all.len());
         let to = from.saturating_add(size).min(all.len());
         return Json(json!({ "data": { "MediaListCollection": {
@@ -95,6 +102,16 @@ async fn answer(State(fake): State<Shared>, Json(body): Json<Value>) -> Json<Val
     let id = vars["id"].as_i64().unwrap_or_default();
     if query.contains("streamingEpisodes") {
         let media = fake.details.get(&id).cloned().unwrap_or(Value::Null);
+        return Json(json!({ "data": { "Media": media } }));
+    }
+    if query.contains("idMal") {
+        // A manga by its MyAnimeList id, from the details this AniList keeps.
+        let media = fake
+            .details
+            .values()
+            .find(|d| d["idMal"].as_i64() == Some(id))
+            .cloned()
+            .unwrap_or(Value::Null);
         return Json(json!({ "data": { "Media": media } }));
     }
     if query.contains("airingSchedules") {
@@ -1773,7 +1790,11 @@ async fn a_list_is_read_whole_and_a_failed_read_changes_nothing() {
     }
     let summary = h.sync(1).await;
     assert_eq!(summary.entries, 5, "{summary:?}");
-    assert_eq!(h.fake.lock().unwrap().list_calls, 3, "three chunks of two");
+    assert_eq!(
+        h.fake.lock().unwrap().list_calls,
+        4,
+        "three chunks of two, then the manga list, empty"
+    );
     assert_eq!(h.watched(95479).await.len(), 7);
     let good: (Option<String>,) =
         sqlx::query_as("SELECT synced_at FROM anilist_link WHERE user_id = 1")
@@ -1901,6 +1922,53 @@ async fn a_lower_progress_on_anilist_keeps_watches_logged_in_frog() {
     h.sync(1).await;
     let seen: Vec<i64> = h.watched(95479).await.into_iter().map(|e| e.1).collect();
     assert_eq!(seen, vec![1, 2, 3, 4, 5, 6, 7, 8, 11]);
+}
+
+/// A first sync is a backlog and has no days. What AniList moves on after
+/// that was watched since the last sync, so it is dated and reaches the diary
+/// and Activity.
+#[tokio::test]
+async fn what_anilist_moves_on_later_is_dated() {
+    let h = Harness::new().await;
+    seed_tmdb(&h).await;
+    h.fake.lock().unwrap().entries = vec![
+        entry(113415, "JUJUTSU KAISEN", "TV", 24, "CURRENT", 10, 0),
+        entry(9000, "JUJUTSU KAISEN 0", "MOVIE", 1, "PLANNING", 0, 0),
+    ];
+    h.connected().await;
+    h.sync(1).await;
+    let dated = "SELECT COUNT(*) FROM watch_event WHERE user_id = 1 AND undated = 0";
+    assert_eq!(count(&h, dated).await, 0, "the first sync dates nothing");
+
+    {
+        let mut fake = h.fake.lock().unwrap();
+        fake.entries[0]["progress"] = json!(12);
+        fake.entries[1]["status"] = json!("COMPLETED");
+        fake.entries[1]["progress"] = json!(1);
+    }
+    h.sync(1).await;
+    let new: Vec<(Option<i64>,)> = sqlx::query_as(
+        "SELECT e.episode_number FROM watch_event w LEFT JOIN episode e ON e.id = w.episode_id
+          WHERE w.user_id = 1 AND w.undated = 0 ORDER BY e.episode_number",
+    )
+    .fetch_all(&h.state.pool)
+    .await
+    .unwrap();
+    let new: Vec<Option<i64>> = new.into_iter().map(|r| r.0).collect();
+    assert_eq!(
+        new,
+        vec![None, Some(11), Some(12)],
+        "the film and two episodes"
+    );
+    assert_eq!(
+        count(
+            &h,
+            "SELECT COUNT(*) FROM watch_event WHERE user_id = 1 AND undated = 1"
+        )
+        .await,
+        10,
+        "the backlog stays undated"
+    );
 }
 
 /// Two syncs of one account at once: one runs, the other steps aside, and
@@ -2369,4 +2437,217 @@ async fn an_anilist_only_show_is_a_title_like_any_other() {
         count(&h, "SELECT COUNT(*) FROM watch_event WHERE user_id = 1").await,
         3
     );
+}
+
+/// A manga on someone's AniList comes into Frog as a manga of its own: never
+/// placed on TMDB, its chapters read a count, its page from AniList. Moving
+/// the count in Frog moves its status the way a reader would.
+#[tokio::test]
+async fn a_manga_on_anilist_is_a_manga_in_frog() {
+    let h = Harness::new().await;
+    let mut berserk = entry(30002, "Berserk", "MANGA", 0, "CURRENT", 120, 90);
+    berserk["media"]["type"] = json!("MANGA");
+    berserk["media"]["chapters"] = json!(380);
+    berserk["media"]["status"] = json!("RELEASING");
+    let mut pluto = entry(30665, "Pluto", "MANGA", 0, "PLANNING", 0, 0);
+    pluto["media"]["type"] = json!("MANGA");
+    pluto["media"]["chapters"] = json!(65);
+    pluto["media"]["status"] = json!("FINISHED");
+    {
+        let mut fake = h.fake.lock().unwrap();
+        fake.entries = vec![berserk, pluto];
+        for (id, name, chapters, status) in [
+            (30002, "Berserk", 380, "RELEASING"),
+            (30665, "Pluto", 65, "FINISHED"),
+        ] {
+            fake.details.insert(
+                id,
+                json!({
+                    "id": id, "idMal": id - 30000, "type": "MANGA", "format": "MANGA", "status": status,
+                    "chapters": chapters, "volumes": 8,
+                    "title": { "english": name, "romaji": name, "native": null },
+                    "description": "A story.<br>(Source: a publisher)",
+                    "startDate": { "year": 1989, "month": 8, "day": 25 },
+                    "genres": ["Action", "Drama"], "averageScore": 93,
+                    "coverImage": { "extraLarge": null },
+                    "staff": { "edges": [
+                        { "role": "Story & Art", "node": { "id": 97000,
+                          "name": { "full": "Kentarou Miura" }, "image": { "large": null } } }
+                    ] },
+                    "characters": { "edges": [] }, "relations": { "edges": [] },
+                    "recommendations": { "nodes": [] }, "externalLinks": [],
+                    "studios": { "nodes": [] }
+                }),
+            );
+        }
+    }
+    let cookie = h.connected().await;
+    h.sync(1).await;
+
+    let row: (String, Option<i64>, String, Option<f64>) = sqlx::query_as(
+        "SELECT t.kind, l.progress, l.status, l.rating
+           FROM library_entry l JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = 1 AND t.name = 'Berserk'",
+    )
+    .fetch_one(&h.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        row,
+        ("manga".into(), Some(120), "watching".into(), Some(90.0))
+    );
+    let id = common::existing_id(&h.state, -30002).await.unwrap();
+    assert_eq!(
+        count(
+            &h,
+            "SELECT COUNT(*) FROM anilist_entry
+              WHERE user_id = 1 AND state = 'placed' AND method = 'manga' AND title_id IS NOT NULL"
+        )
+        .await,
+        2,
+        "listed as matched, to its own title"
+    );
+    assert_eq!(
+        count(
+            &h,
+            "SELECT COUNT(*) FROM title_external WHERE provider = 'tmdb'"
+        )
+        .await,
+        0
+    );
+
+    // Read on AniList: the count follows.
+    h.fake.lock().unwrap().entries[0]["progress"] = json!(131);
+    h.sync(1).await;
+    let page = h.get(&format!("/api/t/{id}"), &cookie).await;
+    assert_eq!(page["item"]["kind"], json!("manga"));
+    assert_eq!(page["item"]["watched_episodes"], json!(131));
+    assert_eq!(page["item"]["total_episodes"], json!(380));
+    assert_eq!(page["item"]["season_count"], json!(8), "volumes");
+    assert_eq!(page["item"]["genres"], json!(["Action", "Drama"]));
+    assert_eq!(page["crew"][0]["name"], json!("Kentarou Miura"));
+
+    // The first sync was where someone was; the eleven since are today's
+    // reading, in the diary.
+    let reads = "SELECT COUNT(*) FROM chapter_read WHERE user_id = 1";
+    assert_eq!(count(&h, reads).await, 11);
+    let diary = h.get("/api/diary", &cookie).await;
+    let day = diary["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["kind"] == json!("manga"))
+        .cloned()
+        .unwrap_or_else(|| panic!("{diary}"));
+    assert_eq!(day["chapters"][0], json!(121));
+    assert_eq!(day["chapters"][10], json!(131));
+    assert_eq!(day["count"], json!(11));
+
+    // Read to the end of a finished one in Frog: it is completed.
+    let pluto = common::existing_id(&h.state, -30665).await.unwrap();
+    let (code, body, _, _) = h
+        .call(
+            "PUT",
+            &format!("/api/t/{pluto}/library"),
+            Some(json!({ "progress": 65 })),
+            Some(&cookie),
+        )
+        .await;
+    assert!(code.is_success(), "{code} {body}");
+    assert_eq!(body["item"]["entry"]["status"], json!("completed"));
+    assert_eq!(body["item"]["watched_episodes"], json!(65));
+
+    // A backup carries the manga and its chapters, and brings both back.
+    let backup = h.get("/api/export/library.json", &cookie).await;
+    let kept = backup["titles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == json!("Berserk"))
+        .cloned()
+        .unwrap();
+    assert_eq!(kept["kind"], json!("manga"));
+    assert_eq!(kept["progress"], json!(131));
+    assert_eq!(kept["ids"]["anilist"], json!([30002]));
+    assert_eq!(kept["reads"].as_array().unwrap().len(), 11);
+    let read_at = kept["reads"][0]["read_at"].clone();
+    h.call(
+        "DELETE",
+        &format!("/api/t/{id}/library"),
+        None,
+        Some(&cookie),
+    )
+    .await;
+    let (_, matched, _, _) = h
+        .call(
+            "POST",
+            "/api/import/match",
+            Some(json!({ "items": [{ "key": "1", "title": "Berserk", "kind": "manga", "anilist_id": 30002 }] })),
+            Some(&cookie),
+        )
+        .await;
+    let found = &matched["results"][0]["matched"];
+    assert_eq!(found["kind"], json!("manga"), "{matched}");
+    assert_eq!(found["anilist_id"], json!(30002));
+
+    // MyAnimeList's manga list names it by MyAnimeList's id.
+    let (_, matched, _, _) = h
+        .call(
+            "POST",
+            "/api/import/match",
+            Some(json!({ "items": [{ "key": "1", "title": "Berserk", "kind": "manga", "mal_id": 2 }] })),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(
+        matched["results"][0]["matched"]["anilist_id"],
+        json!(30002),
+        "{matched}"
+    );
+    let (code, applied, _, _) = h
+        .call(
+            "POST",
+            "/api/import/apply",
+            Some(json!({ "items": [{
+                "kind": "manga", "tmdb_id": null, "anilist_id": 30002,
+                "status": "watching", "rating": 90, "progress": 131,
+                "reads": [{ "chapter": 121, "read_at": read_at }]
+            }] })),
+            Some(&cookie),
+        )
+        .await;
+    assert!(code.is_success(), "{code} {applied}");
+    assert_eq!(applied["added"], json!(1), "{applied}");
+    let page = h.get(&format!("/api/t/{id}"), &cookie).await;
+    assert_eq!(page["item"]["watched_episodes"], json!(131));
+    assert_eq!(page["item"]["entry"]["status"], json!("watching"));
+    assert_eq!(
+        count(
+            &h,
+            &format!("SELECT COUNT(*) FROM chapter_read WHERE user_id = 1 AND title_id = {id}")
+        )
+        .await,
+        1,
+        "removing it took its reads; the backup brought its one back"
+    );
+
+    // A show followed by its episodes takes no count.
+    seed_tmdb(&h).await;
+    let show = h.tid("tv", 95479).await;
+    h.call(
+        "PUT",
+        &format!("/api/t/{show}/library"),
+        Some(json!({})),
+        Some(&cookie),
+    )
+    .await;
+    let (code, _, _, _) = h
+        .call(
+            "PUT",
+            &format!("/api/t/{show}/library"),
+            Some(json!({ "progress": 3 })),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
 }

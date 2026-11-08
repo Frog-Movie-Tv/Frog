@@ -7,7 +7,7 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 1.3.0 "Horned Frog"; 1.3.1 next |
+| **Release** | 1.3.1 "Horned Frog"; manga next (a `feat`, so 1.4.0) |
 | **Next codenames** | Wood Frog, Goliath |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
@@ -21,60 +21,54 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 ## Next
 
-0. **Release 1.3.1.** The rating deck, slid and drawn scores and Clear that
-   clears are in their pull request, with `Release-As: 1.3.1`; merge it, then
-   release-please's pull request. Small releases carry the newest codename,
-   Horned Frog. Back closing menus is checked on desktop Chromium only; try
-   it on the Android phone. The Glass appearance waits on its own branch,
-   `feat/glass-appearance`, unpushed until the owner has looked at it.
-
-1. **Ship the catalog release with a snapshot at hand.** Frog's own title
-   ids (`docs/CATALOG-IDENTITY.md`) are built and tested: fresh databases, a
-   copy of the release before, an older binary writing between the
-   migration and the rebuild, and every `update.sh` path against stand-ins
-   for Docker (`deploy/tests/update-rollback.sh`). It is not an additive
-   release, and it has not met the live database. Before it reaches a
-   server, an owner has to:
-   - copy the new deploy scripts to each server
-     (`sudo cp deploy/*.sh /opt/frog/deploy/` from this release's checkout).
-     The copy there predates the schema generation and would put the
-     previous image back on the rebuilt table and call it healthy;
-   - run a manual backup and see it arrive in `Frog-Movie-Tv/Frog-Backups`
-     (`sudo /opt/frog/deploy/backup.sh production manual`);
-   - know that production is the first live database it meets: there is no
-     staging, merging to `main` changes nothing live, and merging
-     release-please's pull request does. Afterwards read the update log
-     and open a few titles, an AniList-only one among them.
-2. **AniList sign-in on a laptop, once by hand.** The Frog-Dev client
+0. **Ship the 6 November batch, manga first.** Built and tested, not yet
+   committed: manga (search, pages, chapters read, the AniList manga list,
+   backups), reading in the diary, Activity, Continue watching and profiles,
+   Stats in two halves, stars filled in and always five, the 10 point
+   slider, the deck dealing finished titles and its swipe, AniList syncs in
+   Activity, Administration's rows, undo for marking watched and for an
+   unticked episode's every watch, person pages' Appearances, the Home
+   layout button, Trakt history, backups' film watches, Letterboxd's
+   deleted films, MyAnimeList's manga list, renamed and recoloured
+   statuses, shortcut letters, trailers behind a title, a shelf's own poster
+   size, Play's search, new screenshots, and the fixes in Upcoming. Manga is a `feat`, so
+   release-please makes it 1.4.0, which takes the next codename, Wood Frog,
+   through `/release`. Before it reaches the server:
+   - the first start rebuilds `title` once so it can hold manga
+     (`db::rebuild_title`, the same rebuild the catalog release used), and
+     adds `chapter_read` (additive). The release before runs on both, so a
+     rollback needs no snapshot, but take a manual backup first all the
+     same;
+   - the swipe and the edit bar's phone menus were checked in desktop
+     Chromium, not by a finger: try both on the Android phone;
+   - try a manga search, a manga page and Settings → Connections against the
+     live AniList once deployed. Back closing menus (1.3.1) also still
+     wants a try on the phone. The Glass appearance waits on its own branch,
+     `feat/glass-appearance`, unpushed until the owner has looked at it.
+1. **AniList sign-in on a laptop, once by hand.** The Frog-Dev client
    (redirect `http://127.0.0.1:8080/api/anilist/callback`) is in the local
    `.env`, and AniList accepts its id and secret (checked against its token
    endpoint on 2026-10-30). The production block above it used to win,
    because the first value in `.env` is the one kept; it is commented out
    now. What no script can do: run `.\scripts\dev.ps1`, connect AniList in
    Settings → Connections, and see it come back connected.
-3. **AniList: check the overhaul on the live list.** On a copy of the owner's
+2. **AniList: check the overhaul on the live list.** On a copy of the owner's
    list (221 entries) 213 are matched, 7 wait as not out yet, and one film
    special ("ONE PIECE FILM: GOLD - episode 0") has nothing on TMDB. That
    was a copy, not the live list, and the automated tests do not stand in
-   for it. Once the catalog release is deployed, an owner opens
-   Settings → Connections and reads "Needs a check" and the "Matched"
-   methods for anything that reads wrong.
-4. **Old episode ratings that disagreed.** Seasons whose episodes were all
-   rated the same took that as their season rating
-   (`202610291800_anilist_resilience.sql`). The rest, and every episode of an
-   anime show AniList already scores, stay in `episode_state` untouched and
-   are not shown anywhere. The API no longer writes episode ratings. Show
-   them read-only, or let them go.
-5. **A merge you can undo from the app.** Every move of one account's data
+   for it. An owner opens Settings → Connections on the live site and reads
+   "Needs a check" and the "Matched" methods for anything that reads wrong,
+   and the manga it now lists too.
+3. **A merge you can undo from the app.** Every move of one account's data
    from one title to another is in `title_merge` with what both sides held
    before, but undoing one is still by hand in SQL.
-6. **More streaming links.** Services without a known search address (Rakuten
-   TV, Streamz, VRT MAX, GoPlay…) still open TMDB's watch page. Add each one
-   to `frontend/src/lib/providers.ts` once its search URL is confirmed.
-7. **The screenshots, the rest.** There is still no shelves shot.
-8. **The Projects board.** Backlog / In progress / Review / Done. Needs
+   Needs a decision first: a merge comes from an AniList placement, so
+   undoing it while the placement stands only lasts until the next sync.
+   Settings → Connections → Change already moves an entry somewhere else,
+   which is what an undo would mostly be for.
+4. **The Projects board.** Backlog / In progress / Review / Done. Needs
    `gh auth refresh -s project` from an owner before it can be created.
-9. **Netflix: the dates still missing.** On the 4,054-line file 3,145 of
+5. **Netflix: the dates still missing.** On the 4,054-line file 3,145 of
    3,550 episodes land on their day. The other 405 have names TMDB writes
    differently or not at all (Kuroko's Basketball, The Order), so they are
    counted from the start of the season, undated. Films keep only their
@@ -82,18 +76,12 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    entries. Re-importing over an older import dates what it finds and leaves
    the old count's other ticks undated (26 on this file), since an import
    never removes a watch.
-10. **Netflix: untested shapes.** The personal-data ZIP
+6. **Netflix: untested shapes.** The personal-data ZIP
    (`CONTENT_INTERACTION/ViewingActivity.csv`) is read from its documented
    columns but has never been tried on a real one. Netflix's "Part N"
    seasons are placed by their episode names; parts whose episodes are only
    called "Episode 3" (Money Heist Part 1) still wait for a person.
-11. **What the readers still leave out.** A Frog backup restores which
-   episodes were watched but not when, because the export does not write
-   their dates, and only a film's first watch. A Trakt episode marks its show
-   in progress without ticking that episode, though the file says which one.
-   Letterboxd's ZIP may hold a `deleted/` folder that would be read as
-   library; no real export has been tried.
-12. **Finish the data-ownership pass.** The AniList, import, catalog and
+7. **Finish the data-ownership pass.** The AniList, import, catalog and
    emptying-a-library code no longer lives in routes. Every route below was
    read for the catalog change on 2026-10-30: each now goes by Frog's title
    id, and the TMDB ids left in them are TMDB's own (its cache, credits,
@@ -109,39 +97,15 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    `routes/browse.rs`, `routes/admin.rs`, `routes/invites.rs`,
    `routes/auth.rs`, `routes/push.rs`, `routes/settings.rs`. Persistence is
    not centralised yet.
-13. **Smaller things.** Customisable keyboard shortcuts, renaming and
-   recolouring statuses, muted trailer autoplay, per-shelf layout defaults.
-14. **Carry the 1.0 design to the pages it has not reached.** Settings,
+8. **Carry the 1.0 design to the pages it has not reached.** Settings,
    People and profiles, a person's page, the Calendar and Stats bodies,
    What's new and About still have their earlier layout. Then one pass over
    dialogs, menus and toasts so they share a surface. Home, Search, title
    pages, the Diary, Shelves and Administration show the way.
-15. **Home rows already saved.** A layout saved before 1.0 keeps the rows it
-   had, Recently added and Favourites among them, so long-time accounts see a
-   busier Home than a new one until they switch rows off in Settings → Home.
-   Offer a one-tap "use the new layout" there.
-16. **Logos still missing.** Titles nobody has made a logo for anywhere (most
-   are films not out yet) show their name; they are asked again after a
-   month.
-
-17. **Left from the UX pass.** Each small, none urgent:
-   - A person's filmography leads with talk-show and documentary appearances;
-     sort acting credits by popularity, or put them first.
-   - Undoing an unticked episode restores its latest watch only; earlier
-     rewatches of that episode stay cleared.
-18. **Netflix: try the threshold on more than one file.** 3 was judged on one
+9. **Netflix: try the threshold on more than one file.** 3 was judged on one
    export. The menu in the review moves it for one import; if another person's
    file says 2 or 4, change `SHOW_THRESHOLD`.
-19. **Left from the solid pass.** Each small, none broken:
-   - Marking titles watched in edit mode has no undo. Status, favourite and
-     remove do. It would need the watches it added taken back.
-   - On the Light themes a white title logo sits on the pale end of Home's hero,
-     where it reads less well than on Dark.
-   - A Netflix show already in a library as On hold with nothing ticked stays
-     there. Only Watching was moved to the watchlist.
-   - The Status menu of edit mode covers Done while it is open on a phone.
-
-20. **Upload a picture from a real iPhone or Mac.** Safari has no WebP writer, so
+10. **Upload a picture from a real iPhone or Mac.** Safari has no WebP writer, so
    pictures reach the server as PNG, and past 3 MB as JPEG, which turns a clear
    background black. `verify-pictures` runs that path in Chromium with the writer
    taken away, and WebKit as far as the upload. Playwright's WebKit on Windows
@@ -173,6 +137,9 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   the rest is ticked by hand, on purpose.
 - **Plex.** Its webhooks need a paid Plex Pass.
 - **Interface languages.** English only, decided 2026-10-26.
+- **Moving Netflix shows left On hold.** A show an import left On hold with
+  nothing ticked stays On hold: paused is the person's word everywhere in
+  Frog, and nothing changes it behind their back. Decided 2026-11-06.
 - **Oracle Pay As You Go.** Always Free only, whatever the console suggests
   when A1 capacity runs out.
 
@@ -379,10 +346,31 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
   being chosen. Sign-in only refuses names past `SIGN_IN_NAME_MAX` (256), so an
   account older than the limit always gets in. Raise that one if an instance
   ever has a longer name.
+- **Reading is `chapter_read`**, one row per chapter on the day it was read,
+  owned by the library entry (it leaves with it, and undo and backups carry
+  it). How far someone is stays `library_entry.progress`; only reads with a
+  day are rows, so a first AniList sync adds none. The diary and Activity
+  union it with `watch_event`; Stats reads it in its own Manga half
+  (`routes/stats.rs::manga`), and films-and-shows figures never see it.
+- **The trailer behind a title** (Settings → Watching → Play trailers) needs
+  three things, each learned the hard way: a referrer
+  (`referrerpolicy="strict-origin-when-cross-origin"`), or YouTube refuses
+  most trailers; no `playlist` loop, which brings next and previous buttons
+  (Frog loops by `seekTo` on state 0 instead); and a player that is never
+  hidden, because a browser pauses a muted video nobody can see and YouTube
+  flashes its button on resuming. So it plays under the title's picture,
+  which lifts 3 s after the player says it is playing (`AMBIENT_SETTLE`), and
+  starts 12 s in, past the studio logos (`AMBIENT_FROM`).
+- **Manga search is ranked here** (`media::rank_manga`): AniList answers by
+  synonym and description too, so only what a title answers is kept,
+  synonyms after titles, light novels left out.
 - **New Home rows** reach saved layouts once, through `homeRowsSeen` in
   `lib/settings.svelte.ts`. Add the id to `HOME_ROWS` and to the default list.
 
 ## Shipped
+
+**1.3.1 Horned Frog** — Rate a whole library one card at a time, slid and
+drawn scores, and Clear that clears.
 
 **1.3.0 Horned Frog** — A Rewatched filter, rewatches on cards and profiles,
 every site's scores for anime and older titles, AniList's dates winning, an

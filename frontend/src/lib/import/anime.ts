@@ -67,7 +67,7 @@ function animeStatus(value: string): Status {
 	if (v === 'completed') return 'completed';
 	if (v === 'paused' || v === 'onhold') return 'paused';
 	if (v === 'dropped') return 'dropped';
-	if (v === 'planning' || v === 'plantowatch') return 'planned';
+	if (v === 'planning' || v === 'plantowatch' || v === 'plantoread') return 'planned';
 	return 'watching';
 }
 
@@ -169,7 +169,10 @@ function applyPartOffsets(rows: Incoming[]): Incoming[] {
 	return rows;
 }
 
-/** MyAnimeList's XML export: one <anime> element per entry. */
+/**
+ * MyAnimeList's XML export: one <anime> element per entry, or for its manga
+ * list one <manga> element per entry.
+ */
 export function readMalXml(text: string): Incoming[] {
 	const doc = new DOMParser().parseFromString(text, 'application/xml');
 	if (doc.querySelector('parsererror')) throw new Error('That file is not a MyAnimeList export.');
@@ -177,7 +180,23 @@ export function readMalXml(text: string): Incoming[] {
 	const get = (el: Element, tag: string) =>
 		el.getElementsByTagName(tag)[0]?.textContent?.trim() ?? '';
 	const anime = Array.from(doc.getElementsByTagName('anime'));
-	if (!anime.length) throw new Error('No anime found in that file.');
+	const manga = Array.from(doc.getElementsByTagName('manga'));
+	if (!anime.length && !manga.length) throw new Error('No anime or manga found in that file.');
+	const day = (value: string) => (value && !value.startsWith('0000') ? toDate(value) : null);
+	const mangaRows = manga.map((el) => {
+		const row = newRow(get(el, 'manga_title'), 'MyAnimeList');
+		const score = Number(get(el, 'my_score'));
+		const id = Number(get(el, 'manga_mangadb_id'));
+		row.kind = 'manga';
+		row.mal_id = id > 0 ? id : null;
+		row.status = animeStatus(get(el, 'my_status'));
+		row.rating = score > 0 ? score * 10 : null;
+		row.progress = Number(get(el, 'my_read_chapters')) || null;
+		row.started_at = day(get(el, 'my_start_date'));
+		row.finished_at = row.status === 'completed' ? day(get(el, 'my_finish_date')) : null;
+		row.rewatches = Number(get(el, 'my_times_read')) || 0;
+		return row;
+	});
 
 	const rows = anime.map((el) => {
 		const score = Number(get(el, 'my_score'));
@@ -199,5 +218,5 @@ export function readMalXml(text: string): Incoming[] {
 			source: 'MyAnimeList'
 		});
 	});
-	return applyPartOffsets(rows);
+	return [...applyPartOffsets(rows), ...mangaRows];
 }

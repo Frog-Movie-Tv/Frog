@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
-	import { api, img } from '#lib/api';
+	import { api, img, type ClearedWatch } from '#lib/api';
 	import { localDay } from '#lib/day';
 	import { episodeCode, prettyDate, relativeDate, runtime } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
@@ -15,6 +15,7 @@
 		SeasonSummary
 	} from '#lib/types';
 	import Rating from './Rating.svelte';
+	import Score from './Score.svelte';
 
 	interface Props {
 		/** Frog's id for the show. */
@@ -130,14 +131,16 @@
 			watched: next,
 			watch_count: next ? Math.max(1, ep.watch_count) : 0
 		});
+		let cleared: ClearedWatch[] = [];
 		try {
-			const { item } = await api.setEpisodeWatched(
+			const answer = await api.setEpisodeWatched(
 				titleId,
 				ep.season_number,
 				ep.episode_number,
 				next
 			);
-			onprogress?.(item);
+			cleared = answer.cleared ?? [];
+			onprogress?.(answer.item);
 		} catch (e) {
 			patch(ep.season_number, ep.episode_number, {
 				watched: ep.watched,
@@ -149,11 +152,33 @@
 		}
 
 		// Unticking is the one that stings, so it is the one that offers undo,
-		// and the undo puts the watch back on the day it was, not today.
+		// and the undo puts back every watch of it on the day it was, rewatches
+		// too, not one today.
 		if (!next) {
 			toasts.undoable(`Unmarked ${episodeCode(ep.season_number, ep.episode_number)}`, () =>
-				restore(ep.season_number, [ep])
+				cleared.length ? restoreAll(ep, cleared) : restore(ep.season_number, [ep])
 			);
+		}
+	}
+
+	/** Every watch an untick cleared, back as it was. */
+	async function restoreAll(ep: EpisodeView, cleared: ClearedWatch[]) {
+		busy = `season-${ep.season_number}`;
+		try {
+			const { item } = await api.setEpisodeWatched(
+				titleId,
+				ep.season_number,
+				ep.episode_number,
+				true,
+				undefined,
+				cleared
+			);
+			onprogress?.(item);
+			await fetchSeason(ep.season_number);
+		} catch (e) {
+			toasts.error(e);
+		} finally {
+			busy = null;
 		}
 	}
 
@@ -293,6 +318,14 @@
 		return !!detail?.episodes.length && detail.episodes.every((e) => e.watched);
 	}
 </script>
+
+<!-- A rating an episode was given before seasons were rated instead: kept,
+     shown, and no longer changed here. -->
+{#snippet oldRating(ep: EpisodeView)}
+	{#if ep.rating !== null}
+		<span class="ep-score" title="Your rating for this episode"><Score value={ep.rating} /></span>
+	{/if}
+{/snippet}
 
 <div class="seasons">
 	{#if ordered.length > 1}
@@ -445,6 +478,7 @@
 								<span class="name">
 									{ep.name ?? 'Untitled'}
 									{#if ep.watch_count > 1}<span class="times-inline">×{ep.watch_count}</span>{/if}
+									{@render oldRating(ep)}
 								</span>
 								{#if ep.overview && !blurStill(ep)}
 									<p class="overview">{ep.overview}</p>
@@ -512,6 +546,7 @@
 								<div class="line">
 									<span class="code">{code}</span>
 									<span class="name">{ep.name ?? 'Untitled'}</span>
+									{@render oldRating(ep)}
 								</div>
 								<div class="sub">
 									{#if unaired(ep)}
@@ -731,6 +766,14 @@
 
 	.ep-row .note-btn {
 		margin-top: 2px;
+	}
+
+	.ep-score {
+		margin-left: 6px;
+		font-size: 0.72rem;
+		font-weight: 650;
+		color: var(--text-dim);
+		white-space: nowrap;
 	}
 
 	.times-inline {

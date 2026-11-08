@@ -398,16 +398,17 @@
 						</div>
 						<div>
 							<dt>Titles known</dt>
-							<dd>
-								{instance?.titles?.all.toLocaleString() ?? '—'}
-								{#if instance?.titles}
-									<span class="faint small-note">
-										{instance.titles.films.toLocaleString()} films ·
-										{instance.titles.shows.toLocaleString()} shows
-									</span>
-								{/if}
-							</dd>
+							<dd>{instance?.titles?.all.toLocaleString() ?? '—'}</dd>
 						</div>
+						{#if instance?.titles}
+							{@const known = instance.titles}
+							{#each [['Films', known.films], ['Shows', known.shows], ['Manga', known.manga ?? 0]] as [name, n] (name)}
+								<div class="part">
+									<dt>{name}</dt>
+									<dd>{Number(n).toLocaleString()}</dd>
+								</div>
+							{/each}
+						{/if}
 						<div>
 							<dt>Database</dt>
 							<dd>{instance ? size(instance.database_bytes) : '—'}</dd>
@@ -631,6 +632,12 @@
 		border-bottom: 0;
 	}
 
+	/* What a total is made of, each on a row of its own under it. */
+	.facts > div.part {
+		padding: 6px 0 6px 16px;
+		font-size: 0.9rem;
+	}
+
 	.facts dt,
 	.facts dd {
 		margin: 0;
@@ -709,11 +716,5 @@
 
 	.danger {
 		color: var(--bad);
-	}
-
-	.small-note {
-		display: block;
-		font-size: 0.76rem;
-		font-weight: 400;
 	}
 </style>

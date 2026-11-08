@@ -1,7 +1,7 @@
 use axum::extract::{Path, State};
 use axum::Json;
 use chrono::Utc;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 
@@ -23,7 +23,23 @@ pub struct WatchBody {
     pub watched: bool,
     /// ISO timestamp. Defaults to now, which is what a checkmark means.
     pub watched_at: Option<String>,
+    /// Undo of an untick: every watch it cleared, put back as it was, in
+    /// place of the one watch `watched_at` makes.
+    #[serde(default)]
+    pub restore: Vec<KeptWatch>,
 }
+
+/// One watch of an episode as an untick cleared it.
+#[derive(Debug, Deserialize, Serialize, sqlx::FromRow)]
+pub struct KeptWatch {
+    pub watched_at: String,
+    pub undated: bool,
+    pub is_rewatch: bool,
+    pub source: String,
+}
+
+/// Where a watch put back may say it came from.
+const SOURCES: [&str; 5] = ["manual", "import", "anilist", "netflix", "trakt"];
 
 fn yes() -> bool {
     true
@@ -62,7 +78,35 @@ pub async fn set_watched(
     let title_id = show(&state, title_id).await?;
     let ep_id = episode_id(&state.pool, title_id, season, episode).await?;
 
-    if body.watched {
+    let mut cleared: Vec<KeptWatch> = Vec::new();
+    if body.watched && !body.restore.is_empty() {
+        for w in &body.restore {
+            if chrono::DateTime::parse_from_rfc3339(&w.watched_at).is_err() {
+                return Err(AppError::BadRequest("a watch needs a valid time".into()));
+            }
+            let source = if SOURCES.contains(&w.source.as_str()) {
+                w.source.as_str()
+            } else {
+                "manual"
+            };
+            sqlx::query(
+                "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                          source, undated)
+                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+                  WHERE NOT EXISTS (SELECT 1 FROM watch_event
+                                     WHERE user_id = ?1 AND episode_id = ?3 AND watched_at = ?4)",
+            )
+            .bind(auth.user_id())
+            .bind(title_id)
+            .bind(ep_id)
+            .bind(&w.watched_at)
+            .bind(w.is_rewatch)
+            .bind(source)
+            .bind(w.undated)
+            .execute(&state.pool)
+            .await?;
+        }
+    } else if body.watched {
         let when = body.watched_at.unwrap_or_else(|| Utc::now().to_rfc3339());
         // Only my own watches make this a rewatch.
         let seen_before: (i64,) =
@@ -86,6 +130,15 @@ pub async fn set_watched(
         .execute(&state.pool)
         .await?;
     } else {
+        // Every watch, so undo can put back the rewatches as well as the last.
+        cleared = sqlx::query_as(
+            "SELECT watched_at, undated, is_rewatch, source FROM watch_event
+              WHERE user_id = ? AND episode_id = ? ORDER BY watched_at",
+        )
+        .bind(auth.user_id())
+        .bind(ep_id)
+        .fetch_all(&state.pool)
+        .await?;
         sqlx::query("DELETE FROM watch_event WHERE user_id = ? AND episode_id = ?")
             .bind(auth.user_id())
             .bind(ep_id)
@@ -93,7 +146,11 @@ pub async fn set_watched(
             .await?;
     }
 
-    after_change(&state, auth.user_id(), title_id).await
+    let Json(mut answer) = after_change(&state, auth.user_id(), title_id).await?;
+    if !body.watched {
+        answer["cleared"] = json!(cleared);
+    }
+    Ok(Json(answer))
 }
 
 #[derive(Deserialize)]

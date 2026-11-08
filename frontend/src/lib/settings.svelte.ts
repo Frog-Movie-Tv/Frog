@@ -113,7 +113,27 @@ export interface Settings {
 	navTabs: string[];
 	/** Which release the "what's new" dot was last cleared for. */
 	lastSeenVersion: string;
+
+	/** A status called something else, everywhere it is named. */
+	statusNames?: Partial<Record<Status, string>>;
+	/** A status in another colour, a #rrggbb, on every theme. */
+	statusColors?: Partial<Record<Status, string>>;
+	/** The letter after G that goes to a page, by its address. */
+	goKeys?: Record<string, string>;
+	/** A title's trailer plays without sound behind its page. */
+	trailerAutoplay?: boolean;
+	/** A shelf's own poster size, by shelf id, over `posterSize`. */
+	shelfPosterSize?: Record<string, number>;
 }
+
+/** The letter after G for each page, until changed in Settings. */
+export const GO_KEYS: Record<string, string> = {
+	'/': 'h',
+	'/library': 'l',
+	'/search': 's',
+	'/stats': 't',
+	'/settings': 'c'
+};
 
 export const DEFAULTS: Settings = {
 	theme: 'pond',
@@ -170,6 +190,9 @@ export const NAV_PAGES: { href: string; label: string; icon: string; fixed?: boo
 
 /** Most pages a phone tab bar holds before the More tab. */
 export const MAX_TABS = 4;
+
+/** Home as a new account has it: one idea a row, shelves first. */
+export const HOME_LAYOUT = ['shelves', 'continue', 'thisweek', 'activity', 'because'];
 
 export const HOME_ROWS: { id: string; label: string; hint: string }[] = [
 	{ id: 'shelves', label: 'Your shelves', hint: 'Every shelf, one tap away' },
@@ -379,6 +402,13 @@ class SettingsStore {
 		style.setProperty('--font', face.stack);
 		style.setProperty('--font-display', face.display ?? face.stack);
 		style.fontSize = `${Math.round(16 * s.textScale)}px`;
+
+		// A status recoloured keeps its colour whatever the theme.
+		for (const status of ['watching', 'completed', 'planned', 'paused', 'dropped'] as const) {
+			const value = s.statusColors?.[status];
+			if (value && /^#[0-9a-f]{6}$/i.test(value)) style.setProperty(`--status-${status}`, value);
+			else style.removeProperty(`--status-${status}`);
+		}
 
 		// A custom theme is just token overrides on top of the chosen base.
 		for (const token of ['bg', 'bg-elev', 'bg-elev-2', 'accent', 'text'] as const) {

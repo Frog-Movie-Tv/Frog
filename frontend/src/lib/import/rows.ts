@@ -30,7 +30,9 @@ export function applyItem(row: Foldable) {
 		episodes: chosen.kind === 'tv' ? (row.incoming.watches ?? []) : [],
 		started_at: row.incoming.started_at ?? null,
 		finished_at: row.incoming.finished_at ?? null,
-		rewatches: row.incoming.rewatches ?? 0
+		rewatches: row.incoming.rewatches ?? 0,
+		reads: chosen.kind === 'manga' ? (row.incoming.reads ?? []) : [],
+		film_watches: chosen.kind === 'movie' ? (row.incoming.film_watches ?? []) : []
 	};
 }
 

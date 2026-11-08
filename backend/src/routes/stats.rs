@@ -1,4 +1,6 @@
-//! The stats page and the year in review it shares.
+//! The stats page and the year in review it shares, in two halves as AniList
+//! keeps its own: films and shows, from what was watched, and manga, from
+//! what was read.
 //!
 //! Every figure is computed over one scope: either everything, or the watches
 //! dated within one calendar year. Undated watches (a back catalogue ticked
@@ -195,14 +197,19 @@ pub async fn stats(
         .await?;
 
     // All time covers every rating, including titles rated without a
-    // recorded watch; a year covers what was watched in it.
+    // recorded watch; a year covers what was watched in it. Manga have their
+    // own half.
     let rated = if scope.year.is_some() {
         format!(
             "{} AND l.rating IS NOT NULL AND l.title_id IN (SELECT title_id FROM scoped)",
             scope.mine()
         )
     } else {
-        format!("{} AND l.rating IS NOT NULL", scope.mine())
+        format!(
+            "{} AND l.rating IS NOT NULL
+             AND l.title_id IN (SELECT id FROM title WHERE kind != 'manga')",
+            scope.mine()
+        )
     };
     let buckets: Vec<(i64, i64)> = scope
         .all(
@@ -295,9 +302,29 @@ pub async fn stats(
         )
         .await?;
 
+    // The library as it stands, films and shows: what the bar at the end shows.
+    let library: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT l.status, COUNT(*) FROM library_entry l JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = ? AND t.kind != 'manga'
+          GROUP BY l.status",
+    )
+    .bind(auth.user_id())
+    .fetch_all(pool)
+    .await?;
+    let (manga,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM library_entry l JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = ? AND t.kind = 'manga'",
+    )
+    .bind(auth.user_id())
+    .fetch_one(pool)
+    .await?;
+
     Ok(Json(json!({
         "year": q.year,
         "years": years,
+        "library": crate::routes::library::to_map(library),
+        // Whether there is a manga half to offer.
+        "manga": manga,
         "totals": {
             "films": films,
             "episodes": episodes,
@@ -321,6 +348,199 @@ pub async fn stats(
         "top_films": top_films.into_iter().map(top_json).collect::<Vec<_>>(),
         "people": { "actors": actors, "directors": directors, "studios": studios },
         "credits_pending": if state.tmdb.is_configured() { credits_pending } else { 0 },
+    })))
+}
+
+/// (title id, name, poster, chapters read, rating)
+type MangaTopRow = (i64, String, Option<String>, i64, Option<f64>);
+
+/// (manga, chapters, completed, days reading, mean rating, rated)
+type MangaTotalsRow = (i64, i64, i64, i64, Option<f64>, i64);
+
+/// The manga half of Stats: the manga in the library and the chapters read
+/// (`chapter_read`), all time or in one year. All time counts every chapter
+/// read, dated or not (`library_entry.progress`); a year counts the chapters
+/// read in it, and the manga read in it.
+pub async fn manga(
+    auth: Auth,
+    State(state): State<AppState>,
+    Query(q): Query<StatsQuery>,
+) -> AppResult<Json<Value>> {
+    if q.year.is_some_and(|y| !(1900..=2100).contains(&y)) {
+        return Err(AppError::BadRequest(
+            "year must be between 1900 and 2100".into(),
+        ));
+    }
+    let pool = &state.pool;
+    let me = auth.user_id();
+    let year = q.year.map(|y| y.to_string()).unwrap_or_default();
+    // Every manga in the library, or those read in the year. ?1 is the
+    // account and ?2 the year ('' for all time) in every query below.
+    let titles = "SELECT l.title_id FROM library_entry l JOIN title t ON t.id = l.title_id
+                   WHERE l.user_id = ?1 AND t.kind = 'manga'
+                     AND (?2 = '' OR l.title_id IN (SELECT r.title_id FROM chapter_read r
+                           WHERE r.user_id = ?1 AND substr(r.read_at, 1, 4) = ?2))";
+
+    let years: Vec<(String,)> = sqlx::query_as(
+        "SELECT DISTINCT substr(read_at, 1, 4) FROM chapter_read
+          WHERE user_id = ? ORDER BY 1 DESC",
+    )
+    .bind(me)
+    .fetch_all(pool)
+    .await?;
+    let years: Vec<i32> = years
+        .into_iter()
+        .filter_map(|(y,)| y.parse().ok())
+        .collect();
+
+    let (manga, chapters, completed, days, mean_rating, rated): MangaTotalsRow =
+        sqlx::query_as(&format!(
+            "SELECT (SELECT COUNT(*) FROM ({titles})),
+                    CASE WHEN ?2 = '' THEN
+                         (SELECT COALESCE(SUM(l.progress), 0) FROM library_entry l
+                           WHERE l.user_id = ?1 AND l.title_id IN ({titles}))
+                    ELSE (SELECT COUNT(*) FROM chapter_read r
+                           WHERE r.user_id = ?1 AND substr(r.read_at, 1, 4) = ?2
+                             AND r.title_id IN ({titles})) END,
+                    (SELECT COUNT(*) FROM library_entry l
+                      WHERE l.user_id = ?1 AND l.status = 'completed'
+                        AND l.title_id IN ({titles})),
+                    (SELECT COUNT(DISTINCT substr(r.read_at, 1, 10)) FROM chapter_read r
+                      WHERE r.user_id = ?1 AND (?2 = '' OR substr(r.read_at, 1, 4) = ?2)
+                        AND r.title_id IN ({titles})),
+                    (SELECT AVG(l.rating) FROM library_entry l
+                      WHERE l.user_id = ?1 AND l.rating IS NOT NULL
+                        AND l.title_id IN ({titles})),
+                    (SELECT COUNT(*) FROM library_entry l
+                      WHERE l.user_id = ?1 AND l.rating IS NOT NULL
+                        AND l.title_id IN ({titles}))"
+        ))
+        .bind(me)
+        .bind(&year)
+        .fetch_one(pool)
+        .await?;
+
+    // Chapters read by month in a year, by year over all time.
+    let unit_len = if q.year.is_some() { 7 } else { 4 };
+    let read: Vec<(String, i64)> = sqlx::query_as(&format!(
+        "SELECT substr(r.read_at, 1, {unit_len}) AS unit, COUNT(*) FROM chapter_read r
+          WHERE r.user_id = ?1 AND (?2 = '' OR substr(r.read_at, 1, 4) = ?2)
+            AND r.title_id IN ({titles})
+          GROUP BY unit ORDER BY unit"
+    ))
+    .bind(me)
+    .bind(&year)
+    .fetch_all(pool)
+    .await?;
+    let timeline: Vec<Value> = match q.year {
+        Some(y) => (1..=12)
+            .map(|m| {
+                let unit = format!("{y}-{m:02}");
+                let n = read.iter().find(|r| r.0 == unit).map_or(0, |r| r.1);
+                json!({ "unit": unit, "chapters": n })
+            })
+            .collect(),
+        None => read
+            .into_iter()
+            .map(|(unit, n)| json!({ "unit": unit, "chapters": n }))
+            .collect(),
+    };
+
+    let by_status: Vec<(String, i64)> = sqlx::query_as(&format!(
+        "SELECT l.status, COUNT(*) FROM library_entry l
+          WHERE l.user_id = ?1 AND l.title_id IN ({titles})
+          GROUP BY l.status"
+    ))
+    .bind(me)
+    .bind(&year)
+    .fetch_all(pool)
+    .await?;
+
+    let genres: Vec<(String, i64)> = sqlx::query_as(&format!(
+        "SELECT g.value, COUNT(*) FROM title t, json_each(t.genres_json) g
+          WHERE t.id IN ({titles})
+          GROUP BY g.value ORDER BY 2 DESC, 1 LIMIT 12"
+    ))
+    .bind(me)
+    .bind(&year)
+    .fetch_all(pool)
+    .await?;
+
+    // Whoever wrote or drew them: a manga's creators.
+    let authors: Vec<PersonRow> = sqlx::query_as(&format!(
+        "SELECT p.tmdb_id, MAX(p.name), MAX(p.profile_path), COUNT(DISTINCT p.title_id) AS n
+           FROM title_person p
+          WHERE p.role = 'creator' AND p.title_id IN ({titles})
+          GROUP BY p.tmdb_id
+          ORDER BY n DESC, MIN(p.ord), MAX(p.name)
+          LIMIT 10"
+    ))
+    .bind(me)
+    .bind(&year)
+    .fetch_all(pool)
+    .await?;
+
+    let buckets: Vec<(i64, i64)> = sqlx::query_as(&format!(
+        "SELECT MIN(MAX(CAST(ROUND(l.rating / 10.0) AS INTEGER), 1), 10) - 1 AS bucket, COUNT(*)
+           FROM library_entry l
+          WHERE l.user_id = ?1 AND l.rating IS NOT NULL AND l.title_id IN ({titles})
+          GROUP BY bucket"
+    ))
+    .bind(me)
+    .bind(&year)
+    .fetch_all(pool)
+    .await?;
+    let mut ratings = [0i64; 10];
+    for (b, n) in buckets {
+        if let Some(slot) = ratings.get_mut(b.clamp(0, 9) as usize) {
+            *slot += n;
+        }
+    }
+
+    // Best first, then what was read furthest.
+    let top: Vec<MangaTopRow> = sqlx::query_as(&format!(
+        "SELECT t.id, t.name, t.poster_path, COALESCE(l.progress, 0), l.rating
+           FROM library_entry l JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = ?1 AND l.title_id IN ({titles})
+          ORDER BY l.rating IS NULL, l.rating DESC, COALESCE(l.progress, 0) DESC
+          LIMIT 12"
+    ))
+    .bind(me)
+    .bind(&year)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(Json(json!({
+        "year": q.year,
+        "years": years,
+        "totals": {
+            "manga": manga,
+            "chapters": chapters,
+            "completed": completed,
+            "days": days,
+            "mean_rating": mean_rating,
+            "rated": rated,
+        },
+        "timeline": timeline,
+        "by_status": crate::routes::library::to_map(by_status),
+        "genres": genres
+            .into_iter()
+            .map(|(name, titles)| json!({ "name": name, "titles": titles }))
+            .collect::<Vec<_>>(),
+        "authors": authors
+            .into_iter()
+            .map(|(id, name, image, titles)| json!({
+                "tmdb_id": id, "name": name, "image": image, "titles": titles,
+            }))
+            .collect::<Vec<_>>(),
+        "ratings": ratings,
+        "top": top
+            .into_iter()
+            .map(|(id, name, poster_path, chapters, rating)| json!({
+                "id": id, "kind": "manga", "name": name, "poster_path": poster_path,
+                "chapters": chapters, "rating": rating,
+            }))
+            .collect::<Vec<_>>(),
     })))
 }
 

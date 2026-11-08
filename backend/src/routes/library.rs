@@ -7,6 +7,7 @@ use crate::auth::Auth;
 use crate::bulk::{self, Marking};
 use crate::catalog;
 use crate::error::{AppError, AppResult};
+use crate::release;
 use crate::state::AppState;
 use crate::store::{self, EntryRecord, LibraryFilter, LibraryPatch, Page};
 
@@ -146,6 +147,9 @@ pub async fn stats(auth: Auth, State(state): State<AppState>) -> AppResult<Json<
 pub struct UpsertBody {
     #[serde(flatten)]
     pub patch: LibraryPatch,
+    /// How far in, for a title followed as a count: a manga's chapters read.
+    #[serde(default)]
+    pub progress: Option<i64>,
     /// Pull every season into the local database. Default on for shows: it is
     /// what makes progress, and "up next" work straight away.
     #[serde(default = "yes")]
@@ -174,6 +178,10 @@ pub async fn upsert(
     if kind == "movie" && finished_now {
         let now = chrono::Utc::now().to_rfc3339();
         store::add_first_film_watch(&state.pool, auth.user_id(), title_id, &now, false).await?;
+    }
+
+    if let Some(count) = body.progress {
+        release::set_count(&state.pool, auth.user_id(), title_id, count).await?;
     }
 
     if kind == "tv" && is_new && body.sync_seasons {
@@ -213,6 +221,11 @@ pub enum BulkBody {
     Restore {
         entries: Vec<EntryRecord>,
     },
+    /// What `watched` said a moment ago: the titles as they were, with the
+    /// watches and chapters marking added taken back.
+    Unmark {
+        entries: Vec<EntryRecord>,
+    },
     Watched {
         title_ids: Vec<i64>,
         #[serde(flatten)]
@@ -248,7 +261,10 @@ pub async fn bulk(
             json!({ "before": bulk::remove(pool, me, &title_ids).await? })
         }
         BulkBody::Restore { entries } => {
-            json!({ "restored": store::restore_entries(pool, me, &entries).await? })
+            json!({ "restored": store::restore_entries(pool, me, &entries, false).await? })
+        }
+        BulkBody::Unmark { entries } => {
+            json!({ "restored": store::restore_entries(pool, me, &entries, true).await? })
         }
         BulkBody::Watched { title_ids, marking } => {
             bulk::check_size(&title_ids)?;

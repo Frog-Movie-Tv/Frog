@@ -20,6 +20,8 @@ export interface AskOptions {
 	allowToday?: boolean;
 	/** A film has one release date, not one per episode. */
 	film?: boolean;
+	/** A manga's chapters read: no release dates to go by. */
+	reading?: boolean;
 	/** Moving an existing entry: start the date picker on its day. */
 	day?: string;
 	/** The confirm button; "Mark watched" unless this is a move. */
@@ -54,6 +56,7 @@ class WhenWatched {
 				detail,
 				allowToday: options.allowToday ?? true,
 				film: options.film ?? false,
+				reading: options.reading ?? false,
 				day: options.day ?? null,
 				confirm: options.confirm ?? 'Mark watched',
 				extras: options.extras ?? [],

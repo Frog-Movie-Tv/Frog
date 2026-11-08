@@ -107,7 +107,7 @@ for AniList's, which win), who else has a title (`others_with`), emptying it, an
 | `activity` | What others have been watching, for Home's Activity row and the Activity page. `summarise` adds up one person's watches on plain values; `everything` pages through all of it, a title a day per card. Only accounts `store::shown_to` names, only dated watches of titles still in that library, and never notes. |
 | `taste` | How alike two people rate things, and two libraries side by side. `score` and `compare` are the decisions on plain values; `between` and `library_of` are the reads. |
 | `franchise` | A franchise across films and shows: TMDB collections hold only films, so a show joins one by name (`franchise_of`, `belongs`), and a show page finds the collection named after it. |
-| `release` | When an episode counts as out, the status a show should have (`reconcile`), and whether Continue watching has anything to say about it (`continues`). |
+| `release` | When an episode counts as out, the status a show should have (`reconcile`), and whether Continue watching has anything to say about it (`continues`). For a title followed as a count, a manga's chapters, `set_count` moves the count and `counted_status` the status. |
 | `transfer` | Imports (matching, applying) and exports. |
 | `anilist` | AniList sign-in, and reading each account's list into its library. Read only. |
 | `push` | Web Push: subscriptions and sending. |
@@ -199,7 +199,8 @@ app_user ── session, recovery_code, invite, password_reset, app_setting,
             user_image, push_subscription, push_sent
 
 title (shared catalog; id is Frog's own) ──┬── episode ──┬── episode_state  (notes, per account)
-  kind, metadata, merged_into              │             └── watch_event    (the diary, per account)
+  kind (film, show, manga), metadata,      │             └── watch_event    (the diary, per account)
+  merged_into                              ├── library_entry ── chapter_read  (a manga's reads)
                                            ├── title_external (TMDB / AniList / IMDb ids; one primary)
                                            ├── library_entry (per account: status, rating, …)
                                            ├── season_rating (per account, per season or part)
@@ -230,7 +231,18 @@ Decisions worth naming:
   point decimal, 10 point, 5 stars, 3 smileys) is a display concern only, so
   switching it never rewrites or rounds data.
 - **Watches carry a source** (`manual`, `import`, `anilist`). Only a
-  source's own watches are ever taken back by it.
+  source's own watches are ever taken back by it. AniList's first sync of
+  an entry is a backlog and leaves its watches undated; what it moves on
+  after that is dated to the sync, so it reaches the diary and Activity.
+- **Manga are AniList's titles.** Kind `manga`, primary provider AniList,
+  never on TMDB. Chapters stand in `episode_count`, volumes in
+  `season_count`, and how far in someone is is a count
+  (`library_entry.progress`) rather than ticked episodes, as for an
+  AniList-only show with no episode list (`store::is_counted`). What was
+  read on which day is `chapter_read`, a row per chapter owned by the
+  library entry: the diary, Activity, Continue watching and the Manga half
+  of Stats read it beside `watch_event`, never in place of it, so no film or
+  episode figure ever counts a chapter.
 
 Specials (season 0) never count towards completion. Marking a season watched
 only adds rows for episodes with no watch yet, so it cannot silently inflate
@@ -282,16 +294,27 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
   `ProfileHeader` over each tab: Overview, Library (`LibraryBrowser` with
   `embedded`), Ratings and Compare.
 - **Rating as a deck.** `routes/rate` deals the unrated titles of the library
-  one card at a time; which titles, in what order, and the ten-or-fewer score
-  buttons a format gets are pure functions in `lib/rate.ts` (tested in
-  `tests/rate.test.mjs`). It saves through `api.track` like a title page and
-  needs no route of its own; the next two cards' scores load ahead.
-- **Slid scores.** A hundred points, or ten with a decimal, are slid to on
-  `ScoreSlider` rather than picked, in the deck and in `Rating`; its scale (0
-  to the format's top, whole steps or tenths) is `lib/score-entry.ts`, tested
-  in `tests/score-entry.test.mjs`. `Score` shows a rating in the chosen
-  format wherever one appears, and `Stars` draws five-star scores as icons,
-  the half star clipped from the same star.
+  one card at a time, the finished ones unless Everything is chosen; which
+  titles, in what order, and the keys a format gets are pure functions in
+  `lib/rate.ts` (tested in `tests/rate.test.mjs`). It saves through
+  `api.track` like a title page and needs no route of its own; the next two
+  cards' scores load ahead. A dragged card moves once a frame and every card
+  is its own layer, so a swipe never repaints one.
+- **How a score is entered.** Every number format (a hundred points, ten, ten
+  with a decimal) is slid to on `ScoreSlider`; five stars are filled in on
+  `StarPicker`, empty to start, the left half of a star a half; smileys are
+  three buttons. The same parts serve the deck and `Rating`. The scales and
+  where a touch lands on the stars are `lib/score-entry.ts`, tested in
+  `tests/score-entry.test.mjs`. `Score` shows a rating in the chosen format
+  wherever one appears, and `Stars` draws five-star scores as icons, the half
+  star clipped from the same star.
+- **Stats in two halves**, as AniList keeps them: films and shows from
+  `watch_event`, manga from `chapter_read` and the counts
+  (`/api/stats/manga`), chosen with `?half=manga`.
+- **Kinds have one home.** `lib/types.ts` holds what each kind is called
+  (`KIND_LABEL`), its icon (`KIND_ICON`) and a status in its words
+  (`statusLabel`: a manga is Reading, not Watching). A manga's page counts
+  chapters with `ChapterCount`, which saves a run of taps as one request.
 - **A rating is whole.** `store::whole_rating` keeps every saved rating a
   whole number from 0 to 100, which every format shows exactly, whoever sends
   it; imports clean theirs first (`lib/import/common.ts::cleanRating`), so an

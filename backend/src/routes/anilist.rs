@@ -225,6 +225,11 @@ pub async fn choose(
         return Ok(Json(json!({ "ok": true })));
     }
 
+    if records::is_manga(&state.pool, auth.user_id(), media_id).await? {
+        return Err(AppError::BadRequest(
+            "A manga stays as AniList has it.".into(),
+        ));
+    }
     let (Some(kind), Some(tmdb_id)) = (choice.kind.as_deref(), choice.tmdb_id) else {
         return Err(AppError::BadRequest("choose a title".into()));
     };

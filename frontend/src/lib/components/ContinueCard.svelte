@@ -12,6 +12,8 @@
 	let { entry }: Props = $props();
 
 	const item = $derived(entry.item);
+	/** A manga goes on by the chapter, and may not know how many there are. */
+	const manga = $derived(item.kind === 'manga');
 	const next = $derived(entry.next);
 	const backdrop = $derived(img(item.backdrop_path ?? item.poster_path, 'w780'));
 	const progress = $derived(
@@ -40,7 +42,12 @@
 	</div>
 
 	<div class="meta">
-		{#if next && next.aired && item.watched_episodes === 0}
+		{#if manga}
+			<span class="next">
+				<strong>Chapter {item.watched_episodes + 1}</strong>
+				<span class="ep">{item.watched_episodes} read</span>
+			</span>
+		{:else if next && next.aired && item.watched_episodes === 0}
 			<span class="next">
 				<strong>Start</strong>
 				<span class="ep"
@@ -65,10 +72,11 @@
 		{/if}
 
 		{#if item.total_episodes > 0}
-			<div class="bar" aria-label="{item.watched_episodes} of {item.total_episodes} episodes">
+			{@const unit = manga ? 'chapters' : 'episodes'}
+			<div class="bar" aria-label="{item.watched_episodes} of {item.total_episodes} {unit}">
 				<i style:width="{progress}%"></i>
 			</div>
-			<span class="faint small">{item.watched_episodes} / {item.total_episodes} episodes</span>
+			<span class="faint small">{item.watched_episodes} / {item.total_episodes} {unit}</span>
 		{/if}
 	</div>
 </a>

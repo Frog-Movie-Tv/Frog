@@ -11,6 +11,7 @@
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import { whenWatched } from '#lib/when.svelte';
+	import { KIND_ICON, type Kind } from '#lib/types';
 
 	interface Episode {
 		season_number: number;
@@ -25,7 +26,7 @@
 		watched_at: string;
 		/** Frog's id for the title. */
 		id: number;
-		kind: 'movie' | 'tv';
+		kind: Kind;
 		title: string;
 		poster_path: string | null;
 		film: boolean;
@@ -34,6 +35,8 @@
 		imported: boolean;
 		rating: number | null;
 		episodes: Episode[];
+		/** A manga's chapters read that day. */
+		chapters: number[];
 	}
 
 	let entries = $state<Entry[]>([]);
@@ -133,11 +136,21 @@
 			.join(', ');
 	}
 
+	/** "Chapters 12–15", or "Chapter 12", for a day's reading. */
+	function chapterRange(chapters: number[]): string {
+		if (!chapters.length) return '';
+		const first = chapters[0];
+		const last = chapters[chapters.length - 1];
+		return first === last ? `Chapter ${first}` : `Chapters ${first}–${last}`;
+	}
+
 	async function changeDate(entry: Entry) {
-		const what = entry.film ? 'Film' : plural(entry.count, 'episode');
+		const manga = entry.kind === 'manga';
+		const what = entry.film ? 'Film' : plural(entry.count, manga ? 'chapter' : 'episode');
 		const answer = await whenWatched.ask(entry.title, `${what} on ${prettyDate(entry.day)}`, {
 			allowToday: false,
 			film: entry.film,
+			reading: manga,
 			day: entry.day,
 			confirm: 'Change date'
 		});
@@ -145,9 +158,13 @@
 		try {
 			const { changed } = await api.redateDiary(entry.id, entry.day, answer);
 			toasts.push(
-				answer.when === 'unknown'
-					? `${plural(changed, 'watch', 'watches')} moved out of the diary`
-					: `${plural(changed, 'watch', 'watches')} redated`
+				entry.kind === 'manga'
+					? answer.when === 'unknown'
+						? `${plural(changed, 'chapter')} moved out of the diary`
+						: `${plural(changed, 'chapter')} redated`
+					: answer.when === 'unknown'
+						? `${plural(changed, 'watch', 'watches')} moved out of the diary`
+						: `${plural(changed, 'watch', 'watches')} redated`
 			);
 			open = null;
 			await load(0);
@@ -213,7 +230,7 @@
 											{#if entry.poster_path}
 												<img src={img(entry.poster_path, 'w92')} alt="" loading="lazy" />
 											{:else}
-												<Icon name={entry.film ? 'film' : 'tv'} size={16} />
+												<Icon name={KIND_ICON[entry.kind]} size={16} />
 											{/if}
 										</a>
 
@@ -229,7 +246,10 @@
 												{#if entry.imported}<span class="tag">Imported</span>{/if}
 											</span>
 											<span class="detail">
-												{#if entry.film}
+												{#if entry.kind === 'manga'}
+													{chapterRange(entry.chapters ?? [])}
+													{#if entry.count > 1}· {plural(entry.count, 'chapter')}{/if}
+												{:else if entry.film}
 													Film
 												{:else if entry.episodes.length === 1}
 													{range(entry.episodes)}
@@ -241,7 +261,7 @@
 											</span>
 										</button>
 
-										{#if entry.film && entry.rating !== null}
+										{#if (entry.film || entry.kind === 'manga') && entry.rating !== null}
 											<span class="score"><Score value={entry.rating} /></span>
 										{:else if entry.episodes.length === 1 && entry.episodes[0].rating !== null}
 											<span class="score"><Score value={entry.episodes[0].rating} /></span>

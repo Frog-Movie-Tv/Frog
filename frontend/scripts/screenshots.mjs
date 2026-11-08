@@ -155,6 +155,12 @@ async function must(method, path, body) {
 	return res;
 }
 
+/** Frog's id of a title opened through the API, from its address. */
+const idOf = (api) => Number(api.split('/').pop());
+
+/** The manga page the shots show, when AniList answers. */
+let mangaPath = '';
+
 async function seed() {
 	await call('POST', '/api/auth/setup', { username: USER, password: PASS, remember: true });
 
@@ -193,6 +199,29 @@ async function seed() {
 				});
 			}
 		}
+	}
+
+	// A shelf, so Shelves and Home's row of them have something to show.
+	const picks = [];
+	for (const entry of SEED.slice(0, 6)) picks.push(idOf(await titleApi(entry.kind, entry.id)));
+	await must('POST', '/api/shelves', { name: 'Comfort watches', kind: 'manual', title_ids: picks });
+
+	// Manga, read part-way and finished, for its page and the Manga half of
+	// Stats. Only AniList has them; without it these shots are left out.
+	for (const [anilist, status, read, rating] of [
+		[105778, 'watching', 40, 90],
+		[30013, 'watching', 1100, 95],
+		[30002, 'paused', 120, 100]
+	]) {
+		const res = await call('GET', `/api/titles/anilist/${anilist}`);
+		if (!res.ok) {
+			console.log(`  manga ${anilist} not found; manga shots will be skipped`);
+			continue;
+		}
+		const t = `/api/t/${(await res.json()).item.id}`;
+		await must('PUT', `${t}/library`, { status, rating });
+		if (read) await must('PUT', `${t}/library`, { progress: read });
+		if (anilist === 105778) mangaPath = `/t/${idOf(t)}`;
 	}
 }
 
@@ -306,6 +335,26 @@ try {
 		theme: 'pond-light'
 	});
 
+	await shoot(browser, {
+		name: 'shelves-desktop-pond',
+		path: '/shelves',
+		viewport: DESKTOP,
+		theme: 'pond'
+	});
+	if (mangaPath) {
+		await shoot(browser, {
+			name: 'manga-desktop-pond',
+			path: mangaPath,
+			viewport: DESKTOP,
+			theme: 'pond'
+		});
+		await shoot(browser, {
+			name: 'stats-manga-desktop-pond',
+			path: '/stats?half=manga',
+			viewport: DESKTOP,
+			theme: 'pond'
+		});
+	}
 	await shoot(browser, { name: 'home-phone-pond', path: '/', viewport: PHONE, theme: 'pond' });
 	await shoot(browser, {
 		name: 'library-phone-pond',

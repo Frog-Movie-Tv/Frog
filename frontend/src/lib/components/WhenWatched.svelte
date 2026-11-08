@@ -18,7 +18,7 @@
 	// back catalogue: on the dates it aired.
 	$effect(() => {
 		if (pending) {
-			mode = 'release';
+			mode = pending.reading ? 'date' : 'release';
 			date = pending.day ?? today;
 			picked = [];
 			queueMicrotask(() => dialog?.querySelector<HTMLButtonElement>('.option.on')?.focus());
@@ -48,7 +48,9 @@
 				hint: 'Counted as watched, left out of the diary',
 				icon: 'eye-off'
 			}
-		].filter((o) => pending?.allowToday !== false || o.id !== 'today') as {
+		]
+			.filter((o) => pending?.allowToday !== false || o.id !== 'today')
+			.filter((o) => !pending?.reading || o.id !== 'release') as {
 			id: WhenMode;
 			label: string;
 			hint: string;
