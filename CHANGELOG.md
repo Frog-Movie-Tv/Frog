@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.4.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.3.1...v1.4.0) (2026-11-08)
+
+
+### Features
+
+* **appearance:** glass, as the look of every page ([651e658](https://github.com/Frog-Movie-Tv/Frog/commit/651e658fd413daabff38c31b35b0295166c6b31a))
+* **appearance:** glass, as the look of every page ([8bd1a01](https://github.com/Frog-Movie-Tv/Frog/commit/8bd1a019c0b4a97d9ea45ebdef40f1e2f09ef6ae))
+* **manga:** manga, and reading in the diary, Activity and Stats ([a59bb44](https://github.com/Frog-Movie-Tv/Frog/commit/a59bb4423744dd2563d098be6b48ec586eec1b22))
+* **manga:** manga, and reading in the diary, Activity and Stats ([24c06bf](https://github.com/Frog-Movie-Tv/Frog/commit/24c06bfe78ba06dd7dd262c8972b7ba1e98717d9))
+
+
+### Fixes
+
+* **palette:** enter opens the best match, wherever the pointer rests ([17484b5](https://github.com/Frog-Movie-Tv/Frog/commit/17484b50db9ca2849c3cdb875cfd8688b6065607))
+* **palette:** enter opens the best match, wherever the pointer rests ([20f1b82](https://github.com/Frog-Movie-Tv/Frog/commit/20f1b82e796729689075c3708362e31e707aa65b))
+
 ## [1.3.1](https://github.com/Frog-Movie-Tv/Frog/compare/v1.3.0...v1.3.1) (2026-11-03)
 
 
