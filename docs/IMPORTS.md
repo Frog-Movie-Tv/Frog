@@ -31,6 +31,7 @@ a new source is a new reader and nothing else.
 | `frontend/src/lib/import/anime.ts` | Anime trackers: season and part from a title (`animeTitle`), MyAnimeList XML |
 | `frontend/src/lib/import/netflix.ts` | Netflix viewing history: grouping plays into shows and seasons, then settling them with TMDB's answer |
 | `frontend/src/lib/import/rows.ts` | Turning settled rows into what `apply` takes |
+| `frontend/src/lib/import/list.ts` | A list pasted onto a shelf: a title a line, links and ids, or a Letterboxd list export, in its order |
 | `frontend/src/lib/import/review.ts` | Sorting rows for review: the kind of problem, grouping by title, what can be kept in bulk, what was barely watched |
 | `backend/src/transfer/matching.rs` | Which TMDB title a row means: ids, then names, by year, spelling and season; episodes by name |
 | `backend/src/transfer/apply.rs` | Conflict modes, `merged_status`, ticking seasons and episodes, film diary entries |

@@ -458,6 +458,12 @@ export const api = {
 };
 
 /**
+ * How long a search field waits after a key before it asks: long enough that
+ * a quick burst of keys asks once, short enough that results follow typing.
+ */
+export const SEARCH_PAUSE = 60;
+
+/**
  * Frog's id for a title, opening it by its provider's address first if Frog
  * does not have it yet (a search result, a credit).
  */

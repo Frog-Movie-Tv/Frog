@@ -70,7 +70,7 @@
 		<Empty
 			art="rest"
 			title="Nothing yet"
-			hint="What others on this Frog watch shows here, once their profile is on."
+			hint="What you and everyone on this Frog watch shows here."
 		/>
 	{:else}
 		{#each days as group (group.day)}

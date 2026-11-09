@@ -289,6 +289,11 @@ async fn as_item(state: &AppState, media: &Value) -> AppResult<Option<Value>> {
         .fetch_optional(&state.pool)
         .await?
     };
+    // Or a film already found to be TMDB's when someone opened it.
+    let mapped = match mapped {
+        None if kind_of(media) == "movie" => tmdb_title_for(state, id).await?,
+        found => found,
+    };
     let (kind, item_id, source) = match mapped {
         Some((kind, tmdb_id)) => (kind, tmdb_id, "tmdb"),
         None => (kind_of(media).to_string(), id, "anilist"),
@@ -312,6 +317,25 @@ async fn as_item(state: &AppState, media: &Value) -> AppResult<Option<Value>> {
         item["first_air_date"] = json!(date);
     }
     Ok(Some(item))
+}
+
+/// The TMDB title an AniList id was linked to (or its copy merged into).
+async fn tmdb_title_for(state: &AppState, media_id: i64) -> AppResult<Option<(String, i64)>> {
+    let key: Option<(String,)> = sqlx::query_as(
+        "SELECT p.external_id
+           FROM title_external a
+           JOIN title t ON t.id = COALESCE((SELECT o.merged_into FROM title o WHERE o.id = a.title_id),
+                                           a.title_id)
+           JOIN title_external p ON p.title_id = t.id AND p.provider = 'tmdb' AND p.is_primary = 1
+          WHERE a.provider = 'anilist' AND a.external_id = ?",
+    )
+    .bind(media_id.to_string())
+    .fetch_optional(&state.pool)
+    .await?;
+    Ok(key.and_then(|(k,)| {
+        let (kind, id) = k.split_once('/')?;
+        Some((kind.to_string(), id.parse().ok()?))
+    }))
 }
 
 /// An anime or manga by its AniList id as a list item: for an anime, the

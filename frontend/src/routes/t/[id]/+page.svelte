@@ -183,7 +183,9 @@
 			if (item.season_count) {
 				bits.push(`${item.season_count} volume${item.season_count === 1 ? '' : 's'}`);
 			}
-			if (item.episode_count) bits.push(`${item.episode_count} chapters`);
+			if (item.episode_count) {
+				bits.push(`${item.episode_count} chapter${item.episode_count === 1 ? '' : 's'}`);
+			}
 			const state = item.tmdb_status ? PUBLISHING[item.tmdb_status] : null;
 			if (state) bits.push(state);
 		} else if (detail?.anilist_only) bits.push('From AniList');
@@ -213,6 +215,11 @@
 		}
 		return people;
 	});
+
+	/** Who wrote and drew a manga, for the line under its name. */
+	const authors = $derived(
+		item?.kind === 'manga' ? crew.filter((c) => c.jobs.includes('Author')) : []
+	);
 
 	const cast = $derived(uniqueBy(detail?.cast ?? [], (p) => p.id));
 	const trailers = $derived(uniqueBy(detail?.trailers ?? [], (t) => t.key));
@@ -499,6 +506,15 @@
 
 					{#if detail.tagline}
 						<p class="tagline">{detail.tagline}</p>
+					{/if}
+
+					{#if authors.length}
+						<p class="byline">
+							by
+							{#each authors as a, i (a.id)}{#if i > 0}{i === authors.length - 1
+										? ' and '
+										: ', '}{/if}<a href="/person/{a.id}">{a.name}</a>{/each}
+						</p>
 					{/if}
 
 					<div class="meta">
@@ -1114,6 +1130,21 @@
 		color: var(--text-dim);
 	}
 
+	.byline {
+		font-size: 0.98rem;
+		color: var(--text-dim);
+	}
+
+	.byline a {
+		color: var(--text);
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.byline a:hover {
+		text-decoration: underline;
+	}
+
 	/* Every control here is one family: the same height, the same pill, the
 	   same surface over the artwork. Only "Add to library" stands out. */
 	.actions {
@@ -1142,7 +1173,7 @@
 	.actions :global(.trigger:hover),
 	.actions :global(.rating > .chip:hover) {
 		border-color: var(--line-strong);
-		background: var(--bg-elev);
+		background: var(--bg-hover);
 	}
 
 	.actions :global(.btn.primary) {
@@ -1570,7 +1601,7 @@
 	}
 
 	.others a:hover {
-		background: var(--bg-elev);
+		background: var(--bg-hover);
 	}
 
 	.who {

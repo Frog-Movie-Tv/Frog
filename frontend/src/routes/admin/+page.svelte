@@ -41,6 +41,23 @@
 		user: 'Member'
 	};
 
+	/** "1 owner · 2 members": who is here, by role. */
+	const roleCounts = $derived.by(() => {
+		const parts: string[] = [];
+		for (const [key, one, many] of [
+			['owner', 'owner', 'owners'],
+			['admin', 'administrator', 'administrators'],
+			['user', 'member', 'members']
+		] as const) {
+			const n = users.filter((u) => u.role === key).length;
+			if (n) parts.push(`${n} ${n === 1 ? one : many}`);
+		}
+		return parts.join(' · ');
+	});
+
+	const openInvites = $derived(invites.filter((i) => i.state === 'open'));
+	const pastInvites = $derived(invites.filter((i) => i.state !== 'open'));
+
 	async function loadPeople() {
 		try {
 			[users, instance, server] = await Promise.all([
@@ -221,25 +238,77 @@
 			hint="Ask whoever runs this instance if you need it."
 		/>
 	{:else}
+		<!-- The instance at a glance; the detail is further down. -->
+		<div class="overview">
+			<div class="kpi card">
+				<span class="kpi-icon" aria-hidden="true"><Icon name="users" size={18} /></span>
+				<span class="eyebrow">People</span>
+				<strong>{users.length || '—'}</strong>
+				<span class="faint">{roleCounts}</span>
+			</div>
+			<div class="kpi card">
+				<span class="kpi-icon" aria-hidden="true"><Icon name="film" size={18} /></span>
+				<span class="eyebrow">Titles known</span>
+				<strong>{instance?.titles?.all.toLocaleString() ?? '—'}</strong>
+				{#if instance?.titles}
+					<span class="faint"
+						>{instance.titles.films.toLocaleString()} films · {instance.titles.shows.toLocaleString()}
+						shows{#if instance.titles.manga}&nbsp;· {instance.titles.manga.toLocaleString()} manga{/if}</span
+					>
+				{/if}
+			</div>
+			<div class="kpi card">
+				<span class="kpi-icon" aria-hidden="true"><Icon name="database" size={18} /></span>
+				<span class="eyebrow">Storage</span>
+				<strong>{instance ? size(instance.database_bytes) : '—'}</strong>
+				{#if instance}<span class="faint">and {size(instance.image_cache_bytes)} of artwork</span
+					>{/if}
+			</div>
+			<a class="kpi card" href="#server">
+				<span class="kpi-icon" aria-hidden="true"><Icon name="server" size={18} /></span>
+				<span class="eyebrow">Server</span>
+				<strong class="health">
+					<span
+						class="dot"
+						class:bad={server?.backup?.ok === false || server?.update?.ok === false}
+						aria-hidden="true"
+					></span>
+					{server?.backup?.ok === false || server?.update?.ok === false
+						? 'Needs a look'
+						: 'Healthy'}
+				</strong>
+				<span class="faint">Version {session.status?.version ?? '—'}</span>
+			</a>
+		</div>
+
 		<div class="sections">
 			<section class="block">
-				<h2>People</h2>
+				<div class="block-head">
+					<h2>People</h2>
+					<a class="btn ghost small" href="#invite"><Icon name="user-plus" size={15} /> Invite</a>
+				</div>
 				<ul class="users list-pane">
 					{#each users as user (user.id)}
 						<li class:off={user.disabled}>
 							<div class="who">
-								<span class="avatar" aria-hidden="true"
+								<span class="avatar" data-role={user.role} aria-hidden="true"
 									>{user.username.slice(0, 1).toUpperCase()}</span
 								>
 								<span class="label">
-									<strong>{user.username}</strong>
+									<span class="name-line">
+										<strong>{user.username}</strong>
+										<span class="role" data-role={user.role}
+											>{#if user.role === 'owner'}<Icon name="crown" size={11} />{/if}{ROLE[
+												user.role
+											]}</span
+										>
+										{#if user.disabled}<span class="role off-label">Switched off</span>{/if}
+									</span>
 									<span class="faint">
-										{ROLE[user.role]}
-										· {user.titles === 1 ? '1 title' : `${user.titles} titles`}
+										{user.titles === 1 ? '1 title' : `${user.titles.toLocaleString()} titles`}
 										· {user.last_sign_in
 											? `signed in ${relativeDate(user.last_sign_in)}`
 											: 'not signed in yet'}
-										{#if user.disabled}· <span class="off-label">switched off</span>{/if}
 									</span>
 								</span>
 							</div>
@@ -298,43 +367,47 @@
 			</section>
 
 			<div class="col">
-				<section class="block">
+				<section class="block" id="invite">
 					<h2>Invite someone</h2>
-					<p class="muted">
-						A link that works once and then stops. Nobody can create an account without one.
-					</p>
+					<div class="invite card">
+						<div class="invite-head">
+							<span class="kpi-icon" aria-hidden="true"><Icon name="ticket" size={18} /></span>
+							<p class="muted">
+								A link that works once and then stops. Nobody can create an account without one.
+							</p>
+						</div>
+						<div class="row">
+							<label class="field">
+								<span>Role</span>
+								<Select
+									value={role}
+									label="Role"
+									onchange={(v) => (role = v as 'user' | 'admin')}
+									options={[
+										{ value: 'user', label: 'Member' },
+										...(owner ? [{ value: 'admin', label: 'Administrator' }] : [])
+									]}
+								/>
+							</label>
 
-					<div class="row card">
-						<label class="field">
-							<span>Role</span>
-							<Select
-								value={role}
-								label="Role"
-								onchange={(v) => (role = v as 'user' | 'admin')}
-								options={[
-									{ value: 'user', label: 'Member' },
-									...(owner ? [{ value: 'admin', label: 'Administrator' }] : [])
-								]}
-							/>
-						</label>
+							<label class="field">
+								<span>Expires after</span>
+								<Select
+									value={days}
+									label="Expires after"
+									onchange={(v) => (days = v)}
+									options={[
+										{ value: '1', label: 'A day' },
+										{ value: '7', label: 'A week' },
+										{ value: '30', label: 'A month' }
+									]}
+								/>
+							</label>
 
-						<label class="field">
-							<span>Expires after</span>
-							<Select
-								value={days}
-								label="Expires after"
-								onchange={(v) => (days = v)}
-								options={[
-									{ value: '1', label: 'A day' },
-									{ value: '7', label: 'A week' },
-									{ value: '30', label: 'A month' }
-								]}
-							/>
-						</label>
-
-						<button class="btn primary" onclick={create} disabled={busy}>
-							{busy ? 'Making it…' : 'Make a link'}
-						</button>
+							<button class="btn primary" onclick={create} disabled={busy}>
+								{busy ? 'Making it…' : 'Make a link'}
+							</button>
+						</div>
 					</div>
 
 					{#if fresh}
@@ -358,29 +431,28 @@
 					{:else if invites.length === 0}
 						<Empty art="none" title="No invites yet" hint="Make one above to let somebody in." />
 					{:else}
-						<ul class="invites list-pane">
-							{#each invites as invite (invite.id)}
-								<li>
-									<div>
-										<strong>{invite.role === 'admin' ? 'Administrator' : 'Member'}</strong>
-										<span class="state {invite.state}">{invite.state}</span>
-									</div>
-									<p class="muted">
-										{#if invite.state === 'used'}
-											Used by {invite.used_by ?? 'someone'} on {when(invite.used_at ?? '')}
-										{:else if invite.state === 'expired'}
-											Expired on {when(invite.expires_at)}
-										{:else}
-											Expires on {when(invite.expires_at)}
-										{/if}
-										{#if invite.created_by}· made by {invite.created_by}{/if}
-									</p>
-									{#if invite.state === 'open'}
-										<button class="btn ghost" onclick={() => revoke(invite)}>Withdraw</button>
-									{/if}
-								</li>
-							{/each}
-						</ul>
+						{#if openInvites.length}
+							<ul class="invites list-pane">
+								{#each openInvites as invite (invite.id)}
+									{@render inviteRow(invite)}
+								{/each}
+							</ul>
+						{:else}
+							<p class="faint">No open invites.</p>
+						{/if}
+						{#if pastInvites.length}
+							<details class="past">
+								<summary>
+									<Icon name="chevron-right" size={14} />
+									Used and expired <span class="faint">{pastInvites.length}</span>
+								</summary>
+								<ul class="invites list-pane">
+									{#each pastInvites as invite (invite.id)}
+										{@render inviteRow(invite)}
+									{/each}
+								</ul>
+							</details>
+						{/if}
 					{/if}
 				</section>
 			</div>
@@ -465,6 +537,28 @@
 	{/if}
 </div>
 
+{#snippet inviteRow(invite: Invite)}
+	<li>
+		<div>
+			<strong>{invite.role === 'admin' ? 'Administrator' : 'Member'}</strong>
+			<span class="state {invite.state}">{invite.state}</span>
+		</div>
+		<p class="muted">
+			{#if invite.state === 'used'}
+				Used by {invite.used_by ?? 'someone'} on {when(invite.used_at ?? '')}
+			{:else if invite.state === 'expired'}
+				Expired on {when(invite.expires_at)}
+			{:else}
+				Expires on {when(invite.expires_at)}
+			{/if}
+			{#if invite.created_by}· made by {invite.created_by}{/if}
+		</p>
+		{#if invite.state === 'open'}
+			<button class="btn ghost" onclick={() => revoke(invite)}>Withdraw</button>
+		{/if}
+	</li>
+{/snippet}
+
 {#snippet outcome(event: ServerEvent)}
 	<span class="outcome" class:failed={!event.ok}>
 		{#if !event.ok}<Icon name="x" size={14} />{/if}
@@ -476,6 +570,157 @@
 <style>
 	#server dt {
 		white-space: nowrap;
+	}
+
+	.overview {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+		gap: 12px;
+		margin-bottom: 36px;
+	}
+
+	.kpi {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding: 16px 18px;
+		color: inherit;
+		text-decoration: none;
+		min-width: 0;
+	}
+
+	a.kpi:hover {
+		background: var(--bg-hover);
+	}
+
+	.kpi strong {
+		font-size: 1.5rem;
+		font-weight: 750;
+		letter-spacing: -0.01em;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.kpi .faint {
+		font-size: 0.78rem;
+	}
+
+	.kpi-icon {
+		flex: none;
+		width: 34px;
+		height: 34px;
+		display: grid;
+		place-items: center;
+		margin-bottom: 6px;
+		border-radius: 10px;
+		background: var(--accent-soft);
+		color: var(--accent);
+	}
+
+	.health {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		font-size: 1.15rem !important;
+	}
+
+	.dot {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		background: var(--good);
+		flex: none;
+	}
+
+	.dot.bad {
+		background: var(--bad);
+	}
+
+	.block-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+
+	.small {
+		min-height: 32px;
+		padding: 0 12px;
+		font-size: 0.8rem;
+	}
+
+	.name-line {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.role {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 1px 8px;
+		border-radius: var(--radius-pill);
+		background: var(--bg-elev-2);
+		color: var(--text-dim);
+		font-size: 0.72rem;
+		font-weight: 650;
+	}
+
+	.role[data-role='owner'],
+	.role[data-role='admin'] {
+		background: var(--accent-soft);
+		color: var(--accent);
+	}
+
+	.role.off-label {
+		background: color-mix(in srgb, var(--bad) 14%, transparent);
+	}
+
+	.avatar[data-role='owner'] {
+		box-shadow: 0 0 0 2px var(--accent);
+	}
+
+	.invite {
+		display: grid;
+		gap: 4px;
+		padding: 16px 0 0;
+	}
+
+	.invite-head {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 0 18px;
+	}
+
+	.invite-head .kpi-icon {
+		margin: 0;
+	}
+
+	.invite-head p {
+		margin: 0;
+		font-size: 0.88rem;
+	}
+
+	.past summary {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 4px 10px;
+		font-size: 0.88rem;
+		font-weight: 600;
+		color: var(--text-dim);
+		cursor: pointer;
+		list-style: none;
+	}
+
+	.past summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.past[open] summary :global(svg) {
+		transform: rotate(90deg);
 	}
 
 	.outcome {

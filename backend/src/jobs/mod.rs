@@ -37,6 +37,13 @@ pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
         let _ops_guard = AbortOnDrop(ops);
         let logos = tokio::spawn(fill_logos(state.clone()));
         let _logos_guard = AbortOnDrop(logos);
+        let twins = tokio::spawn({
+            let state = state.clone();
+            async move {
+                merge_film_twins(&state).await;
+            }
+        });
+        let _twins_guard = AbortOnDrop(twins);
         loop {
             if let Err(e) = tick(&state).await {
                 tracing::warn!(error = %e, "worker tick failed");
@@ -377,6 +384,55 @@ async fn backfill_credits(state: AppState) {
         backfill_credits_once(&state).await;
         tokio::time::sleep(CREDITS_TICK).await;
     }
+}
+
+/// AniList-only films that TMDB has too, from before opening one checked:
+/// each account's history moves to TMDB's title and the copy points there,
+/// so nobody sees the same film twice. Once a start; a film someone's
+/// AniList list keeps is left to the sync, which places it by the same rule
+/// and would otherwise bring the copy back.
+pub async fn merge_film_twins(state: &AppState) -> usize {
+    if !state.tmdb.is_configured() {
+        return 0;
+    }
+    let copies: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT t.id, x.external_id
+           FROM title t
+           JOIN title_external x ON x.title_id = t.id AND x.provider = 'anilist' AND x.is_primary = 1
+          WHERE t.kind = 'movie' AND t.merged_into IS NULL",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
+    let mut merged = 0;
+    for (from, media_id) in copies {
+        let listed: Option<(i64,)> =
+            sqlx::query_as("SELECT user_id FROM anilist_entry WHERE media_id = ? LIMIT 1")
+                .bind(media_id.parse::<i64>().unwrap_or(0))
+                .fetch_optional(&state.pool)
+                .await
+                .unwrap_or(None);
+        if listed.is_some() {
+            continue;
+        }
+        let to = match catalog::film_twin_of(state, from).await {
+            Ok(Some(to)) => to,
+            Ok(None) => continue,
+            Err(e) => {
+                tracing::debug!(title_id = from, error = %e, "film duplicates paused");
+                break;
+            }
+        };
+        match crate::store::merge_copy(&state.pool, from, to, "the same film on TMDB").await {
+            Ok(()) => merged += 1,
+            Err(e) => tracing::warn!(from, to, error = %e, "could not merge a duplicate film"),
+        }
+    }
+    if merged > 0 {
+        tracing::info!(merged, "merged AniList films into the TMDB films they are");
+    }
+    merged
 }
 
 /// Fill in credits for titles stored before they were kept. Most details are

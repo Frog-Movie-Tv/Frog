@@ -94,8 +94,12 @@ pub async fn calendar(
     .fetch_all(&state.pool)
     .await?;
 
+    let keys: Vec<(i64, &str, i64)> = episodes.iter().map(|r| (r.1, r.5.as_str(), r.6)).collect();
+    let keep = crate::release::calendar_keeps(&keys);
     let mut entries: Vec<CalendarEntry> = episodes
         .into_iter()
+        .zip(keep)
+        .filter_map(|(row, keep)| keep.then_some(row))
         .map(
             |(kind, id, title, poster, accent, date, season, episode, ep_name, watched)| {
                 CalendarEntry {

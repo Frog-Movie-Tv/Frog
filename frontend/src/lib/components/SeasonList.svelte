@@ -1045,7 +1045,7 @@
 
 	.note-btn:hover {
 		color: var(--text);
-		background: var(--bg-elev-2);
+		background: var(--bg-hover);
 	}
 
 	.note-btn.has {

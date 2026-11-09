@@ -5,7 +5,7 @@
 	import { page } from '$app/state';
 	import { address } from '#lib/address';
 	import Icon from '#lib/components/Icon.svelte';
-	import { api, frogId, img } from '#lib/api';
+	import { api, frogId, img, SEARCH_PAUSE } from '#lib/api';
 	import { completeShow } from '#lib/complete';
 	import Empty from '#lib/components/Empty.svelte';
 	import FilterMenu from '#lib/components/FilterMenu.svelte';
@@ -142,10 +142,12 @@
 			remember();
 			return;
 		}
+		// Results follow each key: a moment's grace only so a burst of keys
+		// asks once. Late answers are dropped by `run`'s token.
 		const timer = setTimeout(() => {
 			remember();
 			void run(q);
-		}, 280);
+		}, SEARCH_PAUSE);
 		return () => clearTimeout(timer);
 	});
 
@@ -841,7 +843,7 @@
 	}
 
 	.opt:hover {
-		background: var(--bg-elev-2);
+		background: var(--bg-hover);
 	}
 
 	.tick {

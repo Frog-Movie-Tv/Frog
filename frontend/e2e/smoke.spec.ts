@@ -60,15 +60,14 @@ test('creating the account signs you straight in', async ({ page }) => {
 	await page.getByLabel('Password').fill(PASS);
 	await page.getByRole('button', { name: isSetup ? 'Create account' : 'Sign in' }).click();
 
-	// A new account with nothing tracked is welcomed first. Home shows for a
-	// moment before it sends you on, so wait for the welcome itself; on a
-	// retry the account may have been welcomed already and Home stays.
+	// A new account with nothing tracked is welcomed first; on a retry the
+	// account may have been welcomed already and Home stays. Home shows its
+	// empty state only once it knows which, so whichever of the two appears
+	// is the answer. A fixed wait for the welcome alone raced slow runners.
 	const welcome = page.getByRole('heading', { name: /^Welcome/ });
-	const welcomed = await welcome.waitFor({ timeout: 10000 }).then(
-		() => true,
-		() => false
-	);
-	if (welcomed) {
+	const empty = page.getByText('Nothing here yet');
+	await expect(welcome.or(empty)).toBeVisible({ timeout: 30000 });
+	if (await welcome.isVisible()) {
 		await page.getByRole('button', { name: 'Continue' }).click();
 		await expect(page.getByRole('heading', { name: 'Fill your library' })).toBeVisible();
 		await page.getByRole('button', { name: 'Later' }).click();
@@ -389,7 +388,13 @@ test('a saved colour scheme can be copied again and again', async ({ page }) => 
 	await signIn(page);
 	await page.goto('/settings#appearance');
 	await page.getByText('Colour editor').click();
-	await page.getByLabel('Accent').fill('#e06c9f');
+	// The accent is picked in Frog's own colour picker; its hex field takes
+	// a colour typed in.
+	await page.getByRole('button', { name: 'Accent', exact: true }).click();
+	const picker = page.getByRole('dialog', { name: 'Accent' });
+	await picker.getByLabel('Hex colour').fill('#e06c9f');
+	await picker.getByLabel('Hex colour').press('Enter');
+	await picker.getByRole('button', { name: 'Done', exact: true }).click();
 	await page.getByRole('button', { name: 'Save', exact: true }).click();
 
 	// Two copies of one theme used to share a name, and the page fell over.
@@ -631,8 +636,10 @@ test('a name sorts from A, and Back from a title keeps the filters', async ({
 	await expect(page).toHaveURL(/\/t\/9101/);
 	await page.goBack();
 	await expect(page).toHaveURL(/status=completed/);
-	await expect(titles(page)).toHaveCount(3);
-	await expect(titles(page).first()).toHaveAttribute('title', 'Alien');
+	// Back draws the kept page and then the fresh answer over it; on a slow
+	// phone runner the grid can be between the two for a moment.
+	await expect(titles(page)).toHaveCount(3, { timeout: 15000 });
+	await expect(titles(page).first()).toHaveAttribute('title', 'Alien', { timeout: 15000 });
 	clearLibrary(testInfo.project.name);
 });
 

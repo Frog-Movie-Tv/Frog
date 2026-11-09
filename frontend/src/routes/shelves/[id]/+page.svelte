@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { api, img } from '#lib/api';
+	import { api, frogId, img, SEARCH_PAUSE } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Grid from '#lib/components/Grid.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import Poster from '#lib/components/Poster.svelte';
 	import Select from '#lib/components/Select.svelte';
 	import { settings } from '#lib/settings.svelte';
+	import ShelfFromList from '#lib/components/ShelfFromList.svelte';
 	import ShelfRules from '#lib/components/ShelfRules.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { failure, type Failure } from '#lib/failure';
@@ -15,7 +16,7 @@
 	import { session } from '#lib/session.svelte';
 	import { moved, sortable } from '#lib/sortable';
 	import { toasts } from '#lib/toast.svelte';
-	import type { LibraryItem, Shelf, ShelfRules as Rules } from '#lib/types';
+	import type { LibraryItem, SearchItem, Shelf, ShelfRules as Rules } from '#lib/types';
 
 	const id = $derived(Number(page.params.id));
 
@@ -40,6 +41,8 @@
 	let loading = $state(true);
 	let error = $state<Failure | null>(null);
 	let editing = $state(false);
+	/** Adding a pasted list, in its order. */
+	let listing = $state(false);
 	let editingRules = $state(page.url.searchParams.get('edit') === '1');
 	let renaming = $state(false);
 	let draftName = $state('');
@@ -119,9 +122,53 @@
 			.slice(0, 40);
 	});
 
+	/** A watchlist picks from everything, so it searches as you type. */
+	const watchlist = $derived(shelf?.kind === 'watchlist');
+	let found = $state<SearchItem[]>([]);
+	let searching = $state(false);
+	let asked = 0;
+
+	$effect(() => {
+		if (!adding || !watchlist) return;
+		const q = pick.trim();
+		const ask = ++asked;
+		if (q.length < 2) {
+			found = [];
+			searching = false;
+			return;
+		}
+		searching = true;
+		const wait = setTimeout(() => {
+			api
+				.search(q)
+				.then((r) => {
+					if (ask === asked) found = r.results.slice(0, 24);
+				})
+				.catch(() => undefined)
+				.finally(() => {
+					if (ask === asked) searching = false;
+				});
+		}, SEARCH_PAUSE);
+		return () => clearTimeout(wait);
+	});
+
+	const onShelf = $derived(new Set(items.map((i) => i.id)));
+
+	async function addFound(result: SearchItem) {
+		try {
+			const titleId = await frogId(result);
+			if (onShelf.has(titleId)) return;
+			await api.addToShelf(id, titleId);
+			toasts.push(`Added ${result.name}`);
+			await load();
+		} catch (e) {
+			toasts.error(e);
+		}
+	}
+
 	async function openAdding() {
 		adding = true;
-		if (library.length) return;
+		if (watchlist || library.length) return;
 		try {
 			library = (await api.library({ sort: 'name', order: 'asc', limit: 2000 })).items;
 		} catch (e) {
@@ -223,7 +270,10 @@
 					<h1>{shelf.name}</h1>
 				{/if}
 				<span class="faint sub">
-					{#if shelf.kind === 'smart'}<Icon name="sparkle" size={14} /> Smart shelf ·{/if}
+					{#if shelf.kind === 'smart'}<Icon name="sparkle" size={14} /> Smart shelf ·{:else if watchlist}<Icon
+							name="bookmark"
+							size={14}
+						/> Watchlist ·{/if}
 					{plural(items.length, 'title')}
 				</span>
 			</div>
@@ -243,6 +293,9 @@
 						onclick={() => (adding ? (adding = false) : openAdding())}
 					>
 						{#if adding}<Icon name="check" size={16} /> Done{:else}<Icon name="plus" size={16} /> Add{/if}
+					</button>
+					<button class="btn" onclick={() => (listing = true)}>
+						<Icon name="list" size={16} /> Add a list
 					</button>
 					{#if items.length}
 						<button class="btn" class:primary={editing} onclick={() => (editing = !editing)}>
@@ -272,11 +325,68 @@
 			</div>
 		</div>
 
+		{#if listing}
+			<ShelfFromList
+				shelfId={id}
+				shelfName={shelf.name}
+				{onShelf}
+				onclose={() => (listing = false)}
+				ondone={(added) => {
+					listing = false;
+					toasts.push(added ? `Added ${plural(added, 'title')}` : 'All of it was here already');
+					void load();
+				}}
+			/>
+		{/if}
+
 		{#if shelf.kind === 'smart' && editingRules}
 			<ShelfRules rules={shelf.rules} onsave={saveRules} oncancel={() => (editingRules = false)} />
 		{/if}
 
-		{#if adding}
+		{#if adding && watchlist}
+			<section class="adder card" aria-label="Add anything">
+				<input
+					class="input"
+					type="search"
+					placeholder="Search films, shows and anime"
+					aria-label="Search films, shows and anime"
+					bind:value={pick}
+					use:focusName
+				/>
+				{#if found.length}
+					<ul>
+						{#each found as result (`${result.kind}:${result.tmdb_id ?? ''}:${result.anilist_id ?? ''}`)}
+							{@const here = result.id != null && onShelf.has(result.id)}
+							<li>
+								<button class="candidate" disabled={here} onclick={() => addFound(result)}>
+									{#if result.poster_path}
+										<img src={img(result.poster_path, 'w92')} alt="" loading="lazy" />
+									{:else}
+										<span class="thumb"></span>
+									{/if}
+									<span class="who">
+										<strong>{result.name}</strong>
+										<span class="faint"
+											>{result.year ?? ''}{#if result.in_library}{result.year ? ' · ' : ''}In your
+												library{/if}</span
+										>
+									</span>
+									<Icon name={here ? 'check' : 'plus'} size={16} />
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="faint">
+						{pick.trim().length < 2
+							? 'Type a name. Nothing you add here goes into your library.'
+							: searching
+								? 'Searching'
+								: 'Nothing by that name.'}
+					</p>
+				{/if}
+			</section>
+		{:else if adding}
 			<section class="adder card" aria-label="Add from your library">
 				<input
 					class="input"
@@ -320,12 +430,22 @@
 					{/if}
 				</Empty>
 			{:else}
-				{#if !adding}
+				{#if !adding && watchlist}
+					<Empty
+						art="search"
+						title="Nothing on this watchlist yet"
+						hint="Add anything you want to see. It stays out of your library until you start it."
+					>
+						<button class="btn primary" onclick={openAdding}>Add titles</button>
+						<button class="btn" onclick={() => (listing = true)}>Add a list</button>
+					</Empty>
+				{:else if !adding}
 					<Empty
 						title="Nothing on this shelf yet"
 						hint="Pick from your library, or use Add to shelf on any title."
 					>
 						<button class="btn primary" onclick={openAdding}>Add from your library</button>
+						<button class="btn" onclick={() => (listing = true)}>Add a list</button>
 					</Empty>
 				{/if}
 			{/if}
@@ -558,8 +678,13 @@
 		cursor: pointer;
 	}
 
-	.candidate:hover {
-		background: var(--bg-elev-2);
+	.candidate:hover:not(:disabled) {
+		background: var(--bg-hover);
+	}
+
+	.candidate:disabled {
+		cursor: default;
+		color: var(--text-faint);
 	}
 
 	.candidate img,

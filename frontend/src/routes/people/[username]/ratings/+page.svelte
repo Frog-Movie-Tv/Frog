@@ -117,7 +117,7 @@
 	}
 
 	.row:hover {
-		background: var(--bg-elev);
+		background: var(--bg-hover);
 	}
 
 	.rank {

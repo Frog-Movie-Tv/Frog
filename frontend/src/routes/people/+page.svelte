@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, img } from '#lib/api';
+	import { api, img, SEARCH_PAUSE } from '#lib/api';
 	import Avatar from '#lib/components/Avatar.svelte';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
@@ -50,7 +50,7 @@
 					}
 				})
 				.catch(() => (crew = []));
-		}, 280);
+		}, SEARCH_PAUSE);
 		return () => clearTimeout(timer);
 	});
 

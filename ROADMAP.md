@@ -7,7 +7,7 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 1.3.1 "Horned Frog"; 1.4.0 "Wood Frog" (manga and Glass) is in review |
+| **Release** | 1.4.0 "Wood Frog" (manga and Glass); 1.4.1 (the 9 November batch) is in review |
 | **Next codenames** | Goliath |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
@@ -21,37 +21,26 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 ## Next
 
-0. **Ship 1.4.0 Wood Frog: the 6 November batch, then Glass.** Two pull
-   requests, `feat/manga` then `feat/glass` on top of it; merge them in that
-   order. The batch: manga (search, pages, chapters read, the AniList manga list,
-   backups), reading in the diary, Activity, Continue watching and profiles,
-   Stats in two halves, stars filled in and always five, the 10 point
-   slider, the deck dealing finished titles and its swipe, AniList syncs in
-   Activity, Administration's rows, undo for marking watched and for an
-   unticked episode's every watch, person pages' Appearances, the Home
-   layout button, Trakt history, backups' film watches, Letterboxd's
-   deleted films, MyAnimeList's manga list, renamed and recoloured
-   statuses, shortcut letters, trailers behind a title, a shelf's own poster
-   size, Play's search, new screenshots, and the fixes in its notes. Both
-   are `feat`, so release-please makes 1.4.0; its section is already written
-   as Wood Frog in `RELEASE-NOTES.md`, which keeps the codename. Before it
-   reaches the server:
-   - the first start rebuilds `title` once so it can hold manga
-     (`db::rebuild_title`, the same rebuild the catalog release used), and
-     adds `chapter_read` (additive). The release before runs on both, so a
-     rollback needs no snapshot, but take a manual backup first all the
-     same;
-   - the swipe and the edit bar's phone menus were checked in desktop
-     Chromium, not by a finger: try both on the Android phone;
-   - try a manga search, a manga page and Settings → Connections against the
-     live AniList once deployed. Back closing menus (1.3.1) also still
-     wants a try on the phone.
-   - **Glass is the base design** (decided 2026-11-06). Every appearance is
-     a colour set over one glass design; `feat/glass-appearance` is
-     superseded by it and can be deleted. Checked in Chromium at phone size
-     with touch, not on the Android phone itself: try the floating tab bar,
-     the full-screen heroes and the frosted bars while scrolling there, and
-     an iPhone or Mac, where Frog's own face is Apple's system face.
+0. **Ship 1.4.1: the 9 November batch.** One pull request,
+   `fix/november-batch`, with `Release-As: 1.4.1` so release-please makes a
+   patch although watchlists and the Stats dashboard are new. Its notes are
+   under Upcoming in `RELEASE-NOTES.md`. In it: watchlists and adding a pasted
+   list to a shelf, Stats you can click through, Activity a card per title and
+   with your own watching, a manga's author, AniList films opening as TMDB's
+   (and the copies merged), the calendar's bonus shorts, light-theme hover, a
+   colour picker, Settings' Account, Ratings and AniList, About, Administration,
+   search as you type, empty people and studios left out of search, and the
+   e2e race that failed `main` after 1.4.0. Before and after it reaches the
+   server:
+   - the first start adds `shelf.watchlist` (additive), and folds AniList-only
+     films TMDB also has into TMDB's title, once (`jobs::merge_film_twins`).
+     Read the log for "merged AniList films" and open Look Back the manga's
+     Related row: it should lead to the one Look Back film. Take a manual
+     backup first all the same;
+   - the colour picker's sheet and the Stats bars were checked in desktop
+     Chromium only: try both by finger on the Android phone;
+   - the AniList card and Administration's overview were checked against the
+     demo accounts, not the live list and the live server's backup log.
 1. **AniList sign-in on a laptop, once by hand.** The Frog-Dev client
    (redirect `http://127.0.0.1:8080/api/anilist/callback`) is in the local
    `.env`, and AniList accepts its id and secret (checked against its token
@@ -117,6 +106,16 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
    taken away, and WebKit as far as the upload. Playwright's WebKit on Windows
    hangs and closes once the page draws the new picture, so nothing here has seen
    Safari draw it.
+
+11. **Duplicates of a series.** Opening an AniList film TMDB has now opens
+   TMDB's; a series still makes its own copy when the sync has not placed it,
+   since a season needs the sync's walk with someone's token. Do the same for
+   a series' first season once that walk can run without a token.
+12. **Stats' people and streaks under a pick.** Picking a bar narrows every
+   chart and total but the actors, directors and studios, which still count
+   the whole period (the page says so); days watching and the streaks are set
+   aside while something is picked.
+   They need the credits and days per title in `facts`.
 
 ## Known issues
 

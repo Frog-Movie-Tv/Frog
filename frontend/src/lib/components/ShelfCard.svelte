@@ -35,7 +35,10 @@
 	<span class="meta">
 		<strong>{shelf.name}</strong>
 		<span class="faint">
-			{#if shelf.kind === 'smart'}<Icon name="sparkle" size={12} /> Smart ·{/if}
+			{#if shelf.kind === 'smart'}<Icon name="sparkle" size={12} /> Smart ·{:else if shelf.kind === 'watchlist'}<Icon
+					name="bookmark"
+					size={12}
+				/> Watchlist ·{/if}
 			{plural(shelf.count, 'title')}
 		</span>
 	</span>
@@ -63,7 +66,7 @@
 	}
 
 	a.shelf:hover .cover {
-		background: var(--bg-elev-2);
+		background: var(--bg-hover);
 	}
 
 	.cover img {

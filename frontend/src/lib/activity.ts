@@ -20,7 +20,3 @@ export function activityLine(item: ActivityItem): string {
 	}
 	return `${item.did} ${name}`;
 }
-
-/** The last line of a person's cards, for what did not get a card of its own. */
-export const alsoLine = (also: number) =>
-	also === 1 ? 'and 1 other title' : `and ${also} other titles`;

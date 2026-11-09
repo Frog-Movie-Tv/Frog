@@ -164,7 +164,7 @@
 
 	.menu a:hover,
 	.menu button:hover {
-		background: var(--bg-elev-2);
+		background: var(--bg-hover);
 	}
 
 	hr {

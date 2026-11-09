@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { api } from '#lib/api';
+	import Avatar from '#lib/components/Avatar.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import { relativeDate } from '#lib/format';
 	import { characters, nameLimit, USERNAME_MAX } from '#lib/names';
@@ -28,6 +29,10 @@
 		admin: 'Administrator',
 		user: 'Member'
 	};
+
+	/** A phone or a computer, from the name the browser gave itself. */
+	const onPhone = (device: DeviceSession) =>
+		/android|iphone|ipad|mobile/i.test(device.device ?? '');
 
 	async function load() {
 		try {
@@ -130,27 +135,34 @@
 	}
 </script>
 
-<div class="account list-pane">
-	<div class="row">
-		<span class="who">
-			<span class="avatar" aria-hidden="true"
-				>{(account?.username ?? '?').slice(0, 1).toUpperCase()}</span
-			>
-			<span class="label">
-				<strong>{account?.username ?? session.status?.username ?? ''}</strong>
-				<span class="faint">
-					{account ? ROLE[account.role] : ''}
-					{#if account}· joined {relativeDate(account.created_at)}{/if}
-				</span>
-			</span>
+<div class="identity card">
+	<Avatar
+		src={session.status?.avatar ?? null}
+		name={account?.username ?? session.status?.username ?? '?'}
+		size={64}
+	/>
+	<span class="who">
+		<strong class="name">{account?.username ?? session.status?.username ?? ''}</strong>
+		<span class="meta">
+			{#if account}
+				<span class="role" data-role={account.role}
+					>{#if account.role === 'owner'}<Icon name="crown" size={12} />{/if}{ROLE[
+						account.role
+					]}</span
+				>
+				<span class="faint">Joined {relativeDate(account.created_at)}</span>
+			{/if}
 		</span>
-		<button class="btn ghost" onclick={switchAccount}>
-			<Icon name="refresh" size={15} /> Switch account
-		</button>
-	</div>
+	</span>
+	<button class="btn ghost" onclick={switchAccount}>
+		<Icon name="refresh" size={15} /> Switch account
+	</button>
+</div>
 
+<div class="account list-pane">
 	<div class="row column">
 		<div class="top">
+			<span class="tile" aria-hidden="true"><Icon name="id" size={18} /></span>
 			<span class="label">
 				<strong>Username</strong>
 				<span class="faint">It is how you sign in, and the address of your profile.</span>
@@ -196,6 +208,7 @@
 
 	<div class="row column">
 		<div class="top">
+			<span class="tile" aria-hidden="true"><Icon name="key" size={18} /></span>
 			<span class="label">
 				<strong>Password</strong>
 				<span class="faint">Changing it signs out your other devices.</span>
@@ -239,6 +252,7 @@
 
 	<div class="row column">
 		<div class="top">
+			<span class="tile" aria-hidden="true"><Icon name="shield" size={18} /></span>
 			<span class="label">
 				<strong>Signed-in devices</strong>
 				<span class="faint"
@@ -251,7 +265,10 @@
 		</div>
 		<ul class="devices">
 			{#each devices as device (device.id)}
-				<li>
+				<li class:current={device.current}>
+					<span class="device-icon" aria-hidden="true"
+						><Icon name={onPhone(device) ? 'phone' : 'desktop'} size={18} /></span
+					>
 					<span class="label">
 						<strong>{device.device ?? 'A browser'}</strong>
 						<span class="faint">
@@ -273,6 +290,7 @@
 	{#if account && account.role !== 'owner'}
 		<div class="row column">
 			<div class="top">
+				<span class="tile danger-tile" aria-hidden="true"><Icon name="trash" size={18} /></span>
 				<span class="label">
 					<strong>Delete account</strong>
 					<span class="faint"
@@ -325,33 +343,78 @@
 		align-items: stretch;
 	}
 
+	/* Who you are, as a card of its own over the settings. */
+	.identity {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 16px;
+		padding: 18px 20px;
+		margin-bottom: 14px;
+	}
+
+	.who {
+		flex: 1 1 12em;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		min-width: 0;
+	}
+
+	.name {
+		font-size: 1.3rem;
+		font-weight: 750;
+		letter-spacing: -0.01em;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 10px;
+		font-size: 0.82rem;
+	}
+
+	.role {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 2px 9px;
+		border-radius: var(--radius-pill);
+		background: var(--accent-soft);
+		color: var(--accent);
+		font-weight: 650;
+		font-size: 0.76rem;
+	}
+
 	.top {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
 		flex-wrap: wrap;
 		gap: 12px;
 	}
 
-	/* Wide enough to read a name; past that the button takes its own line. */
-	.who {
-		flex: 1 1 12em;
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		min-width: 0;
+	.top .label {
+		flex: 1 1 10em;
 	}
 
-	.avatar {
-		width: 40px;
-		height: 40px;
-		border-radius: 50%;
+	/* Each setting leads with its icon, as a phone's settings do. */
+	.tile {
+		flex: none;
+		width: 36px;
+		height: 36px;
 		display: grid;
 		place-items: center;
+		border-radius: 10px;
 		background: var(--accent-soft);
 		color: var(--accent);
-		font-weight: 700;
-		flex: none;
+	}
+
+	.danger-tile {
+		background: color-mix(in srgb, var(--bad) 14%, transparent);
+		color: var(--bad);
 	}
 
 	.label {
@@ -381,19 +444,40 @@
 
 	.devices {
 		list-style: none;
-		margin: 10px 0 0;
+		margin: 12px 0 0 48px;
 		padding: 0;
 		display: flex;
 		flex-direction: column;
+		gap: 6px;
 	}
 
 	.devices li {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
 		gap: 12px;
-		padding: 10px 0;
-		border-top: 1px solid var(--line);
+		padding: 10px 12px;
+		border-radius: var(--radius-sm);
+		background: var(--bg-elev-2);
+		border: 1px solid var(--line);
+	}
+
+	.devices li .label {
+		flex: 1;
+	}
+
+	.devices li.current {
+		border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+	}
+
+	.device-icon {
+		flex: none;
+		color: var(--text-dim);
+	}
+
+	@media (max-width: 600px) {
+		.devices {
+			margin-left: 0;
+		}
 	}
 
 	.small {

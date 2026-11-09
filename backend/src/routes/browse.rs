@@ -118,6 +118,10 @@ async fn people(state: &AppState, term: &str) -> AppResult<Vec<Value>> {
                 .take(3)
                 .collect();
             let name = models::str_at(p, "name")?;
+            // Known for nothing: a page with no credits to show.
+            if known.is_empty() {
+                return None;
+            }
             Some((
                 text::closeness(&name, &typed),
                 i,
@@ -219,7 +223,53 @@ async fn studios(state: &AppState, term: &str) -> AppResult<Vec<Value>> {
         found.retain(|s| s.rank.0 < Closeness::Loose);
     }
     found.sort_by_key(|s| (s.rank, s.order));
-    Ok(found.into_iter().take(20).map(|s| s.value).collect())
+    found.truncate(20);
+
+    // A studio with no logo is often a shell with nothing to its name, whose
+    // page would be empty: those go. One whose titles this Frog holds, or
+    // that has a logo, is kept without asking.
+    let held: Vec<i64> = sqlx::query_as::<_, (i64,)>(
+        "SELECT DISTINCT tmdb_id FROM title_person WHERE role = 'studio' AND tmdb_id IN
+           (SELECT value FROM json_each(?))",
+    )
+    .bind(
+        serde_json::to_string(
+            &found
+                .iter()
+                .filter_map(|s| s.value["id"].as_i64())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_default(),
+    )
+    .fetch_all(&state.pool)
+    .await?
+    .into_iter()
+    .map(|(id,)| id)
+    .collect();
+    let checks = found.iter().map(|s| {
+        let id = s.value["id"].as_i64().unwrap_or(0);
+        let ask = s.value["logo_path"].is_null() && !held.contains(&id);
+        async move { !ask || has_titles(state, id).await }
+    });
+    let keep = futures_util::future::join_all(checks).await;
+    Ok(found
+        .into_iter()
+        .zip(keep)
+        .filter_map(|(s, keep)| keep.then_some(s.value))
+        .collect())
+}
+
+/// Whether TMDB has any film or show under a company. A failed answer keeps
+/// the company: better a page with less than a search with gaps.
+async fn has_titles(state: &AppState, id: i64) -> bool {
+    for kind in ["movie", "tv"] {
+        match state.tmdb.by_company(kind, id, 1).await {
+            Ok(r) if r["total_results"].as_i64().unwrap_or(0) > 0 => return true,
+            Ok(_) => {}
+            Err(_) => return true,
+        }
+    }
+    false
 }
 
 /// The logo of the TMDB company with exactly this name, for a studio AniList
@@ -425,6 +475,10 @@ async fn anime_characters(state: &AppState, term: &str) -> AppResult<Vec<Value>>
             continue;
         }
         let media = &c["media"]["nodes"][0];
+        // A character from no anime has nothing to lead to.
+        if media.is_null() {
+            continue;
+        }
         let show = media["title"]["english"]
             .as_str()
             .filter(|s| !s.trim().is_empty())
