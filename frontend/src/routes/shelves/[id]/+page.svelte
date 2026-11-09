@@ -138,9 +138,10 @@
 			return;
 		}
 		searching = true;
+		const calling = new AbortController();
 		const wait = setTimeout(() => {
 			api
-				.search(q)
+				.search(q, 1, false, {}, calling.signal)
 				.then((r) => {
 					if (ask === asked) found = r.results.slice(0, 24);
 				})
@@ -149,7 +150,10 @@
 					if (ask === asked) searching = false;
 				});
 		}, SEARCH_PAUSE);
-		return () => clearTimeout(wait);
+		return () => {
+			clearTimeout(wait);
+			calling.abort();
+		};
 	});
 
 	const onShelf = $derived(new Set(items.map((i) => i.id)));

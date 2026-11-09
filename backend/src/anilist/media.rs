@@ -730,6 +730,51 @@ async fn work(state: &AppState, media: &Value) -> AppResult<Option<SearchItem>> 
     Ok(SearchItem::from_value(&item, None))
 }
 
+/// What Search asks AniList for a name: manga and characters together, in
+/// one call. AniList is asked one call at a time, a couple of seconds apart,
+/// so two calls a search kept the second waiting long enough to miss it.
+const NAME_SEARCH: &str = "query ($search: String) {
+  manga: Page(perPage: 30) {
+    media(search: $search, type: MANGA, format_in: [MANGA, ONE_SHOT], isAdult: false,
+          sort: [SEARCH_MATCH, POPULARITY_DESC]) {
+      id type format title { english romaji native } synonyms
+      coverImage { extraLarge } bannerImage startDate { year month day }
+      averageScore popularity
+    }
+  }
+  characters: Page(perPage: 12) {
+    characters(search: $search, sort: [SEARCH_MATCH, FAVOURITES_DESC]) {
+      id name { full native alternative } image { medium }
+      media(perPage: 1, sort: POPULARITY_DESC, type: ANIME) {
+        nodes { id format title { english romaji } coverImage { extraLarge } }
+      }
+    }
+  }
+}";
+
+/// Manga and characters by name, in one AniList call, kept a day. The
+/// answer's `manga` goes through `manga_found`; its `characters` are read by
+/// the search route.
+pub async fn search_by_name(state: &AppState, term: &str) -> AppResult<Value> {
+    let key = format!("anilist:name-search:1:{}", term.trim().to_lowercase());
+    cached(state, &key, NAME_SEARCH, json!({ "search": term.trim() })).await
+}
+
+/// The manga in a `search_by_name` answer, ranked as `search_manga` ranks.
+pub async fn manga_found(state: &AppState, data: &Value, term: &str) -> AppResult<Vec<SearchItem>> {
+    let found: Vec<Value> = data["manga"]["media"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for media in rank_manga(found, &crate::text::words(term)) {
+        if let Some(item) = work(state, &media).await? {
+            out.push(item);
+        }
+    }
+    Ok(out)
+}
+
 /// Manga by name, best match first, as list items. AniList is the only
 /// place Frog finds manga; adult titles stay out, as TMDB's do, and so do
 /// light novels, which AniList files with manga. AniList's own search also

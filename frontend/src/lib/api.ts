@@ -72,7 +72,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 				...init?.headers
 			}
 		});
-	} catch {
+	} catch (e) {
+		// Called off: a newer request took its place, and nobody is waiting.
+		if (init?.signal?.aborted) throw e;
 		// Offline, or the backend is down. The caller decides whether to fall
 		// back to cached data or show the banner.
 		throw new ApiError('Cannot reach Frog. Are you on the right network?', 0);
@@ -103,7 +105,11 @@ function safeParse(text: string): unknown {
 	}
 }
 
-const get = <T>(path: string) => request<T>(path);
+const get = <T>(path: string, signal?: AbortSignal) =>
+	request<T>(path, signal ? { signal } : undefined);
+
+/** A request called off because a newer one replaced it: not an error. */
+export const isAbort = (e: unknown) => e instanceof DOMException && e.name === 'AbortError';
 const send = <T>(method: string, path: string, body?: unknown) =>
 	request<T>(path, { method, body: body === undefined ? undefined : JSON.stringify(body) });
 
@@ -291,7 +297,13 @@ export const api = {
 		send<NewInvite>('POST', '/api/invites', { role, days }),
 	revokeInvite: (id: string) => send<{ ok: true }>('DELETE', `/api/invites/${id}`),
 
-	search: (q: string, page = 1, hideAnimation = false, filters: SearchFilters = {}) =>
+	search: (
+		q: string,
+		page = 1,
+		hideAnimation = false,
+		filters: SearchFilters = {},
+		signal?: AbortSignal
+	) =>
 		get<SearchAnswer>(
 			`/api/search${qs({
 				q,
@@ -304,7 +316,8 @@ export const api = {
 				min_score: filters.min_score,
 				statuses: filters.statuses?.join(','),
 				sort: filters.sort
-			})}`
+			})}`,
+			signal
 		),
 	searchGenres: () => get<{ genres: string[] }>('/api/search/genres'),
 	scores: (id: number) => get<TitleScores>(`/api/t/${id}/scores`),
@@ -312,7 +325,10 @@ export const api = {
 		get<{ results: SearchItem[]; next_page?: number | null }>(
 			`/api/discover/trending${qs({ list: list === 'top' ? 'top' : undefined, page: page > 1 ? page : undefined })}`
 		),
-	searchMore: (q: string) => get<MoreResults>(`/api/search/more${qs({ q })}`),
+	/** People, studios, characters and manga; it asks AniList, which takes
+	 *  one call at a time, so it is asked once typing pauses (`MORE_PAUSE`). */
+	searchMore: (q: string, signal?: AbortSignal) =>
+		get<MoreResults>(`/api/search/more${qs({ q })}`, signal),
 	studio: (id: number, page = 1) =>
 		get<StudioDetail>(`/api/studios/${id}${qs({ page: page > 1 ? page : undefined })}`),
 
@@ -462,6 +478,13 @@ export const api = {
  * a quick burst of keys asks once, short enough that results follow typing.
  */
 export const SEARCH_PAUSE = 60;
+
+/**
+ * The same for a search that reaches AniList (manga, characters). AniList is
+ * asked one call at a time, so a call a key would queue behind the keys
+ * before it and answer long after; this asks once typing pauses.
+ */
+export const MORE_PAUSE = 350;
 
 /**
  * Frog's id for a title, opening it by its provider's address first if Frog

@@ -339,9 +339,13 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
   searches everything rather than the library. Any hand-picked shelf takes a
   pasted list (`lib/import/list.ts` reads it into import rows, the import's
   matcher finds them, `ShelfFromList` adds them in order).
-- **Search follows typing.** Every search field waits `SEARCH_PAUSE` (60 ms)
-  after a key and drops answers to keys since; nothing waits for typing to
-  stop.
+- **Search follows typing.** Titles are asked `SEARCH_PAUSE` (60 ms) after a
+  key; manga, characters, people and studios (`/api/search/more`) once typing
+  pauses (`MORE_PAUSE`, 350 ms), because they reach AniList, which Frog asks
+  a call at a time. That route asks AniList once per name for manga and
+  characters together (`anilist::media::search_by_name`). Each new key
+  cancels the requests it replaces (`AbortSignal`), so late answers never
+  land and the server stops waiting on them.
 - **Kinds have one home.** `lib/types.ts` holds what each kind is called
   (`KIND_LABEL`), its icon (`KIND_ICON`) and a status in its words
   (`statusLabel`: a manga is Reading, not Watching). A manga's page counts

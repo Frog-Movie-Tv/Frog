@@ -31,7 +31,9 @@ Watchlists, Stats you can click through, and a calmer Settings.
 - Activity lists every title on its own card, and shows your own watching
   beside everyone else's.
 - A manga's page names its author under the title.
-- Search answers as you type, everywhere you can search.
+- Search answers as you type, everywhere you can search. Manga and anime
+  characters follow a moment after you pause, and always for what is in the
+  box now, never for something typed before.
 - People, characters and studios with nothing to show stay out of search.
 - Settings → Account leads with who you are, and lists your devices as phones
   and computers. Rating formats show themselves as you would see them.

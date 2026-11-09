@@ -5,7 +5,7 @@
 	import { page } from '$app/state';
 	import { address } from '#lib/address';
 	import Icon from '#lib/components/Icon.svelte';
-	import { api, frogId, img, SEARCH_PAUSE } from '#lib/api';
+	import { api, frogId, img, SEARCH_PAUSE, MORE_PAUSE, isAbort } from '#lib/api';
 	import { completeShow } from '#lib/complete';
 	import Empty from '#lib/components/Empty.svelte';
 	import FilterMenu from '#lib/components/FilterMenu.svelte';
@@ -123,8 +123,8 @@
 		};
 	}
 
-	// Debounced as you type: 280 ms is long enough to avoid a request per
-	// keystroke and short enough that it still feels live.
+	// Titles as you type; TMDB answers quickly, and each key cancels the one
+	// before it.
 	$effect(() => {
 		const q = term.trim();
 		const filtered = filterCount > 0;
@@ -132,11 +132,10 @@
 		void [genres.length, fromYear, toYear, minScore, statuses.length, sort];
 		if (!q && !filtered) {
 			token++;
+			askingTitles?.abort();
 			results = [];
 			nextPage = null;
 			personFirst = false;
-			more = NONE;
-			moreReady = false;
 			searched = false;
 			loading = false;
 			remember();
@@ -148,6 +147,45 @@
 			remember();
 			void run(q);
 		}, SEARCH_PAUSE);
+		return () => clearTimeout(timer);
+	});
+
+	// People, studios, characters and manga once typing pauses: they reach
+	// AniList, which answers one call at a time, so a call per key would
+	// queue up and arrive long after the words they were for. What is on
+	// screen stays until the new answer replaces it.
+	let moreToken = 0;
+	let askingMore: AbortController | null = null;
+	$effect(() => {
+		const q = term.trim();
+		const mine = ++moreToken;
+		askingMore?.abort();
+		if (!q) {
+			more = NONE;
+			moreReady = true;
+			return;
+		}
+		const timer = setTimeout(() => {
+			const ask = new AbortController();
+			askingMore = ask;
+			api
+				.searchMore(q, ask.signal)
+				.then((res) => {
+					if (mine !== moreToken) return;
+					more = {
+						...res,
+						people: uniqueBy(res.people, (p) => p.id),
+						studios: uniqueBy(res.studios, (s) => s.id),
+						manga: uniqueBy(res.manga ?? [], titleKey)
+					};
+					moreReady = true;
+				})
+				.catch((e) => {
+					if (mine !== moreToken || isAbort(e)) return;
+					more = NONE;
+					moreReady = true;
+				});
+		}, MORE_PAUSE);
 		return () => clearTimeout(timer);
 	});
 
@@ -242,46 +280,33 @@
 	}
 
 	let token = 0;
+	let askingTitles: AbortController | null = null;
 
+	/** Titles for what is typed; the rest arrives on its own (see above). */
 	async function run(q: string) {
 		const mine = ++token;
+		askingTitles?.abort();
+		const ask = new AbortController();
+		askingTitles = ask;
 		loading = true;
-		// Titles and everything else arrive separately; neither waits on the
-		// other, and one failing leaves the other on screen.
-		const titles = api
-			.search(q, 1, settings.current.hideAnimation, currentFilters())
-			.then((res) => {
-				if (mine !== token) return;
-				results = res.results;
-				nextPage = res.next_page;
-				personFirst = !!res.person_first;
-				searched = true;
-			})
-			.catch((e) => {
-				if (mine === token) toasts.error(e);
-			});
-		const rest = q
-			? api
-					.searchMore(q)
-					.then((res) => {
-						if (mine === token) {
-							more = {
-								...res,
-								people: uniqueBy(res.people, (p) => p.id),
-								studios: uniqueBy(res.studios, (s) => s.id),
-								manga: uniqueBy(res.manga ?? [], titleKey)
-							};
-						}
-					})
-					.catch(() => {
-						if (mine === token) more = NONE;
-					})
-			: Promise.resolve((more = NONE));
-		await titles;
-		await rest;
+		try {
+			const res = await api.search(
+				q,
+				1,
+				settings.current.hideAnimation,
+				currentFilters(),
+				ask.signal
+			);
+			if (mine !== token) return;
+			results = res.results;
+			nextPage = res.next_page;
+			personFirst = !!res.person_first;
+		} catch (e) {
+			if (mine !== token || isAbort(e)) return;
+			toasts.error(e);
+		}
 		if (mine === token) {
 			searched = true;
-			moreReady = true;
 			loading = false;
 		}
 	}
@@ -392,7 +417,7 @@
 		sort === 'best' ? null : (SORTS.find((s) => s.value === sort)?.label ?? null)
 	);
 	const nothing = $derived(
-		searched && !loading && TABS.every((t) => t.id === 'all' || counts[t.id] === 0)
+		searched && !loading && moreReady && TABS.every((t) => t.id === 'all' || counts[t.id] === 0)
 	);
 	/** What a person does, in a word. */
 	const JOBS: Record<string, string> = {

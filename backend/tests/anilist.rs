@@ -42,6 +42,8 @@ struct Fake {
     /// People and studios, as AniList's Staff and Studio queries answer.
     people: std::collections::HashMap<i64, Value>,
     studios: std::collections::HashMap<i64, Value>,
+    /// How many times Search asked AniList for a name.
+    name_searches: usize,
 }
 
 type Shared = Arc<Mutex<Fake>>;
@@ -164,6 +166,28 @@ async fn answer(State(fake): State<Shared>, Json(body): Json<Value>) -> Json<Val
             _ => Value::Null,
         };
         return Json(json!({ "data": { "Media": media } }));
+    }
+    if query.contains("characters: Page") {
+        // Search's one call for a name: manga and characters together.
+        fake.name_searches += 1;
+        return Json(json!({ "data": {
+            "manga": { "media": [
+                { "id": 31000, "type": "MANGA", "format": "MANGA",
+                  "title": { "english": "Pond Diaries", "romaji": "Ike Nikki", "native": null },
+                  "synonyms": [], "startDate": { "year": 2019 } }
+            ] },
+            "characters": { "characters": [
+                { "id": 5, "name": { "full": "Pond Keeper", "native": null, "alternative": [] },
+                  "image": { "medium": null },
+                  "media": { "nodes": [
+                    { "id": 30000, "format": "TV",
+                      "title": { "english": "Lily Pad Story", "romaji": null } }
+                  ] } },
+                { "id": 6, "name": { "full": "Nobody From Anything", "native": null,
+                                     "alternative": ["Pond"] },
+                  "image": { "medium": null }, "media": { "nodes": [] } }
+            ] }
+        } }));
     }
     if query.contains("Page") {
         // Episode counts of seasons not on this list.
@@ -2650,4 +2674,41 @@ async fn a_manga_on_anilist_is_a_manga_in_frog() {
         )
         .await;
     assert_eq!(code, StatusCode::BAD_REQUEST);
+}
+
+/// Search asks AniList for a name once, and gets manga and characters from
+/// that one answer: AniList is asked a call at a time, so two calls a search
+/// kept the second waiting until the search had moved on. A character from no
+/// anime is left out.
+#[tokio::test]
+async fn a_search_asks_anilist_once_for_manga_and_characters() {
+    let h = Harness::new().await;
+    let (_, _, cookie, _) = h
+        .call(
+            "POST",
+            "/api/auth/setup",
+            Some(json!({ "username": "zjef", "password": "a-long-enough-pass" })),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+
+    let (status, found, _, _) = h
+        .call("GET", "/api/search/more?q=pond", None, Some(&cookie))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{found}");
+    assert_eq!(found["manga"][0]["name"], json!("Pond Diaries"), "{found}");
+    let characters: Vec<&str> = found["characters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|c| c["name"].as_str())
+        .collect();
+    assert_eq!(characters, ["Pond Keeper"]);
+    assert_eq!(h.fake.lock().unwrap().name_searches, 1);
+
+    // Asked again, it is kept: AniList is not asked a second time.
+    h.call("GET", "/api/search/more?q=pond", None, Some(&cookie))
+        .await;
+    assert_eq!(h.fake.lock().unwrap().name_searches, 1);
 }

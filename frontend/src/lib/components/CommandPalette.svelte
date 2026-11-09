@@ -2,7 +2,7 @@
 	import { backCloses } from '#lib/layers.svelte';
 	import { sameTitle, titleHref, titleKey } from '#lib/titles';
 	import { goto } from '$app/navigation';
-	import { api, img, SEARCH_PAUSE } from '#lib/api';
+	import { api, img, SEARCH_PAUSE, isAbort } from '#lib/api';
 	import Icon, { type IconName } from '#lib/components/Icon.svelte';
 	import { settings, THEMES, GO_KEYS } from '#lib/settings.svelte';
 	import { session } from '#lib/session.svelte';
@@ -78,19 +78,24 @@
 			return;
 		}
 		const mine = ++asked;
+		const ask = new AbortController();
 		const timer = setTimeout(async () => {
 			searching = true;
 			try {
-				const res = await api.search(q);
+				const res = await api.search(q, 1, false, {}, ask.signal);
 				// A later key asked again: its answer is the one to show.
 				if (mine === asked) remote = res.results.slice(0, 6);
-			} catch {
-				if (mine === asked) remote = [];
+			} catch (e) {
+				if (mine === asked && !isAbort(e)) remote = [];
 			} finally {
 				if (mine === asked) searching = false;
 			}
 		}, SEARCH_PAUSE);
-		return () => clearTimeout(timer);
+		// The next key calls this one off, here and on the server.
+		return () => {
+			clearTimeout(timer);
+			ask.abort();
+		};
 	});
 
 	function localMatches(q: string): LibraryItem[] {
