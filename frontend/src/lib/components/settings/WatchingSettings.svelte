@@ -1,5 +1,7 @@
 <script lang="ts">
+	import ColourPicker from '#lib/components/ColourPicker.svelte';
 	import Rating from '#lib/components/Rating.svelte';
+	import Score from '#lib/components/Score.svelte';
 	import Select from '#lib/components/Select.svelte';
 	import { SCORE_FORMATS, type ScoreFormat } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
@@ -7,6 +9,15 @@
 
 	/** Watching: how ratings read, and what tracking does by default. */
 	const s = $derived(settings.current);
+
+	/** What each format is, under its sample. */
+	const ABOUT: Record<ScoreFormat, string> = {
+		pt100: 'Out of 100',
+		pt10dec: 'Out of 10, with tenths',
+		pt10: 'Out of 10',
+		star5: 'Five stars, halves too',
+		smiley3: 'Disliked, fine or loved'
+	};
 
 	/** A rating to try the chosen format on; not saved anywhere. */
 	let preview = $state<number | null>(78);
@@ -49,8 +60,9 @@
 				aria-pressed={s.scoreFormat === f.id}
 				onclick={() => settings.set('scoreFormat', f.id as ScoreFormat)}
 			>
+				<span class="sample"><Score value={preview ?? 78} format={f.id} /></span>
 				<strong>{f.label}</strong>
-				<span class="faint">{f.example}</span>
+				<span class="faint">{ABOUT[f.id]}</span>
 			</button>
 		{/each}
 	</div>
@@ -186,12 +198,10 @@
 					aria-label="Name for {STATUS_LABEL[st]}"
 					onchange={(e) => rename(st, e.currentTarget.value)}
 				/>
-				<input
-					type="color"
-					class="colour"
+				<ColourPicker
 					value={colourOf(st)}
-					aria-label="Colour for {statusLabel(st)}"
-					onchange={(e) => recolour(st, e.currentTarget.value)}
+					label="Colour for {statusLabel(st)}"
+					onchange={(c) => recolour(st, c)}
 				/>
 				{#if own || s.statusColors?.[st]}
 					<button
@@ -216,7 +226,7 @@
 	   ringed in the accent, as in a segmented control. */
 	.tiles {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+		grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
 		gap: 6px;
 		margin-bottom: 14px;
 		padding: 8px;
@@ -232,8 +242,8 @@
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
-		gap: 4px;
-		padding: 10px 12px;
+		gap: 3px;
+		padding: 14px 14px 12px;
 		border: 0;
 		border-radius: var(--radius-sm);
 		background: none;
@@ -253,7 +263,24 @@
 	}
 
 	.tile .faint {
-		font-size: 0.76rem;
+		font-size: 0.74rem;
+	}
+
+	/* The format itself, drawn as it will read everywhere. */
+	.sample {
+		display: flex;
+		align-items: center;
+		height: 34px;
+		margin-bottom: 4px;
+		font-size: 1.55rem;
+		font-weight: 750;
+		font-variant-numeric: tabular-nums;
+		letter-spacing: -0.01em;
+		color: var(--text);
+	}
+
+	.tile.on .sample {
+		color: var(--accent);
 	}
 
 	.row {
@@ -299,17 +326,6 @@
 		flex: 1;
 		min-width: 0;
 		max-width: 260px;
-	}
-
-	.colour {
-		flex: none;
-		width: 40px;
-		height: 32px;
-		padding: 0;
-		border: 1px solid var(--line);
-		border-radius: var(--radius-sm);
-		background: none;
-		cursor: pointer;
 	}
 
 	@media (max-width: 720px) {

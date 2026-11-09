@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { activityLine, alsoLine } from '#lib/activity';
+	import { activityLine } from '#lib/activity';
 	import { img } from '#lib/api';
 	import { relativeDate } from '#lib/format';
 	import { titleHref } from '#lib/titles';
@@ -28,7 +28,6 @@
 		<span class="line">{activityLine(item)}</span>
 		<span class="faint when">
 			{relativeDate(item.at)}
-			{#if item.also}· {alsoLine(item.also)}{/if}
 		</span>
 	</span>
 </a>
@@ -48,7 +47,7 @@
 	}
 
 	.card:hover {
-		background: var(--bg-elev-2);
+		background: var(--bg-hover);
 	}
 
 	.poster {

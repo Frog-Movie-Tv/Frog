@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api, img } from '#lib/api';
+	import { api, img, MORE_PAUSE, isAbort } from '#lib/api';
 	import Avatar from '#lib/components/Avatar.svelte';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
@@ -40,18 +40,26 @@
 			looked = '';
 			return;
 		}
+		// This search reaches AniList too, so it asks once typing pauses, and a
+		// newer key calls off the one before.
+		const ask = new AbortController();
 		const timer = setTimeout(() => {
 			void api
-				.searchMore(q)
+				.searchMore(q, ask.signal)
 				.then((r) => {
 					if (term.trim() === q) {
 						crew = r.people;
 						looked = q;
 					}
 				})
-				.catch(() => (crew = []));
-		}, 280);
-		return () => clearTimeout(timer);
+				.catch((e) => {
+					if (!isAbort(e)) crew = [];
+				});
+		}, MORE_PAUSE);
+		return () => {
+			clearTimeout(timer);
+			ask.abort();
+		};
 	});
 
 	const plain = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');

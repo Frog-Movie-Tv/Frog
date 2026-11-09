@@ -156,7 +156,7 @@
 
 	.item:hover,
 	.item:focus-visible {
-		background: var(--bg-elev-2);
+		background: var(--bg-hover);
 	}
 
 	.tick {

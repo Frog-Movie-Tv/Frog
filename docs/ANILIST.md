@@ -14,7 +14,7 @@ back up, and only `sync` and `local` talk to AniList on a sync's behalf.
 | --- | --- | --- |
 | `client.rs` | Sign-in (authorize URL, code exchange, viewer), the paced and retried GraphQL call, reading the anime and manga lists, `Remote` and `View` | AniList |
 | `idmap.rs` | The two community id lists in `anime_map`, and `anilist_media` | GitHub raw files, SQLite |
-| `place.rs` | Where an entry belongs on TMDB and how sure that is: `Target`, `Placement`, `RESOLVER`, `CONFIDENT` | TMDB (through `state.tmdb`), AniList relations, SQLite caches |
+| `place.rs` | Where an entry belongs on TMDB and how sure that is: `Target`, `Placement`, `RESOLVER`, `CONFIDENT`; and `film_on_tmdb`, the same rule for a film someone opened rather than listed | TMDB (through `state.tmdb`), AniList relations, SQLite caches |
 | `reconcile.rs` | **Who wins.** Change detection between snapshots, the mode (merge or follow), incoming status and rating, a show's one status. Pure: no I/O | nothing |
 | `library.rs` | Frog's side of an entry: which episodes it covers (`run_ids`), how Frog sees it (`frog_view`), writing AniList's side into a title the caller already has (`apply`), taking back a wrong placement (`unplace`), settling a show | SQLite through `store`, `catalog` and `release` |
 | `local.rs` | Entries TMDB lacks, kept as AniList-only titles, and moving them across once TMDB has them (`adopt_local`) | `library`, `client` |

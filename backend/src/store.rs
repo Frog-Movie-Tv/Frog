@@ -78,6 +78,29 @@ pub async fn shown_to(pool: &SqlitePool, viewer: i64) -> AppResult<Vec<ShownAcco
         .collect())
 }
 
+/// The viewer, named as Activity names everyone else beside them.
+pub async fn myself(pool: &SqlitePool, viewer: i64) -> AppResult<ShownAccount> {
+    let (username, display_name, picture): (String, Option<String>, Option<String>) =
+        sqlx::query_as(
+            "SELECT u.username, u.display_name,
+                    (SELECT i.updated_at FROM user_image i
+                      WHERE i.user_id = u.id AND i.kind = 'avatar')
+               FROM app_user u
+              WHERE u.id = ?",
+        )
+        .bind(viewer)
+        .fetch_one(pool)
+        .await?;
+    Ok(ShownAccount {
+        id: viewer,
+        shown: Shown {
+            avatar: picture.map(|at| picture_address(&username, "avatar", &at)),
+            username,
+            display_name,
+        },
+    })
+}
+
 /// A title as the grid and the rows draw it: metadata, my state, my progress.
 #[derive(Debug, Clone, Serialize)]
 pub struct LibraryItem {
@@ -491,6 +514,31 @@ pub async fn move_title_data(
 
     tx.commit().await?;
     Ok(true)
+}
+
+/// Fold a copy of a title into the one it duplicates: every account that
+/// holds anything on the copy has it moved (`move_title_data`), and the copy
+/// then points at the survivor, so its links and provider ids still lead
+/// there. Nothing is dropped.
+pub async fn merge_copy(pool: &SqlitePool, from: i64, to: i64, reason: &str) -> AppResult<()> {
+    let holders: Vec<(i64,)> = sqlx::query_as(
+        "SELECT user_id FROM library_entry WHERE title_id = ?1
+         UNION SELECT user_id FROM watch_event WHERE title_id = ?1
+         UNION SELECT s.user_id FROM shelf_item i JOIN shelf s ON s.id = i.shelf_id
+                WHERE i.title_id = ?1",
+    )
+    .bind(from)
+    .fetch_all(pool)
+    .await?;
+    for (user_id,) in holders {
+        move_title_data(pool, user_id, from, to, reason).await?;
+    }
+    sqlx::query("UPDATE title SET merged_into = ? WHERE id = ? AND merged_into IS NULL")
+        .bind(to)
+        .bind(from)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 fn min_opt(a: &Option<String>, b: &Option<String>) -> Option<String> {

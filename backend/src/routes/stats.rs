@@ -94,6 +94,61 @@ type TopRow = (String, i64, String, Option<String>, i64, f64, Option<f64>);
 /// (tmdb_id, name, profile or logo, titles)
 type PersonRow = (i64, String, Option<String>, i64);
 
+/// (title id, kind, name, poster, genres, release year, rating, unit,
+///  minutes, films, episodes, rewatches)
+type FactRow = (
+    i64,
+    String,
+    String,
+    Option<String>,
+    String,
+    Option<String>,
+    Option<f64>,
+    String,
+    f64,
+    i64,
+    i64,
+    i64,
+);
+
+/// One title as the page filters it: what it is, how you rated it, and what
+/// was watched of it in each month (a year) or year (all time). Clicking a bar
+/// on the page narrows every other chart to the titles under it, so the page
+/// needs the figures per title, not only the sums.
+fn facts_json(rows: Vec<FactRow>) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::new();
+    let mut last: Option<i64> = None;
+    for (id, kind, name, poster, genres, year, rating, unit, minutes, films, episodes, again) in
+        rows
+    {
+        if last != Some(id) {
+            last = Some(id);
+            out.push(json!({
+                "id": id,
+                "kind": kind,
+                "name": name,
+                "poster_path": poster,
+                "genres": crate::catalog::parse_genres(&genres),
+                "year": year.and_then(|y| y.parse::<i64>().ok()),
+                "rating": rating,
+                "units": [],
+            }));
+        }
+        if films + episodes > 0 {
+            if let Some(units) = out.last_mut().and_then(|t| t["units"].as_array_mut()) {
+                units.push(json!([
+                    unit,
+                    minutes.round() as i64,
+                    films,
+                    episodes,
+                    again
+                ]));
+            }
+        }
+    }
+    out
+}
+
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Streak {
     pub days: i64,
@@ -287,6 +342,35 @@ pub async fn stats(
         )
         .await?;
 
+    // Every title counted above, watched or only rated, a row per unit.
+    let facts: Vec<FactRow> = scope
+        .all(
+            pool,
+            &format!(
+                "SELECT t.id, t.kind, t.name, t.poster_path, t.genres_json,
+                        substr(t.release_date, 1, 4), l.rating,
+                        CASE WHEN s.undated = 0 THEN substr(s.watched_at, 1, {unit_len}) ELSE '' END
+                          AS unit,
+                        CAST(COALESCE(SUM({MINUTES}), 0) AS REAL),
+                        COALESCE(SUM(s.episode_id IS NULL), 0),
+                        COALESCE(SUM(s.episode_id IS NOT NULL), 0),
+                        COALESCE(SUM(s.is_rewatch), 0)
+                   FROM scoped s
+                   JOIN title t ON t.id = s.title_id
+                   LEFT JOIN episode e ON e.id = s.episode_id
+                   LEFT JOIN library_entry l ON l.title_id = t.id AND {mine}
+                  GROUP BY t.id, unit
+                 UNION ALL
+                 SELECT t.id, t.kind, t.name, t.poster_path, t.genres_json,
+                        substr(t.release_date, 1, 4), l.rating, '', 0.0, 0, 0, 0
+                   FROM library_entry l
+                   JOIN title t ON t.id = l.title_id
+                  WHERE {rated} AND l.title_id NOT IN (SELECT title_id FROM scoped)
+                  ORDER BY 1, 8"
+            ),
+        )
+        .await?;
+
     let actors = people(&scope, pool, "'cast'").await?;
     let directors = people(&scope, pool, "'director', 'creator'").await?;
     let studios = people(&scope, pool, "'studio'").await?;
@@ -348,6 +432,7 @@ pub async fn stats(
         "top_films": top_films.into_iter().map(top_json).collect::<Vec<_>>(),
         "people": { "actors": actors, "directors": directors, "studios": studios },
         "credits_pending": if state.tmdb.is_configured() { credits_pending } else { 0 },
+        "facts": facts_json(facts),
     })))
 }
 

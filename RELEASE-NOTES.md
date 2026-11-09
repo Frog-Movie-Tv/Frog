@@ -11,7 +11,49 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Wood Frog —
 
-In progress.
+Watchlists, Stats you can click through, and a calmer Settings.
+
+### Highlights
+
+- **Watchlists.** A new kind of shelf for anything you want to see: search
+  every film, show and anime right on it, and nothing lands in your library
+  until you start it.
+- **Add a list to a shelf.** Paste a list (one title a line, with its year if
+  you like, or links from TMDB, IMDb, Letterboxd or AniList, or a Letterboxd
+  list export) and Frog finds each title and shelves them in that order,
+  saying which it could not find.
+- **Stats you can click.** Pick a genre, a decade, a rating, a month, or Films
+  or Episodes, and every other chart and total narrows to it. Picks combine,
+  and each one clears with a tap.
+
+### Improvements
+
+- Activity lists every title on its own card, and shows your own watching
+  beside everyone else's.
+- A manga's page names its author under the title.
+- Search answers as you type, everywhere you can search. Manga and anime
+  characters follow a moment after you pause, and always for what is in the
+  box now, never for something typed before.
+- People, characters and studios with nothing to show stay out of search.
+- Settings → Account leads with who you are, and lists your devices as phones
+  and computers. Rating formats show themselves as you would see them.
+- Settings → Connections shows AniList at a glance: its logo, one status line
+  and the numbers that matter.
+- Administration opens with the instance at a glance, and folds away used
+  invites.
+- About sits in the middle of the page and thanks our playtester.
+- A new colour picker for statuses and themes, with swatches, on a computer
+  and on a phone.
+- Hovering shows clearly on light appearances.
+
+### Fixes
+
+- An AniList film TMDB also has opens as one title, and the copies that were
+  made before are merged into it, with everyone's history.
+- A bonus short that airs with an episode no longer shows as a second entry
+  in the calendar.
+- The rating chart in Stats reads clearly on every rating format.
+- A manga with one chapter says "1 chapter".
 
 ## [1.4.0] — Wood Frog — 2026-11-08
 

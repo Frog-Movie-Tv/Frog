@@ -1311,15 +1311,9 @@ async fn by_name(
     remote: &Remote,
     scored: &[Scored],
 ) -> AppResult<Option<Found>> {
-    let Some(best) = scored.first() else {
+    let Some(best) = clear_winner(remote, scored) else {
         return Ok(None);
     };
-    // Clearly ahead: no runner-up at all, or one well behind.
-    let margin = scored.get(1).map_or(i64::MAX, |s| best.score - s.score);
-    let bar = if unreleased(remote) { 80 } else { 90 };
-    if !best.exact || best.score < bar || margin < 15 {
-        return Ok(None);
-    }
     let Some(id) = best.result["id"].as_i64() else {
         return Ok(None);
     };
@@ -1354,6 +1348,39 @@ async fn by_name(
         note: None,
     };
     Ok(Some(checked(state, remote, found).await?))
+}
+
+/// The best result when it is the right name and clearly ahead: no runner-up
+/// at all, or one well behind.
+fn clear_winner<'a>(remote: &Remote, scored: &'a [Scored]) -> Option<&'a Scored> {
+    let best = scored.first()?;
+    let margin = scored.get(1).map_or(i64::MAX, |s| best.score - s.score);
+    let bar = if unreleased(remote) { 80 } else { 90 };
+    (best.exact && best.score >= bar && margin >= 15).then_some(best)
+}
+
+/// The TMDB film an AniList anime film is, when that is as certain as the
+/// sync requires: the id lists, or else its name and year clearly ahead of
+/// everything else TMDB has. Anything but a film is left alone, since a
+/// series' seasons need the walk `place` makes with the person's own token.
+/// What opening an AniList film asks before it keeps a copy of its own.
+pub async fn film_on_tmdb(state: &AppState, media: &Value) -> AppResult<Option<i64>> {
+    let remote = super::client::remote_of_media(media);
+    if remote.manga || !is_film(&remote) || remote.media_id == 0 {
+        return Ok(None);
+    }
+    if let Some(row) = map_row(state, remote.media_id).await? {
+        if let Some(found) = by_tmdb_list(state, &remote, &row).await? {
+            if let (true, Target::Movie(id)) = (found.confidence >= CONFIDENT, found.target) {
+                return Ok(Some(id));
+            }
+        }
+    }
+    let mut searched = Searches::default();
+    let scored = scored_results(state, &remote, &mut searched).await?;
+    Ok(clear_winner(&remote, &scored)
+        .filter(|best| best.result["media_type"].as_str() == Some("movie"))
+        .and_then(|best| best.result["id"].as_i64()))
 }
 
 /// The closest TMDB titles, for the person to choose from, with what is

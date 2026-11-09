@@ -486,9 +486,36 @@ pub async fn set_count(
     Ok(())
 }
 
+/// Which calendar rows to show, given each row's (title id, air date,
+/// season). A special airing the same day as a regular episode of the same
+/// show is the short that goes with it (TMDB lists a weekly bonus as a
+/// special beside each episode), so it is not a second thing to watch that
+/// day. A special on a day of its own stays.
+pub fn calendar_keeps(rows: &[(i64, &str, i64)]) -> Vec<bool> {
+    rows.iter()
+        .map(|&(title, date, season)| {
+            season > 0
+                || !rows
+                    .iter()
+                    .any(|&(t, d, s)| t == title && d == date && s > 0)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_special_beside_an_episode_is_not_a_second_entry() {
+        let rows = [
+            (1, "2026-11-09", 0),
+            (1, "2026-11-09", 1),
+            (2, "2026-11-09", 0),
+            (1, "2026-11-16", 0),
+        ];
+        assert_eq!(calendar_keeps(&rows), [false, true, true, true]);
+    }
 
     #[test]
     fn a_manga_is_under_way_from_its_first_chapter() {

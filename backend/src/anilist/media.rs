@@ -289,6 +289,11 @@ async fn as_item(state: &AppState, media: &Value) -> AppResult<Option<Value>> {
         .fetch_optional(&state.pool)
         .await?
     };
+    // Or a film already found to be TMDB's when someone opened it.
+    let mapped = match mapped {
+        None if kind_of(media) == "movie" => tmdb_title_for(state, id).await?,
+        found => found,
+    };
     let (kind, item_id, source) = match mapped {
         Some((kind, tmdb_id)) => (kind, tmdb_id, "tmdb"),
         None => (kind_of(media).to_string(), id, "anilist"),
@@ -312,6 +317,25 @@ async fn as_item(state: &AppState, media: &Value) -> AppResult<Option<Value>> {
         item["first_air_date"] = json!(date);
     }
     Ok(Some(item))
+}
+
+/// The TMDB title an AniList id was linked to (or its copy merged into).
+async fn tmdb_title_for(state: &AppState, media_id: i64) -> AppResult<Option<(String, i64)>> {
+    let key: Option<(String,)> = sqlx::query_as(
+        "SELECT p.external_id
+           FROM title_external a
+           JOIN title t ON t.id = COALESCE((SELECT o.merged_into FROM title o WHERE o.id = a.title_id),
+                                           a.title_id)
+           JOIN title_external p ON p.title_id = t.id AND p.provider = 'tmdb' AND p.is_primary = 1
+          WHERE a.provider = 'anilist' AND a.external_id = ?",
+    )
+    .bind(media_id.to_string())
+    .fetch_optional(&state.pool)
+    .await?;
+    Ok(key.and_then(|(k,)| {
+        let (kind, id) = k.split_once('/')?;
+        Some((kind.to_string(), id.parse().ok()?))
+    }))
 }
 
 /// An anime or manga by its AniList id as a list item: for an anime, the
@@ -704,6 +728,51 @@ async fn work(state: &AppState, media: &Value) -> AppResult<Option<SearchItem>> 
         return Ok(None);
     };
     Ok(SearchItem::from_value(&item, None))
+}
+
+/// What Search asks AniList for a name: manga and characters together, in
+/// one call. AniList is asked one call at a time, a couple of seconds apart,
+/// so two calls a search kept the second waiting long enough to miss it.
+const NAME_SEARCH: &str = "query ($search: String) {
+  manga: Page(perPage: 30) {
+    media(search: $search, type: MANGA, format_in: [MANGA, ONE_SHOT], isAdult: false,
+          sort: [SEARCH_MATCH, POPULARITY_DESC]) {
+      id type format title { english romaji native } synonyms
+      coverImage { extraLarge } bannerImage startDate { year month day }
+      averageScore popularity
+    }
+  }
+  characters: Page(perPage: 12) {
+    characters(search: $search, sort: [SEARCH_MATCH, FAVOURITES_DESC]) {
+      id name { full native alternative } image { medium }
+      media(perPage: 1, sort: POPULARITY_DESC, type: ANIME) {
+        nodes { id format title { english romaji } coverImage { extraLarge } }
+      }
+    }
+  }
+}";
+
+/// Manga and characters by name, in one AniList call, kept a day. The
+/// answer's `manga` goes through `manga_found`; its `characters` are read by
+/// the search route.
+pub async fn search_by_name(state: &AppState, term: &str) -> AppResult<Value> {
+    let key = format!("anilist:name-search:1:{}", term.trim().to_lowercase());
+    cached(state, &key, NAME_SEARCH, json!({ "search": term.trim() })).await
+}
+
+/// The manga in a `search_by_name` answer, ranked as `search_manga` ranks.
+pub async fn manga_found(state: &AppState, data: &Value, term: &str) -> AppResult<Vec<SearchItem>> {
+    let found: Vec<Value> = data["manga"]["media"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for media in rank_manga(found, &crate::text::words(term)) {
+        if let Some(item) = work(state, &media).await? {
+            out.push(item);
+        }
+    }
+    Ok(out)
 }
 
 /// Manga by name, best match first, as list items. AniList is the only

@@ -26,7 +26,7 @@
 	import { titleHref } from '#lib/titles';
 	import { SvelteSet } from 'svelte/reactivity';
 	import Icon from '#lib/components/Icon.svelte';
-	import { api, ApiError, img, type LibraryQuery } from '#lib/api';
+	import { api, ApiError, img, type LibraryQuery, SEARCH_PAUSE } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Grid from '#lib/components/Grid.svelte';
 	import LibraryEditBar from '#lib/components/LibraryEditBar.svelte';
@@ -196,7 +196,7 @@
 				}
 				void load(query, keyOf(wanted));
 			},
-			name === sent ? 0 : 220
+			name === sent ? 0 : SEARCH_PAUSE
 		);
 		return () => clearTimeout(timer);
 	});
@@ -1060,7 +1060,7 @@
 	}
 
 	tbody tr:hover {
-		background: var(--bg-elev);
+		background: var(--bg-hover);
 	}
 
 	tbody tr:last-child td {

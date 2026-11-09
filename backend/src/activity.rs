@@ -1,5 +1,5 @@
-//! What other people here have been watching and reading, for a row on Home
-//! and the Activity page behind it. A manga's chapters read (`chapter_read`)
+//! What everyone here has been watching and reading, the viewer included, for a
+//! row on Home and the Activity page behind it. A manga's chapters read (`chapter_read`)
 //! come in as its episodes do: one with no season, its number the chapter.
 //!
 //! This reads one account's diary for another, so what it may touch is narrow on
@@ -21,10 +21,7 @@ use crate::store;
 
 /// How far back the row looks.
 const WINDOW_DAYS: i64 = 14;
-/// Titles one person gets in the row. Anything past it is a number on their
-/// last card, so one binge or one import cannot fill the row.
-const TITLES_EACH: usize = 3;
-/// The most the row shows.
+/// The most the row shows. Activity has the rest.
 const ROW_LENGTH: usize = 12;
 
 /// One watch, as `summarise` needs it.
@@ -74,11 +71,9 @@ pub struct Summary {
     pub episode: Option<i64>,
     /// When the newest of them was.
     pub at: String,
-    /// Other titles this person watched that did not get a card.
-    pub also: usize,
 }
 
-/// Add up one person's watches, newest first, into at most `TITLES_EACH` cards.
+/// Add up one person's watches, newest first, into a card per title.
 pub fn summarise(watches: &[Watch]) -> Vec<Summary> {
     let mut titles: Vec<Vec<&Watch>> = Vec::new();
     for watch in watches {
@@ -87,17 +82,7 @@ pub fn summarise(watches: &[Watch]) -> Vec<Summary> {
             None => titles.push(vec![watch]),
         }
     }
-
-    let others = titles.len().saturating_sub(TITLES_EACH);
-    let mut cards: Vec<Summary> = titles
-        .iter()
-        .take(TITLES_EACH)
-        .map(|group| summary(group))
-        .collect();
-    if let Some(last) = cards.last_mut() {
-        last.also = others;
-    }
-    cards
+    titles.iter().map(|group| summary(group)).collect()
 }
 
 fn summary(group: &[&Watch]) -> Summary {
@@ -125,7 +110,6 @@ fn summary(group: &[&Watch]) -> Summary {
         season: newest.season.filter(|_| one),
         episode: newest.episode.filter(|_| one),
         at: newest.watched_at.clone(),
-        also: 0,
     }
 }
 
@@ -220,10 +204,18 @@ async fn recent_watches(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Watch>
         .collect())
 }
 
-/// The row for one viewer: everyone they may see, and never themselves.
+/// Whose watching the viewer sees: their own, whatever their profile says, then
+/// everyone they may see.
+async fn people(pool: &SqlitePool, viewer: i64) -> AppResult<Vec<store::ShownAccount>> {
+    let mut people = vec![store::myself(pool, viewer).await?];
+    people.extend(store::shown_to(pool, viewer).await?);
+    Ok(people)
+}
+
+/// The row for one viewer: themselves and everyone they may see.
 pub async fn feed(pool: &SqlitePool, viewer: i64) -> AppResult<Vec<Card>> {
     let mut cards = Vec::new();
-    for person in store::shown_to(pool, viewer).await? {
+    for person in people(pool, viewer).await? {
         let watches = recent_watches(pool, person.id).await?;
         cards.extend(summarise(&watches).into_iter().map(|summary| Card {
             who: person.shown.clone(),
@@ -261,7 +253,7 @@ pub async fn everything(
 ) -> AppResult<(Vec<Card>, Option<String>)> {
     let before = before.unwrap_or("9999");
     let mut cards = Vec::new();
-    for person in store::shown_to(pool, viewer).await? {
+    for person in people(pool, viewer).await? {
         let rows: Vec<DayRow> = sqlx::query_as(
             "SELECT substr(w.watched_at, 1, 10) AS day, MAX(w.watched_at) AS latest,
                     w.title_id, t.name, t.kind, t.poster_path,
@@ -333,7 +325,6 @@ pub async fn everything(
                     season: season.filter(|_| one),
                     episode: episode.filter(|_| one),
                     at: latest,
-                    also: 0,
                 },
             });
         }
@@ -457,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn a_large_import_stays_three_cards_and_a_number() {
+    fn a_large_import_is_a_card_per_title() {
         let watches: Vec<Watch> = (0..200)
             .map(|n| {
                 film(
@@ -468,10 +459,8 @@ mod tests {
             })
             .collect();
         let cards = summarise(&watches);
-        assert_eq!(cards.len(), TITLES_EACH);
+        assert_eq!(cards.len(), 200);
         assert_eq!(cards[0].title.name, "Film 0", "in the order they came");
-        assert_eq!(cards[TITLES_EACH - 1].also, 197, "on the last card");
-        assert_eq!(cards[0].also, 0);
     }
 
     #[test]

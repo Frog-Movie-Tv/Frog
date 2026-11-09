@@ -42,7 +42,8 @@ mod sync;
 pub use client::{public_list, Api, Remote, View};
 pub use library::{forget_place, set_part_rating};
 pub use place::{
-    clean, locate, main_run, place_tv, plain, Outcome, Placement, Target, CONFIDENT, RESOLVER,
+    clean, film_on_tmdb, locate, main_run, place_tv, plain, Outcome, Placement, Target, CONFIDENT,
+    RESOLVER,
 };
 pub use sync::{diagnose, due, is_syncing, sync_minutes, sync_user, Summary};
 

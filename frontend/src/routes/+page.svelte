@@ -38,7 +38,7 @@
 		}
 	});
 
-	// Only those who show the row ask for other people's watching, and that is
+	// Only those who show the row ask for everyone's watching, and that is
 	// the account's own say: this browser's copy may be from before it changed.
 	const showsActivity = $derived(settings.loaded && settings.current.homeRows.includes('activity'));
 	$effect(() => {
@@ -86,6 +86,11 @@
 	const isEmpty = $derived(
 		!!data && !data.hero && !data.continue.length && !data.recent.length && !data.favourites.length
 	);
+
+	// Empty, and staying here: decided only once the account's own settings
+	// say it was welcomed, so a new account never sees Home flash empty on its
+	// way to the welcome.
+	const showEmpty = $derived(isEmpty && settings.loaded && !!settings.current.onboarded);
 
 	// A brand-new account starts with a welcome rather than an empty page.
 	// It waits for the account's own settings, which load alongside Home, and
@@ -143,16 +148,18 @@
 {:else if failed && !data}
 	<div class="page"><LoadFailed {failed} onretry={load} /></div>
 {:else if isEmpty}
-	<div class="page">
-		<Empty
-			art="search"
-			title="Nothing here yet"
-			hint="Add a film or show and this page fills with what to watch next."
-		>
-			<a class="btn primary" href="/search">Find something</a>
-			<a class="btn ghost" href="/import">Import a library</a>
-		</Empty>
-	</div>
+	{#if showEmpty}
+		<div class="page">
+			<Empty
+				art="search"
+				title="Nothing here yet"
+				hint="Add a film or show and this page fills with what to watch next."
+			>
+				<a class="btn primary" href="/search">Find something</a>
+				<a class="btn ghost" href="/import">Import a library</a>
+			</Empty>
+		</div>
+	{/if}
 {:else if data}
 	<div class="home">
 		{#if heroItem && heroStyle !== 'off'}
@@ -544,7 +551,7 @@
 	}
 
 	.week li a:hover {
-		background: var(--bg-elev-2);
+		background: var(--bg-hover);
 	}
 
 	.week img,

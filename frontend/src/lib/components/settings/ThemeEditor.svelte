@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ColourPicker from '#lib/components/ColourPicker.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import { downloadJson } from '#lib/download';
 	import { settings, type CustomTheme } from '#lib/settings.svelte';
@@ -116,14 +117,14 @@
 
 	<div class="colours">
 		{#each tokens as token (token.key)}
-			<label class="colour">
-				<input
-					type="color"
+			<div class="colour">
+				<ColourPicker
 					value={currentToken(token.key)}
-					oninput={(e) => setToken(token.key, e.currentTarget.value)}
+					label={token.label}
+					oninput={(c) => setToken(token.key, c)}
 				/>
 				<span>{token.label}</span>
-			</label>
+			</div>
 		{/each}
 	</div>
 
@@ -219,17 +220,6 @@
 		align-items: center;
 		gap: 9px;
 		font-size: 0.84rem;
-		cursor: pointer;
-	}
-
-	input[type='color'] {
-		width: 34px;
-		height: 34px;
-		padding: 0;
-		border: 1px solid var(--line-strong);
-		border-radius: 8px;
-		background: none;
-		cursor: pointer;
 	}
 
 	.actions {

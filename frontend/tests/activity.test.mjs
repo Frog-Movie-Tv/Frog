@@ -1,7 +1,7 @@
 // The words of a card on Home. Run with `npm test`.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { activityLine, alsoLine } from '../src/lib/activity.ts';
+import { activityLine } from '../src/lib/activity.ts';
 
 const item = (fields) => ({
 	title: { id: 1, kind: 'tv', name: 'Dark', poster_path: null },
@@ -34,11 +34,6 @@ test('a rewatch keeps the count', () => {
 		activityLine(item({ did: 'rewatched', episodes: 3 })),
 		'rewatched 3 episodes of Dark'
 	);
-});
-
-test('what got no card is counted', () => {
-	assert.equal(alsoLine(1), 'and 1 other title');
-	assert.equal(alsoLine(58), 'and 58 other titles');
 });
 
 test('a manga is read, by the chapter', () => {

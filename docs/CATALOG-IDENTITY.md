@@ -55,6 +55,14 @@ title_external               who else knows a title, and as what
   `catalog::find` follows `merged_into`, so an old AniList id or link still
   lands on the survivor. `catalog::externals` lists a survivor's own ids and
   those of titles merged into it; backups carry both.
+- **AniList's film is TMDB's film.** Opening an AniList film Frog has not
+  seen asks `anilist::film_on_tmdb` (the id lists, then name and year clearly
+  ahead, the sync's own bar) and, when it is certain, opens TMDB's title with
+  the AniList id linked to it rather than making a copy. Related rails then
+  lead there too. Copies made before that are folded in once a start by
+  `jobs::merge_film_twins` (`store::merge_copy`); a film somebody's AniList
+  list holds is left to the sync, which would otherwise bring the copy back.
+  Series are not matched this way: their seasons need the sync's walk.
 - **A provider id changes**: it is a new id. The old row keeps `gone_at`.
 
 ## Episodes

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatScore, toDisplay } from '#lib/format';
+	import { formatScore, toDisplay, type ScoreFormat } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import Stars from './Stars.svelte';
 
@@ -13,11 +13,13 @@
 		value: number | null | undefined;
 		/** What none reads as. */
 		empty?: string;
+		/** A format other than the chosen one: Settings showing each. */
+		format?: ScoreFormat;
 	}
 
-	let { value, empty = '–' }: Props = $props();
+	let { value, empty = '–', format: own }: Props = $props();
 
-	const format = $derived(settings.current.scoreFormat);
+	const format = $derived(own ?? settings.current.scoreFormat);
 	const text = $derived(value == null ? empty : formatScore(value, format));
 </script>
 

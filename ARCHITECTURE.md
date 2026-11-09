@@ -101,13 +101,13 @@ left. See CLAUDE.md for the rule.
 | `tmdb` | HTTP client, response cache, the curated mapping from TMDB's JSON to what a screen draws. |
 | `catalog` | Frog's titles and their provider ids (`title_external`): finding a title by any provider's id, making or refreshing one from a provider, episodes, credits, poster colour. |
 | `store` | One account's library: entries, the filtered list and what its filters offer (`LibraryFilter`), progress, "up next", a title's history (`history`: started, finished, rewatches), the days another place knows (`set_known_dates`, and `replace_known_dates`
-for AniList's, which win), who else has a title (`others_with`), emptying it, and moving one account's data between titles (`move_title_data`). Removing a title takes its watches and episode notes with it, held in `EntryRecord` so undo puts them back. |
+for AniList's, which win), who else has a title (`others_with`), emptying it, and moving one account's data between titles (`move_title_data`), or every account's at once when a copy is folded into its title (`merge_copy`). Removing a title takes its watches and episode notes with it, held in `EntryRecord` so undo puts them back. |
 | `images` | The picture cache in SQLite, and its budget. |
 | `bulk` | One action on many titles of a library, one request each, and the marking of aired episodes it shares with "Mark all watched" (`tick_aired`, `When`). Removing, changing a status or favouriting answers with what the titles held (`store::EntryRecord`), which is what undo sends back. |
-| `activity` | What others have been watching, for Home's Activity row and the Activity page. `summarise` adds up one person's watches on plain values; `everything` pages through all of it, a title a day per card. Only accounts `store::shown_to` names, only dated watches of titles still in that library, and never notes. |
+| `activity` | What everyone has been watching, the viewer included, for Home's Activity row and the Activity page. `summarise` adds up one person's watches on plain values, a card per title; `everything` pages through all of it, a title a day per card. Only the viewer (`store::myself`) and the accounts `store::shown_to` names, only dated watches of titles still in that library, and never notes. |
 | `taste` | How alike two people rate things, and two libraries side by side. `score` and `compare` are the decisions on plain values; `between` and `library_of` are the reads. |
 | `franchise` | A franchise across films and shows: TMDB collections hold only films, so a show joins one by name (`franchise_of`, `belongs`), and a show page finds the collection named after it. |
-| `release` | When an episode counts as out, the status a show should have (`reconcile`), and whether Continue watching has anything to say about it (`continues`). For a title followed as a count, a manga's chapters, `set_count` moves the count and `counted_status` the status. |
+| `release` | When an episode counts as out, which of a day's episodes the calendar lists (`calendar_keeps`: a special airing beside a regular episode is its bonus, not a second entry), the status a show should have (`reconcile`), and whether Continue watching has anything to say about it (`continues`). For a title followed as a count, a manga's chapters, `set_count` moves the count and `counted_status` the status. |
 | `transfer` | Imports (matching, applying) and exports. |
 | `anilist` | AniList sign-in, and reading each account's list into its library. Read only. |
 | `push` | Web Push: subscriptions and sending. |
@@ -328,6 +328,24 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
 - **Stats in two halves**, as AniList keeps them: films and shows from
   `watch_event`, manga from `chapter_read` and the counts
   (`/api/stats/manga`), chosen with `?half=manga`.
+- **Stats is a dashboard.** `/api/stats` sends, beside its sums, a row per
+  title (`facts`: genres, year, rating, and minutes, films and episodes per
+  month or year). A bar clicked on the page narrows everything else to the
+  titles under it: `lib/stats-filter.ts` works each chart out from every pick
+  but its own, tested in `tests/stats-filter.test.mjs`. Nothing picked, the
+  page shows the server's sums as they are.
+- **Shelves come in three kinds.** Hand-picked, smart, and watchlists: a
+  watchlist is a hand-picked shelf with `shelf.watchlist` set, whose picker
+  searches everything rather than the library. Any hand-picked shelf takes a
+  pasted list (`lib/import/list.ts` reads it into import rows, the import's
+  matcher finds them, `ShelfFromList` adds them in order).
+- **Search follows typing.** Titles are asked `SEARCH_PAUSE` (60 ms) after a
+  key; manga, characters, people and studios (`/api/search/more`) once typing
+  pauses (`MORE_PAUSE`, 350 ms), because they reach AniList, which Frog asks
+  a call at a time. That route asks AniList once per name for manga and
+  characters together (`anilist::media::search_by_name`). Each new key
+  cancels the requests it replaces (`AbortSignal`), so late answers never
+  land and the server stops waiting on them.
 - **Kinds have one home.** `lib/types.ts` holds what each kind is called
   (`KIND_LABEL`), its icon (`KIND_ICON`) and a status in its words
   (`statusLabel`: a manga is Reading, not Watching). A manga's page counts

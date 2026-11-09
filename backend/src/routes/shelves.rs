@@ -1,5 +1,9 @@
-//! Shelves: hand-picked lists in your own order, and smart shelves that fill
-//! themselves from rules ("shows in progress rated 8 or more").
+//! Shelves: hand-picked lists in your own order, watchlists (hand-picked from
+//! everything, so a title need not be in the library), and smart shelves that
+//! fill themselves from rules ("shows in progress rated 8 or more").
+//!
+//! A watchlist is stored as a manual shelf with `watchlist` set; the app sees
+//! it as a kind of its own.
 
 use axum::extract::{Path, State};
 use axum::Json;
@@ -186,14 +190,23 @@ pub async fn evaluate(pool: &SqlitePool, user_id: i64, rules: &Rules) -> AppResu
     Ok(q.build_query_as::<TitleRow>().fetch_all(pool).await?)
 }
 
-/// (id, name, kind, rules, position)
-type ShelfRow = (i64, String, String, String, i64);
+/// (id, name, kind, rules, position, watchlist)
+type ShelfRow = (i64, String, String, String, i64, bool);
+
+/// The kind the app sees.
+fn kind_of(row: &ShelfRow) -> &str {
+    if row.5 {
+        "watchlist"
+    } else {
+        &row.2
+    }
+}
 
 /// The one gate for every shelf operation: a shelf that belongs to somebody
 /// else is simply not there.
 async fn shelf(pool: &SqlitePool, user_id: i64, id: i64) -> AppResult<ShelfRow> {
     sqlx::query_as(
-        "SELECT id, name, kind, rules_json, position
+        "SELECT id, name, kind, rules_json, position, watchlist
            FROM shelf WHERE id = ? AND user_id = ?",
     )
     .bind(id)
@@ -232,7 +245,7 @@ fn summary(row: &ShelfRow, titles: &[TitleRow]) -> Value {
     json!({
         "id": row.0,
         "name": row.1,
-        "kind": row.2,
+        "kind": kind_of(row),
         "rules": rules_of(&row.3),
         "position": row.4,
         "count": titles.len(),
@@ -248,7 +261,7 @@ pub async fn list(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
 /// One account's shelves, in their order, with a count and a cover each.
 pub async fn summaries(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Value>> {
     let rows: Vec<ShelfRow> = sqlx::query_as(
-        "SELECT id, name, kind, rules_json, position
+        "SELECT id, name, kind, rules_json, position, watchlist
            FROM shelf WHERE user_id = ? ORDER BY position, id",
     )
     .bind(user_id)
@@ -302,10 +315,18 @@ pub async fn create(
     Json(body): Json<CreateBody>,
 ) -> AppResult<Json<Value>> {
     let name = clean_name(&body.name)?;
-    if body.kind != "manual" && body.kind != "smart" {
-        return Err(AppError::BadRequest("kind must be manual or smart".into()));
+    if !["manual", "smart", "watchlist"].contains(&body.kind.as_str()) {
+        return Err(AppError::BadRequest(
+            "kind must be manual, watchlist or smart".into(),
+        ));
     }
     body.rules.validate()?;
+    let watchlist = body.kind == "watchlist";
+    let kind = if watchlist {
+        "manual"
+    } else {
+        body.kind.as_str()
+    };
 
     let mut tx = state.pool.begin().await?;
     let (next,): (i64,) =
@@ -314,19 +335,20 @@ pub async fn create(
             .fetch_one(&mut *tx)
             .await?;
     let id = sqlx::query(
-        "INSERT INTO shelf (user_id, name, kind, rules_json, position, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO shelf (user_id, name, kind, rules_json, position, created_at, watchlist)
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(auth.user_id())
     .bind(&name)
-    .bind(&body.kind)
+    .bind(kind)
     .bind(serde_json::to_string(&body.rules).unwrap_or_else(|_| "{}".into()))
     .bind(next)
     .bind(Utc::now().to_rfc3339())
+    .bind(watchlist)
     .execute(&mut *tx)
     .await?
     .last_insert_rowid();
-    if body.kind == "manual" {
+    if kind == "manual" {
         for (pos, title_id) in body.title_ids.iter().enumerate() {
             sqlx::query(
                 "INSERT OR IGNORE INTO shelf_item (shelf_id, title_id, position)
@@ -403,7 +425,7 @@ pub async fn remove(
         .await?;
     Ok(Json(json!({
         "name": row.1,
-        "kind": row.2,
+        "kind": kind_of(&row),
         "rules": rules_of(&row.3),
         "title_ids": title_ids.into_iter().map(|(t,)| t).collect::<Vec<_>>(),
     })))
@@ -508,8 +530,8 @@ pub async fn reorder_items(
     Ok(Json(json!({ "ok": true })))
 }
 
-/// The manual shelves, and whether this title is on each: the title page's
-/// "Add to shelf" menu.
+/// The hand-picked shelves and watchlists, and whether this title is on each:
+/// the title page's "Add to shelf" menu.
 pub async fn for_title(
     auth: Auth,
     State(state): State<AppState>,

@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::time::timeout;
 
-use crate::anilist::{self, Api};
+use crate::anilist;
 use crate::auth::Auth;
 use crate::catalog::ExternalId;
 use crate::error::{AppError, AppResult};
@@ -25,12 +25,10 @@ pub struct MoreQuery {
     pub q: String,
 }
 
-/// How long a search waits for AniList's characters. It paces every request,
-/// and a search should not wait behind a sync.
-const ANIME_CHARACTERS_WAIT: Duration = Duration::from_millis(1200);
-
-/// How long a search waits for AniList's manga, which only AniList has.
-const MANGA_WAIT: Duration = Duration::from_millis(2500);
+/// How long a search waits for AniList's manga and characters, asked in one
+/// call. AniList is asked a couple of seconds apart, so this covers one turn
+/// in the queue behind a sync, and no more.
+const ANILIST_WAIT: Duration = Duration::from_millis(3500);
 
 /// People, characters, studios and manga for one search, each list on its own
 /// so a slow or failing source leaves the others standing.
@@ -45,12 +43,14 @@ pub async fn more(
             "give me something to search for".into(),
         ));
     }
-    let (people, studios, characters, manga) = tokio::join!(
+    let (people, studios, named) = tokio::join!(
         people(&state, term),
         studios(&state, term),
-        characters(&state, term),
-        manga(&state, auth.user_id(), term)
+        by_name(&state, term)
     );
+    let named = named.unwrap_or(Value::Null);
+    let characters = characters(&state, term, &named).await;
+    let manga = manga(&state, auth.user_id(), term, &named).await;
     let quiet = |r: AppResult<Vec<Value>>, what: &str| {
         r.unwrap_or_else(|e| {
             tracing::warn!(error = %e, what, "search source failed");
@@ -65,18 +65,31 @@ pub async fn more(
     })))
 }
 
+/// AniList's manga and characters for a name, in one call, or nothing when
+/// AniList is not set up, too slow or failing: the rest of the search stands.
+async fn by_name(state: &AppState, term: &str) -> Option<Value> {
+    if term.chars().count() < 2 || state.config.anilist.is_none() {
+        return None;
+    }
+    match timeout(ANILIST_WAIT, anilist::media::search_by_name(state, term)).await {
+        Ok(Ok(data)) => Some(data),
+        Ok(Err(e)) => {
+            tracing::warn!(error = %e, "AniList name search failed");
+            None
+        }
+        Err(_) => {
+            tracing::debug!("AniList name search skipped: too slow");
+            None
+        }
+    }
+}
+
 /// Manga by name from AniList, marked with what is in the library already.
-async fn manga(state: &AppState, user_id: i64, term: &str) -> AppResult<Vec<Value>> {
-    if term.chars().count() < 2 {
+async fn manga(state: &AppState, user_id: i64, term: &str, named: &Value) -> AppResult<Vec<Value>> {
+    if named.is_null() {
         return Ok(Vec::new());
     }
-    let mut found = match timeout(MANGA_WAIT, anilist::media::search_manga(state, term)).await {
-        Ok(found) => found?,
-        Err(_) => {
-            tracing::debug!("AniList manga search skipped: too slow");
-            Vec::new()
-        }
-    };
+    let mut found = anilist::media::manga_found(state, named, term).await?;
     annotate_library(state, user_id, &mut found).await?;
     Ok(found
         .into_iter()
@@ -118,6 +131,10 @@ async fn people(state: &AppState, term: &str) -> AppResult<Vec<Value>> {
                 .take(3)
                 .collect();
             let name = models::str_at(p, "name")?;
+            // Known for nothing: a page with no credits to show.
+            if known.is_empty() {
+                return None;
+            }
             Some((
                 text::closeness(&name, &typed),
                 i,
@@ -219,7 +236,53 @@ async fn studios(state: &AppState, term: &str) -> AppResult<Vec<Value>> {
         found.retain(|s| s.rank.0 < Closeness::Loose);
     }
     found.sort_by_key(|s| (s.rank, s.order));
-    Ok(found.into_iter().take(20).map(|s| s.value).collect())
+    found.truncate(20);
+
+    // A studio with no logo is often a shell with nothing to its name, whose
+    // page would be empty: those go. One whose titles this Frog holds, or
+    // that has a logo, is kept without asking.
+    let held: Vec<i64> = sqlx::query_as::<_, (i64,)>(
+        "SELECT DISTINCT tmdb_id FROM title_person WHERE role = 'studio' AND tmdb_id IN
+           (SELECT value FROM json_each(?))",
+    )
+    .bind(
+        serde_json::to_string(
+            &found
+                .iter()
+                .filter_map(|s| s.value["id"].as_i64())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_default(),
+    )
+    .fetch_all(&state.pool)
+    .await?
+    .into_iter()
+    .map(|(id,)| id)
+    .collect();
+    let checks = found.iter().map(|s| {
+        let id = s.value["id"].as_i64().unwrap_or(0);
+        let ask = s.value["logo_path"].is_null() && !held.contains(&id);
+        async move { !ask || has_titles(state, id).await }
+    });
+    let keep = futures_util::future::join_all(checks).await;
+    Ok(found
+        .into_iter()
+        .zip(keep)
+        .filter_map(|(s, keep)| keep.then_some(s.value))
+        .collect())
+}
+
+/// Whether TMDB has any film or show under a company. A failed answer keeps
+/// the company: better a page with less than a search with gaps.
+async fn has_titles(state: &AppState, id: i64) -> bool {
+    for kind in ["movie", "tv"] {
+        match state.tmdb.by_company(kind, id, 1).await {
+            Ok(r) if r["total_results"].as_i64().unwrap_or(0) > 0 => return true,
+            Ok(_) => {}
+            Err(_) => return true,
+        }
+    }
+    false
 }
 
 /// The logo of the TMDB company with exactly this name, for a studio AniList
@@ -276,14 +339,10 @@ pub async fn studio_logo(state: &AppState, name: &str) -> Option<String> {
 /// Characters from two places: the casts of every film and show this Frog
 /// holds, and AniList's character search for anime, whose casts TMDB mostly
 /// lists by voice actor alone.
-async fn characters(state: &AppState, term: &str) -> AppResult<Vec<Value>> {
+async fn characters(state: &AppState, term: &str, named: &Value) -> AppResult<Vec<Value>> {
     let mut out = cast_characters(state, term).await?;
-    if term.chars().count() >= 2 {
-        match timeout(ANIME_CHARACTERS_WAIT, anime_characters(state, term)).await {
-            Ok(Ok(found)) => out.extend(found),
-            Ok(Err(e)) => tracing::warn!(error = %e, "AniList character search failed"),
-            Err(_) => tracing::debug!("AniList character search skipped: too slow"),
-        }
+    if !named.is_null() {
+        out.extend(anime_characters(state, term, named).await?);
     }
     Ok(out)
 }
@@ -356,17 +415,6 @@ async fn cast_characters(state: &AppState, term: &str) -> AppResult<Vec<Value>> 
     Ok(out.into_iter().take(20).map(|(_, v)| v).collect())
 }
 
-const CHARACTER_QUERY: &str = "query ($q: String) {
-  Page(perPage: 12) {
-    characters(search: $q, sort: [SEARCH_MATCH, FAVOURITES_DESC]) {
-      id name { full native alternative } image { medium }
-      media(perPage: 1, sort: POPULARITY_DESC, type: ANIME) {
-        nodes { id format title { english romaji } coverImage { extraLarge } }
-      }
-    }
-  }
-}";
-
 /// AniList's own CDN path for an image, which the image route fetches from
 /// AniList and keeps, the way it does TMDB's.
 fn anilist_image(url: &str) -> Option<String> {
@@ -374,46 +422,17 @@ fn anilist_image(url: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-async fn anime_characters(state: &AppState, term: &str) -> AppResult<Vec<Value>> {
-    if state.config.anilist.is_none() {
-        return Ok(Vec::new());
-    }
-    let key = format!("anilist:characters:3:{}", term.to_lowercase());
-    let cached: Option<(String,)> =
-        sqlx::query_as("SELECT body FROM tmdb_cache WHERE cache_key = ? AND expires_at > ?")
-            .bind(&key)
-            .bind(Utc::now().to_rfc3339())
-            .fetch_optional(&state.pool)
-            .await?;
-    let data: Value = match cached.and_then(|(b,)| serde_json::from_str(&b).ok()) {
-        Some(v) => v,
-        None => {
-            // Anonymous: searching AniList needs nobody's sign-in.
-            let data = Api::new(state)?
-                .graphql("", CHARACTER_QUERY, json!({ "q": term }))
-                .await?;
-            let now = Utc::now();
-            sqlx::query(
-                "INSERT INTO tmdb_cache (cache_key, body, fetched_at, expires_at) VALUES (?, ?, ?, ?)
-                 ON CONFLICT (cache_key) DO UPDATE SET
-                    body = excluded.body, fetched_at = excluded.fetched_at,
-                    expires_at = excluded.expires_at",
-            )
-            .bind(&key)
-            .bind(data.to_string())
-            .bind(now.to_rfc3339())
-            .bind((now + chrono::Duration::hours(12)).to_rfc3339())
-            .execute(&state.pool)
-            .await?;
-            data
-        }
-    };
-
+/// The characters in an AniList name search (`anilist::media::search_by_name`).
+async fn anime_characters(state: &AppState, term: &str, data: &Value) -> AppResult<Vec<Value>> {
     // AniList matches loosely ("nolan" finds "Norland"); keep the characters
     // whose name, in any form, really holds what was typed.
     let needle = anilist::plain(term);
     let mut out = Vec::new();
-    for c in data["Page"]["characters"].as_array().into_iter().flatten() {
+    for c in data["characters"]["characters"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
         let Some(name) = c["name"]["full"].as_str() else {
             continue;
         };
@@ -425,6 +444,10 @@ async fn anime_characters(state: &AppState, term: &str) -> AppResult<Vec<Value>>
             continue;
         }
         let media = &c["media"]["nodes"][0];
+        // A character from no anime has nothing to lead to.
+        if media.is_null() {
+            continue;
+        }
         let show = media["title"]["english"]
             .as_str()
             .filter(|s| !s.trim().is_empty())

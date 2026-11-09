@@ -368,7 +368,7 @@ export interface ShelfRules {
 export interface Shelf {
 	id: number;
 	name: string;
-	kind: 'manual' | 'smart';
+	kind: 'manual' | 'smart' | 'watchlist';
 	rules: ShelfRules;
 	position: number;
 	count: number;
@@ -430,6 +430,8 @@ export interface FullStats {
 	top_films: StatsTitle[];
 	people: { actors: StatsPerson[]; directors: StatsPerson[]; studios: StatsPerson[] };
 	credits_pending: number;
+	/** One row per title counted, for narrowing the page by a picked bar. */
+	facts?: import('./stats-filter').StatsFact[];
 }
 
 export interface NextEpisode {
@@ -460,7 +462,7 @@ export interface AiringEntry {
 	air_date: string | null;
 }
 
-/** Someone else's watching, as a card on Home. */
+/** Someone's watching, yours included, as a card on Home. */
 export interface ActivityItem {
 	who: { username: string; display_name: string | null; avatar: string | null };
 	title: { id: number; kind: Kind; name: string; poster_path: string | null };
@@ -470,8 +472,6 @@ export interface ActivityItem {
 	season: number | null;
 	episode: number | null;
 	at: string;
-	/** Other titles this person watched that have no card of their own. */
-	also: number;
 }
 
 export interface HomeData {

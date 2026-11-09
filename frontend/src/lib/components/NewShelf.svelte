@@ -32,7 +32,7 @@
 		busy = true;
 		try {
 			const { shelf } = await api.createShelf({ name: name.trim(), kind });
-			if (titleId && kind === 'manual') {
+			if (titleId && kind !== 'smart') {
 				await api.addToShelf(shelf.id, titleId);
 				shelf.count = 1;
 			}
@@ -84,21 +84,37 @@
 			/>
 		</label>
 
-		{#if !titleId}
-			<div class="kinds" role="radiogroup" aria-label="Kind of shelf">
-				<button
-					type="button"
-					class="kind"
-					class:on={kind === 'manual'}
-					role="radio"
-					aria-checked={kind === 'manual'}
-					onclick={() => (kind = 'manual')}
+		<div class="kinds" role="radiogroup" aria-label="Kind of shelf">
+			<button
+				type="button"
+				class="kind"
+				class:on={kind === 'manual'}
+				role="radio"
+				aria-checked={kind === 'manual'}
+				onclick={() => (kind = 'manual')}
+			>
+				<Icon name="grip" size={18} />
+				<span
+					><strong>Hand-picked</strong><small>Titles from your library, in your own order</small
+					></span
 				>
-					<Icon name="grip" size={18} />
-					<span
-						><strong>Hand-picked</strong><small>Add titles yourself, in your own order</small></span
-					>
-				</button>
+			</button>
+			<button
+				type="button"
+				class="kind"
+				class:on={kind === 'watchlist'}
+				role="radio"
+				aria-checked={kind === 'watchlist'}
+				onclick={() => (kind = 'watchlist')}
+			>
+				<Icon name="bookmark" size={18} />
+				<span
+					><strong>Watchlist</strong><small
+						>Anything you want to see, kept out of your library</small
+					></span
+				>
+			</button>
+			{#if !titleId}
 				<button
 					type="button"
 					class="kind"
@@ -110,8 +126,8 @@
 					<Icon name="sparkle" size={18} />
 					<span><strong>Smart</strong><small>Fills itself from rules you set</small></span>
 				</button>
-			</div>
-		{/if}
+			{/if}
+		</div>
 
 		<div class="actions">
 			<button type="button" class="btn ghost" onclick={onclose}>Cancel</button>

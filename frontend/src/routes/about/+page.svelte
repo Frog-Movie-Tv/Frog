@@ -60,7 +60,7 @@
 	<title>About · Frog</title>
 </svelte:head>
 
-<div class="page">
+<div class="page about">
 	<header class="head">
 		<Logo size={56} />
 		<div>
@@ -152,6 +152,18 @@
 	</section>
 
 	<section class="block">
+		<h2>Playtesting</h2>
+		<ul class="credits">
+			<li>
+				<span class="credit">
+					<strong>Daan Vangompel</strong>
+					<span class="faint">Playtester</span>
+				</span>
+			</li>
+		</ul>
+	</section>
+
+	<section class="block">
 		<h2>Built with</h2>
 		<ul class="credits">
 			{#each credits as credit (credit.name)}
@@ -188,11 +200,19 @@
 </div>
 
 <style>
+	/* One centred column: the page reads down the middle, as a card would. */
+	.about {
+		max-width: 760px;
+		margin-inline: auto;
+	}
+
 	.head {
 		display: flex;
+		flex-direction: column;
 		align-items: center;
-		gap: 20px;
-		margin-bottom: 24px;
+		text-align: center;
+		gap: 12px;
+		margin-bottom: 20px;
 	}
 
 	.head p {
@@ -201,15 +221,15 @@
 	}
 
 	.lede {
-		max-width: 62ch;
+		max-width: 56ch;
+		margin: 0 auto 40px;
+		text-align: center;
 		font-size: 1.05rem;
 		color: var(--text-dim);
-		margin-bottom: 40px;
 	}
 
 	.block {
 		margin-bottom: 40px;
-		max-width: 70ch;
 	}
 
 	.block h2 {
@@ -291,7 +311,8 @@
 		gap: 8px;
 	}
 
-	.credits a {
+	.credits a,
+	.credit {
 		display: flex;
 		align-items: center;
 		gap: 10px;

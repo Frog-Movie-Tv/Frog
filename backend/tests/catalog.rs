@@ -347,6 +347,55 @@ async fn the_catalog_refuses_ambiguous_mappings() {
     );
 }
 
+/// A copy of a film merged into the film it is: everyone's history goes
+/// across, and the copy, and its AniList id, lead to the survivor even when
+/// nobody kept it.
+#[tokio::test]
+async fn a_copy_merges_into_its_film_for_everyone() {
+    let (state, _dir) = state().await;
+    let pool = &state.pool;
+    for sql in [
+        "INSERT INTO app_user (id, username, password_hash, created_at) VALUES
+            (1, 'mihai', 'x', 'now'), (2, 'zjef', 'x', 'now')",
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (1, 'movie', 1244492, 'Look Back')",
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (2, 'movie', -174788, 'LOOK BACK')",
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (3, 'movie', -5, 'Nobody kept it')",
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (4, 'movie', 99, 'Its film')",
+        "INSERT INTO library_entry (user_id, title_id, status, rating, added_at, updated_at) VALUES
+            (1, 2, 'completed', 80, 'a', 'a'),
+            (2, 2, 'planned', NULL, 'a', 'a')",
+    ] {
+        sqlx::query(sql)
+            .execute(pool)
+            .await
+            .unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
+
+    frog::store::merge_copy(pool, 2, 1, "test").await.unwrap();
+    assert_eq!(
+        count(
+            pool,
+            "SELECT COUNT(*) FROM library_entry WHERE title_id = 1"
+        )
+        .await,
+        2,
+        "both accounts' entries moved"
+    );
+    assert_eq!(
+        catalog::find(pool, &ExternalId::AniList(174788))
+            .await
+            .unwrap(),
+        Some(1)
+    );
+
+    frog::store::merge_copy(pool, 3, 4, "test").await.unwrap();
+    assert_eq!(
+        catalog::find(pool, &ExternalId::AniList(5)).await.unwrap(),
+        Some(4),
+        "a copy nobody kept still points at its film"
+    );
+}
+
 /// Two titles with different providers turn out to be one. Each account's
 /// data moves on its own; the old title's AniList id then answers with the
 /// survivor, and the survivor lists it among its own.

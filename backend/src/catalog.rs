@@ -444,6 +444,13 @@ async fn ensure_anilist(state: &AppState, media_id: i64) -> AppResult<(i64, Valu
         Some(title_id) => get_title(pool, title_id).await?.kind,
         None => crate::anilist::media::kind_of(&media).to_string(),
     };
+    // A film TMDB has too opens as TMDB's, with this AniList id pointing at
+    // it, rather than as a second copy of the same film.
+    if existing.is_none() && kind == "movie" {
+        if let Some(found) = tmdb_twin(state, &id, &media).await {
+            return Ok(found);
+        }
+    }
     let detail = crate::anilist::media::as_tmdb(state, &kind, &media).await?;
     let core = TitleCore::from_detail(&kind, &detail)
         .ok_or_else(|| AppError::AniList("AniList returned a title with no name".into()))?;
@@ -452,6 +459,43 @@ async fn ensure_anilist(state: &AppState, media_id: i64) -> AppResult<(i64, Valu
         upsert_episodes(pool, title_id, &crate::anilist::media::episodes(&media)).await?;
     }
     Ok((title_id, detail))
+}
+
+/// The TMDB title an AniList film already is, linked to its AniList id. A
+/// failed lookup is no answer: the film opens from AniList, as before.
+async fn tmdb_twin(state: &AppState, id: &ExternalId, media: &Value) -> Option<(i64, Value)> {
+    let tmdb_id = match crate::anilist::film_on_tmdb(state, media).await {
+        Ok(found) => found?,
+        Err(e) => {
+            tracing::debug!(anilist = %id.key(), error = %e, "no TMDB lookup for an AniList film");
+            return None;
+        }
+    };
+    let tmdb = ExternalId::tmdb("movie", tmdb_id);
+    let (title_id, detail) = ensure_tmdb(state, &tmdb, "movie", tmdb_id).await.ok()?;
+    let mut conn = state.pool.acquire().await.ok()?;
+    if let Err(e) = link(&mut conn, title_id, id, false).await {
+        tracing::debug!(anilist = %id.key(), title_id, error = %e, "AniList film not linked");
+    }
+    Some((title_id, detail))
+}
+
+/// The TMDB film an AniList-only film is, for merging the two. `None` when
+/// it is not certain, or the title is not an AniList-only film.
+pub async fn film_twin_of(state: &AppState, title_id: i64) -> AppResult<Option<i64>> {
+    let Some(ExternalId::AniList(media_id)) = primary(&state.pool, title_id).await? else {
+        return Ok(None);
+    };
+    let media = crate::anilist::media::fetch(state, media_id).await?;
+    if crate::anilist::media::kind_of(&media) != "movie" {
+        return Ok(None);
+    }
+    let Some(tmdb_id) = crate::anilist::film_on_tmdb(state, &media).await? else {
+        return Ok(None);
+    };
+    let (twin, _) =
+        ensure_tmdb(state, &ExternalId::tmdb("movie", tmdb_id), "movie", tmdb_id).await?;
+    Ok((twin != title_id).then_some(twin))
 }
 
 /// Store a title's detail under the provider id it came from: a new title

@@ -2,7 +2,7 @@
 	import { backCloses } from '#lib/layers.svelte';
 	import { sameTitle, titleHref, titleKey } from '#lib/titles';
 	import { goto } from '$app/navigation';
-	import { api, img } from '#lib/api';
+	import { api, img, SEARCH_PAUSE, isAbort } from '#lib/api';
 	import Icon, { type IconName } from '#lib/components/Icon.svelte';
 	import { settings, THEMES, GO_KEYS } from '#lib/settings.svelte';
 	import { session } from '#lib/session.svelte';
@@ -63,6 +63,8 @@
 			.catch(() => {});
 	});
 
+	let asked = 0;
+
 	// TMDB is only consulted once the local list runs dry, so the common case
 	// costs no network at all.
 	$effect(() => {
@@ -75,18 +77,25 @@
 			remote = [];
 			return;
 		}
+		const mine = ++asked;
+		const ask = new AbortController();
 		const timer = setTimeout(async () => {
 			searching = true;
 			try {
-				const res = await api.search(q);
-				remote = res.results.slice(0, 6);
-			} catch {
-				remote = [];
+				const res = await api.search(q, 1, false, {}, ask.signal);
+				// A later key asked again: its answer is the one to show.
+				if (mine === asked) remote = res.results.slice(0, 6);
+			} catch (e) {
+				if (mine === asked && !isAbort(e)) remote = [];
 			} finally {
-				searching = false;
+				if (mine === asked) searching = false;
 			}
-		}, 320);
-		return () => clearTimeout(timer);
+		}, SEARCH_PAUSE);
+		// The next key calls this one off, here and on the server.
+		return () => {
+			clearTimeout(timer);
+			ask.abort();
+		};
 	});
 
 	function localMatches(q: string): LibraryItem[] {

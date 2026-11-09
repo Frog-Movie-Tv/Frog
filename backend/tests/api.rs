@@ -1780,6 +1780,62 @@ async fn a_shelf_counts_the_episodes_of_a_title_outside_the_library() {
     assert_eq!(outside["watched_episodes"], json!(1));
 }
 
+/// A watchlist holds titles without putting them in the library, and stays a
+/// watchlist through a delete and its undo.
+#[tokio::test]
+async fn a_watchlist_holds_titles_outside_the_library() {
+    let h = Harness::new().await;
+    let cookie = shelf_library(&h).await;
+    sqlx::query("DELETE FROM library_entry WHERE user_id = 1 AND title_id = 1")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+
+    let (status, body, _) = h
+        .post(
+            "/api/shelves",
+            json!({ "name": "To watch", "kind": "watchlist" }),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["shelf"]["kind"], json!("watchlist"));
+    let id = body["shelf"]["id"].as_i64().unwrap();
+
+    let (status, _, _) = h
+        .post(
+            &format!("/api/shelves/{id}/items"),
+            json!({ "title_id": 1 }),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (entries,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM library_entry WHERE user_id = 1 AND title_id = 1")
+            .fetch_one(&h.state.pool)
+            .await
+            .unwrap();
+    assert_eq!(entries, 0, "still not in the library");
+
+    let (_, body) = h.get(&format!("/api/shelves/{id}"), Some(&cookie)).await;
+    assert_eq!(body["shelf"]["kind"], json!("watchlist"));
+    assert_eq!(body["items"][0]["entry"], Value::Null);
+    let (_, membership) = h.get("/api/t/1/shelves", Some(&cookie)).await;
+    assert_eq!(membership["shelves"][0]["on"], json!(true));
+
+    let req = Request::builder()
+        .uri(format!("/api/shelves/{id}"))
+        .method("DELETE")
+        .header(header::COOKIE, &cookie)
+        .body(Body::empty())
+        .unwrap();
+    let (_, gone, _) = h.call(req).await;
+    assert_eq!(gone["kind"], json!("watchlist"));
+    let (_, back, _) = h.post("/api/shelves", gone, Some(&cookie)).await;
+    assert_eq!(back["shelf"]["kind"], json!("watchlist"));
+    assert_eq!(back["shelf"]["count"], json!(1));
+}
+
 /// Home is built from one reading of the account's numbers: each row still
 /// shows its own.
 #[tokio::test]
@@ -3812,11 +3868,27 @@ async fn the_activity_row_shows_someone_with_their_profile_on() {
 }
 
 #[tokio::test]
-async fn the_activity_row_never_shows_your_own_watching() {
+async fn the_activity_row_shows_your_own_watching_too() {
     let h = Harness::new().await;
     let (_, member) = two_accounts(&h).await;
     someone_to_see(&h, &member).await;
-    assert!(activity(&h, &member).await.is_empty());
+    let items = activity(&h, &member).await;
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert_eq!(items[0]["who"]["username"], json!("zjef"));
+}
+
+#[tokio::test]
+async fn your_own_watching_shows_with_your_profile_off() {
+    let h = Harness::new().await;
+    let (_, member) = two_accounts(&h).await;
+    someone_to_see(&h, &member).await;
+    h.put(
+        "/api/account/profile",
+        json!({ "public": false }),
+        Some(&member),
+    )
+    .await;
+    assert_eq!(activity(&h, &member).await.len(), 1);
 }
 
 #[tokio::test]
@@ -3898,7 +3970,7 @@ async fn a_note_appears_nowhere_in_what_others_see() {
 }
 
 #[tokio::test]
-async fn a_binge_and_a_large_import_cannot_flood_the_activity_row() {
+async fn a_large_import_lists_its_titles_a_card_each() {
     let h = Harness::new().await;
     let (owner, member) = two_accounts(&h).await;
     let id = someone_to_see(&h, &member).await;
@@ -3907,26 +3979,15 @@ async fn a_binge_and_a_large_import_cannot_flood_the_activity_row() {
         watch(&h, id, title, false).await;
     }
     let items = activity(&h, &owner).await;
-    assert_eq!(items.len(), 3, "{items:?}");
-    assert_eq!(items[2]["also"], json!(58));
-}
-
-#[tokio::test]
-async fn the_number_on_the_last_card_counts_the_whole_fortnight() {
-    let h = Harness::new().await;
-    let (owner, member) = two_accounts(&h).await;
-    let id = someone_to_see(&h, &member).await;
-    for title in 9700..10200 {
-        track(&h, id, title, None).await;
-        watch(&h, id, title, false).await;
-    }
-    let items = activity(&h, &owner).await;
-    assert_eq!(items.len(), 3, "{items:?}");
-    assert_eq!(
-        items[2]["also"],
-        json!(498),
-        "501 titles, three with a card"
-    );
+    assert_eq!(items.len(), 12, "the row is full; Activity has the rest");
+    assert!(items.iter().all(|i| i.get("also").is_none()), "{items:?}");
+    let mut names: Vec<&str> = items
+        .iter()
+        .map(|i| i["title"]["name"].as_str().unwrap())
+        .collect();
+    names.sort();
+    names.dedup();
+    assert_eq!(names.len(), 12, "each title once");
 }
 
 #[tokio::test]

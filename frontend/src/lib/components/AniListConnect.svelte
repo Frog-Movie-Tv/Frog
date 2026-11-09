@@ -3,6 +3,7 @@
 	import { uniqueBy } from '#lib/unique';
 	import { api, img } from '#lib/api';
 	import Icon from '#lib/components/Icon.svelte';
+	import { ANILIST_MARK } from '#lib/marks';
 	import Select from '#lib/components/Select.svelte';
 	import { plural, relativeDate } from '#lib/format';
 	import { toasts } from '#lib/toast.svelte';
@@ -491,21 +492,30 @@
 
 <div class="anilist card">
 	<div class="top">
+		<svg class="logo" viewBox="-3 -3 30 30" width="44" height="44" aria-hidden="true">
+			<rect x="-3" y="-3" width="30" height="30" rx="6" fill="#2b2d42" />
+			<path d={ANILIST_MARK} fill="#02a9ff" />
+		</svg>
 		<div class="label">
 			<strong>AniList</strong>
-			<span class="faint">
+			<span class="faint state">
 				{#if !status}
 					Checking…
 				{:else if !status.available}
 					Not set up on this Frog.
 				{:else if !status.connected || leaving}
-					Your episodes, statuses and scores, brought into Frog. Frog never changes your AniList.
-				{:else if status.syncing}
-					Syncing with {status.name}…
-				{:else if status.synced_at}
-					Connected as {status.name} · synced {minutes(status.synced_at)}
+					Your anime and manga, kept in step. Read only.
 				{:else}
-					Connected as {status.name}
+					<span
+						class="dot"
+						class:bad={status.error || status.needs_reconnect}
+						class:busy={status.syncing}
+						aria-hidden="true"
+					></span>
+					{status.name}
+					{#if status.syncing}· syncing…{:else if status.synced_at}· synced {minutes(
+							status.synced_at
+						)}{/if}
 				{/if}
 			</span>
 		</div>
@@ -537,11 +547,6 @@
 				{status.error}
 				{#if status.next_sync_at}Next try {minutes(status.next_sync_at)}.{/if}
 			</p>
-		{:else if status.synced_at && !status.syncing}
-			<p class="faint small">
-				Changes on AniList arrive by themselves, every {status.interval_minutes ?? 3} minutes or so, even
-				while Frog is closed.
-			</p>
 		{/if}
 		{#if expiresSoon}
 			<p class="problem">
@@ -553,22 +558,33 @@
 		{/if}
 		{#if status.summary}
 			{@const s = status.summary}
-			<p class="faint small">
-				{plural(s.entries, 'entry', 'entries')} on AniList · last sync brought {s.to_frog} into Frog{#if s.repaired}&nbsp;·
-					moved {plural(s.repaired, 'match', 'matches')} to a better place{/if}{#if s.failed}&nbsp;· {plural(
-						s.failed,
-						'entry',
-						'entries'
-					)} to try again{/if}
-			</p>
+			<dl class="figures">
+				<div>
+					<dt>On AniList</dt>
+					<dd>{s.entries.toLocaleString()}</dd>
+				</div>
+				<div>
+					<dt>Last sync</dt>
+					<dd>{s.to_frog ? `${s.to_frog} new` : 'Up to date'}</dd>
+				</div>
+				<div title="Even while Frog is closed">
+					<dt>Syncs</dt>
+					<dd>Every {status.interval_minutes ?? 3} min</dd>
+				</div>
+				{#if s.failed}
+					<div>
+						<dt>To try again</dt>
+						<dd>{s.failed}</dd>
+					</div>
+				{/if}
+			</dl>
 		{/if}
 
 		{#if entries.length}
 			{#if needsYou}
 				<p class="nudge">
 					<Icon name="info" size={15} />
-					{plural(needsYou, 'entry', 'entries')}
-					{needsYou === 1 ? 'needs' : 'need'} you. Everything else syncs by itself.
+					{plural(needsYou, 'entry', 'entries')} to look at
 				</p>
 			{/if}
 			<div class="groups" role="tablist" aria-label="AniList entries">
@@ -686,23 +702,83 @@
 	.anilist {
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
-		padding: 15px 18px;
+		gap: 14px;
+		padding: 18px 20px;
 	}
 
 	.top {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
 		flex-wrap: wrap;
-		gap: 12px 16px;
+		gap: 12px 14px;
+	}
+
+	.logo {
+		flex: none;
+		border-radius: 11px;
 	}
 
 	.label {
+		flex: 1 1 12em;
 		display: flex;
 		flex-direction: column;
 		gap: 3px;
 		min-width: 0;
+	}
+
+	.label strong {
+		font-size: 1.05rem;
+	}
+
+	.state {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	/* Green while syncing well, amber at work, red when it needs you. */
+	.dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--good);
+		flex: none;
+	}
+
+	.dot.busy {
+		background: #e3a008;
+	}
+
+	.dot.bad {
+		background: var(--bad);
+	}
+
+	.figures {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+		gap: 8px;
+		margin: 0;
+	}
+
+	.figures div {
+		padding: 10px 12px;
+		border-radius: var(--radius-sm);
+		background: var(--bg-elev-2);
+		border: 1px solid var(--line);
+	}
+
+	.figures dt {
+		font-size: 0.72rem;
+		color: var(--text-faint);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		font-weight: 650;
+	}
+
+	.figures dd {
+		margin: 2px 0 0;
+		font-size: 0.98rem;
+		font-weight: 700;
 	}
 
 	.label .faint,

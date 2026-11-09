@@ -17,6 +17,7 @@
 	import { settings } from '#lib/settings.svelte';
 	import type { FullStats, MangaStats, StatsPerson, StatsTitle, Status } from '#lib/types';
 	import { STATUSES, statusLabel } from '#lib/types';
+	import { decadeOf, toggle, view, type Dimension, type StatsFilter } from '#lib/stats-filter';
 
 	/*
 	 * Two halves, as AniList keeps its own: films and shows, from what was
@@ -126,11 +127,99 @@
 		return unit.length === 7 ? (MONTHS[Number(unit.slice(5)) - 1] ?? unit) : unit;
 	}
 
-	const timelineMax = $derived(Math.max(1, ...(stats?.timeline ?? []).map((t) => t.minutes)));
-	const genreMax = $derived(Math.max(1, ...(stats?.genres ?? []).map((g) => g.titles)));
-	const decadeMax = $derived(Math.max(1, ...(stats?.decades ?? []).map((d) => d.titles)));
-	const ratingMax = $derived(Math.max(1, ...(stats?.ratings ?? [])));
-	const rated = $derived((stats?.ratings ?? []).reduce((a, b) => a + b, 0));
+	/*
+	 * A dashboard: a bar clicked narrows every other chart to the titles under
+	 * it, and picks combine. A new period starts with nothing picked.
+	 */
+	let filter = $state<StatsFilter>({});
+	$effect(() => {
+		void yearParam;
+		filter = {};
+	});
+	const picked = $derived(Object.keys(filter).length > 0);
+	const narrowed = $derived(
+		stats && picked && stats.facts
+			? view(
+					stats.facts,
+					filter,
+					stats.timeline.map((t) => t.unit)
+				)
+			: null
+	);
+	function pick<K extends Dimension>(key: K, value: StatsFilter[K]) {
+		filter = toggle(filter, key, value);
+	}
+	/** This bar is the one picked, or another in its chart is. */
+	const isOn = (key: Dimension, value: unknown) => filter[key] === value;
+	const isOff = (key: Dimension, value: unknown) =>
+		filter[key] !== undefined && filter[key] !== value;
+
+	const totals = $derived(
+		narrowed?.totals ?? {
+			...(stats?.totals ?? {
+				films: 0,
+				episodes: 0,
+				shows: 0,
+				titles: 0,
+				rewatches: 0,
+				minutes: 0,
+				days: 0,
+				mean_rating: null
+			}),
+			rated: (stats?.ratings ?? []).reduce((a, b) => a + b, 0)
+		}
+	);
+	const timeline = $derived(narrowed?.timeline ?? stats?.timeline ?? []);
+	const genres = $derived(narrowed?.genres ?? stats?.genres ?? []);
+	const decades = $derived(narrowed?.decades ?? stats?.decades ?? []);
+	const ratingBars = $derived(narrowed?.ratings ?? stats?.ratings ?? []);
+	const topShows = $derived(narrowed?.top_shows ?? stats?.top_shows ?? []);
+	const topFilms = $derived(narrowed?.top_films ?? stats?.top_films ?? []);
+
+	const timelineMax = $derived(Math.max(1, ...timeline.map((t) => t.minutes)));
+	const genreMax = $derived(Math.max(1, ...genres.map((g) => g.titles)));
+	const decadeMax = $derived(Math.max(1, ...decades.map((d) => d.titles)));
+	const ratingMax = $derived(Math.max(1, ...ratingBars));
+	const rated = $derived(totals.rated);
+
+	/** A ratings bar's label, short enough for ten of them side by side. */
+	function axisScore(i: number): string {
+		const format = settings.current.scoreFormat;
+		if (format === 'star5') return String((i + 1) / 2);
+		if (format === 'pt100') return String((i + 1) * 10);
+		if (format === 'pt10dec') return ((i + 1) as number).toFixed(0);
+		return formatScore((i + 1) * 10, format);
+	}
+
+	/** What is picked, in words, for the chips above the charts. */
+	const chips = $derived.by(() => {
+		const out: { key: Dimension; label: string }[] = [];
+		if (filter.kind) out.push({ key: 'kind', label: filter.kind === 'movie' ? 'Films' : 'Shows' });
+		if (filter.unit) out.push({ key: 'unit', label: unitName(filter.unit) });
+		if (filter.genre) out.push({ key: 'genre', label: filter.genre });
+		if (filter.decade !== undefined) out.push({ key: 'decade', label: `${filter.decade}s` });
+		if (filter.rating !== undefined) {
+			out.push({
+				key: 'rating',
+				label: `Rated ${formatScore((filter.rating + 1) * 10, settings.current.scoreFormat)}`
+			});
+		}
+		return out;
+	});
+
+	function unitName(unit: string): string {
+		if (unit.length !== 7) return unit;
+		return new Date(`${unit}-01T12:00:00`).toLocaleDateString(undefined, {
+			month: 'long',
+			year: 'numeric'
+		});
+	}
+
+	function unpick(key: Dimension) {
+		const next = { ...filter };
+		delete next[key];
+		filter = next;
+	}
 
 	function initials(name: string): string {
 		return name
@@ -421,35 +510,56 @@
 			<div class="tiles">
 				<div class="tile card hero">
 					<span class="eyebrow">Time watched</span>
-					<strong>{longRuntime(stats.totals.minutes)}</strong>
-					<span class="faint">{Math.round(stats.totals.minutes / 60).toLocaleString()} hours</span>
+					<strong>{longRuntime(totals.minutes)}</strong>
+					<span class="faint">{Math.round(totals.minutes / 60).toLocaleString()} hours</span>
 				</div>
-				<div class="tile card">
+				<button
+					type="button"
+					class="tile card pickable"
+					class:on={isOn('kind', 'movie')}
+					aria-pressed={isOn('kind', 'movie')}
+					title="Only films"
+					onclick={() => pick('kind', 'movie')}
+				>
 					<span class="eyebrow">Films</span>
-					<strong>{stats.totals.films.toLocaleString()}</strong>
-					{#if stats.totals.rewatches}
-						<span class="faint">{plural(stats.totals.rewatches, 'rewatch', 'rewatches')}</span>
+					<strong>{totals.films.toLocaleString()}</strong>
+					{#if totals.rewatches}
+						<span class="faint">{plural(totals.rewatches, 'rewatch', 'rewatches')}</span>
 					{/if}
-				</div>
-				<div class="tile card">
+				</button>
+				<button
+					type="button"
+					class="tile card pickable"
+					class:on={isOn('kind', 'tv')}
+					aria-pressed={isOn('kind', 'tv')}
+					title="Only shows"
+					onclick={() => pick('kind', 'tv')}
+				>
 					<span class="eyebrow">Episodes</span>
-					<strong>{stats.totals.episodes.toLocaleString()}</strong>
-					<span class="faint">{plural(stats.totals.shows, 'show')}</span>
-				</div>
-				<div class="tile card">
-					<span class="eyebrow">Days watching</span>
-					<strong>{stats.totals.days.toLocaleString()}</strong>
-				</div>
-				<div class="tile card">
-					<span class="eyebrow">Longest streak</span>
-					<strong>{plural(stats.streaks.longest.days, 'day')}</strong>
-					{#if stats.streaks.longest.days > 1}
-						<span class="faint">
-							{shortDate(stats.streaks.longest.from)} – {shortDate(stats.streaks.longest.to)}
-						</span>
-					{/if}
-				</div>
-				{#if stats.streaks.current.days > 0}
+					<strong>{totals.episodes.toLocaleString()}</strong>
+					<span class="faint">{plural(totals.shows, 'show')}</span>
+				</button>
+				{#if picked}
+					<div class="tile card">
+						<span class="eyebrow">Titles</span>
+						<strong>{totals.titles.toLocaleString()}</strong>
+					</div>
+				{:else}
+					<div class="tile card">
+						<span class="eyebrow">Days watching</span>
+						<strong>{stats.totals.days.toLocaleString()}</strong>
+					</div>
+					<div class="tile card">
+						<span class="eyebrow">Longest streak</span>
+						<strong>{plural(stats.streaks.longest.days, 'day')}</strong>
+						{#if stats.streaks.longest.days > 1}
+							<span class="faint">
+								{shortDate(stats.streaks.longest.from)} – {shortDate(stats.streaks.longest.to)}
+							</span>
+						{/if}
+					</div>
+				{/if}
+				{#if stats.streaks.current.days > 0 && !picked}
 					<div class="tile card">
 						<span class="eyebrow">Current streak</span>
 						<strong class="streak"
@@ -459,12 +569,28 @@
 				{/if}
 				<div class="tile card">
 					<span class="eyebrow">Mean rating</span>
-					<strong><Score value={stats.totals.mean_rating} /></strong>
+					<strong><Score value={totals.mean_rating} /></strong>
 					{#if rated}<span class="faint">{plural(rated, 'rating')}</span>{/if}
 				</div>
 			</div>
 
-			{#if stats.timeline.some((t) => t.minutes > 0)}
+			<div class="picks" aria-live="polite">
+				{#if chips.length}
+					{#each chips as chip (chip.key)}
+						<button type="button" class="chip on" onclick={() => unpick(chip.key)}>
+							{chip.label}
+							<Icon name="x" size={13} label="Clear {chip.label}" />
+						</button>
+					{/each}
+					<button type="button" class="btn ghost small" onclick={() => (filter = {})}>
+						Clear all
+					</button>
+				{:else if stats.facts?.length}
+					<span class="faint">Pick any bar to see the rest of your stats through it.</span>
+				{/if}
+			</div>
+
+			{#if timeline.some((t) => t.minutes > 0)}
 				<section class="block card panel">
 					<h2>{stats.year ? 'Watch time by month' : 'Watch time by year'}</h2>
 					<div
@@ -473,9 +599,15 @@
 						role="img"
 						aria-label="Watch time over time"
 					>
-						{#each stats.timeline as point (point.unit)}
-							<div
-								class="column"
+						{#each timeline as point (point.unit)}
+							<button
+								type="button"
+								class="column pick"
+								class:on={isOn('unit', point.unit)}
+								class:off={isOff('unit', point.unit)}
+								aria-pressed={isOn('unit', point.unit)}
+								disabled={!point.minutes && !isOn('unit', point.unit)}
+								onclick={() => pick('unit', point.unit)}
 								title="{unitLabel(point.unit)}: {longRuntime(point.minutes)} · {plural(
 									point.films,
 									'film'
@@ -491,7 +623,7 @@
 								>
 								<span class="bar-v" style:height="{(point.minutes / timelineMax) * 100}%"></span>
 								<span class="label faint">{unitLabel(point.unit)}</span>
-							</div>
+							</button>
 						{/each}
 					</div>
 					<p class="faint note">Hours</p>
@@ -499,22 +631,31 @@
 			{/if}
 
 			<div class="split">
-				{@render titles('Most watched shows', stats.top_shows, true)}
-				{@render titles('Top films', stats.top_films, false)}
+				{@render titles('Most watched shows', topShows, true)}
+				{@render titles('Top films', topFilms, false)}
 			</div>
 
 			<div class="grid">
-				{#if stats.genres.length}
+				{#if genres.length}
 					<section class="block card panel">
 						<h2>Genres</h2>
 						<ul class="hbars">
-							{#each stats.genres.slice(0, 10) as g (g.name)}
+							{#each genres.slice(0, 10) as g (g.name)}
 								<li>
-									<span class="hname">{g.name}</span>
-									<span class="track"
-										><span class="fill" style:width="{(g.titles / genreMax) * 100}%"></span></span
+									<button
+										type="button"
+										class="hrow pick"
+										class:on={isOn('genre', g.name)}
+										class:off={isOff('genre', g.name)}
+										aria-pressed={isOn('genre', g.name)}
+										onclick={() => pick('genre', g.name)}
 									>
-									<span class="faint hcount">{g.titles}</span>
+										<span class="hname">{g.name}</span>
+										<span class="track"
+											><span class="fill" style:width="{(g.titles / genreMax) * 100}%"></span></span
+										>
+										<span class="faint hcount">{g.titles}</span>
+									</button>
 								</li>
 							{/each}
 						</ul>
@@ -524,31 +665,53 @@
 				{#if rated}
 					<section class="block card panel">
 						<h2>Ratings</h2>
-						<div class="columns" role="img" aria-label="How you rate">
-							{#each stats.ratings as n, i (i)}
-								<div
-									class="column"
+						<div class="columns" role="group" aria-label="How you rate">
+							{#each ratingBars as n, i (i)}
+								<button
+									type="button"
+									class="column pick"
+									class:on={isOn('rating', i)}
+									class:off={isOff('rating', i)}
+									aria-pressed={isOn('rating', i)}
+									disabled={!n && !isOn('rating', i)}
+									onclick={() => pick('rating', i)}
 									title="{formatScore((i + 1) * 10, settings.current.scoreFormat)}: {n}"
 								>
 									<span class="value faint">{n || ''}</span>
 									<span class="bar-v" style:height="{(n / ratingMax) * 100}%"></span>
-									<span class="label faint"><Score value={(i + 1) * 10} /></span>
-								</div>
+									<span class="label faint axis"
+										>{#if settings.current.scoreFormat === 'smiley3'}<Score
+												value={(i + 1) * 10}
+											/>{:else}{axisScore(i)}{#if settings.current.scoreFormat === 'star5'}<Icon
+													name="star"
+													size={9}
+													filled
+												/>{/if}{/if}</span
+									>
+								</button>
 							{/each}
 						</div>
 					</section>
 				{/if}
 
-				{#if stats.decades.length}
+				{#if decades.length}
 					<section class="block card panel">
 						<h2>Release decades</h2>
-						<div class="columns" role="img" aria-label="Titles by release decade">
-							{#each stats.decades as d (d.decade)}
-								<div class="column" title="{d.decade}s: {plural(d.titles, 'title')}">
+						<div class="columns" role="group" aria-label="Titles by release decade">
+							{#each decades as d (d.decade)}
+								<button
+									type="button"
+									class="column pick"
+									class:on={isOn('decade', d.decade)}
+									class:off={isOff('decade', d.decade)}
+									aria-pressed={isOn('decade', d.decade)}
+									onclick={() => pick('decade', decadeOf(d.decade))}
+									title="{d.decade}s: {plural(d.titles, 'title')}"
+								>
 									<span class="value faint">{d.titles}</span>
 									<span class="bar-v" style:height="{(d.titles / decadeMax) * 100}%"></span>
 									<span class="label faint">{String(d.decade).slice(2)}s</span>
-								</div>
+								</button>
 							{/each}
 						</div>
 					</section>
@@ -557,6 +720,9 @@
 
 			<!-- The people get a row of their own, side by side, rather than
 			     filling whatever gap the charts above leave. -->
+			{#if picked}
+				<p class="faint note">The people below count everything in this period.</p>
+			{/if}
 			<div class="grid people-row">
 				{@render people('Actors', stats.people.actors, '/person')}
 				{@render people('Directors and creators', stats.people.directors, '/person')}
@@ -775,6 +941,86 @@
 		opacity: 1;
 	}
 
+	/* A bar that narrows the page when clicked. */
+	.pick {
+		padding: 0;
+		border: 0;
+		background: none;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+		border-radius: var(--radius-sm);
+		transition: opacity var(--fast) var(--ease);
+	}
+
+	.pick:disabled {
+		cursor: default;
+	}
+
+	.pick:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
+	.pick.off {
+		opacity: 0.35;
+	}
+
+	.pick.on .bar-v,
+	.pick.on .fill {
+		opacity: 1;
+		box-shadow:
+			0 0 0 2px var(--bg-float),
+			0 0 0 4px var(--accent);
+	}
+
+	.pick.on .label,
+	.pick.on .value,
+	.pick.on .hname {
+		color: var(--text);
+		font-weight: 700;
+	}
+
+	.axis {
+		display: inline-flex;
+		align-items: center;
+		gap: 1px;
+	}
+
+	.picks {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		min-height: 34px;
+		margin: 4px 0 14px;
+		font-size: 0.84rem;
+	}
+
+	.picks .chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.tile.pickable {
+		font: inherit;
+		color: inherit;
+		text-align: left;
+		cursor: pointer;
+		transition:
+			box-shadow var(--fast) var(--ease),
+			background var(--fast) var(--ease);
+	}
+
+	.tile.pickable:hover {
+		background: var(--bg-hover);
+	}
+
+	.tile.pickable.on {
+		box-shadow: inset 0 0 0 2px var(--accent);
+	}
+
 	.value,
 	.label {
 		font-size: 0.7rem;
@@ -798,11 +1044,22 @@
 	}
 
 	.hbars li {
+		font-size: 0.86rem;
+	}
+
+	.hrow {
 		display: grid;
 		grid-template-columns: minmax(80px, 34%) 1fr 34px;
 		align-items: center;
 		gap: 10px;
-		font-size: 0.86rem;
+		width: 100%;
+		padding: 3px 4px;
+		margin: -3px -4px;
+		text-align: left;
+	}
+
+	.hrow:hover {
+		background: var(--bg-hover);
 	}
 
 	.hname {
@@ -909,7 +1166,7 @@
 	}
 
 	a.person:hover {
-		background: var(--bg-elev-2);
+		background: var(--bg-hover);
 	}
 
 	.rank {

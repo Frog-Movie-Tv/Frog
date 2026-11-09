@@ -329,6 +329,36 @@ pub(super) fn titles_of(media: &Value) -> Vec<String> {
     titles
 }
 
+/// A media as a `Remote` with nothing of anyone's list in it: for placing a
+/// title someone opened rather than one on their list.
+pub fn remote_of_media(media: &Value) -> Remote {
+    let manga = media["type"].as_str() == Some("MANGA");
+    Remote {
+        media_id: media["id"].as_i64().unwrap_or(0),
+        name: media_name(media),
+        titles: titles_of(media),
+        synonyms: Vec::new(),
+        format: media["format"].as_str().map(str::to_string),
+        manga,
+        episodes: media[if manga { "chapters" } else { "episodes" }]
+            .as_i64()
+            .filter(|n| *n > 0),
+        year: media["startDate"]["year"].as_i64(),
+        start: full_date(&media["startDate"]),
+        media_status: media["status"].as_str().map(str::to_string),
+        country: media["countryOfOrigin"].as_str().map(str::to_string),
+        next_airing: None,
+        view: View {
+            status: "PLANNING".into(),
+            progress: 0,
+            score: 0,
+        },
+        started: None,
+        completed: None,
+        repeat: 0,
+    }
+}
+
 pub fn parse_list(data: &Value) -> Vec<Remote> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
