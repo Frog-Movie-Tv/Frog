@@ -11,6 +11,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Wood Frog —
 
+In progress.
+
+## [1.4.1] — Wood Frog — 2026-11-09
+
 Watchlists, Stats you can click through, and a calmer Settings.
 
 ### Highlights
@@ -846,6 +850,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.4.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.4.1
 [1.4.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.4.0
 [1.3.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.3.1
 [1.3.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.3.0
