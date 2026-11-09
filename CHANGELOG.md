@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.1](https://github.com/Frog-Movie-Tv/Frog/compare/v1.4.0...v1.4.1) (2026-11-09)
+
+
+### Fixes
+
+* **search:** keep manga and characters in step with what is typed ([ac03f6d](https://github.com/Frog-Movie-Tv/Frog/commit/ac03f6dffe667334f1bc062f24b5d90ce71650a1))
+* the 9 November batch ([1e6c546](https://github.com/Frog-Movie-Tv/Frog/commit/1e6c54670c9d985b1452ac4196217c5c4ecad0bf))
+* the 9 November batch (1.4.1) ([d7876dd](https://github.com/Frog-Movie-Tv/Frog/commit/d7876dd23f13b339effdd3b9e4e7b7f979bdbc16))
+
 ## [1.4.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.3.1...v1.4.0) (2026-11-08)
 
 
