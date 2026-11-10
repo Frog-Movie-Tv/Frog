@@ -3,6 +3,7 @@
 	import Score from './Score.svelte';
 	import Icon from './Icon.svelte';
 	import { formatScore } from '#lib/format';
+	import { contextMenu, type MenuSource } from '#lib/menu.svelte';
 	import { morph as opened } from '#lib/morph.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import { titleHref, type TitleRef } from '#lib/titles';
@@ -32,6 +33,8 @@
 		selected?: boolean;
 		/** Watched again this many times, said beside the status. */
 		rewatches?: number;
+		/** What a right-click, or a hold, offers. Unset, the card has no menu. */
+		menu?: MenuSource;
 	}
 
 	let {
@@ -50,6 +53,7 @@
 		fallbackPath = null,
 		selected,
 		rewatches = 0,
+		menu,
 		...rest
 	}: Props = $props();
 
@@ -80,6 +84,7 @@
 	href={href ?? undefined}
 	title={name}
 	style:view-transition-name={named ? `poster-${key}` : undefined}
+	use:contextMenu={menu}
 	onclick={(e) => {
 		if (!morph) return;
 		opened.key = key;

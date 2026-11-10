@@ -3,6 +3,7 @@
 	import { uniqueBy } from '#lib/unique';
 	import { page } from '$app/state';
 	import { api, img } from '#lib/api';
+	import { titleMenu } from '#lib/menus';
 	import Empty from '#lib/components/Empty.svelte';
 	import Grid from '#lib/components/Grid.svelte';
 	import Poster from '#lib/components/Poster.svelte';
@@ -10,7 +11,7 @@
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { failure, type Failure } from '#lib/failure';
 	import { prettyDate } from '#lib/format';
-	import type { PersonDetail } from '#lib/types';
+	import type { PersonDetail, SearchItem } from '#lib/types';
 
 	let person = $state<PersonDetail | null>(null);
 	let loading = $state(true);
@@ -25,6 +26,10 @@
 	});
 
 	let token = 0;
+
+	/** A right-click's offer on a credit; the page reads itself again after. */
+	const menuOf = (item: SearchItem) =>
+		titleMenu({ ...item, status: item.in_library }, { onchanged: () => load(id) });
 
 	async function load(personId: number) {
 		const mine = ++token;
@@ -74,7 +79,7 @@
 	{#if loading && !person}
 		<Spinner label="Loading" />
 	{:else if error}
-		<Empty art={error.missing ? 'search' : 'rest'} title={error.title} hint={error.hint}>
+		<Empty art={error.missing ? 'lost' : 'failed'} title={error.title} hint={error.hint}>
 			{#if !error.missing}
 				<button class="btn primary" onclick={() => load(id)}>Try again</button>
 			{/if}
@@ -134,6 +139,7 @@
 				{#each credits as credit (titleKey(credit.item))}
 					<div class="credit" class:seen={credit.item.in_library !== null}>
 						<Poster
+							menu={menuOf(credit.item)}
 							kind={credit.item.kind}
 							ref={credit.item}
 							name={credit.item.name}
@@ -156,6 +162,7 @@
 					{#each appearances as credit (titleKey(credit.item))}
 						<div class="credit" class:seen={credit.item.in_library !== null}>
 							<Poster
+								menu={menuOf(credit.item)}
 								kind={credit.item.kind}
 								ref={credit.item}
 								name={credit.item.name}

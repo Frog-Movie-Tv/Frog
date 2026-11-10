@@ -92,7 +92,7 @@
 		<LoadFailed {failed} onretry={() => load(username)} />
 	{:else if failed || !profile}
 		<Empty
-			art="search"
+			art="lost"
 			title="No profile here"
 			hint="It may be private, or there is no such account on this Frog."
 		>

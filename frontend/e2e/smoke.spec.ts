@@ -1031,6 +1031,56 @@ test('renaming a shelf starts in the name field', async ({ page }) => {
 	await page.request.delete(`/api/shelves/${shelf.id}`);
 });
 
+test('a right-click on a title offers its actions, each with an undo', async ({
+	page,
+	isMobile
+}, testInfo) => {
+	await signIn(page);
+	seedLibrary(testInfo.project.name);
+	await page.goto('/library?sort=name&order=asc');
+	const first = titles(page).first();
+	await expect(first).toHaveAttribute('title', 'Alien');
+
+	// A right-click on a computer; a hold on a phone, which the browser
+	// reports as the same event.
+	const open = async () => {
+		if (isMobile) await first.dispatchEvent('contextmenu');
+		else await first.click({ button: 'right' });
+		await expect(page.getByRole('menu', { name: 'Alien' })).toBeVisible();
+	};
+
+	await open();
+	await expect(page, 'the card did not open').toHaveURL(/\/library/);
+	const menu = page.getByRole('menu', { name: 'Alien' });
+	await expect(menu.getByRole('menuitem', { name: 'Remove from library' })).toBeVisible();
+
+	// A second level in the same menu, and the current status is ticked.
+	await menu.getByRole('menuitem', { name: 'Move to' }).click();
+	await expect(menu.getByRole('menuitemcheckbox', { name: 'Completed' })).toHaveAttribute(
+		'aria-checked',
+		'true'
+	);
+	await menu.getByRole('menuitemcheckbox', { name: 'Watching' }).click();
+	await expect(page.getByText('Moved Alien to Watching')).toBeVisible();
+	await expect(menu).toHaveCount(0);
+	await expect(first.getByText('Watching')).toBeVisible();
+	await page.getByRole('button', { name: 'Undo' }).click();
+	await expect(first.getByText('Completed')).toBeVisible();
+
+	// Escape closes it without doing anything.
+	await open();
+	await page.keyboard.press('Escape');
+	await expect(menu).toHaveCount(0);
+
+	await open();
+	await menu.getByRole('menuitem', { name: 'Remove from library' }).click();
+	await expect(page.getByText('Removed Alien')).toBeVisible();
+	await expect(titles(page)).toHaveCount(4);
+	await page.getByRole('button', { name: 'Undo' }).click();
+	await expect(titles(page)).toHaveCount(5);
+	clearLibrary(testInfo.project.name);
+});
+
 test('the next account on this device starts from its own preferences', async ({ page }) => {
 	await signIn(page);
 	await page.goto('/settings#appearance');

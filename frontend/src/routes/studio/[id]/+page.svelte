@@ -3,13 +3,14 @@
 	import { uniqueBy } from '#lib/unique';
 	import { page } from '$app/state';
 	import { api, img } from '#lib/api';
+	import { titleMenu } from '#lib/menus';
 	import Empty from '#lib/components/Empty.svelte';
 	import Grid from '#lib/components/Grid.svelte';
 	import LoadMore from '#lib/components/LoadMore.svelte';
 	import Poster from '#lib/components/Poster.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { failure, type Failure } from '#lib/failure';
-	import type { Kind, StudioDetail } from '#lib/types';
+	import type { Kind, SearchItem, StudioDetail } from '#lib/types';
 
 	let studio = $state<StudioDetail | null>(null);
 	let loading = $state(true);
@@ -25,6 +26,10 @@
 	});
 
 	let token = 0;
+
+	/** A right-click's offer on a title; the page reads itself again after. */
+	const menuOf = (item: SearchItem) =>
+		titleMenu({ ...item, status: item.in_library }, { onchanged: () => load(id) });
 
 	async function load(studioId: number) {
 		const mine = ++token;
@@ -79,7 +84,7 @@
 	{#if loading && !studio}
 		<Spinner label="Loading" />
 	{:else if error}
-		<Empty art={error.missing ? 'search' : 'rest'} title={error.title} hint={error.hint}>
+		<Empty art={error.missing ? 'lost' : 'failed'} title={error.title} hint={error.hint}>
 			{#if !error.missing}
 				<button class="btn primary" onclick={() => load(id)}>Try again</button>
 			{/if}
@@ -127,6 +132,7 @@
 			<Grid>
 				{#each shown as item (titleKey(item))}
 					<Poster
+						menu={menuOf(item)}
 						kindBadge={films > 0 && shows > 0}
 						kind={item.kind}
 						ref={item}

@@ -307,6 +307,24 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
 - **Menus stay on screen.** `use:onScreen` (`lib/onscreen.ts`) nudges a
   dropdown back inside the window on a computer; on a phone `Select` and
   `Rating` draw as a sheet from the bottom over a scrim.
+- **One context menu.** A right-click, or a hold on a touch screen, opens
+  the menu in `ContextMenu.svelte`, mounted once in the layout and driven by
+  `lib/menu.svelte.ts` (`use:contextMenu={source}` on the card). What a title
+  or a shelf offers is built in `lib/menus.ts`, so a card in Library, on a
+  shelf, on Home or in Search offers the same things in the same words; a
+  page only says where the card is and what to read again afterwards. The
+  actions reuse the bulk endpoint Library's edit bar uses, so each one comes
+  with its undo.
+- **Pip.** `Mascot.svelte` is the mascot as a whole frog on a lily pad: one
+  inline SVG, posed by a class (`idle`, `lost`, `asleep`, `searching`,
+  `happy`, `wave`, `dizzy`, `hop`) and dressed by the mascot chosen in
+  Settings. It holds still when animations are off, or when the system asks
+  for reduced motion. `Empty` picks a pose from its `art` (asleep for
+  nothing yet, searching for nothing found, happy for all done, lost for a
+  page that is not there, dizzy for a failure, waving on an empty Home);
+  `Spinner` and the pull to refresh hop; sign-in and the welcome wave;
+  `toasts.cheer` puts a jumping Pip beside the message when a show's last
+  episode or a manga's last chapter goes in.
 - **Profiles are tabs.** `ProfileShell` loads a profile once and draws
   `ProfileHeader` over each tab: Overview, Library (`LibraryBrowser` with
   `embedded`), Ratings and Compare.

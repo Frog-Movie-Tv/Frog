@@ -95,7 +95,20 @@
 	}
 
 	function updateItem(item: LibraryItem) {
-		if (detail) detail = { ...detail, item };
+		if (detail) {
+			cheerIfFinished(detail.item, item);
+			detail = { ...detail, item };
+		}
+	}
+
+	/** The last episode or chapter just went in: Pip jumps for it. */
+	function cheerIfFinished(before: LibraryItem, after: LibraryItem) {
+		const total = after.total_episodes;
+		if (after.kind === 'movie' || total <= 0 || before.id !== after.id) return;
+		if (before.watched_episodes >= total || after.watched_episodes < total) return;
+		// Still airing or publishing: there is more to come, so it is caught up.
+		const going = /returning|production|releasing|hiatus/i.test(after.tmdb_status ?? '');
+		toasts.cheer(going ? `All caught up on ${after.name}` : `You finished ${after.name}`);
 	}
 
 	async function refreshAfterEpisodes(item: LibraryItem) {
@@ -445,7 +458,7 @@
 	<div class="page"><Spinner label="Loading" /></div>
 {:else if error}
 	<div class="page">
-		<Empty art={error.missing ? 'search' : 'rest'} title={error.title} hint={error.hint}>
+		<Empty art={error.missing ? 'lost' : 'failed'} title={error.title} hint={error.hint}>
 			{#if !error.missing}
 				<button class="btn primary" onclick={() => load(titleId)}>Try again</button>
 			{/if}

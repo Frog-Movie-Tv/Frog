@@ -2,6 +2,7 @@
 	import ThemePreview from '#lib/components/ThemePreview.svelte';
 	import { goto } from '$app/navigation';
 	import Icon from '#lib/components/Icon.svelte';
+	import Mascot from '#lib/components/Mascot.svelte';
 	import { session } from '#lib/session.svelte';
 	import { MASCOTS, THEMES, settings, type MascotName, type ThemeName } from '#lib/settings.svelte';
 
@@ -31,7 +32,7 @@
 
 	{#if step === 1}
 		<header>
-			<img src="/mascots/{s.mascot}.svg" alt="" width="72" height="72" />
+			<Mascot pose="wave" size={120} />
 			<h1>Welcome{name ? `, ${name}` : ''}</h1>
 			<p class="muted">Make Frog yours. You can change all of this later in Settings.</p>
 		</header>
@@ -80,7 +81,7 @@
 		</div>
 	{:else}
 		<header>
-			<img src="/mascots/{s.mascot}.svg" alt="" width="72" height="72" />
+			<Mascot pose="searching" size={120} />
 			<h1>Fill your library</h1>
 			<p class="muted">Bring what you have watched, or start with something you love.</p>
 		</header>

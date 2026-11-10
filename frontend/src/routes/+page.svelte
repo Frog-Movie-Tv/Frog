@@ -17,7 +17,16 @@
 	import { episodeCode, prettyDate, relativeDate, runtime, year } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
-	import type { ActivityItem, AiringEntry, BecauseRow, HomeData } from '#lib/types';
+	import { shelfMenu, titleMenu } from '#lib/menus';
+	import type {
+		ActivityItem,
+		AiringEntry,
+		BecauseRow,
+		HomeData,
+		LibraryItem,
+		SearchItem,
+		UpNextEntry
+	} from '#lib/types';
 
 	let data = $state<HomeData | null>(null);
 	let loading = $state(true);
@@ -60,6 +69,24 @@
 			loading = false;
 		}
 	}
+
+	/** What a right-click, or a hold, offers on a card; Home reads itself again after. */
+	const menuOf = (item: LibraryItem) =>
+		titleMenu(
+			{ ...item, status: item.entry?.status ?? null, favourite: item.entry?.favourite },
+			{ onchanged: load }
+		);
+	const menuOfNext = (entry: UpNextEntry) =>
+		titleMenu(
+			{
+				...entry.item,
+				status: entry.item.entry?.status ?? null,
+				favourite: entry.item.entry?.favourite
+			},
+			{ progress: { next: entry.next, watched: entry.item.watched_episodes }, onchanged: load }
+		);
+	const menuOfFound = (item: SearchItem) =>
+		titleMenu({ ...item, status: item.in_library }, { onchanged: load });
 
 	const hero = $derived(data?.hero ?? null);
 	const heroItem = $derived(hero?.item ?? null);
@@ -151,7 +178,7 @@
 	{#if showEmpty}
 		<div class="page">
 			<Empty
-				art="search"
+				art="hello"
 				title="Nothing here yet"
 				hint="Add a film or show and this page fills with what to watch next."
 			>
@@ -239,7 +266,7 @@
 					{#snippet allShelves()}<a class="see-all hit" href="/shelves">All shelves</a>{/snippet}
 					<Rail title="Your shelves" action={allShelves} width="216px">
 						{#each data.shelves as shelf (shelf.id)}
-							<ShelfCard {shelf} />
+							<ShelfCard {shelf} menu={shelfMenu(shelf, load)} />
 						{/each}
 						<a class="new-shelf" href="/shelves?new=1">
 							<span class="plus"><Icon name="plus" size={22} /></span>
@@ -249,7 +276,7 @@
 				{:else if row === 'continue'}
 					<Rail title="Continue watching" wide>
 						{#each following as entry (entry.item.id)}
-							<ContinueCard {entry} />
+							<ContinueCard {entry} menu={menuOfNext(entry)} />
 						{/each}
 					</Rail>
 				{:else if row === 'activity'}
@@ -297,6 +324,7 @@
 						<Rail title="Because you watched {group.seed.name}">
 							{#each uniqueBy(group.items, titleKey) as item (titleKey(item))}
 								<Poster
+									menu={menuOfFound(item)}
 									kind={item.kind}
 									ref={item}
 									name={item.name}
@@ -310,6 +338,7 @@
 					<Rail title="Recently added">
 						{#each data.recent as item (item.id)}
 							<Poster
+								menu={menuOf(item)}
 								kind={item.kind}
 								ref={item}
 								name={item.name}
@@ -326,6 +355,7 @@
 					<Rail title="Favourites">
 						{#each data.favourites as item (item.id)}
 							<Poster
+								menu={menuOf(item)}
 								kind={item.kind}
 								ref={item}
 								name={item.name}

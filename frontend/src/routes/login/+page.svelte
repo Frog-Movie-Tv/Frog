@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, ApiError } from '#lib/api';
-	import Logo from '#lib/components/Logo.svelte';
+	import Mascot from '#lib/components/Mascot.svelte';
 	import { nameLimit } from '#lib/names';
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
@@ -60,7 +60,7 @@
 <div class="screen">
 	<form class="card panel" onsubmit={submit}>
 		<div class="head">
-			<span class="mark" aria-hidden="true"><Logo size={44} /></span>
+			<span class="mark"><Mascot pose="wave" size={112} /></span>
 			<h1>{setup ? 'Set up Frog' : 'Frog'}</h1>
 			<p class="muted">
 				{setup
@@ -175,10 +175,11 @@
 		margin-bottom: 4px;
 	}
 
+	/* Pip says hello, sat a little into the card's top edge. */
 	.mark {
 		display: block;
-		margin-bottom: 6px;
-		filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--accent) 35%, transparent));
+		margin: -18px 0 0;
+		filter: drop-shadow(0 10px 20px color-mix(in srgb, var(--accent) 30%, transparent));
 	}
 
 	h1 {

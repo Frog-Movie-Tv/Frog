@@ -7,6 +7,7 @@
 	import AccountMenu from '#lib/components/AccountMenu.svelte';
 	import PullToRefresh from '#lib/components/PullToRefresh.svelte';
 	import CommandPalette from '#lib/components/CommandPalette.svelte';
+	import ContextMenu from '#lib/components/ContextMenu.svelte';
 	import Logo from '#lib/components/Logo.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import Toasts from '#lib/components/Toasts.svelte';
@@ -265,6 +266,7 @@
 	<CommandPalette bind:this={palette} />
 	<UpdateBanner />
 	<WhenWatched />
+	<ContextMenu />
 {/if}
 
 <Toasts />

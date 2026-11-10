@@ -10,7 +10,7 @@
 	let { failed, onretry }: Props = $props();
 </script>
 
-<Empty art={failed.missing ? 'search' : 'rest'} title={failed.title} hint={failed.hint}>
+<Empty art={failed.missing ? 'lost' : 'failed'} title={failed.title} hint={failed.hint}>
 	{#if !failed.missing}
 		<button class="btn primary" onclick={onretry}>Try again</button>
 	{/if}
