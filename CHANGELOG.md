@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.4.2](https://github.com/Frog-Movie-Tv/Frog/compare/v1.4.1...v1.4.2) (2026-11-10)
+
+
+### Features
+
+* right-click actions and Pip the mascot (1.4.2) ([f770885](https://github.com/Frog-Movie-Tv/Frog/commit/f7708850eef1eb313a152dcb0cec0f2f1db41049))
+* right-click actions on titles and shelves, and Pip the mascot ([3d48971](https://github.com/Frog-Movie-Tv/Frog/commit/3d48971acd8a5b1d7f3a3c81355d261453ba9e06))
+
+
+### Documentation
+
+* move the 1.4.2 notes under Upcoming and update the roadmap ([bf58396](https://github.com/Frog-Movie-Tv/Frog/commit/bf583960d95e68be2c7648ee3b2cde35a2c85598))
+
 ## [1.4.1](https://github.com/Frog-Movie-Tv/Frog/compare/v1.4.0...v1.4.1) (2026-11-09)
 
 
