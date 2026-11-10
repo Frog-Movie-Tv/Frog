@@ -136,10 +136,11 @@ export function clockTime(at: string | null | undefined): string {
 	if (!at) return '';
 	const d = new Date(at);
 	if (Number.isNaN(d.getTime())) return '';
+	const clock24 = settings.current.clock24;
 	return d.toLocaleTimeString(undefined, {
-		hour: 'numeric',
+		hour: clock24 ? '2-digit' : 'numeric',
 		minute: '2-digit',
-		hour12: !settings.current.clock24
+		hour12: !clock24
 	});
 }
 

@@ -125,11 +125,11 @@
 			unsupported: 'This browser cannot show notifications from Frog.',
 			insecure: 'Available when Frog is opened over HTTPS.',
 			blocked: 'Blocked in this browser. Allow notifications for Frog in its site settings.',
-			off: 'The moment an episode or film you follow comes out',
+			off: 'Episodes the minute they air, films on their release day',
 			on:
 				devices > 1
 					? `On for this device and ${devices - 1} more`
-					: 'The moment an episode or film you follow comes out'
+					: 'Episodes the minute they air, films on their release day'
 		}[step]
 	);
 	const available = $derived(step === 'on' || step === 'off');
@@ -138,7 +138,7 @@
 <div class="rows list-pane" data-step={step}>
 	<label class="row" class:unavailable={!available}>
 		<span class="label">
-			<strong>Notifications</strong>
+			<strong>When something you follow comes out</strong>
 			{#if hint}<span class="faint">{hint}</span>{/if}
 		</span>
 		<input
