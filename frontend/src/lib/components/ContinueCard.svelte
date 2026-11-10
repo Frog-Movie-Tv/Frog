@@ -3,13 +3,16 @@
 	import Icon from './Icon.svelte';
 	import { img } from '#lib/api';
 	import { episodeCode, prettyDate } from '#lib/format';
+	import { contextMenu, type MenuSource } from '#lib/menu.svelte';
 	import type { UpNextEntry } from '#lib/types';
 
 	interface Props {
 		entry: UpNextEntry;
+		/** What a right-click, or a hold, offers. */
+		menu?: MenuSource;
 	}
 
-	let { entry }: Props = $props();
+	let { entry, menu }: Props = $props();
 
 	const item = $derived(entry.item);
 	/** A manga goes on by the chapter, and may not know how many there are. */
@@ -21,7 +24,7 @@
 	);
 </script>
 
-<a class="card" href={titleHref(item)} style:--tint={item.accent.shade}>
+<a class="card" href={titleHref(item)} style:--tint={item.accent.shade} use:contextMenu={menu}>
 	<div class="art">
 		{#if backdrop}
 			<img src={backdrop} alt="" loading="lazy" decoding="async" />

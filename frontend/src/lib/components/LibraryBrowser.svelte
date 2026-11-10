@@ -31,6 +31,8 @@
 	import Grid from '#lib/components/Grid.svelte';
 	import LibraryEditBar from '#lib/components/LibraryEditBar.svelte';
 	import Poster from '#lib/components/Poster.svelte';
+	import { contextMenu } from '#lib/menu.svelte';
+	import { titleMenu } from '#lib/menus';
 	import Select from '#lib/components/Select.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { plural, relativeDate, runtime, year } from '#lib/format';
@@ -344,6 +346,15 @@
 		picked.clear();
 		await load(currentQuery(), keyOf(search()));
 	}
+
+	/** A right-click's offer on a title: none in someone else's library, or while editing. */
+	function menuOf(item: SharedItem) {
+		if (owner || editing) return undefined;
+		return titleMenu(
+			{ ...item, status: item.entry?.status ?? null, favourite: item.entry?.favourite },
+			{ onchanged: changed }
+		);
+	}
 </script>
 
 {#snippet tick(id: number)}
@@ -583,7 +594,7 @@
 
 	{#if missing}
 		<Empty
-			art="search"
+			art="lost"
 			title="No profile here"
 			hint="It may be private, or there is no such account on this Frog."
 		>
@@ -593,6 +604,7 @@
 		<Spinner label={owner ? 'Loading this library' : 'Loading your library'} />
 	{:else if failed && !items.length}
 		<Empty
+			art="failed"
 			title={owner ? 'Could not load this library' : 'Could not load your library'}
 			hint="The server did not answer. Try again."
 		/>
@@ -622,6 +634,7 @@
 				<Poster
 					{...pickable(item.id)}
 					morph={!editing}
+					menu={menuOf(item)}
 					selected={editing ? picked.has(item.id) : undefined}
 					kind={item.kind}
 					ref={item}
@@ -643,6 +656,7 @@
 					class="land"
 					class:on={picked.has(item.id)}
 					href={titleHref(item)}
+					use:contextMenu={menuOf(item)}
 					{...pickable(item.id)}
 				>
 					<div class="art">
@@ -672,7 +686,12 @@
 		<ul class="list">
 			{#each items as item (item.id)}
 				<li>
-					<a class:on={picked.has(item.id)} href={titleHref(item)} {...pickable(item.id)}>
+					<a
+						class:on={picked.has(item.id)}
+						href={titleHref(item)}
+						use:contextMenu={menuOf(item)}
+						{...pickable(item.id)}
+					>
 						{@render tick(item.id)}
 						{#if item.poster_path}
 							<img src={img(item.poster_path, 'w92')} alt="" loading="lazy" />
@@ -713,6 +732,7 @@
 					{#each items as item (item.id)}
 						<tr
 							class:on={picked.has(item.id)}
+							use:contextMenu={menuOf(item)}
 							onclick={editing ? () => toggle(item.id) : undefined}
 						>
 							{#if editing}<td>{@render tick(item.id)}</td>{/if}

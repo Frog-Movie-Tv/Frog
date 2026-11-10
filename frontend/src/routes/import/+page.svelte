@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { api, img } from '#lib/api';
 	import Icon from '#lib/components/Icon.svelte';
+	import Mascot from '#lib/components/Mascot.svelte';
 	import ImportRow from '#lib/components/ImportRow.svelte';
 	import Select from '#lib/components/Select.svelte';
 	import { CHOOSE, netflixRows, settleNetflix, type NetflixExport } from '#lib/import/netflix';
@@ -608,7 +609,7 @@
 		</div>
 	{:else if summary}
 		<div class="done card">
-			<Icon name="check" size={30} />
+			<Mascot pose="happy" size={140} />
 			<h2>Import finished</h2>
 			<dl>
 				<div>

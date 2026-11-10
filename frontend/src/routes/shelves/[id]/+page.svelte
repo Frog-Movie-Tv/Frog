@@ -13,6 +13,7 @@
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { failure, type Failure } from '#lib/failure';
 	import { year, plural } from '#lib/format';
+	import { titleMenu } from '#lib/menus';
 	import { session } from '#lib/session.svelte';
 	import { moved, sortable } from '#lib/sortable';
 	import { toasts } from '#lib/toast.svelte';
@@ -53,6 +54,10 @@
 			shelf = r.shelf;
 			items = r.items;
 			error = null;
+			// A shelf's card can send you here to rename it, or to add to it.
+			const asked = page.url.searchParams;
+			if (asked.get('rename') === '1' && !renaming) startRename();
+			if (asked.get('add') === '1' && !adding && shelf.kind !== 'smart') void openAdding();
 		} catch (e) {
 			error = failure(e, {
 				title: 'No shelf here',
@@ -241,7 +246,7 @@
 		<Spinner label="Loading shelf" />
 	{:else if error || !shelf}
 		<Empty
-			art={error && !error.missing ? 'rest' : 'search'}
+			art={error && !error.missing ? 'failed' : 'lost'}
 			title={error?.title ?? 'No shelf here'}
 			hint={error?.hint}
 		>
@@ -482,6 +487,10 @@
 					{#each items as item (item.id)}
 						<Poster
 							morph
+							menu={titleMenu(
+								{ ...item, status: item.entry?.status ?? null, favourite: item.entry?.favourite },
+								{ shelf: { ...shelf, remove: () => remove(item) }, onchanged: load }
+							)}
 							kind={item.kind}
 							ref={item}
 							name={item.name}

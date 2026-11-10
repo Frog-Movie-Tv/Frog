@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { fly } from 'svelte/transition';
 	import Icon from './Icon.svelte';
+	import Mascot from './Mascot.svelte';
 	import { toasts, type Toast } from '#lib/toast.svelte';
 
 	async function act(toast: Toast) {
@@ -11,7 +12,13 @@
 
 <div class="stack" role="region" aria-label="Notifications">
 	{#each toasts.items as toast (toast.id)}
-		<div class="toast" data-tone={toast.tone} transition:fly={{ y: 14, duration: 180 }}>
+		<div
+			class="toast"
+			class:cheer={toast.cheer}
+			data-tone={toast.tone}
+			transition:fly={{ y: 14, duration: 180 }}
+		>
+			{#if toast.cheer}<span class="pip"><Mascot pose="happy" size={52} /></span>{/if}
 			<span class="message">{toast.message}</span>
 
 			{#if toast.action}
@@ -60,6 +67,17 @@
 	.toast[data-tone='error'] {
 		border-color: color-mix(in srgb, var(--bad) 55%, transparent);
 		background: color-mix(in srgb, var(--bad) 16%, var(--bg-float));
+	}
+
+	/* Pip jumps out over the toast's top edge. */
+	.toast.cheer {
+		padding-left: 8px;
+	}
+
+	.pip {
+		flex: none;
+		display: block;
+		margin: -22px 0 -6px;
 	}
 
 	.message {

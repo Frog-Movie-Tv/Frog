@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Icon from '#lib/components/Icon.svelte';
-	import Logo from '#lib/components/Logo.svelte';
+	import Mascot, { type Pose } from '#lib/components/Mascot.svelte';
 	import { offline } from '#lib/offline.svelte';
 	import { session } from '#lib/session.svelte';
 
@@ -54,6 +54,15 @@
 			href: 'https://github.com/101arrowz/fflate'
 		}
 	];
+
+	/** Pip jumps when tapped, and settles again after one jump. */
+	let pose = $state<Pose>('idle');
+	let settle: ReturnType<typeof setTimeout> | undefined;
+	function jump() {
+		pose = 'happy';
+		clearTimeout(settle);
+		settle = setTimeout(() => (pose = 'idle'), 1800);
+	}
 </script>
 
 <svelte:head>
@@ -62,7 +71,9 @@
 
 <div class="page about">
 	<header class="head">
-		<Logo size={56} />
+		<button class="pip" aria-label="Pip, Frog's mascot" onclick={jump}>
+			<Mascot {pose} size={150} />
+		</button>
 		<div>
 			<h1>Frog</h1>
 			<p class="muted">Version {session.status?.version ?? '—'} · Wood Frog</p>
@@ -213,6 +224,20 @@
 		text-align: center;
 		gap: 12px;
 		margin-bottom: 20px;
+	}
+
+	.pip {
+		padding: 0;
+		border: 0;
+		background: none;
+		cursor: pointer;
+		border-radius: var(--radius);
+		filter: drop-shadow(0 14px 24px rgba(0, 0, 0, 0.3));
+	}
+
+	.pip:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 4px;
 	}
 
 	.head p {

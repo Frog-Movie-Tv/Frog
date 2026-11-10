@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { settings } from '#lib/settings.svelte';
+	import Mascot from './Mascot.svelte';
 
 	/**
 	 * Pull down from the top of any page to reload it, on touch screens.
@@ -8,7 +8,7 @@
 	 * An installed app has no browser pull-to-refresh at all, and in a browser
 	 * tab Chrome's own one fights the page's scrolling. So on touch screens the
 	 * native one is switched off (overscroll-behavior) and this takes its place:
-	 * the same gesture everywhere, with the mascot as the indicator.
+	 * the same gesture everywhere, with Pip as the indicator.
 	 */
 
 	/** How far, in pixels of finger travel, before letting go reloads. */
@@ -17,6 +17,15 @@
 	let pull = $state(0);
 	let reloading = $state(false);
 	let startY: number | null = null;
+	let startX = 0;
+	/**
+	 * Which way the finger went first. A swipe along a row of tabs or cards
+	 * drifts a little downward too, and used to start a reload; now the first
+	 * few pixels say which it is, and a sideways one is left alone.
+	 */
+	let axis: 'x' | 'y' | null = null;
+	/** How far before the direction is decided. */
+	const SLOP = 8;
 
 	/** A gesture that starts inside something scrolled, or a menu, is not ours. */
 	function startsInScroller(target: EventTarget | null): boolean {
@@ -42,10 +51,22 @@
 				return;
 			}
 			startY = e.touches[0].clientY;
+			startX = e.touches[0].clientX;
+			axis = null;
 		};
 		const move = (e: TouchEvent) => {
 			if (startY === null) return;
 			const dy = e.touches[0].clientY - startY;
+			const dx = e.touches[0].clientX - startX;
+			if (axis === null) {
+				if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return;
+				axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+			}
+			if (axis === 'x') {
+				startY = null;
+				pull = 0;
+				return;
+			}
 			if (dy <= 0 || window.scrollY > 0) {
 				pull = 0;
 				return;
@@ -91,13 +112,9 @@
 		role="status"
 		aria-live="polite"
 	>
-		<img
-			src="/mascots/{settings.current.mascot}.svg"
-			alt=""
-			width="30"
-			height="30"
-			style:transform="rotate({progress * 360}deg)"
-		/>
+		<span class="pip" style:scale={reloading ? 1 : 0.75 + progress * 0.25}>
+			<Mascot pose={reloading ? 'hop' : 'idle'} size={40} />
+		</span>
 		<span class="sr"
 			>{reloading ? 'Refreshing' : ready ? 'Release to refresh' : 'Pull to refresh'}</span
 		>
@@ -126,8 +143,11 @@
 		pointer-events: none;
 	}
 
-	.ptr img {
+	/* Pip grows into the circle as the pull nears the point of letting go. */
+	.pip {
 		grid-area: 1 / 1;
+		display: block;
+		margin-top: -4px;
 	}
 
 	.ring {
@@ -148,16 +168,6 @@
 
 	.ready .ring circle {
 		opacity: 1;
-	}
-
-	.reloading img {
-		animation: spin 0.8s linear infinite;
-	}
-
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
 	}
 
 	.sr {

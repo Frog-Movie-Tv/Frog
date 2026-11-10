@@ -9,6 +9,7 @@
 	import ShelfCard from '#lib/components/ShelfCard.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { failure, type Failure } from '#lib/failure';
+	import { shelfMenu } from '#lib/menus';
 	import { session } from '#lib/session.svelte';
 	import { moved, sortable } from '#lib/sortable';
 	import { toasts } from '#lib/toast.svelte';
@@ -94,7 +95,7 @@
 		>
 			{#each shelves as shelf (shelf.id)}
 				<li data-sort-item>
-					<ShelfCard {shelf} link={!arranging}>
+					<ShelfCard {shelf} link={!arranging} menu={shelfMenu(shelf, load)}>
 						{#if arranging}
 							<button class="handle hit" data-sort-handle aria-label="Move {shelf.name}">
 								<Icon name="grip" size={18} />

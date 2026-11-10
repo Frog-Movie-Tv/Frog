@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Mascot from './Mascot.svelte';
+
 	interface Props {
 		label?: string;
 	}
@@ -6,7 +8,7 @@
 </script>
 
 <div class="wrap" role="status" aria-live="polite">
-	<div class="ring"></div>
+	<Mascot pose="hop" size={64} />
 	<span class="faint">{label}</span>
 </div>
 
@@ -15,23 +17,8 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 12px;
+		gap: 6px;
 		padding: 56px 0;
 		font-size: 0.85rem;
-	}
-
-	.ring {
-		width: 26px;
-		height: 26px;
-		border-radius: 50%;
-		border: 2px solid var(--line-strong);
-		border-top-color: var(--accent);
-		animation: spin 700ms linear infinite;
-	}
-
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
 	}
 </style>

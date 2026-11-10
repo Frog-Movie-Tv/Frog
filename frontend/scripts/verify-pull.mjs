@@ -3,6 +3,7 @@
  *
  *   1. on a touch screen, pulling down from the top past the threshold reloads,
  *   2. a short pull does not, and the indicator goes away,
+ *   2b. a swipe that is mostly sideways is left to the row it is on,
  *   3. a pull that starts inside the More sheet leaves the page alone,
  *   4. a desktop keeps the browser's own scrolling (no overscroll override).
  *
@@ -121,6 +122,23 @@ await release();
 await page.waitForTimeout(600);
 check('a short pull does not reload', await marked());
 check('and the indicator goes away', (await page.locator('.ptr').count()) === 0);
+
+// A swipe along a row of tabs drifts downward a little; that is scrolling
+// sideways, not a pull.
+await cdp.send('Input.dispatchTouchEvent', {
+	type: 'touchStart',
+	touchPoints: [{ x: 300, y: 150, id: 1 }]
+});
+for (let i = 1; i <= 12; i++) {
+	await cdp.send('Input.dispatchTouchEvent', {
+		type: 'touchMove',
+		touchPoints: [{ x: 300 - (220 * i) / 12, y: 150 + (60 * i) / 12, id: 1 }]
+	});
+}
+check('a sideways swipe does not start a pull', (await page.locator('.ptr').count()) === 0);
+await release();
+await page.waitForTimeout(600);
+check('and does not reload', await marked());
 
 await drag(150, 340);
 check('a long pull says release', (await page.locator('.ptr.ready').count()) === 1);

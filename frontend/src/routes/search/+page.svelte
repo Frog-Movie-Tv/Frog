@@ -6,6 +6,7 @@
 	import { address } from '#lib/address';
 	import Icon from '#lib/components/Icon.svelte';
 	import { api, frogId, img, SEARCH_PAUSE, MORE_PAUSE, isAbort } from '#lib/api';
+	import { titleMenu } from '#lib/menus';
 	import { completeShow } from '#lib/complete';
 	import Empty from '#lib/components/Empty.svelte';
 	import FilterMenu from '#lib/components/FilterMenu.svelte';
@@ -356,6 +357,29 @@
 		}
 	}
 
+	/** After the menu changed a result: where that title stands now, in every list. */
+	async function refresh(item: SearchItem) {
+		try {
+			const { item: now } = item.id
+				? await api.title(item.id)
+				: item.tmdb_id
+					? await api.titleAt(item.kind, item.tmdb_id)
+					: await api.titleAt('anilist', item.anilist_id ?? 0);
+			const mark = (list: SearchItem[]) =>
+				list.map((r) =>
+					sameTitle(r, item) ? { ...r, id: now.id, in_library: now.entry?.status ?? null } : r
+				);
+			results = mark(results);
+			trending = mark(trending);
+			more = { ...more, manga: mark(more.manga) };
+		} catch {
+			// The result keeps its old word for it; the title's page has the truth.
+		}
+	}
+
+	const menuOf = (item: SearchItem) =>
+		titleMenu({ ...item, status: item.in_library }, { onchanged: () => refresh(item) });
+
 	const q = $derived(term.trim());
 	// Two providers' answers can turn out to be one title of Frog's.
 	const films = $derived(uniqueBy(results, titleKey).filter((r) => r.kind === 'movie'));
@@ -452,6 +476,7 @@
 	<div class="result">
 		<Poster
 			kindBadge
+			menu={menuOf(item)}
 			kind={item.kind}
 			ref={item}
 			name={item.name}

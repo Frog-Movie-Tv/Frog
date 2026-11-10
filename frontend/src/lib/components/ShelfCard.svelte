@@ -2,6 +2,7 @@
 	import { img } from '#lib/api';
 	import { plural } from '#lib/format';
 	import Icon from './Icon.svelte';
+	import { contextMenu, type MenuSource } from '#lib/menu.svelte';
 	import type { Shelf } from '#lib/types';
 	import type { Snippet } from 'svelte';
 
@@ -9,10 +10,12 @@
 		shelf: Pick<Shelf, 'id' | 'name' | 'count' | 'posters'> & { kind?: Shelf['kind'] };
 		/** False while the shelves are being arranged: the card is not a link. */
 		link?: boolean;
+		/** What a right-click, or a hold, offers. */
+		menu?: MenuSource;
 		children?: Snippet;
 	}
 
-	let { shelf, link = true, children }: Props = $props();
+	let { shelf, link = true, menu, children }: Props = $props();
 
 	/** Three posters fanned out, the first in front. */
 	const fan = $derived(shelf.posters.slice(0, 3));
@@ -22,6 +25,7 @@
 	this={link ? 'a' : 'div'}
 	class="shelf"
 	href={link ? `/shelves/${shelf.id}` : undefined}
+	use:contextMenu={link ? menu : undefined}
 >
 	<span class="cover" aria-hidden="true">
 		{#if fan.length}

@@ -11,7 +11,25 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Wood Frog —
 
-In progress.
+Right-click a title, and meet Pip.
+
+### Highlights
+
+- **Right-click a title.** On a computer, right-click any card; on a phone,
+  hold it. Move it to another status, favourite it, put it on a shelf, mark
+  the next episode watched, take it off a shelf or out of your library, or
+  copy its link, without opening it. A shelf's card offers to rename, add to
+  or delete the shelf the same way. Everything can be undone from the toast.
+- **Meet Pip.** Frog has a mascot: a whole frog on a lily pad, who breathes,
+  blinks and looks around, and wears whichever mascot you chose in Settings.
+  Pip waves when you sign in, naps on an empty page, searches with you,
+  hops while things load, jumps when you finish a show, and looks for the
+  page that is not there. Say hello on About.
+
+### Fixes
+
+- Swiping sideways along a row of tabs or cards on a phone no longer starts
+  a pull to refresh.
 
 ## [1.4.1] — Wood Frog — 2026-11-09
 

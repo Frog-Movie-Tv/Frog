@@ -10,6 +10,8 @@ export interface Toast {
 	message: string;
 	tone: 'info' | 'error';
 	action?: ToastAction;
+	/** A moment worth marking: Pip jumps beside the message. */
+	cheer?: boolean;
 }
 
 let nextId = 1;
@@ -32,6 +34,11 @@ class Toasts {
 		this.add({ message, tone: 'info', action: { label: 'Undo', run: undo } });
 	}
 
+	/** Something finished: a show's last episode, a manga's last chapter. */
+	cheer(message: string) {
+		this.add({ message, tone: 'info', cheer: true });
+	}
+
 	error(e: unknown) {
 		// A 401 is not news: the layout is already sending you to the sign-in
 		// screen, and a toast on top of that just looks like a bug.
@@ -47,7 +54,7 @@ class Toasts {
 		const id = nextId++;
 		this.items = [...this.items, { ...toast, id }];
 		// An offer to undo needs long enough to notice and reach.
-		const life = toast.tone === 'error' ? 6000 : toast.action ? 7000 : 3000;
+		const life = toast.tone === 'error' ? 6000 : toast.action ? 7000 : toast.cheer ? 4500 : 3000;
 		setTimeout(() => this.dismiss(id), life);
 	}
 }

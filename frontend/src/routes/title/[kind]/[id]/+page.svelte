@@ -60,7 +60,7 @@
 
 <div class="page">
 	{#if error}
-		<Empty art={error.missing ? 'search' : 'rest'} title={error.title} hint={error.hint}>
+		<Empty art={error.missing ? 'lost' : 'failed'} title={error.title} hint={error.hint}>
 			{#if !error.missing}
 				<button class="btn primary" onclick={() => open(kind, raw)}>Try again</button>
 			{/if}
