@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 /// Tables that gained a `user_id` in migration 0008, and personal tables
 /// added since.
-const PERSONAL: [&str; 17] = [
+const PERSONAL: [&str; 18] = [
     "password_reset",
     "season_rating",
     "title_merge",
@@ -32,6 +32,7 @@ const PERSONAL: [&str; 17] = [
     "shelf_item",
     "push_subscription",
     "push_sent",
+    "push_sent_title",
     "recovery_code",
     "chapter_read",
 ];
@@ -49,7 +50,11 @@ const SCOPED_FRAGMENTS: [&str; 7] = [
 ];
 
 /// Statements that are global on purpose, each with its reason.
-const ALLOWED: [(&str, &str); 8] = [
+const ALLOWED: [(&str, &str); 9] = [
+    (
+        "LEFT JOIN title_airing a ON a.title_id = t.id WHERE t.kind IN",
+        "decides which shared titles anyone tracks need TheTVDB's air times;          writes only episode days and title_airing",
+    ),
     (
         "DELETE FROM password_reset WHERE expires_at",
         "housekeeping: links past their expiry go at once, whoever they were for",

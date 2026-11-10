@@ -442,6 +442,17 @@ type MangaTopRow = (i64, String, Option<String>, i64, Option<f64>);
 /// (manga, chapters, completed, days reading, mean rating, rated)
 type MangaTotalsRow = (i64, i64, i64, i64, Option<f64>, i64);
 
+/// (title id, name, poster, genres json, status, rating, chapters read so far)
+type MangaFactRow = (
+    i64,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    Option<f64>,
+    i64,
+);
+
 /// The manga half of Stats: the manga in the library and the chapters read
 /// (`chapter_read`), all time or in one year. All time counts every chapter
 /// read, dated or not (`library_entry.progress`); a year counts the chapters
@@ -595,9 +606,50 @@ pub async fn manga(
     .fetch_all(pool)
     .await?;
 
+    // One row per manga with its reads by month or year, so the page can
+    // narrow every chart to the bar someone picks (`lib/stats-filter.ts`).
+    let fact_rows: Vec<MangaFactRow> = sqlx::query_as(&format!(
+        "SELECT t.id, t.name, t.poster_path, t.genres_json, l.status, l.rating,
+                COALESCE(l.progress, 0)
+           FROM library_entry l JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = ?1 AND l.title_id IN ({titles})"
+    ))
+    .bind(me)
+    .bind(&year)
+    .fetch_all(pool)
+    .await?;
+    let reads: Vec<(i64, String, i64)> = sqlx::query_as(&format!(
+        "SELECT r.title_id, substr(r.read_at, 1, {unit_len}) AS unit, COUNT(*) FROM chapter_read r
+          WHERE r.user_id = ?1 AND (?2 = '' OR substr(r.read_at, 1, 4) = ?2)
+            AND r.title_id IN ({titles})
+          GROUP BY r.title_id, unit"
+    ))
+    .bind(me)
+    .bind(&year)
+    .fetch_all(pool)
+    .await?;
+    let facts: Vec<Value> = fact_rows
+        .into_iter()
+        .map(
+            |(id, name, poster_path, genres, status, rating, progress)| {
+                let units: Vec<Value> = reads
+                    .iter()
+                    .filter(|r| r.0 == id)
+                    .map(|(_, unit, n)| json!([unit, n]))
+                    .collect();
+                json!({
+                    "id": id, "name": name, "poster_path": poster_path,
+                    "genres": crate::catalog::parse_genres(genres.as_deref().unwrap_or("[]")),
+                    "status": status, "rating": rating, "progress": progress, "units": units,
+                })
+            },
+        )
+        .collect();
+
     Ok(Json(json!({
         "year": q.year,
         "years": years,
+        "facts": facts,
         "totals": {
             "manga": manga,
             "chapters": chapters,

@@ -2,8 +2,9 @@
 //!
 //! Deliberately small: expire sessions and sign-in failures, drop stale TMDB cache
 //! rows, and re-pull episodes for shows that are still airing so new episodes
-//! appear without anyone opening the page. Phases 2 and 4 hang the calendar,
-//! notification and scrobble-pull jobs off the same loop.
+//! appear without anyone opening the page. Shorter loops beside it fill
+//! credits, logos and TheTVDB's air times, sync AniList, report server
+//! failures, and send notifications the minute something comes out.
 
 use chrono::Utc;
 use std::time::Duration;
@@ -25,6 +26,12 @@ const OPS_TICK: Duration = Duration::from_secs(60 * 5);
 /// Logos from fanart.tv for tracked titles that have none, a batch at a time.
 const LOGO_TICK: Duration = Duration::from_secs(60 * 10);
 
+/// Release days and times from TheTVDB, a batch at a time.
+const AIRING_TICK: Duration = Duration::from_secs(60 * 5);
+
+/// Notifications go out at the minute something airs.
+const ANNOUNCE_TICK: Duration = Duration::from_secs(60);
+
 pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         // Give the HTTP server a moment before the first sweep.
@@ -37,6 +44,10 @@ pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
         let _ops_guard = AbortOnDrop(ops);
         let logos = tokio::spawn(fill_logos(state.clone()));
         let _logos_guard = AbortOnDrop(logos);
+        let airing = tokio::spawn(fill_airing(state.clone()));
+        let _airing_guard = AbortOnDrop(airing);
+        let announce = tokio::spawn(announce(state.clone()));
+        let _announce_guard = AbortOnDrop(announce);
         let twins = tokio::spawn({
             let state = state.clone();
             async move {
@@ -94,9 +105,6 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
     crate::ratings::refresh_due(state).await;
     fill_missing_episodes(state).await;
     refresh_airing_shows(state).await;
-    if let Err(e) = announce_new_episodes(state, chrono::Local::now().naive_local()).await {
-        tracing::warn!(error = %e, "new-episode notifications failed");
-    }
     Ok(())
 }
 
@@ -107,175 +115,20 @@ async fn fill_logos(state: AppState) {
     }
 }
 
-/// One notification: every new episode of one show on one day.
-#[derive(Debug, PartialEq)]
-pub struct Announcement {
-    pub episode_ids: Vec<i64>,
-    /// Frog's id for the show.
-    pub title_id: i64,
-    pub show: String,
-    pub poster_path: Option<String>,
-    /// (season, episode, name)
-    pub episodes: Vec<(i64, i64, Option<String>)>,
-    pub aired_today: bool,
-}
-
-/// (episode id, title id, show, poster, season, episode, episode name, air date)
-type DueRow = (
-    i64,
-    i64,
-    String,
-    Option<String>,
-    i64,
-    i64,
-    Option<String>,
-    String,
-);
-
-/// New episodes of followed shows that air today, or aired yesterday while the
-/// server was off, not yet announced and not already watched.
-pub async fn due_announcements(
-    pool: &sqlx::SqlitePool,
-    user_id: i64,
-    today: chrono::NaiveDate,
-) -> anyhow::Result<Vec<Announcement>> {
-    let yesterday = today - chrono::Duration::days(1);
-    let rows: Vec<DueRow> = sqlx::query_as(&format!(
-        "SELECT e.id, t.id, t.name, t.poster_path, e.season_number, e.episode_number,
-                e.name, e.air_date
-           FROM episode e
-           JOIN title t ON t.id = e.title_id
-           JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?1
-          WHERE t.kind = 'tv'
-            AND {followed}
-            AND l.status != 'completed'
-            AND l.notify = 1
-            AND e.season_number > 0
-            AND e.air_date IN (?2, ?3)
-            AND NOT EXISTS (
-                  SELECT 1 FROM push_sent p
-                   WHERE p.user_id = ?1 AND p.episode_id = e.id)
-            AND NOT EXISTS (
-                  SELECT 1 FROM watch_event w
-                   WHERE w.user_id = ?1 AND w.episode_id = e.id)
-          ORDER BY t.name, e.season_number, e.episode_number",
-        followed = crate::release::FOLLOWED
-    ))
-    .bind(user_id)
-    .bind(today.to_string())
-    .bind(yesterday.to_string())
-    .fetch_all(pool)
-    .await?;
-
-    let mut out: Vec<Announcement> = Vec::new();
-    for (id, title_id, show, poster_path, season, episode, name, air_date) in rows {
-        let aired_today = air_date == today.to_string();
-        match out.last_mut() {
-            Some(a) if a.title_id == title_id => {
-                a.episode_ids.push(id);
-                a.episodes.push((season, episode, name));
-                a.aired_today |= aired_today;
-            }
-            _ => out.push(Announcement {
-                episode_ids: vec![id],
-                title_id,
-                show,
-                poster_path,
-                episodes: vec![(season, episode, name)],
-                aired_today,
-            }),
-        }
-    }
-    Ok(out)
-}
-
-impl Announcement {
-    pub fn payload(&self) -> serde_json::Value {
-        let code = |s: i64, e: i64| format!("S{s:02}E{e:02}");
-        let when = if self.aired_today {
-            "out today"
-        } else {
-            "out now"
-        };
-        let body = match self.episodes.as_slice() {
-            [(s, e, Some(name))] => format!("{} · {name} is {when}", code(*s, *e)),
-            [(s, e, None)] => format!("{} is {when}", code(*s, *e)),
-            [first, .., last] => format!(
-                "{} new episodes, {}–{}, are {when}",
-                self.episodes.len(),
-                code(first.0, first.1),
-                code(last.0, last.1)
-            ),
-            [] => String::new(),
-        };
-        serde_json::json!({
-            "title": self.show,
-            "body": body,
-            "url": format!("/t/{}", self.title_id),
-            // One notification per show: a later one replaces it, never stacks.
-            "tag": format!("frog-title-{}", self.title_id),
-            "image": self.poster_path.as_ref().map(|p| format!("/img/w342{p}")),
-        })
+async fn fill_airing(state: AppState) {
+    loop {
+        crate::airing::refresh_due(&state).await;
+        tokio::time::sleep(AIRING_TICK).await;
     }
 }
 
-/// The hour, in the server's local time, from which this account hears about
-/// new episodes: its own choice in Settings, else FROG_NOTIFY_HOUR.
-pub async fn notify_hour(pool: &sqlx::SqlitePool, user_id: i64, default: u32) -> u32 {
-    let raw: Option<(String,)> =
-        sqlx::query_as("SELECT value FROM app_setting WHERE user_id = ? AND key = 'preferences'")
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
-    raw.and_then(|(json,)| serde_json::from_str::<serde_json::Value>(&json).ok())
-        .and_then(|prefs| prefs.get("notifyHour").and_then(serde_json::Value::as_u64))
-        .filter(|hour| *hour < 24)
-        .map(|hour| hour as u32)
-        .unwrap_or(default)
-}
-
-async fn announce_new_episodes(state: &AppState, now: chrono::NaiveDateTime) -> anyhow::Result<()> {
-    use chrono::Timelike;
-    // Only accounts with a subscribed browser can be told anything, and each
-    // is told about its own shows from its own library.
-    let listeners: Vec<(i64,)> = sqlx::query_as("SELECT DISTINCT user_id FROM push_subscription")
-        .fetch_all(&state.pool)
-        .await?;
-
-    for (user_id,) in listeners {
-        // Evening by default: when most episodes are watchable.
-        if now.hour() < notify_hour(&state.pool, user_id, state.config.notify_hour).await {
-            continue;
+async fn announce(state: AppState) {
+    loop {
+        if let Err(e) = crate::announce::run(&state, Utc::now()).await {
+            tracing::warn!(error = %e, "notifications failed");
         }
-        for a in due_announcements(&state.pool, user_id, now.date()).await? {
-            let result = crate::push::broadcast(state, user_id, &a.payload()).await?;
-            // Nobody reached because the network is down: try again next tick.
-            if result.sent == 0 && result.failed > 0 {
-                continue;
-            }
-            let sent_at = Utc::now().to_rfc3339();
-            for id in &a.episode_ids {
-                sqlx::query(
-                    "INSERT OR IGNORE INTO push_sent (user_id, episode_id, sent_at)
-                     VALUES (?, ?, ?)",
-                )
-                .bind(user_id)
-                .bind(id)
-                .bind(&sent_at)
-                .execute(&state.pool)
-                .await?;
-            }
-            tracing::info!(
-                user_id,
-                show = %a.show,
-                episodes = a.episode_ids.len(),
-                "announced new episodes"
-            );
-        }
+        tokio::time::sleep(ANNOUNCE_TICK).await;
     }
-    Ok(())
 }
 
 /// Stops the backfill when the worker itself is aborted at shutdown.

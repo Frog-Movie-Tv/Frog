@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { afterNavigate } from '$app/navigation';
 	import { backCloses } from '#lib/layers.svelte';
 	import { menu, type MenuEntry, type MenuItem } from '#lib/menu.svelte';
@@ -9,8 +10,9 @@
 	 * The one context menu, drawn where `menu.open` says. On a computer it
 	 * opens at the pointer and is kept on screen; on a phone, or after a hold
 	 * on any touch screen, it is a sheet along the bottom. A choice that has
-	 * choices of its own opens as a second level in the same place, with a
-	 * way back, rather than a second menu beside the first.
+	 * choices of its own opens beside it on a computer, as soon as the pointer
+	 * rests on it; on a sheet it opens as a second level in the same place,
+	 * with a way back.
 	 */
 
 	/** One level: what it is called, and its entries, or null while they load. */
@@ -26,6 +28,20 @@
 	let scrolledFrom = 0;
 	let panel: HTMLDivElement | undefined = $state();
 
+	/** A choice's own choices, opened beside it: computers only. */
+	interface Flyout {
+		label: string;
+		entries: MenuEntry[] | null;
+		anchor: HTMLElement;
+	}
+	let flyout = $state<Flyout | null>(null);
+	let flyoutPanel: HTMLDivElement | undefined = $state();
+	let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+	/** Long enough that a pointer passing over a row on its way does not open it. */
+	const HOVER_OPEN_MS = 90;
+	/** A pointer cutting across a corner towards the flyout keeps it open. */
+	const HOVER_CLOSE_MS = 220;
+
 	const level = $derived(levels[levels.length - 1]);
 
 	backCloses(
@@ -35,6 +51,8 @@
 
 	$effect(() => {
 		const now = menu.open;
+		flyout = null;
+		clearTimeout(hoverTimer);
 		if (!now) {
 			levels = [];
 			busy = false;
@@ -61,6 +79,22 @@
 		panel.style.top = `${Math.round(y)}px`;
 	});
 
+	// Beside the menu, level with its row; on the left when the right is full.
+	$effect(() => {
+		if (!flyout || !flyoutPanel || !panel) return;
+		void flyout.entries;
+		const pad = 8;
+		const m = panel.getBoundingClientRect();
+		const a = flyout.anchor.getBoundingClientRect();
+		const r = flyoutPanel.getBoundingClientRect();
+		let x = m.right - 4;
+		if (x + r.width > innerWidth - pad) x = Math.max(pad, m.left - r.width + 4);
+		let y = a.top - 6;
+		if (y + r.height > innerHeight - pad) y = Math.max(pad, innerHeight - pad - r.height);
+		flyoutPanel.style.left = `${Math.round(x)}px`;
+		flyoutPanel.style.top = `${Math.round(y)}px`;
+	});
+
 	// The keyboard works from the first moment, without taking the focus ring
 	// to an item nobody chose.
 	$effect(() => {
@@ -69,9 +103,59 @@
 
 	afterNavigate(() => menu.close());
 
-	async function pick(item: MenuItem) {
+	async function openFlyout(item: MenuItem, anchor: HTMLElement, focusFirst = false) {
+		clearTimeout(hoverTimer);
+		if (flyout?.anchor === anchor) {
+			if (focusFirst) focusIn(flyoutPanel);
+			return;
+		}
+		flyout = { label: item.label, entries: null, anchor };
+		let entries: MenuEntry[] = [];
+		try {
+			entries = (await item.children?.()) ?? [];
+		} catch {
+			// Nothing to list: the flyout says so.
+		}
+		// Still the flyout that asked, not one closed or moved on since.
+		if (flyout?.anchor !== anchor) return;
+		flyout.entries = entries;
+		if (focusFirst) {
+			await tick();
+			focusIn(flyoutPanel);
+		}
+	}
+
+	function focusIn(node: HTMLElement | undefined) {
+		node?.querySelector<HTMLElement>('[role^="menuitem"]:enabled')?.focus();
+	}
+
+	function closeFlyout() {
+		clearTimeout(hoverTimer);
+		const anchor = flyout?.anchor;
+		flyout = null;
+		return anchor;
+	}
+
+	/** The pointer resting on a row: open what it holds, or close what another row opened. */
+	function hover(e: PointerEvent, entry: MenuItem) {
+		if (sheet || e.pointerType === 'touch') return;
+		const anchor = e.currentTarget as HTMLElement;
+		clearTimeout(hoverTimer);
+		if (entry.children && !entry.disabled) {
+			if (flyout?.anchor === anchor) return;
+			hoverTimer = setTimeout(() => void openFlyout(entry, anchor), HOVER_OPEN_MS);
+		} else if (flyout) {
+			hoverTimer = setTimeout(closeFlyout, HOVER_CLOSE_MS);
+		}
+	}
+
+	async function pick(item: MenuItem, from?: HTMLElement) {
 		if (busy || item.disabled) return;
+		// On a computer a row with choices opens them beside it; a second
+		// click on it leaves them open.
+		if (item.children && !sheet && from) return openFlyout(item, from);
 		if (item.children) {
+			flyout = null;
 			const depth = levels.length;
 			levels = [...levels, { title: item.label, entries: null }];
 			let entries: MenuEntry[] = [];
@@ -98,17 +182,22 @@
 		if (levels.length > 1) levels = levels.slice(0, -1);
 	}
 
-	function items(): HTMLElement[] {
-		return Array.from(panel?.querySelectorAll<HTMLElement>('[role^="menuitem"]:enabled') ?? []);
+	/** The rows of one panel, not those of the flyout drawn inside it. */
+	function items(of: HTMLElement | undefined): HTMLElement[] {
+		return Array.from(
+			of?.querySelectorAll<HTMLElement>(':scope > [role^="menuitem"]:enabled') ?? []
+		);
 	}
 
 	function onkeydown(e: KeyboardEvent) {
-		const list = items();
+		const inFlyout = !!flyoutPanel?.contains(document.activeElement);
+		const list = items(inFlyout ? flyoutPanel : panel);
 		const at = list.indexOf(document.activeElement as HTMLElement);
 		const go = (i: number) => list[(i + list.length) % list.length]?.focus();
 		switch (e.key) {
 			case 'Escape':
-				menu.close();
+				if (flyout) closeFlyout()?.focus();
+				else menu.close();
 				break;
 			case 'ArrowDown':
 				go(at + 1);
@@ -123,13 +212,17 @@
 				go(list.length - 1);
 				break;
 			case 'ArrowLeft':
-				back();
+				if (inFlyout) closeFlyout()?.focus();
+				else back();
 				break;
 			case 'ArrowRight': {
+				if (inFlyout) break;
 				const entry = level?.entries?.find(
 					(x) => x !== 'rule' && x.label === list[at]?.dataset.label
 				);
-				if (entry && entry !== 'rule' && entry.children) void pick(entry);
+				if (!entry || entry === 'rule' || !entry.children) break;
+				if (sheet) void pick(entry);
+				else void openFlyout(entry, list[at], true);
 				break;
 			}
 			default:
@@ -190,30 +283,63 @@
 				{#if entry === 'rule'}
 					<hr />
 				{:else}
-					<button
-						class="item"
-						class:danger={entry.danger}
-						role={entry.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
-						aria-checked={entry.checked}
-						disabled={entry.disabled || busy}
-						data-label={entry.label}
-						onclick={() => pick(entry)}
-					>
-						<span class="ic">
-							{#if entry.checked}<Icon name="check" size={16} />{:else if entry.icon}<Icon
-									name={entry.icon}
-									size={16}
-								/>{/if}
-						</span>
-						<span class="label">{entry.label}</span>
-						{#if entry.children}<span class="more"><Icon name="chevron-right" size={15} /></span
-							>{/if}
-					</button>
+					{@render row(entry, true)}
 				{/if}
 			{/each}
 		{/if}
+
+		{#if flyout && !sheet}
+			<div
+				class="menu flyout"
+				role="menu"
+				aria-label={flyout.label}
+				tabindex="-1"
+				bind:this={flyoutPanel}
+				onpointerenter={() => clearTimeout(hoverTimer)}
+			>
+				{#if flyout.entries === null}
+					<div class="loading faint">Loading</div>
+				{:else if flyout.entries.length === 0}
+					<div class="loading faint">Nothing here</div>
+				{:else}
+					{#each flyout.entries as entry, i (i)}
+						{#if entry === 'rule'}
+							<hr />
+						{:else}
+							{@render row(entry, false)}
+						{/if}
+					{/each}
+				{/if}
+			</div>
+		{/if}
 	</div>
 {/if}
+
+{#snippet row(entry: MenuItem, top: boolean)}
+	{@const opens = top && !!entry.children && !sheet}
+	<button
+		class="item"
+		class:danger={entry.danger}
+		class:open={opens && flyout?.label === entry.label}
+		role={entry.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+		aria-checked={entry.checked}
+		aria-haspopup={opens ? 'menu' : undefined}
+		aria-expanded={opens ? flyout?.label === entry.label : undefined}
+		disabled={entry.disabled || busy}
+		data-label={entry.label}
+		onpointerenter={top ? (e) => hover(e, entry) : undefined}
+		onclick={(e) => pick(entry, top ? e.currentTarget : undefined)}
+	>
+		<span class="ic">
+			{#if entry.checked}<Icon name="check" size={16} />{:else if entry.icon}<Icon
+					name={entry.icon}
+					size={16}
+				/>{/if}
+		</span>
+		<span class="label">{entry.label}</span>
+		{#if entry.children}<span class="more"><Icon name="chevron-right" size={15} /></span>{/if}
+	</button>
+{/snippet}
 
 <style>
 	.catch {
@@ -253,6 +379,11 @@
 		animation: pop 160ms var(--spring) backwards;
 	}
 
+	.flyout {
+		z-index: 82;
+		min-width: 200px;
+	}
+
 	.title {
 		padding: 8px 12px 6px;
 		font-size: 0.78rem;
@@ -280,6 +411,7 @@
 	}
 
 	.item:hover:not(:disabled),
+	.item.open,
 	.item:focus-visible {
 		background: var(--bg-hover);
 		outline: none;

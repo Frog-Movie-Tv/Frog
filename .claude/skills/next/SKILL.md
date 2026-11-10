@@ -41,9 +41,10 @@ both desktop and phone width before calling it done.
 
 ## 4. Record it
 
-- In `ROADMAP.md`: remove the item from **Next**, add a line under an
-  **Unreleased** heading in **Shipped** (create it if missing), and add any
-  follow-ups you discovered to **Next** or **Known issues**.
+- In `ROADMAP.md`: remove the item from **To build**, and add any follow-ups
+  you discovered to **To build**, **To check by hand** or **Known issues**,
+  worded as work still to do. How the new piece works goes in CLAUDE.md under
+  **How things work**, not in the roadmap.
 - Add a line under the `## Upcoming — … —` heading at the top of
   `RELEASE-NOTES.md`, in product voice.
 

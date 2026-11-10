@@ -13,6 +13,7 @@
 	import Toasts from '#lib/components/Toasts.svelte';
 	import UpdateBanner from '#lib/components/UpdateBanner.svelte';
 	import WhenWatched from '#lib/components/WhenWatched.svelte';
+	import { showCutOffText } from '#lib/cutoff';
 	import { offline } from '#lib/offline.svelte';
 	import { paletteKey } from '#lib/platform';
 	import { session } from '#lib/session.svelte';
@@ -34,6 +35,8 @@
 	$effect(() => {
 		settings.apply();
 	});
+
+	$effect(() => showCutOffText());
 
 	$effect(() => {
 		if (session.authenticated) void offline.register();

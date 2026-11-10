@@ -23,6 +23,8 @@ pub struct AiringEpisode {
     pub episode_number: i64,
     pub name: Option<String>,
     pub air_date: Option<String>,
+    /// The moment, when TheTVDB knows the time.
+    pub air_at: Option<String>,
 }
 
 /// One show, with every episode of it due inside the window.
@@ -33,8 +35,15 @@ pub struct Airing {
     pub air_date: Option<String>,
 }
 
-/// (title_id, season, episode, name, air_date)
-type AiringRow = (i64, i64, i64, Option<String>, Option<String>);
+/// (title_id, season, episode, name, air_date, air_at)
+type AiringRow = (
+    i64,
+    i64,
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
 
 /// Everything the home screen draws, in one request.
 pub async fn home(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
@@ -165,7 +174,7 @@ async fn airing_this_week(
     facts: &store::ItemFacts,
 ) -> AppResult<Vec<Airing>> {
     let found: Vec<AiringRow> = sqlx::query_as(&format!(
-        "SELECT e.title_id, e.season_number, e.episode_number, e.name, e.air_date
+        "SELECT e.title_id, e.season_number, e.episode_number, e.name, e.air_date, e.air_at
            FROM episode e
            JOIN library_entry l ON l.title_id = e.title_id AND l.user_id = ?
           WHERE {FOLLOWED}
@@ -181,12 +190,13 @@ async fn airing_this_week(
     .await?;
 
     let mut grouped: Vec<(i64, Vec<AiringEpisode>)> = Vec::new();
-    for (title_id, season_number, episode_number, name, air_date) in found {
+    for (title_id, season_number, episode_number, name, air_date, air_at) in found {
         let episode = AiringEpisode {
             season_number,
             episode_number,
             name,
             air_date,
+            air_at,
         };
         match grouped.iter_mut().find(|(id, _)| *id == title_id) {
             Some((_, list)) => list.push(episode),

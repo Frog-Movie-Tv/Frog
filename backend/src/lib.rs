@@ -1,5 +1,7 @@
 pub mod activity;
+pub mod airing;
 pub mod anilist;
+pub mod announce;
 pub mod auth;
 pub mod bulk;
 pub mod catalog;
@@ -25,5 +27,6 @@ pub mod throttle;
 pub mod tmdb;
 pub mod totp;
 pub mod transfer;
+pub mod tvdb;
 
 pub use state::AppState;

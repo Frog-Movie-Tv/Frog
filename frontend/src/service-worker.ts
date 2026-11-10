@@ -104,8 +104,30 @@ interface PushMessage {
 }
 
 /**
- * A new episode, sent by the server's worker. The message arrives encrypted
- * and complete, so it shows even when Frog itself cannot be reached.
+ * A picture for a notification, as a data URL. Fetched here, signed in, so
+ * it shows whatever a phone's notification loader does with cookies; the
+ * address itself is the fallback.
+ */
+async function inlined(url: string): Promise<string> {
+	try {
+		const res = await fetch(url, { credentials: 'same-origin' });
+		if (!res.ok) return url;
+		const bytes = new Uint8Array(await res.arrayBuffer());
+		let binary = '';
+		for (let i = 0; i < bytes.length; i += 0x8000) {
+			binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+		}
+		return `data:${res.headers.get('content-type') ?? 'image/jpeg'};base64,${btoa(binary)}`;
+	} catch {
+		return url;
+	}
+}
+
+/**
+ * Something followed has come out, sent by the server's worker the minute it
+ * airs. The message arrives encrypted and complete, so it shows even when
+ * Frog itself cannot be reached; the title's wide picture rides along, with
+ * Frog's own icon and badge.
  */
 sw.addEventListener('push', (event) => {
 	let message: PushMessage;
@@ -114,15 +136,25 @@ sw.addEventListener('push', (event) => {
 	} catch {
 		message = { body: event.data?.text() };
 	}
-	const options: NotificationOptions & { image?: string } = {
-		body: message.body ?? 'New episodes are out',
-		tag: message.tag,
-		icon: '/icon-192.png',
-		badge: '/badge-96.png',
-		data: { url: message.url ?? '/' }
+	const show = async () => {
+		const options: NotificationOptions & {
+			image?: string;
+			renotify?: boolean;
+			timestamp?: number;
+		} = {
+			body: message.body ?? 'Something you follow is out',
+			tag: message.tag,
+			// A second episode on the same tag still rings, rather than replacing silently.
+			renotify: !!message.tag,
+			icon: '/icon-192.png',
+			badge: '/badge-96.png',
+			timestamp: Date.now(),
+			data: { url: message.url ?? '/' }
+		};
+		if (message.image) options.image = await inlined(message.image);
+		await sw.registration.showNotification(message.title ?? 'Frog', options);
 	};
-	if (message.image) options.image = message.image;
-	event.waitUntil(sw.registration.showNotification(message.title ?? 'Frog', options));
+	event.waitUntil(show());
 });
 
 sw.addEventListener('notificationclick', (event) => {

@@ -201,3 +201,160 @@ export function toggle<K extends Dimension>(
 	else next[key] = value;
 	return next;
 }
+
+/* --- Manga ------------------------------------------------------------------ */
+
+/** [unit, chapters read in it] */
+export type MangaUnit = [string, number];
+
+/** One manga in the library, as the manga half of Stats sends it. */
+export interface MangaFact {
+	id: number;
+	name: string;
+	poster_path: string | null;
+	genres: string[];
+	status: string;
+	/** 0-100 */
+	rating: number | null;
+	/** How far in, as a count: what all time counts. */
+	progress: number;
+	units: MangaUnit[];
+}
+
+export interface MangaFilter {
+	genre?: string;
+	rating?: number;
+	status?: string;
+	unit?: string;
+}
+
+export type MangaDimension = keyof MangaFilter;
+
+function mangaKeeps(f: MangaFact, filter: MangaFilter, skip?: MangaDimension): boolean {
+	if (skip !== 'genre' && filter.genre !== undefined && !f.genres.includes(filter.genre)) {
+		return false;
+	}
+	if (skip !== 'rating' && filter.rating !== undefined) {
+		if (f.rating === null || bucketOf(f.rating) !== filter.rating) return false;
+	}
+	if (skip !== 'status' && filter.status !== undefined && f.status !== filter.status) return false;
+	if (skip !== 'unit' && filter.unit !== undefined && !f.units.some((u) => u[0] === filter.unit)) {
+		return false;
+	}
+	return true;
+}
+
+/** Chapters a manga counts under a selection: those of the bar picked, else all it has. */
+function chaptersOf(f: MangaFact, filter: MangaFilter, inYear: boolean): number {
+	if (filter.unit !== undefined) {
+		return f.units.filter((u) => u[0] === filter.unit).reduce((n, u) => n + u[1], 0);
+	}
+	// In a year, what was read in it; over all time, how far in.
+	return inYear ? f.units.reduce((n, u) => n + u[1], 0) : f.progress;
+}
+
+export interface MangaView {
+	totals: {
+		manga: number;
+		chapters: number;
+		completed: number;
+		mean_rating: number | null;
+		rated: number;
+	};
+	timeline: { unit: string; chapters: number }[];
+	genres: { name: string; titles: number }[];
+	ratings: number[];
+	by_status: Record<string, number>;
+	top: {
+		id: number;
+		kind: 'manga';
+		name: string;
+		poster_path: string | null;
+		chapters: number;
+		rating: number | null;
+	}[];
+}
+
+/** Every manga chart under a selection, each from every pick but its own. */
+export function mangaView(
+	facts: MangaFact[],
+	filter: MangaFilter,
+	units: string[],
+	inYear: boolean
+): MangaView {
+	const kept = facts.filter((f) => mangaKeeps(f, filter));
+	const rated = kept.filter((f) => f.rating !== null);
+
+	const byUnit = new Map(units.map((u) => [u, { unit: u, chapters: 0 }]));
+	for (const f of facts.filter((f) => mangaKeeps(f, filter, 'unit'))) {
+		for (const [unit, n] of f.units) {
+			const point = byUnit.get(unit);
+			if (point) point.chapters += n;
+		}
+	}
+
+	const genreMap = new Map<string, number>();
+	for (const f of facts.filter((f) => mangaKeeps(f, filter, 'genre'))) {
+		for (const g of f.genres) genreMap.set(g, (genreMap.get(g) ?? 0) + 1);
+	}
+
+	const ratings = Array<number>(10).fill(0);
+	for (const f of facts.filter((f) => mangaKeeps(f, filter, 'rating'))) {
+		if (f.rating !== null) ratings[bucketOf(f.rating)]++;
+	}
+
+	const by_status: Record<string, number> = {};
+	for (const f of facts.filter((f) => mangaKeeps(f, filter, 'status'))) {
+		by_status[f.status] = (by_status[f.status] ?? 0) + 1;
+	}
+
+	const top = kept
+		.map((f) => ({ f, chapters: chaptersOf(f, filter, inYear) }))
+		.sort(
+			(a, b) =>
+				Number(a.f.rating === null) - Number(b.f.rating === null) ||
+				(b.f.rating ?? 0) - (a.f.rating ?? 0) ||
+				b.chapters - a.chapters
+		)
+		.slice(0, 12)
+		.map(({ f, chapters }) => ({
+			id: f.id,
+			kind: 'manga' as const,
+			name: f.name,
+			poster_path: f.poster_path,
+			chapters,
+			rating: f.rating
+		}));
+
+	return {
+		totals: {
+			manga: kept.length,
+			chapters: kept.reduce((n, f) => n + chaptersOf(f, filter, inYear), 0),
+			completed: kept.filter((f) => f.status === 'completed').length,
+			mean_rating: rated.length
+				? rated.reduce((n, f) => n + (f.rating ?? 0), 0) / rated.length
+				: null,
+			rated: rated.length
+		},
+		timeline: [...byUnit.values()],
+		genres: [...genreMap.entries()]
+			.map(([name, titles]) => ({ name, titles }))
+			.sort((a, b) => b.titles - a.titles || a.name.localeCompare(b.name))
+			.slice(0, 12),
+		ratings,
+		by_status,
+		top
+	};
+}
+
+/** Pick a manga bar, or put it back when it is the one picked. */
+export function toggleManga<K extends MangaDimension>(
+	filter: MangaFilter,
+	key: K,
+	value: MangaFilter[K]
+): MangaFilter {
+	const next = { ...filter };
+	if (next[key] === value) delete next[key];
+	else next[key] = value;
+	return next;
+}

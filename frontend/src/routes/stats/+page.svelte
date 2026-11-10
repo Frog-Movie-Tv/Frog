@@ -17,7 +17,17 @@
 	import { settings } from '#lib/settings.svelte';
 	import type { FullStats, MangaStats, StatsPerson, StatsTitle, Status } from '#lib/types';
 	import { STATUSES, statusLabel } from '#lib/types';
-	import { decadeOf, toggle, view, type Dimension, type StatsFilter } from '#lib/stats-filter';
+	import {
+		decadeOf,
+		mangaView,
+		toggle,
+		toggleManga,
+		view,
+		type Dimension,
+		type MangaDimension,
+		type MangaFilter,
+		type StatsFilter
+	} from '#lib/stats-filter';
 
 	/*
 	 * Two halves, as AniList keeps its own: films and shows, from what was
@@ -107,12 +117,73 @@
 		void goto(address(next, null), { replace: true, reset: false });
 	}
 
-	const chaptersMax = $derived(Math.max(1, ...(manga?.timeline ?? []).map((t) => t.chapters)));
-	const mangaGenreMax = $derived(Math.max(1, ...(manga?.genres ?? []).map((g) => g.titles)));
-	const mangaRatingMax = $derived(Math.max(1, ...(manga?.ratings ?? [])));
-	const mangaStatusTotal = $derived(
-		STATUSES.reduce((sum, s) => sum + (manga?.by_status[s as Status] ?? 0), 0)
+	/*
+	 * The manga half is a dashboard too: a bar picked narrows the rest, from
+	 * one row per manga (`mangaView`). Days reading and the authors are set
+	 * aside while something is picked, as they count the whole period.
+	 */
+	let mangaFilter = $state<MangaFilter>({});
+	$effect(() => {
+		void yearParam;
+		void half;
+		mangaFilter = {};
+	});
+	const mangaPicked = $derived(Object.keys(mangaFilter).length > 0);
+	const mangaNarrowed = $derived(
+		manga && mangaPicked && manga.facts
+			? mangaView(
+					manga.facts,
+					mangaFilter,
+					manga.timeline.map((t) => t.unit),
+					manga.year !== null
+				)
+			: null
 	);
+	function pickManga<K extends MangaDimension>(key: K, value: MangaFilter[K]) {
+		mangaFilter = toggleManga(mangaFilter, key, value);
+	}
+	function unpickManga(key: MangaDimension) {
+		const next = { ...mangaFilter };
+		delete next[key];
+		mangaFilter = next;
+	}
+	const mOn = (key: MangaDimension, value: unknown) => mangaFilter[key] === value;
+	const mOff = (key: MangaDimension, value: unknown) =>
+		mangaFilter[key] !== undefined && mangaFilter[key] !== value;
+
+	const mTotals = $derived(
+		mangaNarrowed?.totals ??
+			manga?.totals ?? { manga: 0, chapters: 0, completed: 0, mean_rating: null, rated: 0 }
+	);
+	const mTimeline = $derived(mangaNarrowed?.timeline ?? manga?.timeline ?? []);
+	const mGenres = $derived(mangaNarrowed?.genres ?? manga?.genres ?? []);
+	const mRatings = $derived(mangaNarrowed?.ratings ?? manga?.ratings ?? []);
+	const mStatus = $derived<Partial<Record<string, number>>>(
+		mangaNarrowed?.by_status ?? manga?.by_status ?? {}
+	);
+	const mTop = $derived(mangaNarrowed?.top ?? manga?.top ?? []);
+
+	const chaptersMax = $derived(Math.max(1, ...mTimeline.map((t) => t.chapters)));
+	const mangaGenreMax = $derived(Math.max(1, ...mGenres.map((g) => g.titles)));
+	const mangaRatingMax = $derived(Math.max(1, ...mRatings));
+	const mangaStatusTotal = $derived(STATUSES.reduce((sum, s) => sum + (mStatus[s] ?? 0), 0));
+
+	/** What is picked in the manga half, in words. */
+	const mangaChips = $derived.by(() => {
+		const out: { key: MangaDimension; label: string }[] = [];
+		if (mangaFilter.unit) out.push({ key: 'unit', label: unitName(mangaFilter.unit) });
+		if (mangaFilter.genre) out.push({ key: 'genre', label: mangaFilter.genre });
+		if (mangaFilter.rating !== undefined) {
+			out.push({
+				key: 'rating',
+				label: `Rated ${formatScore((mangaFilter.rating + 1) * 10, settings.current.scoreFormat)}`
+			});
+		}
+		if (mangaFilter.status) {
+			out.push({ key: 'status', label: statusLabel(mangaFilter.status as Status, 'manga') });
+		}
+		return out;
+	});
 
 	/** The year the review button makes: the one in view, else the latest. */
 	const reviewTarget = $derived(stats?.year ?? stats?.years[0] ?? null);
@@ -317,52 +388,75 @@
 			<div class="tiles">
 				<div class="tile card hero">
 					<span class="eyebrow">Chapters read</span>
-					<strong>{manga.totals.chapters.toLocaleString()}</strong>
-					<span class="faint">{plural(manga.totals.manga, 'manga', 'manga')}</span>
+					<strong>{mTotals.chapters.toLocaleString()}</strong>
+					<span class="faint">{plural(mTotals.manga, 'manga', 'manga')}</span>
 				</div>
 				<div class="tile card">
 					<span class="eyebrow">Completed</span>
-					<strong>{manga.totals.completed.toLocaleString()}</strong>
+					<strong>{mTotals.completed.toLocaleString()}</strong>
 				</div>
-				<div class="tile card">
-					<span class="eyebrow">Days reading</span>
-					<strong>{manga.totals.days.toLocaleString()}</strong>
-				</div>
+				{#if !mangaPicked}
+					<div class="tile card">
+						<span class="eyebrow">Days reading</span>
+						<strong>{manga.totals.days.toLocaleString()}</strong>
+					</div>
+				{/if}
 				<div class="tile card">
 					<span class="eyebrow">Mean rating</span>
-					<strong><Score value={manga.totals.mean_rating} /></strong>
-					{#if manga.totals.rated}<span class="faint">{plural(manga.totals.rated, 'rating')}</span
-						>{/if}
+					<strong><Score value={mTotals.mean_rating} /></strong>
+					{#if mTotals.rated}<span class="faint">{plural(mTotals.rated, 'rating')}</span>{/if}
 				</div>
 			</div>
 
-			{#if manga.timeline.some((t) => t.chapters > 0)}
+			<div class="picks" aria-live="polite">
+				{#if mangaChips.length}
+					{#each mangaChips as chip (chip.key)}
+						<button type="button" class="chip on" onclick={() => unpickManga(chip.key)}>
+							{chip.label}
+							<Icon name="x" size={13} label="Clear {chip.label}" />
+						</button>
+					{/each}
+					<button type="button" class="btn ghost small" onclick={() => (mangaFilter = {})}>
+						Clear all
+					</button>
+				{:else if manga.facts?.length}
+					<span class="faint">Pick any bar to see the rest of your stats through it.</span>
+				{/if}
+			</div>
+
+			{#if mTimeline.some((t) => t.chapters > 0)}
 				<section class="block card panel">
 					<h2>{manga.year ? 'Chapters by month' : 'Chapters by year'}</h2>
 					<div
 						class="columns"
 						class:wide={!manga.year}
-						role="img"
+						role="group"
 						aria-label="Chapters read over time"
 					>
-						{#each manga.timeline as point (point.unit)}
-							<div
-								class="column"
+						{#each mTimeline as point (point.unit)}
+							<button
+								type="button"
+								class="column pick"
+								class:on={mOn('unit', point.unit)}
+								class:off={mOff('unit', point.unit)}
+								aria-pressed={mOn('unit', point.unit)}
+								disabled={!manga.facts || (!point.chapters && !mOn('unit', point.unit))}
+								onclick={() => pickManga('unit', point.unit)}
 								title="{unitLabel(point.unit)}: {plural(point.chapters, 'chapter')}"
 							>
 								<span class="value faint">{point.chapters || ''}</span>
 								<span class="bar-v" style:height="{(point.chapters / chaptersMax) * 100}%"></span>
 								<span class="label faint">{unitLabel(point.unit)}</span>
-							</div>
+							</button>
 						{/each}
 					</div>
 				</section>
 			{/if}
 
-			{#if manga.top.length}
+			{#if mTop.length}
 				<section class="block">
 					<Rail title="Top manga" width="112px">
-						{#each manga.top as t, i (t.id)}
+						{#each mTop as t, i (t.id)}
 							{@const src = img(t.poster_path, 'w185')}
 							<a href={titleHref(t)} class="top">
 								<span class="cover">
@@ -382,37 +476,53 @@
 			{/if}
 
 			<div class="grid">
-				{#if manga.genres.length}
+				{#if mGenres.length}
 					<section class="block card panel">
 						<h2>Genres</h2>
 						<ul class="hbars">
-							{#each manga.genres.slice(0, 10) as g (g.name)}
+							{#each mGenres.slice(0, 10) as g (g.name)}
 								<li>
-									<span class="hname">{g.name}</span>
-									<span class="track"
-										><span class="fill" style:width="{(g.titles / mangaGenreMax) * 100}%"
-										></span></span
+									<button
+										type="button"
+										class="hrow pick"
+										class:on={mOn('genre', g.name)}
+										class:off={mOff('genre', g.name)}
+										aria-pressed={mOn('genre', g.name)}
+										disabled={!manga.facts}
+										onclick={() => pickManga('genre', g.name)}
 									>
-									<span class="faint hcount">{g.titles}</span>
+										<span class="hname">{g.name}</span>
+										<span class="track"
+											><span class="fill" style:width="{(g.titles / mangaGenreMax) * 100}%"
+											></span></span
+										>
+										<span class="faint hcount">{g.titles}</span>
+									</button>
 								</li>
 							{/each}
 						</ul>
 					</section>
 				{/if}
 
-				{#if manga.totals.rated}
+				{#if mRatings.some((n) => n > 0)}
 					<section class="block card panel">
 						<h2>Ratings</h2>
-						<div class="columns" role="img" aria-label="How you rate manga">
-							{#each manga.ratings as n, i (i)}
-								<div
-									class="column"
+						<div class="columns" role="group" aria-label="How you rate manga">
+							{#each mRatings as n, i (i)}
+								<button
+									type="button"
+									class="column pick"
+									class:on={mOn('rating', i)}
+									class:off={mOff('rating', i)}
+									aria-pressed={mOn('rating', i)}
+									disabled={!manga.facts || (!n && !mOn('rating', i))}
+									onclick={() => pickManga('rating', i)}
 									title="{formatScore((i + 1) * 10, settings.current.scoreFormat)}: {n}"
 								>
 									<span class="value faint">{n || ''}</span>
 									<span class="bar-v" style:height="{(n / mangaRatingMax) * 100}%"></span>
 									<span class="label faint"><Score value={(i + 1) * 10} /></span>
-								</div>
+								</button>
 							{/each}
 						</div>
 					</section>
@@ -421,27 +531,44 @@
 				{#if mangaStatusTotal > 0}
 					<section class="block card panel">
 						<h2>Status</h2>
-						<div class="bar" role="img" aria-label="Manga by status">
+						<div class="bar" role="group" aria-label="Manga by status">
 							{#each STATUSES as s (s)}
-								{@const n = manga.by_status[s] ?? 0}
+								{@const n = mStatus[s] ?? 0}
 								{#if n > 0}
-									<span
-										class="seg"
+									<button
+										type="button"
+										class="seg pick"
+										class:on={mOn('status', s)}
+										class:off={mOff('status', s)}
+										aria-pressed={mOn('status', s)}
+										aria-label="{statusLabel(s, 'manga')}: {n}"
+										disabled={!manga.facts}
 										data-status={s}
 										style:flex-grow={n}
 										title="{statusLabel(s, 'manga')}: {n}"
-									></span>
+										onclick={() => pickManga('status', s)}
+									></button>
 								{/if}
 							{/each}
 						</div>
 						<ul class="legend">
 							{#each STATUSES as s (s)}
-								{@const n = manga.by_status[s] ?? 0}
+								{@const n = mStatus[s] ?? 0}
 								{#if n > 0}
 									<li>
-										<span class="swatch" data-status={s}></span>
-										{statusLabel(s, 'manga')}
-										<span class="faint">{n}</span>
+										<button
+											type="button"
+											class="legend-pick pick"
+											class:on={mOn('status', s)}
+											class:off={mOff('status', s)}
+											aria-pressed={mOn('status', s)}
+											disabled={!manga.facts}
+											onclick={() => pickManga('status', s)}
+										>
+											<span class="swatch" data-status={s}></span>
+											{statusLabel(s, 'manga')}
+											<span class="faint">{n}</span>
+										</button>
 									</li>
 								{/if}
 							{/each}
@@ -450,6 +577,9 @@
 				{/if}
 			</div>
 
+			{#if mangaPicked && manga.authors.length}
+				<p class="faint note">The authors below count everything in this period.</p>
+			{/if}
 			<div class="grid people-row">
 				{@render people('Authors', manga.authors, '/person')}
 			</div>
@@ -1249,6 +1379,25 @@
 		display: flex;
 		align-items: center;
 		gap: 7px;
+	}
+
+	.legend-pick {
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		padding: 2px 4px;
+	}
+
+	.legend-pick.on {
+		font-weight: 700;
+	}
+
+	.seg.pick {
+		border-radius: 0;
+	}
+
+	.seg.pick.on {
+		box-shadow: inset 0 0 0 2px var(--bg-float);
 	}
 
 	.swatch {

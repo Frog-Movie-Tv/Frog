@@ -16,7 +16,7 @@
 	import { failure, idParam, type Failure } from '#lib/failure';
 	import { localDay } from '#lib/day';
 	import Avatar from '#lib/components/Avatar.svelte';
-	import { episodeCode, prettyDate, runtime, year } from '#lib/format';
+	import { clockTime, episodeCode, prettyDate, runtime, year } from '#lib/format';
 	import { providerLink } from '#lib/providers';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
@@ -426,13 +426,27 @@
 		}
 	}
 
+	/** A film still to come can be announced on its day, as a show's episodes are. */
+	const comingFilm = $derived(
+		item?.kind === 'movie' && (!item.release_date || item.release_date >= today)
+	);
+
 	async function toggleNotify() {
 		if (!item?.entry) return;
 		const notify = !item.entry.notify;
 		try {
 			const { item: updated } = await api.track(item.id, { notify });
 			updateItem(updated);
-			toasts.push(notify ? 'Alerts on for new episodes' : 'Alerts off for this show');
+			const film = item.kind === 'movie';
+			toasts.push(
+				notify
+					? film
+						? 'Alert on for its release'
+						: 'Alerts on for new episodes'
+					: film
+						? 'Alert off for this film'
+						: 'Alerts off for this show'
+			);
 		} catch (e) {
 			toasts.error(e);
 		}
@@ -554,14 +568,15 @@
 						{#if item.kind === 'movie' && item.entry && item.entry.status !== 'completed'}
 							<button class="btn" onclick={markFilmWatched}>Mark watched</button>
 						{/if}
-						{#if item.kind === 'tv' && item.entry && ['watching', 'planned', 'paused'].includes(item.entry.status)}
+						{#if (item.kind === 'tv' || comingFilm) && item.entry && ['watching', 'planned', 'paused'].includes(item.entry.status)}
 							{@const on = item.entry.notify}
+							{@const what = item.kind === 'movie' ? 'Release alert' : 'New episode alerts'}
 							<button
 								class="btn bell"
 								class:on
 								aria-pressed={on}
-								aria-label={on ? 'New episode alerts on' : 'New episode alerts off'}
-								title={on ? 'New episode alerts on' : 'New episode alerts off'}
+								aria-label="{what} {on ? 'on' : 'off'}"
+								title="{what} {on ? 'on' : 'off'}"
 								onclick={toggleNotify}
 							>
 								<Icon name={on ? 'bell' : 'bell-off'} size={17} />
@@ -596,6 +611,7 @@
 									</strong>
 									{#if detail.next_up.air_date && detail.next_up.air_date > today}
 										· {prettyDate(detail.next_up.air_date)}
+										{#if detail.next_up.air_at}· {clockTime(detail.next_up.air_at)}{/if}
 									{/if}
 								</span>
 							{/if}

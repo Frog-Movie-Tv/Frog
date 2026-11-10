@@ -27,6 +27,9 @@ title_external               who else knows a title, and as what
   `episode_state`, `season_rating`, `shelf_item`, `anilist_entry`,
   `title_merge`, profile pins (`app_user.pins_json` holds `{ title_id }`).
   Nothing personal stores a provider's id.
+- **TheTVDB is not an identity.** Its id sits in `title_airing` beside the
+  title, found from TMDB's `tvdb_id` or the IMDb id, and is read only for
+  release days and times (`crate::airing`). No address or lookup goes by it.
 - **One provider id names one title.** It is the table's key. `catalog::link`
   refuses to point an id somewhere else; it never moves one silently.
 - **One primary provider per title**, chosen by Frog: the one the title was

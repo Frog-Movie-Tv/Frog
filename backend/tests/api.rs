@@ -49,9 +49,9 @@ impl Harness {
             admin_password: None,
             secure_cookies: false,
             session_days: 7,
-            notify_hour: 18,
             anilist: None,
             fanart: None,
+            tvdb: None,
             mdblist: None,
         };
 
@@ -790,8 +790,8 @@ async fn a_watchlisted_show_waits_until_it_is_started_or_has_not_begun() {
     assert!(!week.contains(&"Releasing"), "{week:?}");
     assert!(week.contains(&"Watching"), "{week:?}");
 
-    let today = (chrono::Utc::now() + chrono::Duration::days(2)).date_naive();
-    let due = frog::jobs::due_announcements(&h.state.pool, 1, today)
+    let later = chrono::Utc::now() + chrono::Duration::days(2);
+    let due = frog::announce::due(&h.state.pool, 1, later, chrono_tz::UTC)
         .await
         .unwrap();
     let names: Vec<String> = due
@@ -1453,10 +1453,10 @@ async fn the_worker_backfills_credits_for_older_titles() {
     assert_eq!(n, 1);
 }
 
-/// Each account picks the hour it hears about new episodes; anything
-/// missing or out of range falls back to the server's FROG_NOTIFY_HOUR.
+/// Each account's browser says which zone it is in, which decides when
+/// midnight is for an episode with no time. A zone nobody knows is ignored.
 #[tokio::test]
-async fn each_account_chooses_its_notification_hour() {
+async fn each_account_keeps_the_time_zone_its_browser_reports() {
     let h = Harness::new().await;
     let (owner, guest) = two_accounts(&h).await;
     let pool = &h.state.pool;
@@ -1469,26 +1469,33 @@ async fn each_account_chooses_its_notification_hour() {
             .0
     };
     let (owner_id, guest_id) = (id("mihai").await, id("zjef").await);
-
     assert_eq!(
-        frog::jobs::notify_hour(pool, owner_id, 18).await,
-        18,
-        "nothing chosen"
+        frog::announce::time_zone(pool, owner_id).await,
+        chrono_tz::UTC,
+        "nothing reported yet"
     );
 
-    h.put("/api/settings", json!({ "notifyHour": 7 }), Some(&owner))
-        .await;
-    h.put("/api/settings", json!({ "notifyHour": 99 }), Some(&guest))
-        .await;
-    assert_eq!(frog::jobs::notify_hour(pool, owner_id, 18).await, 7);
+    let mut sub = browser_subscription("https://fcm.googleapis.com/fcm/send/zone-1");
+    sub["time_zone"] = json!("Europe/Brussels");
+    let (status, body, _) = h.post("/api/push/subscribe", sub, Some(&owner)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let mut sub = browser_subscription("https://fcm.googleapis.com/fcm/send/zone-2");
+    sub["time_zone"] = json!("Mars/Olympus_Mons");
+    let (status, _, _) = h.post("/api/push/subscribe", sub, Some(&guest)).await;
     assert_eq!(
-        frog::jobs::notify_hour(pool, guest_id, 18).await,
-        18,
-        "an impossible hour falls back"
+        status,
+        StatusCode::OK,
+        "an unknown zone does not refuse the device"
     );
 
-    let (_, status) = h.get("/api/push", Some(&owner)).await;
-    assert_eq!(status["default_hour"], json!(18));
+    assert_eq!(
+        frog::announce::time_zone(pool, owner_id).await,
+        chrono_tz::Europe::Brussels
+    );
+    assert_eq!(
+        frog::announce::time_zone(pool, guest_id).await,
+        chrono_tz::UTC
+    );
 }
 
 /// A browser subscription with real P-256 keys, as `PushSubscription.toJSON()`.
@@ -1567,83 +1574,121 @@ async fn push_subscriptions_are_validated_and_counted() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
-/// What gets announced: today's and yesterday's new episodes of followed
-/// shows, once, never what you watched or switched off.
+/// What gets announced: episodes the minute they air when the time is known,
+/// at midnight on their day when it is not, films on their release day;
+/// each once, never what you watched or switched off.
 #[tokio::test]
-async fn new_episodes_are_announced_once_per_show() {
+async fn new_episodes_and_films_are_announced_once_when_they_come_out() {
+    use chrono::TimeZone;
     let h = Harness::new().await;
     an_owner(&h).await;
-    let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 26).unwrap();
+    let at = |hour: u32, minute: u32| {
+        chrono::Utc
+            .with_ymd_and_hms(2026, 10, 26, hour, minute, 0)
+            .unwrap()
+    };
 
     sqlx::query(
         "INSERT INTO title_seed (kind, tmdb_id, name, poster_path) VALUES
-            ('tv', 1, 'Followed', '/f.jpg'), ('tv', 2, 'Muted', NULL), ('tv', 3, 'Dropped', NULL)",
+            ('tv', 1, 'Followed', '/f.jpg'), ('tv', 2, 'Muted', NULL), ('tv', 3, 'Dropped', NULL),
+            ('tv', 4, 'Timed', NULL), ('movie', 5, 'A Film', '/p.jpg')",
     )
     .execute(&h.state.pool)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO library_entry (user_id, title_id, status, notify, added_at, updated_at) VALUES
-            (1, 1, 'watching', 1, 'x', 'x'), (1, 2, 'watching', 0, 'x', 'x'), (1, 3, 'dropped', 1, 'x', 'x')",
-    )
-    .execute(&h.state.pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO episode (title_id, season_number, episode_number, name, air_date) VALUES
-            (1, 2, 1, 'Premiere',  '2026-10-25'),
-            (1, 2, 2, 'Second',    '2026-10-26'),
-            (1, 2, 3, 'Tomorrow',  '2026-10-27'),
-            (1, 2, 4, 'Last week', '2026-10-19'),
-            (1, 0, 1, 'Special',   '2026-10-26'),
-            (2, 1, 1, 'Muted',     '2026-10-26'),
-            (3, 1, 1, 'Dropped',   '2026-10-26')",
-    )
-    .execute(&h.state.pool)
-    .await
-    .unwrap();
-
-    let due = frog::jobs::due_announcements(&h.state.pool, 1, today)
+    sqlx::query("UPDATE title SET backdrop_path = '/wide.jpg', release_date = '2026-10-26' WHERE name = 'A Film'")
+        .execute(&h.state.pool)
         .await
         .unwrap();
-    assert_eq!(due.len(), 1, "{due:?}");
-    assert_eq!(due[0].episode_ids.len(), 2);
-    let payload = due[0].payload();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, notify, added_at, updated_at) VALUES
+            (1, 1, 'watching', 1, 'x', 'x'), (1, 2, 'watching', 0, 'x', 'x'),
+            (1, 3, 'dropped', 1, 'x', 'x'), (1, 4, 'watching', 1, 'x', 'x'),
+            (1, 5, 'planned', 1, 'x', 'x')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO episode (title_id, season_number, episode_number, name, air_date, air_at) VALUES
+            (1, 2, 1, 'Premiere',  '2026-10-25', NULL),
+            (1, 2, 2, 'Second',    '2026-10-26', NULL),
+            (1, 2, 3, 'Tomorrow',  '2026-10-27', NULL),
+            (1, 2, 4, 'Last week', '2026-10-19', NULL),
+            (1, 0, 1, 'Special',   '2026-10-26', NULL),
+            (2, 1, 1, 'Muted',     '2026-10-26', NULL),
+            (3, 1, 1, 'Dropped',   '2026-10-26', NULL),
+            (4, 1, 1, 'Tonight',   '2026-10-26', '2026-10-26T21:00:00Z')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    let pool = &h.state.pool;
+    let due = |now| async move {
+        frog::announce::due(pool, 1, now, chrono_tz::UTC)
+            .await
+            .unwrap()
+    };
+
+    // Midday: the undated-time episodes and the film, not the one airing tonight.
+    let noon = due(at(12, 0)).await;
+    let names: Vec<&str> = noon.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, ["Followed", "A Film"], "{noon:?}");
+    assert_eq!(noon[0].episode_ids.len(), 2);
+    let payload = noon[0].payload();
     assert_eq!(payload["title"], json!("Followed"));
-    assert_eq!(
-        payload["body"],
-        json!("2 new episodes, S02E01–S02E02, are out today")
-    );
+    assert_eq!(payload["body"], json!("2 new episodes · S2 E1–E2"));
     // The show's own address, by Frog's id.
     assert_eq!(
         payload["url"],
         json!(format!("/t/{}", h.tid("tv", 1).await))
     );
-    assert_eq!(payload["image"], json!("/img/w342/f.jpg"));
+    // No backdrop: the poster stands in.
+    assert_eq!(payload["image"], json!("/img/w780/f.jpg"));
+    let film = noon[1].payload();
+    assert_eq!(film["body"], json!("Out today"));
+    assert_eq!(film["image"], json!("/img/w780/wide.jpg"));
 
-    // Watching one and announcing nothing else leaves a single-episode line.
+    // At the minute it airs, and not before.
+    let names = |list: &[frog::announce::Announcement]| {
+        list.iter().map(|a| a.name.clone()).collect::<Vec<_>>()
+    };
+    assert!(!names(&due(at(20, 59)).await).contains(&"Timed".to_string()));
+    let tonight = due(at(21, 0)).await;
+    let timed = tonight.iter().find(|a| a.name == "Timed").unwrap();
+    assert_eq!(
+        timed.payload()["body"],
+        json!("New episode · S1 E1 · Tonight")
+    );
+
+    // Midnight is the account's own: in Auckland the 27th has begun at 12:00 UTC.
+    let far = frog::announce::due(pool, 1, at(12, 0), chrono_tz::Pacific::Auckland)
+        .await
+        .unwrap();
+    let followed = far.iter().find(|a| a.name == "Followed").unwrap();
+    assert_eq!(followed.episode_ids.len(), 2, "the 26th and the 27th");
+
+    // Watching one leaves a single-episode line.
     sqlx::query(
         "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at) VALUES (1, 1, 1, 'x')",
     )
     .execute(&h.state.pool)
     .await
     .unwrap();
-    let due = frog::jobs::due_announcements(&h.state.pool, 1, today)
-        .await
-        .unwrap();
     assert_eq!(
-        due[0].payload()["body"],
-        json!("S02E02 · Second is out today")
+        due(at(12, 0)).await[0].payload()["body"],
+        json!("New episode · S2 E2 · Second")
     );
 
     sqlx::query("INSERT INTO push_sent (user_id, episode_id, sent_at) VALUES (1, 2, 'x')")
         .execute(&h.state.pool)
         .await
         .unwrap();
-    assert!(frog::jobs::due_announcements(&h.state.pool, 1, today)
+    sqlx::query("INSERT INTO push_sent_title (user_id, title_id, sent_at) VALUES (1, 5, 'x')")
+        .execute(&h.state.pool)
         .await
-        .unwrap()
-        .is_empty());
+        .unwrap();
+    assert!(due(at(12, 0)).await.is_empty());
 }
 
 #[tokio::test]

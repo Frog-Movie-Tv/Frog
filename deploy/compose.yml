@@ -23,7 +23,7 @@ services:
       FROG_BIND: 0.0.0.0:8080
       # Caddy terminates TLS, so the session cookie must carry Secure.
       FROG_SECURE_COOKIES: '1'
-      # So FROG_NOTIFY_HOUR means the hour the owners actually live in.
+      # The clock the logs and the backup scripts keep.
       TZ: ${TZ:-Europe/Brussels}
 
     volumes:

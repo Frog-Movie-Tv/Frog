@@ -1,460 +1,64 @@
 # Roadmap
 
-The working backlog. Claude reads this at the start of a session; whoever
-finishes something updates it. **Next** is ordered — take from the top.
+What is still to build, and what is known to be broken. Nothing else lives
+here: how things work is in [CLAUDE.md](CLAUDE.md), and what shipped is in
+[RELEASE-NOTES.md](RELEASE-NOTES.md). Take an item off when it ships.
 
-## Where Frog is
+**Release:** 1.4.3. **Next codename:** Goliath. **Live at** a DuckDNS hostname on Oracle Cloud Always
+Free, updating itself from each release (`docs/DEPLOY-ORACLE.md`).
 
-| | |
-| --- | --- |
-| **Release** | 1.4.1 "Wood Frog" (the 9 November batch); 1.4.2 (right-click and Pip) is in review |
-| **Next codenames** | Goliath |
-| **Live at** | a DuckDNS hostname, behind Caddy |
-| **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
-| **Updates** | by itself: a timer pulls the newest release every 15 minutes, backs up first, rolls back on an unhealthy `/healthz` |
-| **Owners** | [Mihai Constantin](https://github.com/MihCons) and [Zjef Schaeken](https://github.com/zschaeken) |
+## To build
 
-Frog holds several accounts, each with its own library. `main` is protected,
-releases are cut by release-please, and the image CI builds is the image
-production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
-`docs/CONTRIBUTING.md` is how the two of you work on it.
+1. **Undo a merge from the app.** Every move of one account's data between
+   titles is in `title_merge` with what both sides held, but undoing one is
+   SQL by hand. Decide first: a merge comes from an AniList placement, so an
+   undo lasts only until the next sync while the placement stands.
+2. **Series copies from AniList.** An AniList series the sync has not placed
+   still gets a title of its own beside TMDB's. Place a series' first season
+   the way films already are, once that can run without someone's token.
+3. **Stats' people and streaks under a pick.** Picking a bar narrows every
+   chart but actors, directors, studios, authors, days and streaks. Needs the
+   credits and days per title in the facts the page filters.
+4. **Netflix: the 405 undated episodes.** On the 4,054-line test file, 405
+   episodes have names TMDB writes differently or not at all (Kuroko's
+   Basketball, The Order) and are counted undated. Match them by a looser
+   name, or by position within the season.
+5. **Netflix "Part N" seasons named only "Episode 3".** Money Heist Part 1
+   still waits for a person to place it.
+6. **SQL out of the route files.** Move each route's queries into `store` or
+   its domain module when that route is next touched: `account`,
+   `two_factor` (beside `auth.rs`), `profiles`, `shelves`, `timeline`,
+   `stats`, `titles`, `episodes`, `home`, `search`, `browse`, `admin`,
+   `invites`, `auth`, `push`, `settings`.
+7. **Redraw the last pre-Glass parts:** the Calendar's month grid and day
+   panel, Stats' charts, a person's page, and the import review's rows.
 
-## Next
+## To check by hand
 
-0. **Ship 1.4.2: right-click and Pip.** One pull request,
-   `feat/right-click-and-pip`, with `Release-As: 1.4.2` so release-please makes a
-   patch although it is a `feat`. Its notes are under Upcoming. Still to try by
-   hand once it is on the server:
-   - holding a card on the Android phone opens the menu as a sheet, and a tap
-     after the hold does not open the title (the e2e sends the same event the
-     browser fires on a hold, not a real finger);
-   - a sideways swipe along Settings' tabs on the phone, which is what
-     started this, now scrolls without the reload;
-   - Pip on iOS Safari, which nothing here has drawn.
-   Left over from 1.4.1, also by hand: the colour picker's sheet and the Stats
-   bars by finger on the phone, and the "merged AniList films" line in the
-   server log after its first start.
-1. **AniList sign-in on a laptop, once by hand.** The Frog-Dev client
-   (redirect `http://127.0.0.1:8080/api/anilist/callback`) is in the local
-   `.env`, and AniList accepts its id and secret (checked against its token
-   endpoint on 2026-10-30). The production block above it used to win,
-   because the first value in `.env` is the one kept; it is commented out
-   now. What no script can do: run `.\scripts\dev.ps1`, connect AniList in
-   Settings → Connections, and see it come back connected.
-2. **AniList: check the overhaul on the live list.** On a copy of the owner's
-   list (221 entries) 213 are matched, 7 wait as not out yet, and one film
-   special ("ONE PIECE FILM: GOLD - episode 0") has nothing on TMDB. That
-   was a copy, not the live list, and the automated tests do not stand in
-   for it. An owner opens Settings → Connections on the live site and reads
-   "Needs a check" and the "Matched" methods for anything that reads wrong,
-   and the manga it now lists too.
-3. **A merge you can undo from the app.** Every move of one account's data
-   from one title to another is in `title_merge` with what both sides held
-   before, but undoing one is still by hand in SQL.
-   Needs a decision first: a merge comes from an AniList placement, so
-   undoing it while the placement stands only lasts until the next sync.
-   Settings → Connections → Change already moves an entry somewhere else,
-   which is what an undo would mostly be for.
-4. **The Projects board.** Backlog / In progress / Review / Done. Needs
-   `gh auth refresh -s project` from an owner before it can be created.
-5. **Netflix: the dates still missing.** On the 4,054-line file 3,145 of
-   3,550 episodes land on their day. The other 405 have names TMDB writes
-   differently or not at all (Kuroko's Basketball, The Order), so they are
-   counted from the start of the season, undated. Films keep only their
-   latest date; earlier watches of the same film are a rewatch flag, not
-   entries. Re-importing over an older import dates what it finds and leaves
-   the old count's other ticks undated (26 on this file), since an import
-   never removes a watch.
-6. **Netflix: untested shapes.** The personal-data ZIP
-   (`CONTENT_INTERACTION/ViewingActivity.csv`) is read from its documented
-   columns but has never been tried on a real one. Netflix's "Part N"
-   seasons are placed by their episode names; parts whose episodes are only
-   called "Episode 3" (Money Heist Part 1) still wait for a person.
-7. **Finish the data-ownership pass.** The AniList, import, catalog and
-   emptying-a-library code no longer lives in routes. Every route below was
-   read for the catalog change on 2026-10-30: each now goes by Frog's title
-   id, and the TMDB ids left in them are TMDB's own (its cache, credits,
-   people and recommendations). SQL still in route
-   files, all single-route reads or writes, to move when each is next
-   touched (`routes/library.rs`'s filtered list is done): `routes/account.rs` (account, password, sessions, profile and
-   pictures, deleting the account), `routes/two_factor.rs` (secrets and
-   recovery codes; belongs beside `auth.rs`), `routes/profiles.rs` (profile
-   cards and totals), `routes/shelves.rs` (shelves and smart-shelf rules),
-   `routes/timeline.rs` (calendar, diary, redating), `routes/stats.rs`,
-   `routes/titles.rs` (heatmap, a season's episodes and states),
-   `routes/episodes.rs` (ticks and notes), `routes/home.rs`, `routes/search.rs`,
-   `routes/browse.rs`, `routes/admin.rs`, `routes/invites.rs`,
-   `routes/auth.rs`, `routes/push.rs`, `routes/settings.rs`. Persistence is
-   not centralised yet.
-8. **The rest of the Glass pass.** Every page, dialog, menu and toast now
-   shares the glass surfaces (2026-11-07). Still in their earlier shape: the
-   Calendar's month grid and day panel, Stats' charts, a person's page and the
-   import review's rows. They read well on glass but were not redrawn.
-9. **Netflix: try the threshold on more than one file.** 3 was judged on one
-   export. The menu in the review moves it for one import; if another person's
-   file says 2 or 4, change `SHOW_THRESHOLD`.
-10. **Upload a picture from a real iPhone or Mac.** Safari has no WebP writer, so
-   pictures reach the server as PNG, and past 3 MB as JPEG, which turns a clear
-   background black. `verify-pictures` runs that path in Chromium with the writer
-   taken away, and WebKit as far as the upload. Playwright's WebKit on Windows
-   hangs and closes once the page draws the new picture, so nothing here has seen
-   Safari draw it.
+Nothing automated can stand in for these. An owner tries each and takes it
+off, or turns it into a fix above.
 
-11. **Duplicates of a series.** Opening an AniList film TMDB has now opens
-   TMDB's; a series still makes its own copy when the sync has not placed it,
-   since a season needs the sync's walk with someone's token. Do the same for
-   a series' first season once that walk can run without a token.
-12. **Stats' people and streaks under a pick.** Picking a bar narrows every
-   chart and total but the actors, directors and studios, which still count
-   the whole period (the page says so); days watching and the streaks are set
-   aside while something is picked.
-   They need the credits and days per title in `facts`.
+- **A notification at air time on the Android phone:** the picture, Frog's
+  icon and badge, and tapping it opening the title.
+- **Holding a card on the phone** opens the menu as a sheet, and the tap that
+  ends the hold does not open the title. A sideways swipe along Settings'
+  tabs scrolls without a reload.
+- **Pip on iOS Safari**, and a picture uploaded from an iPhone or a Mac.
+- **The colour picker's sheet and the Stats bars by finger** on the phone.
+- **AniList on the live list:** Settings → Connections, "Needs a check" and
+  the "Matched" methods, manga included. And connecting AniList once from a
+  laptop with the Frog-Dev client in `.env`.
+- **Netflix's personal-data ZIP** (`CONTENT_INTERACTION/ViewingActivity.csv`),
+  read from its documented columns but never from a real one; and the show
+  threshold (3) on a second person's file.
 
 ## Known issues
 
 | | |
 | --- | --- |
-| **Rebase merging doubles the changelog** | "Rebase and merge" rewrites commit hashes, so a change can land twice and release-please lists both. Untick *Allow rebase merging* in the repository settings. |
-| **The backup repository grows without end** | Git keeps every backup it was sent. About 3 MB a copy for 611 titles, one nightly plus one per update. `docs/DEPLOY-ORACLE.md` step 7 has the reset; doing it automatically, say yearly, is not built. |
-| **AniList-only titles, what AniList cannot give** | Accepted, not planned. No title logo for the hero and no episode synopses (AniList has neither). Streaming links show for every country, since AniList does not say where a service carries a show. AniList voice actors and studios are AniList people in Stats, apart from the same person on TMDB. Episode names and thumbnails are left out when the streaming site numbers past AniList's episode count. Everything else (detail, artwork, episodes, sync, ratings, shelves, Stats) works as for any title and is covered by `tests/anilist.rs` and `verify-leapfrog`. |
-| **Characters come from what Frog has seen** | Search finds anime characters through AniList, and everyone else from the casts of titles somebody on this Frog has opened. TMDB has no character search. |
-| **No staging** | 954 MB will not carry a second instance. `install.sh --with-staging` sets one up if it ever moves to a bigger machine. |
-| **A show marked Watching by hand, with nothing ticked** | Stays in Continue watching as "Start S01E01", on purpose. So does one a tracker other than Netflix calls `watching`; `docs/IMPORTS.md` takes a tracker at its word. |
-| **Notifications untested on a real phone** | Verified through FCM in Chrome; not on Android, and tapping one is untested. |
-| **Server messages are English only** | Validation errors and notification text. Fine while the interface is English only. |
-| **Imports keep the day, not the time** | Every reader sets a watch to 20:00 UTC on its day, so Trakt's exact time is not kept. Recorded in `docs/IMPORTS.md` and pinned by `tests/parsers.test.mjs`; keeping exact times needs its own requirements and tests. |
-| **The database file does not shrink** | The picture cache is held to `FROG_IMAGE_CACHE_MB`, but SQLite only reuses freed pages. A one-off `VACUUM` (with the instance stopped) gives the space back if it ever matters. |
-| **Screenshots still weigh 13 MB** | Down from 20 MB by shooting at 1.5×. A lossless optimiser in the release step would take more off; none is part of the build. |
-| **One AniList test is flaky** | `a_tmdb_outage_is_retried_not_left_for_the_person` failed once in a full `cargo test` on 2026-10-29 and passed alone and on the rerun. It races the other tests over account 1's sync flag. `cargo test --test anilist` failed once more on 2026-11-02 and passed straight after, its name not captured. |
-
-## Not doing
-
-- **Jellyfin scrobbling, and the generic webhook it needed.** It only sees
-  what plays through a Jellyfin server; the owners watch through streaming
-  sites, so it would track nothing. Anime arrives through the AniList sync and
-  the rest is ticked by hand, on purpose.
-- **Plex.** Its webhooks need a paid Plex Pass.
-- **Interface languages.** English only, decided 2026-10-26.
-- **Moving Netflix shows left On hold.** A show an import left On hold with
-  nothing ticked stays On hold: paused is the person's word everywhere in
-  Frog, and nothing changes it behind their back. Decided 2026-11-06.
-- **Oracle Pay As You Go.** Always Free only, whatever the console suggests
-  when A1 capacity runs out.
-
-## Notes that save time
-
-- **Ratings** (`backend/src/ratings.rs`) sit in `title_rating` on Frog's own
-  title, matched only by provider id. MDBList's free tier is 1,000 requests a
-  day: the worker reads 20 titles per half hour, in batches of 10, and stops
-  at 200 left so opening a title still works. A title is asked about again
-  after 3, 14 or 45 days by age. An AniList-only title borrows TMDB's score and
-  logo through `anime_map` without being linked to TMDB: the sync decides that.
-- **Search filters** match a name here, over three of TMDB's pages, because
-  TMDB can only filter when there is no name (`/discover`). A status filter
-  without "Not in my library" goes through `shelves::evaluate` instead.
-- **What is followed** is one SQL fragment, `release::FOLLOWED`, shared by the
-  calendar, Airing this week and notifications.
-
-- **Titles are Frog's** (`backend/src/catalog.rs`,
-  `docs/CATALOG-IDENTITY.md`). `title.id` is the identity; provider ids are
-  rows in `title_external`. `/t/{id}` is a title's page and API; a
-  provider's address opens it and moves there. Seed and verify scripts open
-  titles by TMDB address first (`titleApi` in each), and SQL-written fixtures
-  add their `title_external` row (`backend/tests/common`'s `title_seed`).
-- **Backups leave the server.** Every nightly and pre-update backup is
-  age-encrypted and pushed to the private `Frog-Movie-Tv/Frog-Backups` with
-  the server's deploy key (`/opt/frog/backup-key`; the organisation allows
-  deploy keys since 2026-10-30). The server holds only the public half of the
-  age key; the owners keep the private half, and without it no backup opens.
-  A real restore of the newest copy from that repository into a throwaway
-  instance was done on 2026-10-30: 2 accounts, 193 library entries and 6,909
-  watches, the same as production. `docs/DEPLOY-ORACLE.md` steps 7 and 10.
-
-- **Server jobs report to Frog through `ops.jsonl`** beside the database.
-  `update.sh` and `backup.sh` append one line per outcome through
-  `deploy/ops-log.sh` (kinds: backup, update, rollback, restore). `crate::ops`
-  reads it for Administration's Server section. A watcher every 5 minutes
-  pushes each new failure to administrators once; a failure that repeats the
-  previous one of its kind (the timer retrying a broken release) stays quiet.
-  Each administrator's mark is `app_setting` key `ops_seen`. The scripts
-  reach the server only by re-running `install.sh` from a checkout, never
-  with an image update.
-
-- **Migrations are never edited once applied** — sqlx compares checksums and
-  refuses to start, which takes a running instance down on its next deploy.
-  Add another file. New ones get timestamped names, **digits only** before the
-  first `_` (`202610271200_anilist.sql`): sqlx reads that part as a number and
-  a `T` in it fails the build.
-  **Migrations stay additive**: a failed update rolls back to the previous
-  image, which skips migrations it does not know (`set_ignore_missing`) and
-  has to run on the newer schema. A destructive change takes two releases;
-  `docs/CONTRIBUTING.md` has the rule. If the previous image still fails,
-  `update.sh` puts back the plain snapshot it took just before the update.
-  `db::heal_line_endings` forgives a checksum that differs only in line
-  endings, which is what lets a database move between a Windows checkout and
-  the server.
-- **The deployed Content-Security-Policy has broken the site three times** —
-  the inline startup script, the update check, the old AniList import (the
-  browser no longer talks to AniList; the server does). It comes from Caddy.
-  The audit and Playwright now read it from `deploy/caddy/Caddyfile`, serve
-  every page with it (the offline worker is blocked there, since it would
-  fetch pages out of the policy's reach) and fail on anything it blocks. The
-  audit also presses the two buttons that reach another origin (Check for
-  updates, a trailer). Their first run caught a fourth break, already live: a
-  JetBrains Mono subset under 4 KB was inlined as `data:font`, which
-  `font-src 'self'` refuses, so fonts now always ship as files. The header's
-  `script-src 'unsafe-inline'` stays: the inline script's hash changes with
-  every build, and the app's own meta policy already narrows it to that one
-  script.
-- **Rebuild `--release` before Playwright.** The e2e server picks whichever
-  binary is newer, and a stale release build silently tests old code.
-- **One long word cannot widen a page.** `body` sets `overflow-wrap: anywhere`,
-  which every page inherits and which also lowers the least a flex or grid track
-  shrinks to. The cost is that tight rows of Frog's own words can stack letter by
-  letter, so those set `overflow-wrap: normal` (Settings → Home, What's new's
-  version column). `verify-long-names` compares every page with the rule on and
-  off, and text kept on one line with `nowrap` still needs `min-width: 0` on its
-  column. The Playwright test `a very long name never widens a page on a phone`
-  is the guard for anything new.
-- **Verify scripts** live in `frontend/scripts/`, each starting its own server
-  against a throwaway database: `verify-stats`, `verify-push`,
-  `verify-shelves`, `verify-because`, `verify-anime`, `verify-leapfrog`
-  (AniList is a stand-in server inside it), `verify-profile-stats` (no TMDB:
-  it writes a small library straight into the database with `node:sqlite`),
-  `verify-2fa`, `verify-diary`, `verify-import`, `verify-polish`,
-  `verify-long-names` (real titles, ordinary and very long names, phones),
-  `verify-pictures` (uploads in Chromium, as Safari with no WebP writer, and in WebKit; needs `npx playwright install webkit`),
-  `verify-accounts` (invites,
-  isolation, devices, switching off), `verify-pull` (pull to refresh with
-  real touch input), plus `npm run pwa-check` and
-  `npm run audit`. The ones that reach TMDB need a valid key; with a bad one
-  every TMDB page answers 502.
-- **Web Push in tests:** headless Chrome throws away displayed notifications,
-  and Playwright's `--disable-background-networking` cuts it off from FCM.
-  `verify-push.mjs` keeps background networking and records the worker's
-  `showNotification` calls instead.
-- **AniList** — placing, syncing, AniList-only titles, season ratings and
-  the `anilist_check` example: [docs/ANILIST.md](docs/ANILIST.md).
-- **Released and status** (`backend/src/release.rs`): an episode is out when
-  its date has passed, or, undated, when a later one has aired — the
-  `released!()` SQL fragment, used by progress, Home, bulk marking and the
-  export. `desired_status` keeps paused and dropped, makes anything with
-  nothing out planned, unwatched released episodes or caught up on a running
-  show watching, and the rest completed. `reconcile` runs after every tick,
-  every sync and every show refresh.
-- **Imports and exports** — matching, conflict modes, Netflix, the backup
-  formats: [docs/IMPORTS.md](docs/IMPORTS.md).
-- **Library filters** live in the address, read through `lib/address.ts`,
-  because a shallow navigation leaves `page.url` where it was. The server
-  answers items, status counts and genres from one request; a status counts every
-  filter but itself, so its number is what choosing it shows. The page keeps its
-  last answer in the module, so Back draws at once and the scroll lands.
-- **Shelves have one place on Home**, the Your shelves row. A shelf used to be
-  able to add a row of its own, which showed it twice; saved layouts lose those
-  rows as they load (`introduceRows`).
-- **Administration shows initials on purpose.** A picture is served only to those
-  who can see the profile (`visible` in `routes/profiles.rs`), so drawing one
-  there would show it for an account that has its profile off.
-- **The Dark themes' accent stays at 4.37:1 on its buttons.** White and that
-  theme's background are about 20:1 apart, so no single accent reaches 4.5
-  against both, and it is also a text colour. Bold button text keeps it.
-- **The library filter matches `title.search_name`**, the name and original
-  name with case and accents folded out (`text::fold`), against the typed
-  term folded the same way. SQL cannot fold accents, so `upsert_title`
-  writes it and `db::fill_search_names` fills any row without one at
-  startup. Anything that inserts titles another way gets one on the next
-  start, and until then matches by its plain lower-cased name.
-- **A page that cannot load never shows the server's message.**
-  `lib/failure.ts` picks the words from the status (404 and 400 are the
-  page's own "isn't on TMDB" line; 502, 503 and offline have their own), and
-  the server keeps the detail in its log. Unknown addresses land on
-  `routes/+error.svelte`.
-- **Up next** (`store::next_episode`, shared by Home and the title page) is
-  the first unwatched episode after where you are: the latest dated watch,
-  or the furthest undated one when that lies later in the show. Only once
-  nothing after it is left does it go back to the first gap. On the
-  611-title Netflix library this moved 17 of 204 shows in progress, each to
-  the episode after the furthest watched, and changed nothing else.
-- **Last watched counts dated watches only.** An undated watch holds the day
-  it was recorded, so counting it made a show read "today" after an import.
-  A title with only undated watches has no last-watched day; Home's Continue
-  watching then falls back on `updated_at`.
-- **Edit mode** (`backend/src/bulk.rs`, `POST /api/library/bulk`) is one request
-  per action. Remove, status and favourite answer with the entries as they were
-  (`store::EntryRecord`); undo sends those back, and `restore_entries` writes
-  them into the signed-in account whatever they say. A title page's remove goes
-  the same way. Marking a show here is `bulk::tick_aired`, the same code as Mark
-  all watched.
-- **Your people** (`backend/src/activity.rs`, `/api/home/activity`) is its own
-  request, so nobody who switched the row off reads other accounts. Fourteen
-  days, three titles a person with the rest as a number on their last card,
-  twelve cards in all. It reads the whole fortnight, so that number is exact. A show is Finished only when it stands completed and its
-  last regular episode is in the run. `backend/tests/scoping.rs` also holds that
-  `activity.rs` and `taste.rs` name no notes and go through `store::shown_to`.
-- **Taste match** (`backend/src/taste.rs`) is `100 - 2 × the average difference`,
-  from 5 shared titles up. The doubling is on purpose: people rate near the top,
-  so the plain average reads high for anybody. A show rated by season counts at
-  the average of its seasons.
-- **Someone else's library** is `LibraryBrowser` with `owner`, reading 60 titles
-  at a time from `/api/profiles/{name}/library`. Its items are
-  `store::SharedItem`, which has no notes field: do not hand that route
-  `LibraryItem`. Having the profile on is the only switch.
-- **Keyed lists throw in production.** A repeated key in a Svelte `{#each}` takes
-  the whole page down, not just a warning. Anything a provider or a saved setting
-  feeds goes through `uniqueBy`, and `models` narrows TMDB's lists as well.
-- **Episodes are always listed for a tracked show.** An import ensures them even
-  with nothing to tick, a title page does behind the page, and the worker fills
-  any left (`fill_missing_episodes`, 25 a tick). Without them a show has no next
-  episode, and its total is only TMDB's count.
-- **Lists of titles are built from one reading** (`store::ItemFacts`): five
-  queries for the whole account, then `item` per title. Library and shelves go
-  through `build_items`; Home loads it once and shares it across its rows. On
-  the 611-title library a 399-title shelf went from about 640 ms to 96 ms and
-  Home from 145 ms to 86 ms, field for field the same JSON. A six-title shelf
-  went from 13 ms to 38 ms, accepted to keep one code path. `build_item` stays
-  for the pages about one title. Its totals also cover shelf titles, because a
-  title can stay on a hand-picked shelf after leaving the library.
-- **Very long shows were measured and left alone** (2026-10-30). Seasons
-  already draw only when opened: One Piece (1,180 episodes) shows 25. Its extra
-  elements are the episode heatmap, one per episode, 1,262 of 2,387. Drawing
-  that only near the screen halves the elements but moved no time past the
-  noise: at 4× CPU the main thread blocked 1,838 ms before and 1,453 ms after,
-  while Breaking Bad, which it does not touch, went 914 ms to 569 ms. Desktop
-  showed nothing. Removing the heatmap outright reached only 1,250 ms, and
-  deferring just moves the work to the middle of a scroll, so it was not
-  shipped. Compare against an untouched show before trusting any number here.
-- **Stats count only titles in the library.** Watches of removed titles stay
-  in the database (the diary keeps them) but leave every total.
-- **Stats credits** live in `title_person`, filled by `store::ensure_title`
-  and backfilled by the worker, 25 titles every 2 minutes.
-- **Pictures are made ready in the browser** (`lib/picture.ts`): avatars at 512
-  pixels, banners at 1800 on the long side. JPEG stays JPEG and anything else
-  becomes WebP, so transparency lasts; a browser with no WebP writer hands back
-  PNG. Anything that moves goes up untouched, because a canvas would keep only
-  the first frame: GIFs by their type, APNG and animated WebP by reading their
-  bytes (`isAnimated`). The server only checks size and first bytes.
-- **Characters are grapheme clusters** (`auth::characters`, `lib/names.ts`), so a
-  flag or a family emoji is one. The browser's `maxlength` counts UTF-16 units,
-  so `nameLimit` moves it with what is typed. A name past 256 code points is
-  refused even under 20 characters, because sign-in would refuse it afterwards.
-- **A name is checked and written under `state.names`.** The column is only
-  unique as typed, and a case-insensitive index could fail on a database that
-  already holds such a pair. One process makes one lock enough.
-- **Sign-in's limit is not a username limit.** `USERNAME_MAX` (20) is for a name
-  being chosen. Sign-in only refuses names past `SIGN_IN_NAME_MAX` (256), so an
-  account older than the limit always gets in. Raise that one if an instance
-  ever has a longer name.
-- **Reading is `chapter_read`**, one row per chapter on the day it was read,
-  owned by the library entry (it leaves with it, and undo and backups carry
-  it). How far someone is stays `library_entry.progress`; only reads with a
-  day are rows, so a first AniList sync adds none. The diary and Activity
-  union it with `watch_event`; Stats reads it in its own Manga half
-  (`routes/stats.rs::manga`), and films-and-shows figures never see it.
-- **The trailer behind a title** (Settings → Watching → Play trailers) needs
-  three things, each learned the hard way: a referrer
-  (`referrerpolicy="strict-origin-when-cross-origin"`), or YouTube refuses
-  most trailers; no `playlist` loop, which brings next and previous buttons
-  (Frog loops by `seekTo` on state 0 instead); and a player that is never
-  hidden, because a browser pauses a muted video nobody can see and YouTube
-  flashes its button on resuming. So it plays under the title's picture,
-  which lifts 3 s after the player says it is playing (`AMBIENT_SETTLE`), and
-  starts 12 s in, past the studio logos (`AMBIENT_FROM`).
-- **Manga search is ranked here** (`media::rank_manga`): AniList answers by
-  synonym and description too, so only what a title answers is kept,
-  synonyms after titles, light novels left out.
-- **New Home rows** reach saved layouts once, through `homeRowsSeen` in
-  `lib/settings.svelte.ts`. Add the id to `HOME_ROWS` and to the default list.
-
-## Shipped
-
-**1.3.1 Horned Frog** — Rate a whole library one card at a time, slid and
-drawn scores, and Clear that clears.
-
-**1.3.0 Horned Frog** — A Rewatched filter, rewatches on cards and profiles,
-every site's scores for anime and older titles, AniList's dates winning, an
-AniList entry removed in Frog coming back, and lighter title pages.
-
-**1.2.0 Glass Frog** — Profiles in tabs with Ratings and Compare, a title's
-history and rewatches, who else on the Frog has it, Activity, phone sheets,
-Back closing menus, and the 3 November batch.
-
-**1.1.0 Spring Peeper** — Your people on Home, a taste match on profiles, reset
-links and `frog owner-reset-link`, renaming, and pictures that stay small, clear
-and moving. Sign-in is bounded (`crate::throttle`) and answers alike for every
-name, and one long word can no longer widen a page.
-
-**1.0.2 Bullfrog** — Edit mode in Library, someone's whole library from
-their profile, portrait cards for people, and the fixes from a walk through the
-site: title pages that open whatever a provider repeats, a show with nothing
-watched that no longer reads Finished, exact undo on a title page, and a page
-that says so when it cannot load. `202610311000_nothing_watched_is_not_watching`
-moves shows an import left Watching with nothing listed to the watchlist.
-
-**1.0.1 Bullfrog** — Library filters kept in the
-address, status counts that say what a status shows, Back to a search, a Netflix
-import of what was really watched, one layout for every release on What's new,
-and the fixes from a walk through every page.
-
-**1.0.0 Bullfrog** — The bar on top with a search field. Home with one idea
-per row: continue watching (caught-up shows at its end), shelves as covers,
-the week's episodes, one row of recommendations. Search with tabs that filter
-the answer and filters as menus under the bar; a genre only one side has no
-longer brings the other side back unfiltered. Title pages with one line of
-facts, AniList / IMDb / Rotten Tomatoes / Metacritic as percentages with
-TMDB standing in, one family of controls, and episodes as cards under season
-tabs; the episode ratings chart is gone (MDBList has no episode scores).
-Logos from fanart.tv and from the show a season or special belongs to. A
-centred diary. Measured against 0.8 with the CPU slowed four times: the same
-load and scroll times on every main page.
-
-**0.8.0 and 0.8.1 Toad** — search ranked by how well a name answers, with films, shows,
-people, characters and studios apart, and filters with or without a name. Scores
-from IMDb, Rotten Tomatoes, Metacritic and others on one page through MDBList,
-with the age rating. AniList read only. Netflix import with every episode on its
-day, and a faster import review. Shelves at the top of Home, a People page with
-one search bar, a calendar that follows what you follow, a shorter Settings, and
-the UX pass.
-
-**0.7.0 Treefrog** — One search for titles, people, characters, studios and
-members, with studio pages. AniList placed by TMDB id from Fribb's list, by
-exact name and by prequel chain, re-read every 5 minutes, leftovers kept out
-of the way. Trailers play (they needed a referrer). Streaming logos open the
-service. Completed shows tick their aired episodes and offer the specials.
-Settings that did nothing (date style, complete automatically) work, and one
-that never could is gone. Phones get three posters across. Emptying a library,
-four mascots and the 0.6.1 fixes ride along.
-
-**0.6.0 Leapfrog** — AniList both ways through AniList's own sign-in, placed by
-id rather than by name, with anything uncertain left for the person to choose;
-the username import it replaces is gone. Stats, library totals and profiles
-count exactly the library. Settings in six groups with their own addresses.
-Administrators delete accounts. Profiles with a picture, banner, name, about
-text, four pins and fuller totals.
-
-**0.5.0 Ribbit** — Frog for more than one person. An account each, with every
-personal row scoped to its owner and a test that fails the build if a query
-forgets. Invitation-only joining, single-use and expiring. Per-account
-settings, devices and two-factor; change your password, sign a device out,
-take a copy of everything, delete your account. Optional profiles, off until
-turned on. Administration for accounts, roles and invitations. AniList sync.
-And the whole of it put on the internet: Docker image built for both
-architectures, Caddy with automatic HTTPS, pull-based updates with backup and
-rollback, encrypted nightly backups, `main` protected behind CI and review,
-and releases cut by release-please.
-
-**0.4.0 Lily Pad** — full stats with a year filter and a shareable year in
-review; Web Push for new episodes with per-show mute; hand-picked and smart
-shelves; "Because you watched" on Home; AniList and MyAnimeList import;
-two-factor sign-in; "When did you watch this?" and a grouped, redatable diary;
-the phone tab bar; status colours; data saver.
-
-**0.3.0 Tadpole** — imports from Letterboxd, Trakt, IMDb and TV Time; JSON and
-CSV export; calendar; diary; About; bundled typefaces; the Lucide icon set;
-undo toasts, skeletons and empty states.
-
-**0.2.0 Ripple** — the mascot and icons, the Pond theme, Home split from
-Library, the command palette, the theme editor, server-side settings, privacy
-headers, login rate limiting, release notes.
-
-**0.1.0 Spawn** — tracking, episodes, library, title and person pages,
-ratings, PWA, Docker, CI.
+| **Rebase merging doubles the changelog** | "Rebase and merge" rewrites commit hashes, so release-please lists a change twice. Untick *Allow rebase merging* in the repository settings. |
+| **The backup repository grows without end** | About 3 MB a copy, one nightly plus one per update. `docs/DEPLOY-ORACLE.md` step 7 has the reset; nothing does it on a schedule. |
+| **The database file does not shrink** | SQLite reuses freed pages but never returns them. A `VACUUM` with the instance stopped gives the space back. |
+| **Screenshots weigh 13 MB** | No lossless optimiser runs in the release step. |
+| **One AniList test is flaky** | `a_tmdb_outage_is_retried_not_left_for_the_person` races other tests over account 1's sync flag; it passes on a rerun. |
+| **The Projects board does not exist** | Needs `gh auth refresh -s project` from an owner before it can be made. |

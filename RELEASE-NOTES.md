@@ -11,7 +11,34 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Wood Frog —
 
-In progress.
+The minute it airs.
+
+### Highlights
+
+- **Out the minute it airs.** Episodes now come with the time they air as
+  well as the day, in your own time zone, on the calendar, on Home and on
+  every show's page. Notifications arrive the moment an episode is out, or
+  at midnight when only the day is known, and a film on your watchlist is
+  announced on its release day.
+- **Notifications worth opening.** Each one shows the title's artwork, the
+  episode or film by name, and Frog's own icon.
+- **One switch.** Settings → Notifications is a single switch. Nothing to
+  test, no hour to choose.
+- **Manga stats you can click through.** Pick a month, a genre, a rating or
+  a status, and every manga chart narrows to it.
+
+### Improvements
+
+- Choices that hold more choices, like Move to, open as soon as you point at
+  them.
+- Pip wears every mascot's face, Sleepy, Starry-eyed and Delighted included.
+- A name cut short shows in full when you point at it.
+- Added to a phone's home screen, Frog is simply called Frog.
+- A film still to come has its own bell, for its release day.
+
+### Fixes
+
+- The colour picker opens in full wherever its swatch sits in a list.
 
 ## [1.4.2] — Wood Frog — 2026-11-10
 

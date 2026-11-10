@@ -87,7 +87,6 @@ pub fn router(state: AppState) -> Router {
         .route("/push", get(push::status))
         .route("/push/subscribe", post(push::subscribe))
         .route("/push/unsubscribe", post(push::unsubscribe))
-        .route("/push/test", post(push::test))
         .route("/settings", get(settings::get))
         .route("/settings", put(settings::put))
         .route("/account", get(account::get).delete(account::delete))

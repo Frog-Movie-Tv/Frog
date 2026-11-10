@@ -16,8 +16,6 @@ pub struct Config {
     pub admin_password: Option<String>,
     pub secure_cookies: bool,
     pub session_days: i64,
-    /// Local hour (0-23) from which new episodes are announced on their air date.
-    pub notify_hour: u32,
     /// AniList API client. All three are needed, or AniList stays hidden.
     pub anilist: Option<AniListClient>,
     /// MDBList, for IMDb, Rotten Tomatoes and Metacritic scores. Without a
@@ -26,6 +24,26 @@ pub struct Config {
     /// fanart.tv, for title logos TMDB has none of. Without a key titles
     /// simply keep the logo TMDB gives, or none.
     pub fanart: Option<FanartClient>,
+    /// TheTVDB, for the day and time an episode or film comes out. Without a
+    /// key TMDB's days stand, with no time.
+    pub tvdb: Option<TvdbClient>,
+}
+
+/// A TheTVDB v4 project key. It is exchanged for a token that lasts a month;
+/// neither is in any address or log.
+#[derive(Clone)]
+pub struct TvdbClient {
+    pub key: String,
+    /// Only tests point this elsewhere.
+    pub api_url: String,
+}
+
+impl std::fmt::Debug for TvdbClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TvdbClient")
+            .field("api_url", &self.api_url)
+            .finish_non_exhaustive()
+    }
 }
 
 /// A free personal key from fanart.tv. Sent as a header, so it is in no
@@ -129,11 +147,6 @@ impl Config {
             admin_password: env_opt("FROG_ADMIN_PASSWORD"),
             secure_cookies: matches!(env_or("FROG_SECURE_COOKIES", "0").as_str(), "1" | "true"),
             session_days: env_or("FROG_SESSION_DAYS", "90").parse().unwrap_or(90),
-            notify_hour: env_or("FROG_NOTIFY_HOUR", "18")
-                .parse::<u32>()
-                .ok()
-                .filter(|h| *h < 24)
-                .unwrap_or(18),
             anilist: match (
                 env_opt("ANILIST_CLIENT_ID"),
                 env_opt("ANILIST_CLIENT_SECRET"),
@@ -165,6 +178,10 @@ impl Config {
                 key,
                 api_url: env_or("FANART_API_URL", "https://webservice.fanart.tv/v3"),
                 assets_url: env_or("FANART_ASSETS_URL", "https://assets.fanart.tv"),
+            }),
+            tvdb: env_opt("TVDB_API_KEY").map(|key| TvdbClient {
+                key,
+                api_url: env_or("TVDB_API_URL", "https://api4.thetvdb.com/v4"),
             }),
         })
     }

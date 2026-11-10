@@ -24,15 +24,18 @@ pub const FOLLOWED: &str = "(l.status IN ('watching', 'paused', 'completed')
              OR EXISTS (SELECT 1 FROM watch_event o
                          WHERE o.user_id = l.user_id AND o.title_id = l.title_id))))";
 
-/// SQL condition: episode `e` has come out. TMDB lists announced episodes
-/// with no date, so an undated one only counts when a later one has aired;
-/// treating every undated episode as out is what made a season 2 that does
-/// not exist yet show up as the next thing to watch.
+/// SQL condition: episode `e` has come out. With a time from TheTVDB
+/// (`air_at`) that is the moment itself; with a day alone, the day. TMDB
+/// lists announced episodes with no date, so an undated one only counts when
+/// a later one has aired; treating every undated episode as out is what made
+/// a season 2 that does not exist yet show up as the next thing to watch.
 /// The same condition, for splicing into a query with `concat!`.
 #[macro_export]
 macro_rules! released {
     () => {
-        "(e.air_date <= date('now') OR (e.air_date IS NULL AND EXISTS (
+        "((CASE WHEN e.air_at IS NULL THEN e.air_date <= date('now')
+               ELSE e.air_at <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now') END)
+          OR (e.air_date IS NULL AND EXISTS (
         SELECT 1 FROM episode later
          WHERE later.title_id = e.title_id AND later.season_number > 0
            AND (later.season_number > e.season_number

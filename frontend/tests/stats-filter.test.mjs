@@ -83,3 +83,70 @@ test('picking a bar twice puts it back', () => {
 	assert.deepEqual(toggle(once, 'genre', 'Drama'), {});
 	assert.deepEqual(toggle(once, 'genre', 'Comedy'), { genre: 'Comedy' });
 });
+
+// The manga half works the same way, from one row per manga.
+import { mangaView, toggleManga } from '../src/lib/stats-filter.ts';
+
+const manga = (id, fields) => ({
+	id,
+	name: `Manga ${id}`,
+	poster_path: null,
+	genres: [],
+	status: 'watching',
+	rating: null,
+	progress: 0,
+	units: [],
+	...fields
+});
+
+const shelf = [
+	manga(1, {
+		genres: ['Action'],
+		status: 'completed',
+		rating: 90,
+		progress: 120,
+		units: [
+			['2025', 20],
+			['2026', 30]
+		]
+	}),
+	manga(2, { genres: ['Action', 'Drama'], rating: 70, progress: 40, units: [['2026', 40]] }),
+	manga(3, { genres: ['Drama'], status: 'planned', progress: 0 })
+];
+const years = ['2025', '2026'];
+
+test('a manga genre narrows the totals, the timeline and the status', () => {
+	const v = mangaView(shelf, { genre: 'Drama' }, years, false);
+	assert.equal(v.totals.manga, 2);
+	assert.equal(v.totals.chapters, 40, 'all time counts how far in');
+	assert.deepEqual(v.by_status, { watching: 1, planned: 1 });
+	assert.deepEqual(
+		v.timeline.map((t) => t.chapters),
+		[0, 40]
+	);
+	// Its own chart keeps every genre to pick from.
+	assert.deepEqual(
+		v.genres.map((g) => g.name),
+		['Action', 'Drama']
+	);
+});
+
+test('a year bar counts the chapters read in it, and a status picks too', () => {
+	const v = mangaView(shelf, { unit: '2026' }, years, false);
+	assert.equal(v.totals.chapters, 70);
+	assert.equal(v.totals.manga, 2);
+	const done = mangaView(shelf, { status: 'completed' }, years, false);
+	assert.equal(done.totals.completed, 1);
+	assert.equal(done.top[0].id, 1);
+	assert.equal(done.by_status.watching, 1, 'the status chart keeps its other bars');
+});
+
+test('a ratings bar keeps the rated manga under it', () => {
+	const v = mangaView(shelf, { rating: 8 }, years, false);
+	assert.deepEqual(
+		v.top.map((t) => t.id),
+		[1]
+	);
+	assert.equal(v.totals.mean_rating, 90);
+	assert.deepEqual(toggleManga({ rating: 8 }, 'rating', 8), {});
+});

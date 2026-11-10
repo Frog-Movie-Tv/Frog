@@ -219,7 +219,8 @@ pub async fn send(
         .header("content-type", "application/octet-stream")
         // A new-episode alert is stale after a day.
         .header("ttl", "86400")
-        .header("urgency", "normal")
+        // High, or a phone asleep holds it back past the minute it aired.
+        .header("urgency", "high")
         .body(body)
         .send()
         .await;
@@ -252,9 +253,9 @@ pub struct Broadcast {
 }
 
 /// FCM sometimes answers 410 Gone for a subscription made seconds ago, while
-/// the browser's registration settles. Forgetting it then would turn "Send a
-/// test" straight after switching on into "switched off". A subscription this
-/// young that is refused is kept; the browser re-sends it on its next visit.
+/// the browser's registration settles. Forgetting it then would switch off a
+/// device that was switched on a moment before. A subscription this young
+/// that is refused is kept; the browser re-sends it on its next visit.
 const SETTLING_MINUTES: i64 = 10;
 
 /// A subscription that keeps failing for this many sends in a row is

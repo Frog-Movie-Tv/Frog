@@ -311,7 +311,7 @@ function manifest(id) {
 	void prefix;
 
 	return {
-		name: 'Frog — personal cinema',
+		name: 'Frog',
 		short_name: 'Frog',
 		description: 'Your self-hosted film and TV diary.',
 		id: '/',

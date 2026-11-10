@@ -1,3 +1,4 @@
+import { airDay } from './day';
 import { settings } from './settings.svelte';
 import type { TitleRef } from './titles';
 import type { WhenAnswer } from './when.svelte';
@@ -196,6 +197,18 @@ type BulkAnswer<A extends BulkAction['action'], Finishing extends boolean> = A e
 				? { added: number }
 				: { before: EntryRecord[] };
 
+/** Home's days as they fall where the viewer is, for anything with a time. */
+function localHome(home: HomeData): HomeData {
+	for (const entry of [home.hero, ...home.continue, ...home.waiting]) {
+		if (entry?.next) entry.next.air_date = airDay(entry.next.air_date, entry.next.air_at);
+	}
+	for (const airing of home.this_week) {
+		for (const ep of airing.episodes) ep.air_date = airDay(ep.air_date, ep.air_at);
+		airing.air_date = airing.episodes[0]?.air_date ?? airing.air_date;
+	}
+	return home;
+}
+
 function qs(params: Record<string, unknown>): string {
 	const search = new URLSearchParams();
 	for (const [k, v] of Object.entries(params)) {
@@ -332,7 +345,7 @@ export const api = {
 	studio: (id: number, page = 1) =>
 		get<StudioDetail>(`/api/studios/${id}${qs({ page: page > 1 ? page : undefined })}`),
 
-	home: () => get<HomeData>('/api/home'),
+	home: () => get<HomeData>('/api/home').then(localHome),
 	because: () => get<{ rows: BecauseRow[] }>('/api/home/because'),
 	activity: () => get<{ items: ActivityItem[] }>('/api/home/activity'),
 	/** Everyone's activity, all of it, a page before `before` at a time. */
@@ -382,22 +395,31 @@ export const api = {
 		send<{ ok: true }>('PUT', `/api/shelves/${id}/items/order`, { title_ids: titleIds }),
 	titleShelves: (titleId: number) =>
 		get<{ shelves: { id: number; name: string; on: boolean }[] }>(`/api/t/${titleId}/shelves`),
-	pushStatus: () => get<{ public_key: string; devices: number; default_hour: number }>('/api/push'),
+	pushStatus: () => get<{ public_key: string; devices: number }>('/api/push'),
+	/** With this browser's zone, which says when midnight is for a day with no time. */
 	pushSubscribe: (subscription: PushSubscriptionJSON) =>
-		send<{ ok: true }>('POST', '/api/push/subscribe', subscription),
+		send<{ ok: true }>('POST', '/api/push/subscribe', {
+			...subscription,
+			time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone
+		}),
 	pushUnsubscribe: (endpoint: string) =>
 		send<{ ok: true }>('POST', '/api/push/unsubscribe', { endpoint }),
-	pushTest: () =>
-		send<{ sent: number; gone: number; failed: number }>('POST', '/api/push/test', {}),
 	fullStats: (year?: number) => get<FullStats>(`/api/stats${qs({ year })}`),
 	mangaStats: (year?: number) => get<MangaStats>(`/api/stats/manga${qs({ year })}`),
 
 	/** A title as a provider names it (`tv/1399`, `anilist/21`): opens it, and the answer carries Frog's id. */
 	titleAt: (kind: Kind | 'anilist', id: number) => get<TitleDetail>(`/api/titles/${kind}/${id}`),
 	/** A title by Frog's id. Everything below goes by it too. */
-	title: (titleId: number) => get<TitleDetail>(`/api/t/${titleId}`),
+	title: (titleId: number) =>
+		get<TitleDetail>(`/api/t/${titleId}`).then((t) => {
+			if (t.next_up) t.next_up.air_date = airDay(t.next_up.air_date, t.next_up.air_at);
+			return t;
+		}),
 	season: (titleId: number, season: number) =>
-		get<SeasonDetail>(`/api/t/${titleId}/seasons/${season}`),
+		get<SeasonDetail>(`/api/t/${titleId}/seasons/${season}`).then((s) => {
+			for (const ep of s.episodes) ep.air_date = airDay(ep.air_date, ep.air_at);
+			return s;
+		}),
 	person: (id: number) => get<PersonDetail>(`/api/person/${id}`),
 
 	track: (

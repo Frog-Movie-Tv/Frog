@@ -1341,10 +1341,12 @@ pub struct NextEpisode {
     pub name: Option<String>,
     pub still_path: Option<String>,
     pub air_date: Option<String>,
+    /// The moment, when TheTVDB knows the time.
+    pub air_at: Option<String>,
     pub aired: bool,
 }
 
-/// (season, episode, name, still_path, air_date, aired)
+/// (season, episode, name, still_path, air_date, aired, air_at)
 type NextRow = (
     i64,
     i64,
@@ -1352,6 +1354,7 @@ type NextRow = (
     Option<String>,
     Option<String>,
     i64,
+    Option<String>,
 );
 
 /// The episode to watch next: the first unwatched one after where you are,
@@ -1401,7 +1404,7 @@ pub async fn next_episode(
         "SELECT e.season_number, e.episode_number, e.name, e.still_path, e.air_date,
                 CASE WHEN ",
         crate::released!(),
-        " THEN 1 ELSE 0 END
+        " THEN 1 ELSE 0 END, e.air_at
            FROM episode e
           WHERE e.title_id = ?1
             AND e.season_number > 0
@@ -1435,12 +1438,13 @@ pub async fn next_episode(
     }
 
     Ok(row.map(
-        |(season_number, episode_number, name, still_path, air_date, aired)| NextEpisode {
+        |(season_number, episode_number, name, still_path, air_date, aired, air_at)| NextEpisode {
             season_number,
             episode_number,
             name,
             still_path,
             air_date,
+            air_at,
             aired: aired == 1,
         },
     ))

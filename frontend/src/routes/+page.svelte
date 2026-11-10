@@ -14,7 +14,7 @@
 	import RailSkeleton from '#lib/components/RailSkeleton.svelte';
 	import ShelfCard from '#lib/components/ShelfCard.svelte';
 	import { failure, type Failure } from '#lib/failure';
-	import { episodeCode, prettyDate, relativeDate, runtime, year } from '#lib/format';
+	import { clockTime, episodeCode, prettyDate, relativeDate, runtime, year } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import { shelfMenu, titleMenu } from '#lib/menus';
@@ -233,6 +233,7 @@
 						<p class="upnext">
 							{#if heroCaughtUp}
 								Next episode {heroNext.air_date ? prettyDate(heroNext.air_date) : 'to be announced'}
+								{#if heroNext.air_at}· {clockTime(heroNext.air_at)}{/if}
 							{:else}
 								<strong>{episodeCode(heroNext.season_number, heroNext.episode_number)}</strong>
 								{heroNext.name ?? ''}
@@ -302,7 +303,10 @@
 											<span class="noart"></span>
 										{/if}
 										<span class="who">
-											<span class="when">{relativeDate(airing.air_date)}</span>
+											<span class="when"
+												>{relativeDate(airing.air_date)}{#if airing.episodes[0]?.air_at}
+													· {clockTime(airing.episodes[0].air_at)}{/if}</span
+											>
 											<strong>{airing.item.name}</strong>
 											<span class="faint">
 												{episodeRange(airing)}

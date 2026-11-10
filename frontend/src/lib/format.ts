@@ -131,6 +131,18 @@ export function relativeDate(iso: string | null | undefined): string {
 	return prettyDate(iso);
 }
 
+/** The time of day a moment falls at here, by the 12- or 24-hour clock chosen. */
+export function clockTime(at: string | null | undefined): string {
+	if (!at) return '';
+	const d = new Date(at);
+	if (Number.isNaN(d.getTime())) return '';
+	return d.toLocaleTimeString(undefined, {
+		hour: 'numeric',
+		minute: '2-digit',
+		hour12: !settings.current.clock24
+	});
+}
+
 export function episodeCode(season: number, episode: number): string {
 	const pad = (n: number) => String(n).padStart(2, '0');
 	return `S${pad(season)}E${pad(episode)}`;

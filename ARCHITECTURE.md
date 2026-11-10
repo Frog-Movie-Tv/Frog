@@ -82,9 +82,9 @@ the ones above.
 | Layer | Modules | Does |
 | --- | --- | --- |
 | HTTP | `routes/*` | Parse and check the request, name the account (`Auth`, `AdminAuth`), call the layer below, shape the answer. |
-| Domain | `catalog`, `transfer`, `anilist`, `release`, `reset`, `activity`, `taste`, `franchise`, `bulk`, `push`, `jobs` | Decisions and workflows: which title a provider id names, what an import means, who wins a sync, when an episode is out, what a show's status is. |
+| Domain | `catalog`, `transfer`, `anilist`, `release`, `airing`, `announce`, `reset`, `activity`, `taste`, `franchise`, `bulk`, `push`, `jobs` | Decisions and workflows: which title a provider id names, what an import means, who wins a sync, when an episode is out, what a show's status is, what to tell whom and when. |
 | Persistence | `catalog`, `store`, `anilist::records`, `images`, `db` | Reads and writes. `catalog` owns the shared titles, episodes and provider ids; `store` owns one account's library; each domain may own its own tables (`anilist::records` owns `anilist_*`, `images` owns `image_cache`). |
-| Providers | `tmdb`, `anilist::client`, `anilist::media` | Talking to other services, cached; nothing else calls them directly. `catalog::ensure` is how a provider's answer becomes a title. |
+| Providers | `tmdb`, `tvdb`, `anilist::client`, `anilist::media` | Talking to other services, cached; nothing else calls them directly. `catalog::ensure` is how a provider's answer becomes a title. |
 | Shared | `auth`, `config`, `error`, `state`, `text`, `palette`, `throttle`, `totp`, `ops` | Small and specific; no catch-all helpers module. |
 
 Simple, single-area reads still live in their route module (most of
@@ -110,6 +110,9 @@ for AniList's, which win), who else has a title (`others_with`), emptying it, an
 | `release` | When an episode counts as out, which of a day's episodes the calendar lists (`calendar_keeps`: a special airing beside a regular episode is its bonus, not a second entry), the status a show should have (`reconcile`), and whether Continue watching has anything to say about it (`continues`). For a title followed as a count, a manga's chapters, `set_count` moves the count and `counted_status` the status. |
 | `transfer` | Imports (matching, applying) and exports. |
 | `anilist` | AniList sign-in, and reading each account's list into its library. Read only. |
+| `tvdb` | TheTVDB v4: sign-in token, finding a show (TMDB's `tvdb_id`, else IMDb) or a film (IMDb), a show's episodes and time of day, a film's first release, and the network clock a country keeps (`zone_for_country`, `instant`). Release days and times only. |
+| `airing` | TheTVDB's days and times on Frog's episodes. `plan` decides, season by season: a season whose numbering disagrees with TMDB's keeps TMDB's days. `refresh` writes `episode.air_date`, `air_at`, `air_source` and `title_airing`; `catalog::upsert_episodes` keeps a TheTVDB day over TMDB's. The worker reads ten titles every five minutes, running shows twice a day. |
+| `announce` | Notifications: what is due for one account now (`due`), in its time zone (`app_setting` `time_zone`, reported by the browser), and what the notification says (`Announcement::payload`). An episode goes out at its `air_at`, else at midnight on its day; a film on its release day. Once each (`push_sent`, `push_sent_title`). |
 | `push` | Web Push: subscriptions and sending. |
 | `jobs` | The background worker. |
 | `ops` | Reads what the deploy scripts recorded in `ops.jsonl`. |
@@ -196,7 +199,7 @@ flash and no client-side work.
 
 ```
 app_user ── session, recovery_code, invite, password_reset, app_setting,
-            user_image, push_subscription, push_sent
+            user_image, push_subscription, push_sent, push_sent_title
 
 title (shared catalog; id is Frog's own) ──┬── episode ──┬── episode_state  (notes, per account)
   kind (film, show, manga), metadata,      │             └── watch_event    (the diary, per account)
@@ -205,6 +208,7 @@ title (shared catalog; id is Frog's own) ──┬── episode ──┬──
                                            ├── library_entry (per account: status, rating, …)
                                            ├── season_rating (per account, per season or part)
                                            ├── shelf_item ── shelf (per account)
+                                           ├── title_airing (TheTVDB's id, time of day, zone; shared)
                                            └── title_person (credits, shared)
 
 anilist_link · anilist_oauth · anilist_entry      per account
