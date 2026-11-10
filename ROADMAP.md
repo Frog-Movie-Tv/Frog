@@ -7,7 +7,7 @@ finishes something updates it. **Next** is ordered — take from the top.
 
 | | |
 | --- | --- |
-| **Release** | 1.4.0 "Wood Frog" (manga and Glass); 1.4.1 (the 9 November batch) is in review |
+| **Release** | 1.4.1 "Wood Frog" (the 9 November batch); 1.4.2 (right-click and Pip) is in review |
 | **Next codenames** | Goliath |
 | **Live at** | a DuckDNS hostname, behind Caddy |
 | **Hosted on** | Oracle Cloud Always Free, `VM.Standard.E2.1.Micro` — 2 vCPU, 954 MB, amd64, Amsterdam |
@@ -21,26 +21,19 @@ production runs. `docs/DEPLOY-ORACLE.md` is the deployment;
 
 ## Next
 
-0. **Ship 1.4.1: the 9 November batch.** One pull request,
-   `fix/november-batch`, with `Release-As: 1.4.1` so release-please makes a
-   patch although watchlists and the Stats dashboard are new. Its notes are
-   under Upcoming in `RELEASE-NOTES.md`. In it: watchlists and adding a pasted
-   list to a shelf, Stats you can click through, Activity a card per title and
-   with your own watching, a manga's author, AniList films opening as TMDB's
-   (and the copies merged), the calendar's bonus shorts, light-theme hover, a
-   colour picker, Settings' Account, Ratings and AniList, About, Administration,
-   search as you type, empty people and studios left out of search, and the
-   e2e race that failed `main` after 1.4.0. Before and after it reaches the
-   server:
-   - the first start adds `shelf.watchlist` (additive), and folds AniList-only
-     films TMDB also has into TMDB's title, once (`jobs::merge_film_twins`).
-     Read the log for "merged AniList films" and open Look Back the manga's
-     Related row: it should lead to the one Look Back film. Take a manual
-     backup first all the same;
-   - the colour picker's sheet and the Stats bars were checked in desktop
-     Chromium only: try both by finger on the Android phone;
-   - the AniList card and Administration's overview were checked against the
-     demo accounts, not the live list and the live server's backup log.
+0. **Ship 1.4.2: right-click and Pip.** One pull request,
+   `feat/right-click-and-pip`, with `Release-As: 1.4.2` so release-please makes a
+   patch although it is a `feat`. Its notes are under Upcoming. Still to try by
+   hand once it is on the server:
+   - holding a card on the Android phone opens the menu as a sheet, and a tap
+     after the hold does not open the title (the e2e sends the same event the
+     browser fires on a hold, not a real finger);
+   - a sideways swipe along Settings' tabs on the phone, which is what
+     started this, now scrolls without the reload;
+   - Pip on iOS Safari, which nothing here has drawn.
+   Left over from 1.4.1, also by hand: the colour picker's sheet and the Stats
+   bars by finger on the phone, and the "merged AniList films" line in the
+   server log after its first start.
 1. **AniList sign-in on a laptop, once by hand.** The Frog-Dev client
    (redirect `http://127.0.0.1:8080/api/anilist/callback`) is in the local
    `.env`, and AniList accepts its id and secret (checked against its token
