@@ -181,13 +181,20 @@ pub async fn restore_tmdb_days(state: &AppState) -> usize {
                 break;
             }
         }
-        // Whatever TMDB had is written; the mark has done its job.
+        // Whatever TMDB had is written; the mark has done its job. Its times
+        // are worked out next, not hours later: they were skipped while it
+        // was marked.
         let _ = sqlx::query(
             "UPDATE episode SET air_source = NULL WHERE title_id = ? AND air_source = 'restore'",
         )
         .bind(title_id)
         .execute(&state.pool)
         .await;
+        if let Ok(Some(catalog::ExternalId::Tmdb { id, .. })) =
+            catalog::primary(&state.pool, title_id).await
+        {
+            let _ = crate::airtime::mark_due(&state.pool, id).await;
+        }
         reconcile_everyone(state, title_id).await;
         done += 1;
     }

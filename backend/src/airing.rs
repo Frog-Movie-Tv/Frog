@@ -502,21 +502,24 @@ async fn store(
     .execute(&mut *tx)
     .await?;
 
-    let before: Vec<(i64, i64, String)> =
-        sqlx::query_as("SELECT season, episode, air_date FROM airing_episode WHERE tmdb_id = ?")
-            .bind(show.tmdb_id)
-            .fetch_all(&mut *tx)
-            .await?;
-    let before: HashMap<(i64, i64), String> = before
+    let before: Vec<(i64, i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT season, episode, air_date, air_source FROM airing_episode WHERE tmdb_id = ?",
+    )
+    .bind(show.tmdb_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let before: HashMap<(i64, i64), (String, Option<String>)> = before
         .into_iter()
-        .map(|(s, e, day)| ((s, e), day))
+        .map(|(s, e, day, source)| ((s, e), (day, source)))
         .collect();
 
     let mut changed = false;
     for e in episodes {
         let day = e.air_date.to_string();
         match before.get(&(e.season, e.episode)) {
-            Some(was) if *was == day => {
+            // TMDB's day unchanged, or the day is TVmaze's or AniList's,
+            // which TMDB does not overrule (crate::airtime).
+            Some((was, source)) if *was == day || source.is_some() => {
                 sqlx::query(
                     "UPDATE airing_episode SET name = ?
                       WHERE tmdb_id = ? AND season = ? AND episode = ?",

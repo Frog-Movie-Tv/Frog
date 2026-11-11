@@ -1,19 +1,21 @@
-//! The moment an episode airs, for episodes TMDB lists.
+//! When an episode airs, for episodes TMDB lists.
 //!
-//! TMDB says which shows and episodes exist and on which day. This adds only
-//! the moment: AniList's airing schedule for anime (a TMDB show in Animation
-//! from Japan), TVmaze's `airstamp` for everything else, and nothing when
-//! neither knows, so a page says "time TBA" rather than guessing. No title,
-//! name, picture or episode is ever taken from either.
+//! TMDB says which shows and episodes exist. When an episode airs comes from
+//! AniList's airing schedule for anime (a TMDB show in Animation from Japan)
+//! and from TVmaze for everything else: the day, and the moment when the time
+//! of day is known, so a page says "time TBA" rather than guessing. TMDB's
+//! own day stays only for an episode neither has. No title, name, picture or
+//! episode is ever taken from either.
 //!
 //! The matching is pure (`match_anilist`, `match_tvmaze`) and `resolve` reads
 //! the providers. How a TMDB show is found on each is kept for good in
-//! `airtime_show`. A result is stored where it is shown, as UTC:
-//! `episode.air_at` for titles in Frog's catalog and `airing_episode.air_at`
-//! for the Airing page. `refresh_due` works every show out again every few
-//! hours; TMDB's `air_date` is never written here.
+//! `airtime_show`. A result is stored where it is shown: `episode.air_date`
+//! and `air_at` (UTC) for titles in Frog's catalog, `airing_episode`'s for
+//! the Airing page, with `air_source` naming the provider. While it does,
+//! TMDB's refreshes leave the day alone. `refresh_due` works every show out
+//! again every few hours.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use chrono_tz::Asia::Tokyo;
@@ -24,7 +26,7 @@ use crate::anilist::Api;
 use crate::catalog::{self, ExternalId};
 use crate::error::AppResult;
 use crate::state::AppState;
-use crate::text::fold;
+use crate::text::{self, fold};
 use crate::tvmaze;
 
 /// How long a show's worked-out times stand before they are worked out again.
@@ -63,17 +65,22 @@ impl Source {
     }
 }
 
-/// One of TMDB's episodes: its numbers and TMDB's day.
+/// One of TMDB's episodes: its numbers, its day as last stored (TMDB's, or
+/// the provider's once one has it) and its name.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Wanted {
     pub season: i64,
     pub episode: i64,
     pub date: Option<NaiveDate>,
+    pub name: Option<String>,
 }
 
+/// When a provider says an episode airs: its day, and the moment when the
+/// time of day is known.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Found {
-    pub at: DateTime<Utc>,
+    pub day: Option<NaiveDate>,
+    pub at: Option<DateTime<Utc>>,
     pub source: Source,
 }
 
@@ -210,47 +217,255 @@ fn pick(near: &[&Airing], w: &Wanted) -> Option<DateTime<Utc>> {
     None
 }
 
-/// TVmaze numbers most shows as TMDB does: season and number, when TVmaze's
-/// day agrees with TMDB's within a day. Otherwise the day decides: the one
-/// episode TVmaze has that day, or the same place among several. An episode
-/// TVmaze lists without a time of day has none, whatever its `airstamp`.
-pub fn match_tvmaze(eps: &[tvmaze::Episode], wanted: &[Wanted]) -> Vec<Option<DateTime<Utc>>> {
-    wanted.iter().map(|w| tvmaze_one(eps, wanted, w)).collect()
+/// What TVmaze gives one of TMDB's episodes: the day it airs where it is
+/// made, and the moment when TVmaze knows the time of day.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Hit {
+    pub day: Option<NaiveDate>,
+    pub at: Option<DateTime<Utc>>,
 }
 
-fn tvmaze_one(eps: &[tvmaze::Episode], wanted: &[Wanted], w: &Wanted) -> Option<DateTime<Utc>> {
-    let same: Vec<&tvmaze::Episode> = eps
-        .iter()
-        .filter(|e| e.season == w.season && e.number == Some(w.episode))
+/// TMDB and TVmaze dates for the same episode can be this far apart and the
+/// same name still mean it.
+const NAME_REACH_DAYS: i64 = 30;
+
+/// Words that name no episode in particular: "Episode 187", "Part 2", "TBA".
+const FILLER: [&str; 8] = [
+    "episode", "ep", "part", "chapter", "tba", "tbd", "untitled", "special",
+];
+
+/// Words that join names rather than being part of them.
+const JOINERS: [&str; 4] = ["and", "the", "a", "with"];
+
+/// An episode name as the words it is made of, or none when it says nothing
+/// about which episode it is.
+fn name_words(name: Option<&str>) -> Option<BTreeSet<String>> {
+    let words: BTreeSet<String> = text::words(name?)
+        .into_iter()
+        .filter(|w| !JOINERS.contains(&w.as_str()))
         .collect();
-    if let [e] = same.as_slice() {
-        let agrees = match (w.date, e.airdate) {
-            (Some(ours), Some(theirs)) => (ours - theirs).num_days().abs() <= 1,
-            _ => true,
-        };
-        if agrees {
-            return e.at;
+    let says_nothing = words
+        .iter()
+        .all(|w| FILLER.contains(&w.as_str()) || w.chars().all(|c| c.is_ascii_digit()));
+    (!says_nothing).then_some(words)
+}
+
+/// A name's letters and digits run together, for "contains" checks.
+fn name_key(words: &BTreeSet<String>) -> String {
+    words.iter().map(String::as_str).collect()
+}
+
+/// How two episode names compare.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Named {
+    /// The same words, in any order: "Wendy Osefo & Monica McNutt" is
+    /// "Monica McNutt, Wendy Osefo".
+    Same,
+    /// Most of the shorter one's words, or one name inside the other: a guest
+    /// left off one list, or a subtitle kept by one site only.
+    Close,
+    Different,
+    /// One side says nothing about which episode it is.
+    Unknown,
+}
+
+fn named(ours: Option<&BTreeSet<String>>, theirs: Option<&BTreeSet<String>>) -> Named {
+    let (Some(a), Some(b)) = (ours, theirs) else {
+        return Named::Unknown;
+    };
+    if a == b {
+        return Named::Same;
+    }
+    let (small, big) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+    let shared = small.intersection(big).count();
+    if small.len() >= 2 && shared * 4 >= small.len() * 3 {
+        return Named::Close;
+    }
+    let (ka, kb) = (name_key(a), name_key(b));
+    let (short, long) = if ka.len() <= kb.len() {
+        (&ka, &kb)
+    } else {
+        (&kb, &ka)
+    };
+    if short.chars().count() >= LOOSE_NAME && long.contains(short.as_str()) {
+        return Named::Close;
+    }
+    Named::Different
+}
+
+/// Shortest name a "contains" check trusts, as the Netflix import's.
+const LOOSE_NAME: usize = 6;
+
+/// How sure a pairing is from its name, day and number; higher is surer, and
+/// none is not the same episode. A day alone is `by_day`'s to judge.
+fn score(w: &Wanted, e: &tvmaze::Episode, name: Named) -> Option<u8> {
+    let gap = match (w.date, e.airdate) {
+        (Some(ours), Some(theirs)) => Some((ours - theirs).num_days().abs()),
+        _ => None,
+    };
+    let numbered = e.season == w.season && e.number == Some(w.episode);
+    match name {
+        Named::Same => match gap {
+            None | Some(0..=1) => Some(100),
+            Some(g) if g <= NAME_REACH_DAYS => Some(90),
+            _ => None,
+        },
+        Named::Close => {
+            let near = gap.is_some_and(|g| g <= 1);
+            let counted = numbered && gap.is_none_or(|g| g <= NUMBER_REACH_DAYS);
+            (near || counted).then_some(80)
+        }
+        Named::Different => (numbered && gap == Some(0)).then_some(60),
+        Named::Unknown => match (gap, numbered) {
+            (Some(0), true) => Some(95),
+            (Some(1), true) => Some(75),
+            (None, true) => Some(50),
+            _ => None,
+        },
+    }
+}
+
+/// Pairings by day alone: on a day both sides list the same number of
+/// episodes, the first is the first and so on. Names that disagree rule a
+/// pairing out unless the day has one episode on each side.
+fn by_day(
+    eps: &[tvmaze::Episode],
+    wanted: &[Wanted],
+    names: &[NameRow],
+) -> Vec<(u8, usize, usize)> {
+    let mut days: BTreeMap<NaiveDate, (Vec<usize>, Vec<usize>)> = BTreeMap::new();
+    for (i, w) in wanted.iter().enumerate() {
+        if let Some(day) = w.date {
+            days.entry(day).or_default().0.push(i);
         }
     }
-
-    let day = w.date?;
-    let mut theirs: Vec<&tvmaze::Episode> = eps
-        .iter()
-        .filter(|e| e.airdate == Some(day) && e.number.is_some())
-        .collect();
-    theirs.sort_by_key(|e| (e.season, e.number));
-    let mut ours: Vec<&Wanted> = wanted.iter().filter(|o| o.date == Some(day)).collect();
-    ours.sort_by_key(|o| (o.season, o.episode));
-    match theirs.as_slice() {
-        [] => None,
-        _ if theirs.len() == ours.len() => {
-            let place = ours
-                .iter()
-                .position(|o| o.season == w.season && o.episode == w.episode)?;
-            theirs[place].at
+    for (j, e) in eps.iter().enumerate() {
+        if let Some(day) = e.airdate {
+            if let Some(slot) = days.get_mut(&day) {
+                slot.1.push(j);
+            }
         }
-        _ if theirs.iter().all(|e| e.at == theirs[0].at) => theirs[0].at,
-        _ => None,
+    }
+    let mut out = Vec::new();
+    for (ours, theirs) in days.values_mut() {
+        if ours.len() != theirs.len() || ours.is_empty() {
+            continue;
+        }
+        ours.sort_by_key(|&i| (wanted[i].season, wanted[i].episode));
+        theirs.sort_by_key(|&j| (eps[j].season, eps[j].number, eps[j].at));
+        let alone = ours.len() == 1;
+        for (&i, &j) in ours.iter().zip(theirs.iter()) {
+            match names[i][j] {
+                Named::Different if alone => out.push((55, i, j)),
+                Named::Different => {}
+                // Above a number a day off: a nightly show that numbers
+                // differently still airs once a night.
+                _ => out.push((85, i, j)),
+            }
+        }
+    }
+    out
+}
+
+/// How every one of ours compares by name with every one of theirs.
+type NameRow = Vec<Named>;
+
+/// Pair TMDB's episodes with TVmaze's, the way imports pair names: every
+/// signal is weighed (the name, then the day, then the number), the surest
+/// pairings are made first, each episode is used once, and a pairing two
+/// candidates could equally claim is not made. TVmaze numbers some shows
+/// differently (a talk show by year, or one behind after a special), so no
+/// signal decides alone. An episode TVmaze airs on a day it lists nothing
+/// else for, at one moment, gives that moment to every one of ours that day
+/// left over: a double bill.
+pub fn match_tvmaze(eps: &[tvmaze::Episode], wanted: &[Wanted]) -> Vec<Option<Hit>> {
+    let ours: Vec<_> = wanted
+        .iter()
+        .map(|w| name_words(w.name.as_deref()))
+        .collect();
+    let theirs: Vec<_> = eps.iter().map(|e| name_words(e.name.as_deref())).collect();
+    let names: Vec<NameRow> = ours
+        .iter()
+        .map(|o| {
+            theirs
+                .iter()
+                .map(|t| named(o.as_ref(), t.as_ref()))
+                .collect()
+        })
+        .collect();
+    let hit = |j: usize| Hit {
+        day: eps[j].airdate,
+        at: eps[j].at,
+    };
+
+    // (score, days apart, ours, theirs)
+    let mut pairs: Vec<(u8, i64, usize, usize)> = Vec::new();
+    for (i, w) in wanted.iter().enumerate() {
+        for (j, e) in eps.iter().enumerate() {
+            if let Some(s) = score(w, e, names[i][j]) {
+                pairs.push((s, gap_of(w, e), i, j));
+            }
+        }
+    }
+    for (s, i, j) in by_day(eps, wanted, &names) {
+        if !pairs.iter().any(|p| p.2 == i && p.3 == j && p.0 >= s) {
+            pairs.push((s, 0, i, j));
+        }
+    }
+    pairs.sort_by_key(|&(s, gap, i, j)| (std::cmp::Reverse(s), gap, i, j));
+
+    let mut out: Vec<Option<Hit>> = vec![None; wanted.len()];
+    let mut done_ours = vec![false; wanted.len()];
+    let mut done_theirs = vec![false; eps.len()];
+    for &(s, gap, i, j) in &pairs {
+        if done_ours[i] || done_theirs[j] {
+            continue;
+        }
+        let rival_for_ours = pairs.iter().any(|&(s2, g2, i2, j2)| {
+            s2 == s && g2 == gap && i2 == i && j2 != j && !done_theirs[j2] && hit(j2) != hit(j)
+        });
+        if rival_for_ours {
+            done_ours[i] = true;
+            continue;
+        }
+        let rival_for_theirs = pairs
+            .iter()
+            .any(|&(s2, g2, i2, j2)| s2 == s && g2 == gap && j2 == j && i2 != i && !done_ours[i2]);
+        if rival_for_theirs {
+            done_theirs[j] = true;
+            continue;
+        }
+        out[i] = Some(hit(j));
+        done_ours[i] = true;
+        done_theirs[j] = true;
+    }
+
+    // A double bill: one TVmaze episode, or several at one moment, on a day
+    // where some of ours were left over.
+    for (i, w) in wanted.iter().enumerate() {
+        if out[i].is_some() {
+            continue;
+        }
+        let Some(day) = w.date else { continue };
+        let that_day: Vec<usize> = (0..eps.len())
+            .filter(|&j| eps[j].airdate == Some(day))
+            .collect();
+        let Some(&first) = that_day.first() else {
+            continue;
+        };
+        let one_moment = that_day.iter().all(|&j| hit(j) == hit(first));
+        let named_otherwise = that_day.iter().any(|&j| names[i][j] == Named::Different);
+        if one_moment && !named_otherwise && eps[first].at.is_some() {
+            out[i] = Some(hit(first));
+        }
+    }
+    out
+}
+
+fn gap_of(w: &Wanted, e: &tvmaze::Episode) -> i64 {
+    match (w.date, e.airdate) {
+        (Some(ours), Some(theirs)) => (ours - theirs).num_days().abs(),
+        _ => i64::MAX / 2,
     }
 }
 
@@ -267,24 +482,40 @@ pub async fn resolve(
     if wanted.is_empty() {
         return Ok(Vec::new());
     }
-    let tag = |found: Vec<Option<DateTime<Utc>>>, source| {
-        found
-            .into_iter()
-            .map(|at| at.map(|at| Found { at, source }))
-            .collect()
-    };
+    let mut found: Vec<Option<Found>> = vec![None; wanted.len()];
     if show.anime {
         let media = anilist_media(state, show, wanted).await?;
         if !media.is_empty() {
             let airings = anilist_airings(state, &media, wanted).await?;
-            return Ok(tag(match_anilist(&airings, wanted), Source::AniList));
+            // An anime's day is its day in Japan, as TMDB writes it.
+            for (slot, at) in found.iter_mut().zip(match_anilist(&airings, wanted)) {
+                *slot = at.map(|at| Found {
+                    day: Some(japan_day(at)),
+                    at: Some(at),
+                    source: Source::AniList,
+                });
+            }
         }
     }
+    // TVmaze for everything else, and for any anime episode AniList could not
+    // place: a season AniList files under another name, say.
+    let left: Vec<usize> = (0..wanted.len()).filter(|&i| found[i].is_none()).collect();
+    if left.is_empty() {
+        return Ok(found);
+    }
     let Some(id) = tvmaze_show(state, show).await? else {
-        return Ok(vec![None; wanted.len()]);
+        return Ok(found);
     };
     let eps = tvmaze::episodes(state, id).await?;
-    Ok(tag(match_tvmaze(&eps, wanted), Source::TvMaze))
+    let asked: Vec<Wanted> = left.iter().map(|&i| wanted[i].clone()).collect();
+    for (&i, hit) in left.iter().zip(match_tvmaze(&eps, &asked)) {
+        found[i] = hit.map(|h| Found {
+            day: h.day,
+            at: h.at,
+            source: Source::TvMaze,
+        });
+    }
+    Ok(found)
 }
 
 /// One episode's moment, as `resolve` finds it. Pages read stored times; this
@@ -301,12 +532,24 @@ pub async fn air_timestamp(
         season,
         episode,
         date: tmdb_air_date,
+        name: None,
     }];
     Ok(resolve(state, &show, &wanted)
         .await?
         .pop()
         .flatten()
-        .map(|f| f.at))
+        .and_then(|f| f.at))
+}
+
+/// When these episodes of a show air, as `resolve` finds them, for looking
+/// at a whole season at once (`examples/airtime_check`).
+pub async fn air_times(
+    state: &AppState,
+    tmdb_id: i64,
+    wanted: &[Wanted],
+) -> AppResult<Vec<Option<Found>>> {
+    let show = show_facts(state, tmdb_id).await?;
+    resolve(state, &show, wanted).await
 }
 
 /// An AniList media and where the anime map places it on TMDB.
@@ -669,20 +912,21 @@ async fn wanted_for(
     tmdb_id: i64,
     title_id: Option<i64>,
 ) -> AppResult<Vec<Wanted>> {
-    let mut all: BTreeMap<(i64, i64), Option<NaiveDate>> = BTreeMap::new();
-    let listed: Vec<(i64, i64, String)> =
-        sqlx::query_as("SELECT season, episode, air_date FROM airing_episode WHERE tmdb_id = ?")
-            .bind(tmdb_id)
-            .fetch_all(pool)
-            .await?;
-    for (season, episode, date) in listed {
-        all.insert((season, episode), day(&date));
+    type Facts = (Option<NaiveDate>, Option<String>);
+    let mut all: BTreeMap<(i64, i64), Facts> = BTreeMap::new();
+    let listed: Vec<(i64, i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT season, episode, air_date, name FROM airing_episode WHERE tmdb_id = ?",
+    )
+    .bind(tmdb_id)
+    .fetch_all(pool)
+    .await?;
+    for (season, episode, date, name) in listed {
+        all.insert((season, episode), (day(&date), name));
     }
     if let Some(title_id) = title_id {
-        let ours: Vec<(i64, i64, Option<String>)> = sqlx::query_as(
-            "SELECT season_number, episode_number, air_date FROM episode
+        let ours: Vec<(i64, i64, Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT season_number, episode_number, air_date, name FROM episode
               WHERE title_id = ?1 AND season_number > 0
-                AND COALESCE(air_source, '') != 'restore'
                 AND (air_date BETWEEN date('now', ?2) AND date('now', ?3)
                      OR (air_date IS NULL AND season_number >= (
                            SELECT MAX(season_number) FROM episode
@@ -693,26 +937,32 @@ async fn wanted_for(
         .bind(format!("+{TRACKED_AFTER_DAYS} day"))
         .fetch_all(pool)
         .await?;
-        for (season, episode, date) in ours {
+        for (season, episode, date, name) in ours {
             let date = date.as_deref().and_then(day);
-            let slot = all.entry((season, episode)).or_insert(date);
-            if slot.is_none() {
-                *slot = date;
+            let slot = all.entry((season, episode)).or_insert((date, None));
+            if slot.0.is_none() {
+                slot.0 = date;
+            }
+            if slot.1.is_none() {
+                slot.1 = name;
             }
         }
     }
     Ok(all
         .into_iter()
-        .map(|((season, episode), date)| Wanted {
+        .map(|((season, episode), (date, name))| Wanted {
             season,
             episode,
             date,
+            name,
         })
         .collect())
 }
 
-/// Write one show's moments where they are shown. An episode with none
-/// found loses any it had: it may have moved.
+/// Write when one show's episodes air where they are shown: the provider's
+/// day and moment. An episode with nothing found loses any moment it had (it
+/// may have moved) and its day goes back to TMDB's at the next refresh. One
+/// marked for TMDB's day to be put back keeps that mark.
 async fn write(
     pool: &SqlitePool,
     tmdb_id: i64,
@@ -722,12 +972,15 @@ async fn write(
 ) -> AppResult<()> {
     let mut tx = pool.begin().await?;
     for (w, f) in wanted.iter().zip(found) {
-        let at = f.as_ref().map(|f| stamp(f.at));
+        let day = f.as_ref().and_then(|f| f.day).map(|d| d.to_string());
+        let at = f.as_ref().and_then(|f| f.at).map(stamp);
         let source = f.as_ref().map(|f| f.source.as_str());
         sqlx::query(
-            "UPDATE airing_episode SET air_at = ?, air_source = ?
-              WHERE tmdb_id = ? AND season = ? AND episode = ?",
+            "UPDATE airing_episode
+                SET air_date = COALESCE(?1, air_date), air_at = ?2, air_source = ?3
+              WHERE tmdb_id = ?4 AND season = ?5 AND episode = ?6",
         )
+        .bind(&day)
         .bind(&at)
         .bind(source)
         .bind(tmdb_id)
@@ -735,14 +988,27 @@ async fn write(
         .bind(w.episode)
         .execute(&mut *tx)
         .await?;
-        if let Some(title_id) = title_id {
+        let Some(title_id) = title_id else { continue };
+        if f.is_some() {
             sqlx::query(
-                "UPDATE episode SET air_at = ?, air_source = ?
+                "UPDATE episode
+                    SET air_date = COALESCE(?1, air_date), air_at = ?2, air_source = ?3
+                  WHERE title_id = ?4 AND season_number = ?5 AND episode_number = ?6",
+            )
+            .bind(&day)
+            .bind(&at)
+            .bind(source)
+            .bind(title_id)
+            .bind(w.season)
+            .bind(w.episode)
+            .execute(&mut *tx)
+            .await?;
+        } else {
+            sqlx::query(
+                "UPDATE episode SET air_at = NULL, air_source = NULL
                   WHERE title_id = ? AND season_number = ? AND episode_number = ?
                     AND COALESCE(air_source, '') != 'restore'",
             )
-            .bind(&at)
-            .bind(source)
             .bind(title_id)
             .bind(w.season)
             .bind(w.episode)
@@ -774,7 +1040,7 @@ pub async fn refresh_show(state: &AppState, tmdb_id: i64) -> AppResult<usize> {
         resolve(state, &show, &wanted).await?
     };
     write(&state.pool, tmdb_id, title_id, &wanted, &found).await?;
-    Ok(found.iter().flatten().count())
+    Ok(found.iter().flatten().filter(|f| f.at.is_some()).count())
 }
 
 /// Shows whose times are due: everything on the Airing page, and every show
@@ -852,6 +1118,14 @@ mod tests {
             season,
             episode,
             date: Some(d(date)),
+            name: None,
+        }
+    }
+
+    fn named(season: i64, episode: i64, date: &str, name: &str) -> Wanted {
+        Wanted {
+            name: Some(name.to_string()),
+            ..want(season, episode, date)
         }
     }
 
@@ -931,6 +1205,7 @@ mod tests {
             season: 1,
             episode: 3,
             date: None,
+            name: None,
         };
         assert_eq!(
             match_anilist(&airings, &[undated]),
@@ -947,6 +1222,7 @@ mod tests {
             season: 1,
             episode: 3,
             date: None,
+            name: None,
         };
         assert_eq!(match_anilist(&two, &[undated]), [None]);
     }
@@ -957,7 +1233,29 @@ mod tests {
             number: Some(number),
             airdate: Some(d(airdate)),
             at: stamp.map(at),
+            name: None,
         }
+    }
+
+    fn tm_named(
+        season: i64,
+        number: i64,
+        airdate: &str,
+        stamp: &str,
+        name: &str,
+    ) -> tvmaze::Episode {
+        tvmaze::Episode {
+            name: Some(name.to_string()),
+            ..tm(season, number, airdate, Some(stamp))
+        }
+    }
+
+    /// TVmaze's day and moment.
+    fn hit(day: &str, stamp: Option<&str>) -> Option<Hit> {
+        Some(Hit {
+            day: Some(d(day)),
+            at: stamp.map(at),
+        })
     }
 
     #[test]
@@ -969,15 +1267,18 @@ mod tests {
         ];
         assert_eq!(
             match_tvmaze(&eps, &[want(4, 3, "2026-11-15")]),
-            [Some(at("2026-11-16T02:00:00Z"))]
+            [hit("2026-11-15", Some("2026-11-16T02:00:00Z"))]
         );
     }
 
     #[test]
-    fn tvmaze_without_a_time_of_day_gives_none() {
+    fn tvmaze_without_a_time_of_day_still_gives_the_day() {
         // parse_episodes leaves `at` empty for TVmaze's 12:00 stand-in.
-        let eps = [tm(1, 1, "2026-11-20", None)];
-        assert_eq!(match_tvmaze(&eps, &[want(1, 1, "2026-11-20")]), [None]);
+        let eps = [tm(1, 1, "2026-11-21", None)];
+        assert_eq!(
+            match_tvmaze(&eps, &[want(1, 1, "2026-11-20")]),
+            [hit("2026-11-21", None)]
+        );
     }
 
     #[test]
@@ -991,8 +1292,8 @@ mod tests {
         assert_eq!(
             match_tvmaze(&eps, &wanted),
             [
-                Some(at("2026-11-17T04:35:00Z")),
-                Some(at("2026-11-18T04:35:00Z"))
+                hit("2026-11-16", Some("2026-11-17T04:35:00Z")),
+                hit("2026-11-17", Some("2026-11-18T04:35:00Z"))
             ]
         );
         // The same numbers weeks apart are not the same episode.
@@ -1011,10 +1312,171 @@ mod tests {
         assert_eq!(
             match_tvmaze(&eps, &wanted),
             [
-                Some(at("2026-11-13T02:00:00Z")),
-                Some(at("2026-11-13T02:30:00Z"))
+                hit("2026-11-12", Some("2026-11-13T02:00:00Z")),
+                hit("2026-11-12", Some("2026-11-13T02:30:00Z"))
             ]
         );
+    }
+
+    /// Watch What Happens Live as TVmaze listed it on 11 November 2026. TMDB
+    /// counts one episode more, so its numbers run one ahead of these, and
+    /// each night has its own time.
+    fn wwhl() -> Vec<tvmaze::Episode> {
+        vec![
+            tm_named(
+                23,
+                180,
+                "2026-11-05",
+                "2026-11-06T02:45:00Z",
+                "Jessica Chastain, Cynthia Nixon",
+            ),
+            tm_named(
+                23,
+                181,
+                "2026-11-08",
+                "2026-11-09T02:00:00Z",
+                "Monica McNutt, Wendy Osefo",
+            ),
+            tm_named(
+                23,
+                182,
+                "2026-11-09",
+                "2026-11-10T03:00:00Z",
+                "Rachel Dratch, Erin Foster, Sara Foster",
+            ),
+            tm_named(
+                23,
+                183,
+                "2026-11-10",
+                "2026-11-11T02:00:00Z",
+                "Trisha Paytas, Hailey Glassman",
+            ),
+            tm_named(
+                23,
+                184,
+                "2026-11-11",
+                "2026-11-12T02:00:00Z",
+                "AnnaSophia Robb, Ashley Quai",
+            ),
+            tm_named(
+                23,
+                185,
+                "2026-11-12",
+                "2026-11-13T03:15:00Z",
+                "Justine Lupe, Craig Conover",
+            ),
+        ]
+    }
+
+    #[test]
+    fn a_name_outweighs_a_number_that_runs_ahead() {
+        let wanted = [
+            named(23, 181, "2026-11-05", "Jessica Chastain & Cynthia Nixon"),
+            named(23, 182, "2026-11-08", "Wendy Osefo & Monica McNutt"),
+            named(
+                23,
+                183,
+                "2026-11-09",
+                "Rachel Dratch, Erin Foster & Sara Foster",
+            ),
+            named(23, 186, "2026-11-12", "Justine Lupe & Craig Conover"),
+            // Not on TVmaze yet, and TMDB's name says nothing.
+            named(23, 187, "2026-11-15", "Episode 187"),
+        ];
+        assert_eq!(
+            match_tvmaze(&wwhl(), &wanted),
+            [
+                hit("2026-11-05", Some("2026-11-06T02:45:00Z")),
+                hit("2026-11-08", Some("2026-11-09T02:00:00Z")),
+                hit("2026-11-09", Some("2026-11-10T03:00:00Z")),
+                hit("2026-11-12", Some("2026-11-13T03:15:00Z")),
+                None,
+            ]
+        );
+    }
+
+    #[test]
+    fn a_day_wins_over_a_number_when_names_say_nothing() {
+        // The same show with no names on TMDB's side: its number points at
+        // the next night, its day at the right one.
+        let wanted = [
+            want(23, 182, "2026-11-08"),
+            want(23, 183, "2026-11-09"),
+            want(23, 184, "2026-11-10"),
+        ];
+        assert_eq!(
+            match_tvmaze(&wwhl(), &wanted),
+            [
+                hit("2026-11-08", Some("2026-11-09T02:00:00Z")),
+                hit("2026-11-09", Some("2026-11-10T03:00:00Z")),
+                hit("2026-11-10", Some("2026-11-11T02:00:00Z")),
+            ]
+        );
+    }
+
+    #[test]
+    fn names_that_disagree_rule_out_a_near_number() {
+        let eps = [tm_named(
+            23,
+            182,
+            "2026-11-09",
+            "2026-11-10T03:00:00Z",
+            "Rachel Dratch, Erin Foster",
+        )];
+        let wanted = [named(23, 182, "2026-11-08", "Wendy Osefo & Monica McNutt")];
+        assert_eq!(match_tvmaze(&eps, &wanted), [None]);
+    }
+
+    #[test]
+    fn a_name_carries_tvmazes_day_when_it_has_moved() {
+        // TMDB still has the old day; TVmaze has the episode a week later.
+        let eps = [tm_named(
+            2,
+            5,
+            "2026-11-19",
+            "2026-11-20T02:00:00Z",
+            "The Reckoning",
+        )];
+        assert_eq!(
+            match_tvmaze(&eps, &[named(2, 5, "2026-11-12", "The Reckoning")]),
+            [hit("2026-11-19", Some("2026-11-20T02:00:00Z"))]
+        );
+    }
+
+    #[test]
+    fn a_tie_places_nothing() {
+        // Two episodes the same night at different times, one of ours, no
+        // names and no number that fits: either could be it.
+        let eps = [
+            tm(1, 7, "2026-11-12", Some("2026-11-13T02:00:00Z")),
+            tm(1, 8, "2026-11-12", Some("2026-11-13T03:00:00Z")),
+        ];
+        assert_eq!(match_tvmaze(&eps, &[want(3, 1, "2026-11-12")]), [None]);
+    }
+
+    #[test]
+    fn a_double_bill_shares_its_moment() {
+        // TMDB lists two episodes; TVmaze one hour-long airing that night.
+        let eps = [tm(1, 1, "2026-11-12", Some("2026-11-13T02:00:00Z"))];
+        let wanted = [want(1, 1, "2026-11-12"), want(1, 2, "2026-11-12")];
+        assert_eq!(
+            match_tvmaze(&eps, &wanted),
+            [
+                hit("2026-11-12", Some("2026-11-13T02:00:00Z")),
+                hit("2026-11-12", Some("2026-11-13T02:00:00Z")),
+            ]
+        );
+    }
+
+    #[test]
+    fn filler_names_say_nothing() {
+        assert_eq!(name_words(Some("Episode 187")), None);
+        assert_eq!(name_words(Some("TBA")), None);
+        assert_eq!(name_words(Some("Part 2")), None);
+        assert!(name_words(Some("Chapter One: The Vanishing of Will Byers")).is_some());
+        let a = name_words(Some("Wendy Osefo & Monica McNutt"));
+        let b = name_words(Some("Monica McNutt, Wendy Osefo"));
+        assert_eq!(super::named(a.as_ref(), b.as_ref()), Named::Same);
     }
 
     #[test]

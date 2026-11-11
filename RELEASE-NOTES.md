@@ -13,6 +13,12 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Fixes
+
+- Every episode in your library has its air time, nightly shows included.
+- An episode's day is the day it airs where it is made, with its time once
+  it is announced.
+
 ## [1.5.0] — Goliath — 2026-11-11
 
 Everything on air this week, at the minute it airs.
