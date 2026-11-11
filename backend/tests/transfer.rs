@@ -47,7 +47,7 @@ impl Harness {
             session_days: 7,
             anilist: None,
             fanart: None,
-            tvdb: None,
+            tvmaze_url: "http://127.0.0.1:9".into(),
             mdblist: None,
         };
         let pool = frog::db::connect(&url).await.expect("database");

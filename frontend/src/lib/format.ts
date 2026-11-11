@@ -1,3 +1,4 @@
+import { zoneFor } from './day';
 import { settings } from './settings.svelte';
 /**
  * Ratings live as 0..100 in the database no matter how they are shown, so the
@@ -131,7 +132,10 @@ export function relativeDate(iso: string | null | undefined): string {
 	return prettyDate(iso);
 }
 
-/** The time of day a moment falls at here, by the 12- or 24-hour clock chosen. */
+/**
+ * The time of day a moment falls at here, by the 12- or 24-hour clock chosen,
+ * in the zone chosen in Settings or this device's.
+ */
 export function clockTime(at: string | null | undefined): string {
 	if (!at) return '';
 	const d = new Date(at);
@@ -140,8 +144,14 @@ export function clockTime(at: string | null | undefined): string {
 	return d.toLocaleTimeString(undefined, {
 		hour: clock24 ? '2-digit' : 'numeric',
 		minute: '2-digit',
-		hour12: !clock24
+		hour12: !clock24,
+		timeZone: zoneFor(settings.current.timeZone)
 	});
+}
+
+/** When an episode airs here: its time, or "time TBA" with only a day known. */
+export function airTime(at: string | null | undefined): string {
+	return clockTime(at) || 'time TBA';
 }
 
 export function episodeCode(season: number, episode: number): string {

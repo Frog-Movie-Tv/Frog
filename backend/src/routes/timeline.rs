@@ -26,8 +26,8 @@ pub struct CalendarEntry {
     pub poster_path: Option<String>,
     pub accent: Option<String>,
     pub date: String,
-    /// The moment it comes out, when TheTVDB knows the time: the page moves
-    /// it to the day that is where the viewer is.
+    /// The moment it comes out, when AniList or TVmaze knows the time: the
+    /// page moves it to the day that is where the viewer is.
     pub air_at: Option<String>,
     pub season_number: Option<i64>,
     pub episode_number: Option<i64>,
@@ -128,14 +128,13 @@ pub async fn calendar(
 
     let films: Vec<FilmRow> = sqlx::query_as(
         "SELECT t.kind, t.id, t.name, t.poster_path, t.accent_json,
-                COALESCE(a.release_date, t.release_date) AS day
+                t.release_date AS day
            FROM title t
            JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?
-           LEFT JOIN title_airing a ON a.title_id = t.id
           WHERE t.kind = 'movie'
             AND l.status = 'planned'
-            AND COALESCE(a.release_date, t.release_date) >= ?
-            AND COALESCE(a.release_date, t.release_date) <= ?
+            AND t.release_date >= ?
+            AND t.release_date <= ?
           ORDER BY day",
     )
     .bind(auth.user_id())

@@ -272,7 +272,11 @@
 					{#if entry.season_number !== null && entry.episode_number !== null}
 						{episodeCode(entry.season_number, entry.episode_number)}
 						{#if entry.episode_name}· {entry.episode_name}{/if}
-						{#if entry.air_at}· {clockTime(entry.air_at)}{/if}
+						{#if entry.air_at}
+							· {clockTime(entry.air_at)}
+						{:else if entry.date >= today && !entry.watched}
+							· time TBA
+						{/if}
 					{:else}
 						Film release
 					{/if}

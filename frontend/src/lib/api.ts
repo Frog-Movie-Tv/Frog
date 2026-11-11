@@ -1,9 +1,12 @@
-import { airDay } from './day';
+import { airDay, viewerZone } from './day';
 import { settings } from './settings.svelte';
 import type { TitleRef } from './titles';
 import type { WhenAnswer } from './when.svelte';
 import type {
 	ActivityItem,
+	AiringDay,
+	AiringFilters,
+	AiringWeek,
 	AniListChoice,
 	AniListEntry,
 	AniListStatus,
@@ -400,10 +403,16 @@ export const api = {
 	pushSubscribe: (subscription: PushSubscriptionJSON) =>
 		send<{ ok: true }>('POST', '/api/push/subscribe', {
 			...subscription,
-			time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone
+			time_zone: viewerZone()
 		}),
 	pushUnsubscribe: (endpoint: string) =>
 		send<{ ok: true }>('POST', '/api/push/unsubscribe', { endpoint }),
+	/** Seven days of the Airing page from `from`, a day's first shows each. */
+	airing: (filters: AiringFilters, from?: string) =>
+		get<AiringWeek>(`/api/airing${qs({ ...filters, from, tz: viewerZone() })}`),
+	/** More of one Airing day, for "Show more". */
+	airingDay: (filters: AiringFilters, date: string, offset: number) =>
+		get<AiringDay>(`/api/airing/day${qs({ ...filters, date, offset, tz: viewerZone() })}`),
 	fullStats: (year?: number) => get<FullStats>(`/api/stats${qs({ year })}`),
 	mangaStats: (year?: number) => get<MangaStats>(`/api/stats/manga${qs({ year })}`),
 

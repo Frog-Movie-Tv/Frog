@@ -145,23 +145,7 @@ impl Tmdb {
             };
         }
 
-        let mut url = format!("{API_BASE}{path}?language={}", self.inner.language);
-        for (k, v) in params {
-            url.push_str(&format!("&{}={}", k, urlencoding::encode(v)));
-        }
-        if !self.is_bearer() {
-            url.push_str(&format!(
-                "&api_key={}",
-                urlencoding::encode(&self.inner.key)
-            ));
-        }
-
-        let mut req = self.inner.http.get(&url);
-        if self.is_bearer() {
-            req = req.bearer_auth(&self.inner.key);
-        }
-
-        let resp = match req.send().await {
+        let resp = match self.request(path, params).send().await {
             Ok(r) => r,
             Err(e) => {
                 tracing::warn!(%path, error = %e, "TMDB unreachable, falling back to cache");
@@ -195,6 +179,77 @@ impl Tmdb {
 
         self.store(&key, &body, ttl).await;
         Ok(body)
+    }
+
+    /// A GET to TMDB, signed with whichever kind of key this is.
+    fn request(&self, path: &str, params: &[(&str, String)]) -> reqwest::RequestBuilder {
+        let mut url = format!("{API_BASE}{path}?language={}", self.inner.language);
+        for (k, v) in params {
+            url.push_str(&format!("&{}={}", k, urlencoding::encode(v)));
+        }
+        if !self.is_bearer() {
+            url.push_str(&format!(
+                "&api_key={}",
+                urlencoding::encode(&self.inner.key)
+            ));
+        }
+        let req = self.inner.http.get(&url);
+        if self.is_bearer() {
+            req.bearer_auth(&self.inner.key)
+        } else {
+            req
+        }
+    }
+
+    /// One answer straight from TMDB, never cached. For the Airing list,
+    /// which reads thousands of shows a day and keeps a few fields of each:
+    /// kept whole they would fill the database. A 429 waits as long as TMDB
+    /// asks; a server error is tried again a few times.
+    pub async fn fetch(&self, path: &str, params: &[(&str, String)]) -> AppResult<Value> {
+        if !self.is_configured() {
+            return Err(AppError::TmdbUnconfigured);
+        }
+        let mut last = String::from("no answer");
+        for attempt in 0..4u32 {
+            let resp = match self.request(path, params).send().await {
+                Ok(r) => r,
+                Err(e) => {
+                    last = e.without_url().to_string();
+                    tokio::time::sleep(std::time::Duration::from_secs(2 << attempt)).await;
+                    continue;
+                }
+            };
+            let status = resp.status();
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                let secs = resp
+                    .headers()
+                    .get("retry-after")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(2)
+                    .min(30);
+                tracing::info!(secs, "TMDB asked Frog to slow down");
+                last = "rate limited".into();
+                tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
+                continue;
+            }
+            if status == reqwest::StatusCode::NOT_FOUND {
+                return Err(AppError::NotFound("Not on TMDB.".into()));
+            }
+            if status.is_server_error() {
+                last = status.to_string();
+                tokio::time::sleep(std::time::Duration::from_secs(2 << attempt)).await;
+                continue;
+            }
+            if !status.is_success() {
+                return Err(AppError::Tmdb(status.to_string()));
+            }
+            return resp
+                .json()
+                .await
+                .map_err(|e| AppError::Tmdb(format!("bad JSON from TMDB: {}", e.without_url())));
+        }
+        Err(AppError::Tmdb(last))
     }
 
     /// TMDB's filtered browse, for looking without a name to look for.
@@ -338,7 +393,8 @@ impl Tmdb {
         .await
     }
 
-    /// Look a title up by another database's id: `tvdb_id` or `imdb_id`.
+    /// Look a title up by another database's id, as TMDB's `external_source`
+    /// names it (`imdb_id`, or the anime lists' TheTVDB id).
     pub async fn find(&self, external_id: &str, source: &str) -> AppResult<Value> {
         self.get(
             &format!("/find/{external_id}"),

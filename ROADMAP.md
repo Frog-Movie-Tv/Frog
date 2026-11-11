@@ -32,6 +32,10 @@ Free, updating itself from each release (`docs/DEPLOY-ORACLE.md`).
    `invites`, `auth`, `push`, `settings`.
 7. **Redraw the last pre-Glass parts:** the Calendar's month grid and day
    panel, Stats' charts, a person's page, and the import review's rows.
+8. **Drop `title_airing` once the Airing release is live.** It is emptied
+   and no longer read; the previous image still reads it on a rollback, so
+   the migration that drops it waits for the release after
+   (`docs/CONTRIBUTING.md`, two releases for a destructive change).
 
 ## To check by hand
 
@@ -54,11 +58,11 @@ off, or turns it into a fix above.
 
 ## Known issues
 
-| | |
-| --- | --- |
-| **Rebase merging doubles the changelog** | "Rebase and merge" rewrites commit hashes, so release-please lists a change twice. Untick *Allow rebase merging* in the repository settings. |
-| **The backup repository grows without end** | About 3 MB a copy, one nightly plus one per update. `docs/DEPLOY-ORACLE.md` step 7 has the reset; nothing does it on a schedule. |
-| **The database file does not shrink** | SQLite reuses freed pages but never returns them. A `VACUUM` with the instance stopped gives the space back. |
-| **Screenshots weigh 13 MB** | No lossless optimiser runs in the release step. |
-| **One AniList test is flaky** | `a_tmdb_outage_is_retried_not_left_for_the_person` races other tests over account 1's sync flag; it passes on a rerun. |
-| **The Projects board does not exist** | Needs `gh auth refresh -s project` from an owner before it can be made. |
+|                                             |                                                                                                                                              |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Rebase merging doubles the changelog**    | "Rebase and merge" rewrites commit hashes, so release-please lists a change twice. Untick _Allow rebase merging_ in the repository settings. |
+| **The backup repository grows without end** | About 3 MB a copy, one nightly plus one per update. `docs/DEPLOY-ORACLE.md` step 7 has the reset; nothing does it on a schedule.             |
+| **The database file does not shrink**       | SQLite reuses freed pages but never returns them. A `VACUUM` with the instance stopped gives the space back.                                 |
+| **Screenshots weigh 13 MB**                 | No lossless optimiser runs in the release step.                                                                                              |
+| **One AniList test is flaky**               | `a_tmdb_outage_is_retried_not_left_for_the_person` races other tests over account 1's sync flag; it passes on a rerun.                       |
+| **The Projects board does not exist**       | Needs `gh auth refresh -s project` from an owner before it can be made.                                                                      |

@@ -34,7 +34,31 @@ pub struct Api<'a> {
     pub client: &'a AniListClient,
 }
 
+/// AniList's public API as an instance without its own client reaches it:
+/// enough for reads that need nobody's token.
+static PUBLIC: std::sync::OnceLock<AniListClient> = std::sync::OnceLock::new();
+
 impl<'a> Api<'a> {
+    /// For public reads such as air times, which every instance can make,
+    /// signed-in AniList or not. Paced with every other call.
+    pub fn public(state: &'a AppState) -> Self {
+        let client = state.config.anilist.as_ref().unwrap_or_else(|| {
+            PUBLIC.get_or_init(|| AniListClient {
+                id: String::new(),
+                secret: String::new(),
+                redirect_uri: String::new(),
+                api_url: "https://graphql.anilist.co".into(),
+                site_url: "https://anilist.co".into(),
+                anime_ids_url: crate::config::ANIME_IDS_URL.into(),
+                anime_lists_url: crate::config::ANIME_LISTS_URL.into(),
+            })
+        });
+        Self {
+            http: &state.http,
+            client,
+        }
+    }
+
     pub fn new(state: &'a AppState) -> AppResult<Self> {
         let client = state
             .config

@@ -3,6 +3,7 @@
 	import Rating from '#lib/components/Rating.svelte';
 	import Score from '#lib/components/Score.svelte';
 	import Select from '#lib/components/Select.svelte';
+	import { deviceZone } from '#lib/day';
 	import { SCORE_FORMATS, type ScoreFormat } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import { STATUS_LABEL, STATUSES, type Status, statusLabel } from '#lib/types';
@@ -46,6 +47,14 @@
 		else delete colours[status];
 		settings.set('statusColors', colours);
 	}
+
+	/** Every zone the browser knows, after following this device. */
+	const zoneOptions = [
+		{ value: '', label: `This device (${deviceZone().replaceAll('_', ' ')})` },
+		...(typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []).map(
+			(zone) => ({ value: zone, label: zone.replaceAll('_', ' ') })
+		)
+	];
 </script>
 
 <section class="block">
@@ -153,6 +162,19 @@
 					{ value: 'iso', label: 'ISO (2026-10-24)' }
 				]}
 				onchange={(v) => settings.set('dateStyle', v as 'friendly')}
+			/>
+		</div>
+
+		<div class="row">
+			<span class="label">
+				<strong>Time zone</strong>
+				<span class="faint">For air times and the days they fall on</span>
+			</span>
+			<Select
+				label="Time zone"
+				value={s.timeZone ?? ''}
+				options={zoneOptions}
+				onchange={(v) => settings.set('timeZone', v)}
 			/>
 		</div>
 

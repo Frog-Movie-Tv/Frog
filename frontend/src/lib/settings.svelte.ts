@@ -1,4 +1,5 @@
 import { browser } from '$app/env';
+import { chooseZone } from './day';
 import type { ScoreFormat } from './format';
 import type { Status } from './types';
 
@@ -146,6 +147,8 @@ export interface Settings {
 
 	dateStyle: 'friendly' | 'iso' | 'long';
 	clock24: boolean;
+	/** The IANA zone days and times are shown in; empty follows the device. */
+	timeZone?: string;
 
 	/** Smaller artwork everywhere, for mobile data. */
 	dataSaver: boolean;
@@ -215,7 +218,17 @@ export const DEFAULTS: Settings = {
 	clock24: true,
 
 	dataSaver: false,
-	navOrder: ['/', '/library', '/shelves', '/search', '/calendar', '/diary', '/stats', '/settings'],
+	navOrder: [
+		'/',
+		'/library',
+		'/shelves',
+		'/search',
+		'/calendar',
+		'/airing',
+		'/diary',
+		'/stats',
+		'/settings'
+	],
 	navHidden: [],
 	navTabs: ['/', '/library', '/search', '/calendar'],
 	lastSeenVersion: ''
@@ -227,6 +240,7 @@ export const NAV_PAGES: { href: string; label: string; icon: string; fixed?: boo
 	{ href: '/shelves', label: 'Shelves', icon: 'layers' },
 	{ href: '/search', label: 'Search', icon: 'search' },
 	{ href: '/calendar', label: 'Calendar', icon: 'calendar' },
+	{ href: '/airing', label: 'Airing', icon: 'tv' },
 	{ href: '/diary', label: 'Diary', icon: 'book' },
 	{ href: '/stats', label: 'Stats', icon: 'chart' },
 	{ href: '/settings', label: 'Settings', icon: 'settings', fixed: true }
@@ -431,6 +445,7 @@ class SettingsStore {
 
 	/** Write every token the CSS reads onto the document element. */
 	apply() {
+		chooseZone(this.current.timeZone);
 		if (!browser) return;
 		const s = this.current;
 		const root = document.documentElement;

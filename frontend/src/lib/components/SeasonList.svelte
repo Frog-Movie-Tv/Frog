@@ -2,7 +2,7 @@
 	import Icon from './Icon.svelte';
 	import { api, img, type ClearedWatch } from '#lib/api';
 	import { localDay } from '#lib/day';
-	import { clockTime, episodeCode, prettyDate, relativeDate, runtime } from '#lib/format';
+	import { airTime, episodeCode, prettyDate, relativeDate, runtime } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import { uniqueBy } from '#lib/unique';
@@ -256,10 +256,10 @@
 		return !!ep.air_date && ep.air_date > today;
 	}
 
-	/** "Airs tomorrow · 21:00", in the viewer's zone. */
+	/** "Airs tomorrow · 21:00", in the viewer's zone, or "· time TBA". */
 	function airs(ep: EpisodeView): string {
 		const when = `Airs ${relativeDate(ep.air_date)}`;
-		return ep.air_at ? `${when} · ${clockTime(ep.air_at)}` : when;
+		return ep.air_date ? `${when} · ${airTime(ep.air_at)}` : when;
 	}
 
 	/** Cards with stills, or a compact list: one choice, for every show. */

@@ -137,7 +137,7 @@ impl Harness {
                 anime_lists_url: base.clone(),
             }),
             fanart: None,
-            tvdb: None,
+            tvmaze_url: "http://127.0.0.1:9".into(),
             mdblist: Some(MdbListClient {
                 key: "secret-key".into(),
                 api_url: base,

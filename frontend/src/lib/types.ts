@@ -890,3 +890,56 @@ export interface MangaStats {
 		rating: number | null;
 	}[];
 }
+
+/** What the Airing page is narrowed to; every field is optional. */
+export interface AiringFilters {
+	/** `mine`: only shows in the library. */
+	list?: 'mine';
+	type?: 'shows' | 'anime' | 'films';
+	genre?: string;
+	q?: string;
+}
+
+/** One show on one Airing day, its first episode that day, or one film out that day; all from TMDB but the time. */
+export interface AiringItem {
+	kind: 'tv' | 'movie';
+	tmdb_id: number;
+	/** Frog's id, when the catalog has the show. */
+	id: number | null;
+	name: string;
+	poster_path: string | null;
+	network: string | null;
+	season: number;
+	episode: number;
+	episode_name: string | null;
+	/** TMDB's day. */
+	air_date: string;
+	/** The moment, UTC, when it is known. */
+	air_at: string | null;
+	/** More episodes of the show that day. */
+	more: number;
+	/** A film's TMDB release type: 2 or 3 in cinemas, 4 digital. */
+	release_type: number | null;
+	in_list: boolean;
+}
+
+export interface AiringDay {
+	date: string;
+	/** Shows that day, with the filters applied. */
+	total: number;
+	items: AiringItem[];
+}
+
+export interface AiringWeek {
+	zone: string;
+	today: string;
+	/** The first and last day that can be shown. */
+	first: string;
+	last: string;
+	from: string;
+	/** False until the list has been built once. */
+	ready: boolean;
+	listed_at: string | null;
+	genres: string[];
+	days: AiringDay[];
+}

@@ -9,10 +9,10 @@ other app.
 
 This page is for running your own Frog. There are two ways:
 
-| | |
-| --- | --- |
-| **On a server** | A public site anyone you invite can open, with HTTPS and updates that install themselves. [docs/DEPLOY-ORACLE.md](DEPLOY-ORACLE.md) does this on a free Oracle instance, click by click. |
-| **On your own machine** | Docker on a laptop or a home server, reached over your own network or privately over Tailscale. That is what the rest of this page covers. |
+|                         |                                                                                                                                                                                          |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **On a server**         | A public site anyone you invite can open, with HTTPS and updates that install themselves. [docs/DEPLOY-ORACLE.md](DEPLOY-ORACLE.md) does this on a free Oracle instance, click by click. |
+| **On your own machine** | Docker on a laptop or a home server, reached over your own network or privately over Tailscale. That is what the rest of this page covers.                                               |
 
 Either way it costs nothing to run. A free TMDB key is the only credential.
 
@@ -108,7 +108,7 @@ fresh build. Ctrl+C stops it.
 
 This reads your `.env` for the TMDB key and everything else, but overrides
 `DATABASE_URL` and `FROG_STATIC_DIR`, because the values in `.env.example` are
-the paths *inside the container* and do not exist on the host.
+the paths _inside the container_ and do not exist on the host.
 
 ### Start it — option B, Docker
 
@@ -171,10 +171,16 @@ tell you offline mode is unavailable, and Settings → Notifications says it
 needs HTTPS.
 
 Notifications go out the minute an episode or a film someone follows comes
-out. The day and time come from TheTVDB when `TVDB_API_KEY` is set (a free v4
-project key); without it, or when TheTVDB has no time, they go out at midnight
-on the day, in each person's own time zone, which their browser reports when
-they switch notifications on.
+out. TMDB gives the day; the time comes from AniList for anime and from
+TVmaze for everything else, both free and without a key. When neither knows
+the time, a notification goes out at midnight on the day, in each person's
+own time zone: the one chosen in Settings → Watching, or the one their
+browser reports when they switch notifications on.
+
+The Airing page lists every show on TMDB with an episode from last week to
+four weeks ahead. The server builds that list once a day, which takes about
+ten minutes of TMDB requests, and works out the times every few hours. The
+page says the week is on its way until the first build has finished.
 
 Posters and stills are kept in the database so pages load without asking
 TMDB again. The cache stays under `FROG_IMAGE_CACHE_MB` (512 by default):
@@ -207,19 +213,19 @@ Open `https://frog.<your-tailnet>.ts.net` in Chrome on Android, then menu →
 chrome, and keeps anything you have already looked at available offline.
 
 To check it worked, open **About** inside the app: offline mode should read
-*Active*. If it says unavailable, you are on `http://` rather than `https://`
+_Active_. If it says unavailable, you are on `http://` rather than `https://`
 and Tailscale Serve is the fix.
 
 ---
 
 ## 5. Keep it running
 
-Docker Desktop can start on login (Settings → General → *Start Docker Desktop
-when you sign in*), and the container has `restart: unless-stopped`, so Frog
+Docker Desktop can start on login (Settings → General → _Start Docker Desktop
+when you sign in_), and the container has `restart: unless-stopped`, so Frog
 comes back by itself.
 
-The laptop still has to be awake. On Windows, set *Power & battery → Screen and
-sleep → When plugged in, put my device to sleep* to **Never** if you want the
+The laptop still has to be awake. On Windows, set _Power & battery → Screen and
+sleep → When plugged in, put my device to sleep_ to **Never** if you want the
 phone to reach it at any hour.
 
 This is the part a small server solves and a laptop cannot: it is awake when

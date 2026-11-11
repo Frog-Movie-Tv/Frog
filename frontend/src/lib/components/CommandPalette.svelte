@@ -118,6 +118,7 @@
 		{ id: 'p-shelves', group: GO, label: 'Shelves', icon: 'layers', run: () => goto('/shelves') },
 		{ id: 'p-search', group: GO, label: 'Search', icon: 'search', run: () => goto('/search') },
 		{ id: 'p-cal', group: GO, label: 'Calendar', icon: 'calendar', run: () => goto('/calendar') },
+		{ id: 'p-airing', group: GO, label: 'Airing', icon: 'tv', run: () => goto('/airing') },
 		{ id: 'p-diary', group: GO, label: 'Diary', icon: 'book', run: () => goto('/diary') },
 		{ id: 'p-stats', group: GO, label: 'Stats', icon: 'chart', run: () => goto('/stats') },
 		{ id: 'p-set', group: GO, label: 'Settings', icon: 'settings', run: () => goto('/settings') },

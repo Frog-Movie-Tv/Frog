@@ -21,10 +21,8 @@ pub struct AppState {
     /// check; one process means this one lock is enough, with no migration that
     /// could refuse a database already holding such a pair.
     pub names: Arc<tokio::sync::Mutex<()>>,
-    /// For everything that is not TMDB: push services, TheTVDB.
+    /// For everything that is not TMDB: push services, TVmaze.
     pub http: reqwest::Client,
-    /// TheTVDB's sign-in token, once there is one.
-    pub tvdb: crate::tvdb::Session,
 }
 
 impl AppState {
@@ -47,7 +45,6 @@ impl AppState {
                 .user_agent(concat!("Frog/", env!("CARGO_PKG_VERSION")))
                 .build()
                 .unwrap_or_default(),
-            tvdb: Default::default(),
         }
     }
 }

@@ -24,26 +24,9 @@ pub struct Config {
     /// fanart.tv, for title logos TMDB has none of. Without a key titles
     /// simply keep the logo TMDB gives, or none.
     pub fanart: Option<FanartClient>,
-    /// TheTVDB, for the day and time an episode or film comes out. Without a
-    /// key TMDB's days stand, with no time.
-    pub tvdb: Option<TvdbClient>,
-}
-
-/// A TheTVDB v4 project key. It is exchanged for a token that lasts a month;
-/// neither is in any address or log.
-#[derive(Clone)]
-pub struct TvdbClient {
-    pub key: String,
+    /// TVmaze's public API, for the moment an episode airs. It needs no key.
     /// Only tests point this elsewhere.
-    pub api_url: String,
-}
-
-impl std::fmt::Debug for TvdbClient {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TvdbClient")
-            .field("api_url", &self.api_url)
-            .finish_non_exhaustive()
-    }
+    pub tvmaze_url: String,
 }
 
 /// A free personal key from fanart.tv. Sent as a header, so it is in no
@@ -117,6 +100,12 @@ pub struct AniListClient {
     pub anime_lists_url: String,
 }
 
+/// The community lists that say which TMDB entry each AniList id is.
+pub const ANIME_IDS_URL: &str =
+    "https://raw.githubusercontent.com/Kometa-Team/Anime-IDs/master/anime_ids.json";
+pub const ANIME_LISTS_URL: &str =
+    "https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json";
+
 fn env_opt(key: &str) -> Option<String> {
     match std::env::var(key) {
         Ok(v) if !v.trim().is_empty() => Some(v.trim().to_string()),
@@ -158,14 +147,8 @@ impl Config {
                     redirect_uri,
                     api_url: env_or("ANILIST_API_URL", "https://graphql.anilist.co"),
                     site_url: env_or("ANILIST_SITE_URL", "https://anilist.co"),
-                    anime_ids_url: env_or(
-                        "ANIME_IDS_URL",
-                        "https://raw.githubusercontent.com/Kometa-Team/Anime-IDs/master/anime_ids.json",
-                    ),
-                    anime_lists_url: env_or(
-                        "ANIME_LISTS_URL",
-                        "https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json",
-                    ),
+                    anime_ids_url: env_or("ANIME_IDS_URL", ANIME_IDS_URL),
+                    anime_lists_url: env_or("ANIME_LISTS_URL", ANIME_LISTS_URL),
                 }),
                 _ => None,
             },
@@ -179,10 +162,7 @@ impl Config {
                 api_url: env_or("FANART_API_URL", "https://webservice.fanart.tv/v3"),
                 assets_url: env_or("FANART_ASSETS_URL", "https://assets.fanart.tv"),
             }),
-            tvdb: env_opt("TVDB_API_KEY").map(|key| TvdbClient {
-                key,
-                api_url: env_or("TVDB_API_URL", "https://api4.thetvdb.com/v4"),
-            }),
+            tvmaze_url: env_or("TVMAZE_API_URL", "https://api.tvmaze.com"),
         })
     }
 

@@ -27,9 +27,10 @@ title_external               who else knows a title, and as what
   `episode_state`, `season_rating`, `shelf_item`, `anilist_entry`,
   `title_merge`, profile pins (`app_user.pins_json` holds `{ title_id }`).
   Nothing personal stores a provider's id.
-- **TheTVDB is not an identity.** Its id sits in `title_airing` beside the
-  title, found from TMDB's `tvdb_id` or the IMDb id, and is read only for
-  release days and times (`crate::airing`). No address or lookup goes by it.
+- **AniList and TVmaze answer only "when".** `airtime_show` keeps how a TMDB
+  show is found on each (AniList media ids, a TVmaze id, and TMDB's own
+  external ids used to look it up), keyed by the TMDB id and read only for
+  air times (`crate::airtime`). No title, address or lookup goes by them.
 - **One provider id names one title.** It is the table's key. `catalog::link`
   refuses to point an id somewhere else; it never moves one silently.
 - **One primary provider per title**, chosen by Frog: the one the title was
@@ -80,11 +81,11 @@ kept as metadata only.
 
 ## Addresses
 
-| | |
-| --- | --- |
-| `/t/{id}`, `/api/t/{id}/…` | A title by Frog's id. Every link the app draws, and every action. |
+|                                                 |                                                                                                                                                                                                                                                     |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/t/{id}`, `/api/t/{id}/…`                      | A title by Frog's id. Every link the app draws, and every action.                                                                                                                                                                                   |
 | `/title/{kind}/{id}`, `/api/titles/{kind}/{id}` | A title as a provider names it: `movie/550`, `tv/1399`, `anilist/21`. Search results, credits and recommendations use these until opened; the page opens the title (adding it to the catalog if it is new) and replaces its address with `/t/{id}`. |
-| `/title/tv/-21` | How AniList-only titles were addressed before. Still opens them. |
+| `/title/tv/-21`                                 | How AniList-only titles were addressed before. Still opens them.                                                                                                                                                                                    |
 
 ## Backups
 
@@ -161,5 +162,6 @@ and delete the snapshot.
 - Whether a person can choose a title's primary provider.
 - Whether Frog ever makes a title no provider has (a home video, a festival
   short). The schema allows it.
-- TVDB as a provider. `anime_map` reads TVDB ids for placement; adding
-  `'tvdb'` to the provider check is a migration when something needs it.
+- Another provider id in `title_external`. `anime_map` reads the community
+  lists' ids for placement; adding a provider to the check is a migration
+  when something needs it.
