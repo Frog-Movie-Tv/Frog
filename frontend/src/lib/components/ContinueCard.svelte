@@ -2,7 +2,7 @@
 	import { titleHref } from '#lib/titles';
 	import Icon from './Icon.svelte';
 	import { img } from '#lib/api';
-	import { episodeCode, prettyDate } from '#lib/format';
+	import { clockTime, episodeCode, prettyDate } from '#lib/format';
 	import { contextMenu, type MenuSource } from '#lib/menu.svelte';
 	import type { UpNextEntry } from '#lib/types';
 
@@ -67,6 +67,7 @@
 		{:else if next}
 			<span class="next muted">
 				Next episode {next.air_date ? prettyDate(next.air_date) : 'to be announced'}
+				{#if next.air_at}· {clockTime(next.air_at)}{/if}
 			</span>
 		{:else if item.watched_episodes >= item.total_episodes}
 			<span class="next muted">Finished</span>

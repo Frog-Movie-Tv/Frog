@@ -281,9 +281,9 @@ async fn state() -> (AppState, tempfile::TempDir) {
         admin_password: None,
         secure_cookies: false,
         session_days: 7,
-        notify_hour: 18,
         anilist: None,
         fanart: None,
+        tvdb: None,
         mdblist: None,
     };
     let pool = frog::db::connect(&url).await.unwrap();

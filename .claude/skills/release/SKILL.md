@@ -104,8 +104,9 @@ If a new page deserves a place in the README gallery, add it.
 
 ## 5. Update the roadmap
 
-Move what shipped into **Shipped** in `ROADMAP.md`, bump the current/next
-release line, and leave anything unfinished at the top of **Next**.
+Take what shipped off **To build** in `ROADMAP.md` (RELEASE-NOTES.md is the
+record of what shipped), bump the release and codename line, and leave
+anything unfinished under **To build**, worded as work to do.
 
 ## 6. Commit, tag, push — only if the owner asked
 

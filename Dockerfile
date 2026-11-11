@@ -39,8 +39,8 @@ RUN touch src/main.rs src/lib.rs && cargo build --release --locked
 FROM debian:bookworm-slim AS runtime
 
 # tzdata, because the slim image has none and TZ=Europe/Brussels would quietly
-# mean UTC: new-episode alerts go out at FROG_NOTIFY_HOUR in the server's
-# local time.
+# mean UTC in the logs and the scripts. Frog's own air times carry their zones
+# inside the binary.
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends ca-certificates curl tzdata \
 	&& rm -rf /var/lib/apt/lists/* \

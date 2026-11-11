@@ -35,3 +35,48 @@ export function onScreen(node: HTMLElement, sheet = true) {
 		}
 	};
 }
+
+/**
+ * Places a `position: fixed` element under its button, right edges lined up,
+ * inside the window, and above the button when there is no room below. It
+ * follows the button through scrolling. For a panel moved out of its
+ * container with `portal`; on a phone it is left to its sheet CSS.
+ */
+export function anchorTo(node: HTMLElement, anchor: HTMLElement | undefined) {
+	const pad = 8;
+	const gap = 8;
+	const place = () => {
+		if (!anchor || window.matchMedia(SHEET_QUERY).matches) {
+			node.style.left = '';
+			node.style.top = '';
+			return;
+		}
+		const a = anchor.getBoundingClientRect();
+		const r = node.getBoundingClientRect();
+		const left = Math.min(
+			Math.max(pad, a.right - r.width),
+			Math.max(pad, window.innerWidth - pad - r.width)
+		);
+		let top = a.bottom + gap;
+		if (top + r.height > window.innerHeight - pad && a.top - gap - r.height >= pad) {
+			top = a.top - gap - r.height;
+		}
+		node.style.left = `${Math.round(left)}px`;
+		node.style.top = `${Math.round(top)}px`;
+	};
+	place();
+	const frame = requestAnimationFrame(place);
+	window.addEventListener('resize', place);
+	window.addEventListener('scroll', place, true);
+	return {
+		update(next: HTMLElement | undefined) {
+			anchor = next;
+			place();
+		},
+		destroy() {
+			cancelAnimationFrame(frame);
+			window.removeEventListener('resize', place);
+			window.removeEventListener('scroll', place, true);
+		}
+	};
+}

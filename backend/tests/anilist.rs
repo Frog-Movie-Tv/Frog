@@ -274,7 +274,6 @@ impl Harness {
             admin_password: None,
             secure_cookies: false,
             session_days: 7,
-            notify_hour: 18,
             anilist: Some(AniListClient {
                 id: "55123".into(),
                 secret: "not-a-secret".into(),
@@ -285,6 +284,7 @@ impl Harness {
                 anime_lists_url: format!("{base}/anime_lists.json"),
             }),
             fanart: None,
+            tvdb: None,
             mdblist: None,
         };
         let pool = frog::db::connect(&url).await.unwrap();

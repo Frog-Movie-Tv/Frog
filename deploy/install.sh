@@ -146,7 +146,7 @@ cat <<EOF
 Done. Next, by hand:
 
   1. Fill in $ROOT/production/.env and $ROOT/staging/.env
-     (TMDB_API_KEY, FROG_NOTIFY_HOUR, TZ)
+     (TMDB_API_KEY, TVDB_API_KEY, TZ)
   2. Fill in $ROOT/caddy/.env (the two DuckDNS names and an email)
   3. Fill in $ROOT/backup.env (AGE_RECIPIENT, BACKUP_REPO_DIR)
   4. docker login ghcr.io       (only if the repository is private)

@@ -21,8 +21,6 @@ pub async fn status(auth: Auth, State(state): State<AppState>) -> AppResult<Json
     Ok(Json(json!({
         "public_key": vapid.public_key(),
         "devices": devices,
-        // What "the usual time" means on this server, for Settings to show.
-        "default_hour": state.config.notify_hour,
     })))
 }
 
@@ -32,11 +30,14 @@ pub struct Keys {
     pub auth: String,
 }
 
-/// The shape of `PushSubscription.toJSON()`.
+/// The shape of `PushSubscription.toJSON()`, with the browser's time zone,
+/// which decides when midnight is for a day with no time.
 #[derive(Deserialize)]
 pub struct Subscription {
     pub endpoint: String,
     pub keys: Keys,
+    #[serde(default)]
+    pub time_zone: Option<String>,
 }
 
 pub async fn subscribe(
@@ -74,6 +75,10 @@ pub async fn subscribe(
     .bind(Utc::now().to_rfc3339())
     .execute(&state.pool)
     .await?;
+    if let Some(zone) = sub.time_zone.as_deref() {
+        // A zone this server does not know keeps the one it had.
+        crate::announce::set_time_zone(&state.pool, auth.user_id(), zone).await?;
+    }
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -93,30 +98,4 @@ pub async fn unsubscribe(
         .execute(&state.pool)
         .await?;
     Ok(Json(json!({ "ok": true })))
-}
-
-/// Send a test notification to every device, so turning it on can be checked.
-pub async fn test(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
-    let result = push::broadcast(
-        &state,
-        auth.user_id(),
-        &json!({
-            "title": "Frog",
-            "body": "Notifications are on. New episodes of the shows you follow will show up here.",
-            "url": "/calendar",
-            "tag": "frog-test",
-        }),
-    )
-    .await?;
-    if result.sent == 0 {
-        let why = if result.settling > 0 {
-            "This device has only just been set up. Try the test again in a minute."
-        } else if result.failed > 0 {
-            "The push service turned the notification down. Turn notifications off and on again on this device."
-        } else {
-            "This browser no longer accepts notifications from Frog. Turn them on again."
-        };
-        return Err(AppError::BadRequest(why.into()));
-    }
-    Ok(Json(json!(result)))
 }

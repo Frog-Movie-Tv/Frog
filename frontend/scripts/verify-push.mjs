@@ -2,12 +2,13 @@
  * Verifies Web Push end to end in real Chrome, through Google's real push
  * service:
  *
- *   1. Settings turns notifications on and the server stores the device,
- *   2. "Send a test" is accepted by FCM and arrives decrypted in the worker,
- *   3. a show's bell switches its alerts off, and that survives a reload,
- *   4. an episode of a followed show airing today is announced by the worker
- *      as one notification, and the muted show stays silent,
- *   5. turning notifications off removes the device.
+ *   1. Settings' one switch turns notifications on, says so, and the server
+ *      stores the device with the browser's time zone,
+ *   2. a show's bell switches its alerts off, and that survives a reload,
+ *   3. an episode of a followed show whose time has just come is announced
+ *      by the worker within the minute, through FCM, decrypted in the
+ *      worker, with the title's picture, and the muted show stays silent,
+ *   4. turning notifications off removes the device.
  *
  *   node scripts/verify-push.mjs     (needs the TMDB key and a release build)
  */
@@ -73,7 +74,8 @@ async function start() {
 			FROG_STATIC_DIR: join(repo, 'frontend', 'build'),
 			FROG_ADMIN_USERNAME: USER,
 			FROG_ADMIN_PASSWORD: PASS,
-			FROG_NOTIFY_HOUR: '0',
+			// The air times below are set by hand; TheTVDB would put the real ones back.
+			TVDB_API_KEY: '',
 			TMDB_API_KEY: key,
 			RUST_LOG: 'frog=info'
 		}
@@ -156,7 +158,10 @@ async function shown() {
 						tag: options.tag,
 						title,
 						body: options.body,
-						url: options.data?.url
+						url: options.data?.url,
+						icon: options.icon,
+						badge: options.badge,
+						image: options.image?.slice(0, 40)
 					});
 					return original(title, options);
 				};
@@ -187,18 +192,16 @@ for (const id of [BREAKING_BAD, THE_OFFICE]) {
 
 console.log('\n== turning on ==');
 await page.goto(`${BASE}/settings`);
-const card = page.locator('.notifications');
-await card.getByRole('button', { name: 'Turn on' }).click();
+const toggle = page.getByRole('checkbox', { name: 'Notifications' });
+await toggle.waitFor();
+await page.locator('label.row', { has: toggle }).click();
 // Registering with FCM from a fresh profile can take most of a minute.
-await card
-	.getByText('On for this device')
+await page
+	.getByText('Notifications are on')
+	.first()
 	.waitFor({ timeout: 90000 })
 	.catch(() => undefined);
-check(
-	'Settings says it is on',
-	(await card.getByText('On for this device').count()) === 1,
-	await card.innerText()
-);
+check('Settings confirms it is on', await toggle.isChecked());
 const status = await api('GET', '/api/push');
 check('the server stored the device', status.body?.devices === 1, JSON.stringify(status.body));
 const endpoint = await page.evaluate(
@@ -209,65 +212,11 @@ check(
 	/^https:\/\/\S+googleapis\.com\//.test(endpoint ?? ''),
 	endpoint?.slice(0, 50)
 );
+check(
+	'there is nothing to choose but on or off',
+	(await page.getByRole('button', { name: /Send a test|Send alerts from/ }).count()) === 0
+);
 await page.screenshot({ path: join(out, '1-settings-on.png') });
-
-console.log('\n== the hour alerts go out ==');
-const hourPicker = card.getByRole('button', { name: 'Send alerts from' });
-await hourPicker.waitFor();
-check(
-	"the usual time is the server's hour",
-	/Usual time \(00:00\)/.test(await hourPicker.innerText()),
-	await hourPicker.innerText()
-);
-await hourPicker.click();
-await page.getByRole('option', { name: '07:00', exact: true }).click();
-await page.waitForTimeout(800);
-const chosen = (await api('GET', '/api/settings')).body?.notifyHour;
-check('choosing an hour saves it to the account', chosen === 7, String(chosen));
-await hourPicker.click();
-await page.getByRole('option', { name: /^Usual time/ }).click();
-await page.waitForTimeout(800);
-const usual = (await api('GET', '/api/settings')).body?.notifyHour;
-check('the usual time clears it again', usual === null || usual === undefined, String(usual));
-
-console.log('\n== test notification ==');
-await shown();
-// As a person would: a device switched on seconds ago can be refused while
-// it settles, so wait, open Settings again (which re-sends it) and retry.
-let accepted = false;
-for (let attempt = 1; attempt <= 4 && !accepted; attempt++) {
-	await card.getByRole('button', { name: 'Send a test' }).click();
-	const outcome = await Promise.race([
-		page
-			.getByText('Sent to 1 device')
-			.first()
-			.waitFor({ timeout: 20000 })
-			.then(() => 'sent'),
-		page
-			.getByText(/only just been set up/)
-			.first()
-			.waitFor({ timeout: 20000 })
-			.then(() => 'settling')
-	]).catch(() => 'nothing');
-	console.log(`  test attempt ${attempt}: ${outcome}`);
-	accepted = outcome === 'sent';
-	if (!accepted) {
-		await page.waitForTimeout(20000);
-		await page.goto(`${BASE}/settings`);
-		await card.getByText('On for this device').waitFor({ timeout: 60000 });
-		await shown();
-	}
-}
-check('FCM accepted it', accepted);
-// A brand-new registration can take a while to start receiving.
-const test = await waitForNotification('frog-test', 120000);
-check(
-	'it arrived, decrypted, and the worker showed it',
-	test?.title === 'Frog' &&
-		/Notifications are on/.test(test?.body ?? '') &&
-		test?.url === '/calendar',
-	JSON.stringify(test)
-);
 
 console.log('\n== per-show switch ==');
 await page.goto(`${BASE}/title/tv/${THE_OFFICE}`);
@@ -290,20 +239,21 @@ await page.screenshot({ path: join(out, '2-bell-off.png') });
 
 console.log('\n== episode announcement ==');
 await stop();
-const today = new Date();
-const localDay = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+// Both pilots air a few seconds from now, at a time TheTVDB would give.
+const soon = new Date(Date.now() + 20_000);
+const stamp = soon.toISOString().replace(/\.\d{3}Z$/, 'Z');
 {
 	const db = new DatabaseSync(dbFile);
 	const moved = db
 		.prepare(
-			`UPDATE episode SET air_date = ?
+			`UPDATE episode SET air_date = ?, air_at = ?, air_source = 'tvdb'
 			  WHERE season_number = 1 AND episode_number = 1
 			    AND title_id IN (SELECT title_id FROM title_external
 			                      WHERE provider = 'tmdb' AND external_id IN (?, ?))`
 		)
-		.run(localDay, `tv/${BREAKING_BAD}`, `tv/${THE_OFFICE}`);
+		.run(stamp.slice(0, 10), stamp, `tv/${BREAKING_BAD}`, `tv/${THE_OFFICE}`);
 	db.close();
-	check('both pilots now air today', moved.changes === 2, String(moved.changes));
+	check('both pilots now air in a moment', moved.changes === 2, String(moved.changes));
 }
 // The worker's first sweep runs five seconds after start.
 await start();
@@ -314,10 +264,13 @@ check(
 	announced?.title === 'Breaking Bad' && announced?.url === `/t/${frogIds[BREAKING_BAD]}`,
 	JSON.stringify(announced)
 );
+check('it names the episode', announced?.body === 'New episode · S1 E1 · Pilot', announced?.body);
 check(
-	'it names the episode',
-	/^S01E01 · Pilot is out today$/.test(announced?.body ?? ''),
-	announced?.body
+	'it carries the picture, the icon and the badge',
+	/^data:image\//.test(announced?.image ?? '') &&
+		announced?.icon === '/icon-192.png' &&
+		announced?.badge === '/badge-96.png',
+	JSON.stringify(announced)
 );
 const muted = (await shown()).find((n) => n.tag === `frog-title-${frogIds[THE_OFFICE]}`);
 check('the muted show stays silent', !muted, JSON.stringify(muted));
@@ -334,8 +287,13 @@ await start();
 
 console.log('\n== turning off ==');
 await page.goto(`${BASE}/settings`);
-await card.getByRole('button', { name: 'Turn off' }).click();
-await card.getByRole('button', { name: 'Turn on' }).waitFor();
+await toggle.waitFor();
+await page.waitForFunction(
+	() => document.querySelector('input[aria-label="Notifications"]')?.checked === true
+);
+await page.locator('label.row', { has: toggle }).click();
+await page.getByText('Notifications are off').first().waitFor();
+check('Settings confirms it is off', !(await toggle.isChecked()));
 const after = await api('GET', '/api/push');
 check('the device is removed', after.body?.devices === 0, JSON.stringify(after.body));
 check('no errors on the page', errors.length === 0, errors.join(' | '));

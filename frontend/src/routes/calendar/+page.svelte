@@ -6,8 +6,8 @@
 	import Spinner from '#lib/components/Spinner.svelte';
 	import LoadFailed from '#lib/components/LoadFailed.svelte';
 	import { failure, type Failure } from '#lib/failure';
-	import { localDay } from '#lib/day';
-	import { episodeCode, plural, prettyDate, relativeDate } from '#lib/format';
+	import { airDay, localDay } from '#lib/day';
+	import { clockTime, episodeCode, plural, prettyDate, relativeDate } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 
 	interface Entry {
@@ -18,6 +18,8 @@
 		poster_path: string | null;
 		accent: string | null;
 		date: string;
+		/** The moment, when the time is known: it decides the day here. */
+		air_at: string | null;
 		season_number: number | null;
 		episode_number: number | null;
 		episode_name: string | null;
@@ -45,7 +47,11 @@
 		try {
 			const res = await fetch('/api/calendar', { credentials: 'same-origin' });
 			if (!res.ok) throw new ApiError('', res.status);
-			entries = (await res.json()).entries;
+			entries = ((await res.json()).entries as Entry[])
+				.map((e) => ({ ...e, date: airDay(e.date, e.air_at) ?? e.date }))
+				.sort(
+					(a, b) => a.date.localeCompare(b.date) || (a.air_at ?? '').localeCompare(b.air_at ?? '')
+				);
 			// Open on the next day that has something, if today has nothing.
 			if (!entries.some((e) => e.date === today)) {
 				const next = entries.find((e) => e.date >= today);
@@ -266,6 +272,7 @@
 					{#if entry.season_number !== null && entry.episode_number !== null}
 						{episodeCode(entry.season_number, entry.episode_number)}
 						{#if entry.episode_name}· {entry.episode_name}{/if}
+						{#if entry.air_at}· {clockTime(entry.air_at)}{/if}
 					{:else}
 						Film release
 					{/if}

@@ -127,7 +127,6 @@ impl Harness {
             admin_password: None,
             secure_cookies: false,
             session_days: 7,
-            notify_hour: 18,
             anilist: Some(AniListClient {
                 id: "1".into(),
                 secret: "s".into(),
@@ -138,6 +137,7 @@ impl Harness {
                 anime_lists_url: base.clone(),
             }),
             fanart: None,
+            tvdb: None,
             mdblist: Some(MdbListClient {
                 key: "secret-key".into(),
                 api_url: base,

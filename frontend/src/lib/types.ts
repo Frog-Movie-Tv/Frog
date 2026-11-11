@@ -214,6 +214,8 @@ export interface EpisodeView {
 	undated: boolean;
 	rating: number | null;
 	notes: string | null;
+	/** The moment it comes out, when the time is known. */
+	air_at?: string | null;
 }
 
 export interface SeasonDetail {
@@ -231,6 +233,8 @@ export interface NextUp {
 	name: string | null;
 	still_path: string | null;
 	air_date: string | null;
+	/** The moment it comes out, when the time is known. */
+	air_at?: string | null;
 }
 
 export interface Collection {
@@ -440,6 +444,8 @@ export interface NextEpisode {
 	name: string | null;
 	still_path: string | null;
 	air_date: string | null;
+	/** The moment it comes out, when the time is known. */
+	air_at?: string | null;
 	aired: boolean;
 }
 
@@ -453,6 +459,8 @@ export interface AiringEpisode {
 	episode_number: number;
 	name: string | null;
 	air_date: string | null;
+	/** The moment it comes out, when the time is known. */
+	air_at?: string | null;
 }
 
 /** One show, with every episode of it due in the window. */
@@ -858,6 +866,8 @@ export interface StudioDetail {
 export interface MangaStats {
 	year: number | null;
 	years: number[];
+	/** One row per manga, for narrowing the charts to a picked bar. */
+	facts?: import('./stats-filter').MangaFact[];
 	totals: {
 		manga: number;
 		chapters: number;

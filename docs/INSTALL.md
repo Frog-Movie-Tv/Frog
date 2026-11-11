@@ -170,8 +170,11 @@ over a secure connection. Over plain `http://` Frog still works, but About will
 tell you offline mode is unavailable, and Settings → Notifications says it
 needs HTTPS.
 
-New-episode notifications go out from 18:00 on the day an episode airs. Set
-`FROG_NOTIFY_HOUR` in `.env` (0–23, the server's local time) to change that.
+Notifications go out the minute an episode or a film someone follows comes
+out. The day and time come from TheTVDB when `TVDB_API_KEY` is set (a free v4
+project key); without it, or when TheTVDB has no time, they go out at midnight
+on the day, in each person's own time zone, which their browser reports when
+they switch notifications on.
 
 Posters and stills are kept in the database so pages load without asking
 TMDB again. The cache stays under `FROG_IMAGE_CACHE_MB` (512 by default):

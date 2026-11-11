@@ -21,6 +21,8 @@ type EpisodeStateRow = (
     i64,
     Option<String>,
     Option<bool>,
+    Option<String>,
+    Option<String>,
 );
 
 #[derive(Serialize)]
@@ -34,6 +36,8 @@ pub struct EpisodeView {
     /// When the latest watch was, so taking back an untick restores it.
     pub watched_at: Option<String>,
     pub undated: bool,
+    /// The moment it comes out, when TheTVDB knows the time.
+    pub air_at: Option<String>,
 }
 
 /// A title as a provider's address names it: `movie/550` and `tv/1399` are
@@ -323,7 +327,10 @@ pub async fn season(
                   ORDER BY w.watched_at DESC LIMIT 1),
                 (SELECT w.undated FROM watch_event w
                   WHERE w.user_id = ?1 AND w.episode_id = e.id
-                  ORDER BY w.watched_at DESC LIMIT 1)
+                  ORDER BY w.watched_at DESC LIMIT 1),
+                -- TheTVDB's day, which the stored row keeps over TMDB's.
+                CASE WHEN e.air_source = 'tvdb' THEN e.air_date END,
+                e.air_at
            FROM episode e
            LEFT JOIN episode_state s ON s.episode_id = e.id AND s.user_id = ?1
           WHERE e.title_id = ?2 AND e.season_number = ?3",
@@ -336,16 +343,29 @@ pub async fn season(
 
     let views: Vec<EpisodeView> = episodes
         .into_iter()
-        .map(|info| {
+        .map(|mut info| {
             let found = states
                 .iter()
                 .find(|row| row.0 == info.season_number && row.1 == info.episode_number);
-            let (rating, notes, count, at, undated) = match found {
-                Some((_, _, r, n, c, at, u)) => (*r, n.clone(), *c, at.clone(), u.unwrap_or(false)),
-                None => (None, None, 0, None, false),
+            let (rating, notes, count, at, undated, air_at) = match found {
+                Some((_, _, r, n, c, at, u, day, air_at)) => {
+                    if day.is_some() {
+                        info.air_date = day.clone();
+                    }
+                    (
+                        *r,
+                        n.clone(),
+                        *c,
+                        at.clone(),
+                        u.unwrap_or(false),
+                        air_at.clone(),
+                    )
+                }
+                None => (None, None, 0, None, false, None),
             };
             EpisodeView {
                 info,
+                air_at,
                 watched: count > 0,
                 watch_count: count,
                 watched_at: at,

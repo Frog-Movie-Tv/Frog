@@ -269,7 +269,7 @@ jobs:
           docker rm -f frog-ci
           exit 1
 
-      # FROG_NOTIFY_HOUR is local time, so TZ has to mean something in there.
+      # The server's logs and the deploy scripts read TZ, so it has to mean something in there.
       - name: The image knows the owners' time zone
         if: github.event_name == 'pull_request'
         run: |

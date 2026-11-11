@@ -49,7 +49,8 @@
 
 <script lang="ts">
 	import { backCloses } from '#lib/layers.svelte';
-	import { onScreen } from '#lib/onscreen';
+	import { anchorTo } from '#lib/onscreen';
+	import { portal } from '#lib/portal';
 	import Icon from './Icon.svelte';
 
 	interface Props {
@@ -65,6 +66,8 @@
 
 	let open = $state(false);
 	let root: HTMLDivElement | undefined = $state();
+	let trigger: HTMLButtonElement | undefined = $state();
+	let layer: HTMLDivElement | undefined = $state();
 	let hsv = $state<[number, number, number]>([0, 0, 0]);
 	let typed = $state('');
 
@@ -154,7 +157,8 @@
 
 <svelte:window
 	onpointerdown={(e) => {
-		if (open && root && !root.contains(e.target as Node)) close();
+		const t = e.target as Node;
+		if (open && root && !root.contains(t) && !layer?.contains(t)) close();
 	}}
 	onkeydown={(e) => {
 		if (open && e.key === 'Escape') close();
@@ -163,6 +167,7 @@
 
 <div class="picker" bind:this={root}>
 	<button
+		bind:this={trigger}
 		type="button"
 		class="trigger"
 		aria-label={label}
@@ -174,72 +179,75 @@
 	></button>
 
 	{#if open}
-		<div class="scrim" aria-hidden="true" onpointerdown={close}></div>
-		<div class="panel" role="dialog" aria-label={label} use:onScreen>
-			<div class="swatches">
-				{#each SWATCHES as colour (colour)}
-					<button
-						type="button"
-						class="swatch"
-						class:on={colour === hex}
-						style:--c={colour}
-						aria-label={colour}
-						aria-pressed={colour === hex}
-						onclick={() => pick(colour)}
-					>
-						{#if colour === hex}<Icon name="check" size={14} />{/if}
-					</button>
-				{/each}
-			</div>
+		<!-- Out on <body>: a settings list clips what overflows it. -->
+		<div class="layer" bind:this={layer} use:portal>
+			<div class="scrim" aria-hidden="true" onpointerdown={close}></div>
+			<div class="panel" role="dialog" aria-label={label} use:anchorTo={trigger}>
+				<div class="swatches">
+					{#each SWATCHES as colour (colour)}
+						<button
+							type="button"
+							class="swatch"
+							class:on={colour === hex}
+							style:--c={colour}
+							aria-label={colour}
+							aria-pressed={colour === hex}
+							onclick={() => pick(colour)}
+						>
+							{#if colour === hex}<Icon name="check" size={14} />{/if}
+						</button>
+					{/each}
+				</div>
 
-			<div
-				class="pad"
-				role="slider"
-				tabindex="0"
-				aria-label="Shade"
-				aria-valuetext="{Math.round(hsv[1] * 100)}% colour, {Math.round(hsv[2] * 100)}% light"
-				aria-valuenow={Math.round(hsv[2] * 100)}
-				style:--hue={hsv[0]}
-				use:pad
-				onkeydown={padKeys}
-			>
-				<span
-					class="knob"
-					style:left="{hsv[1] * 100}%"
-					style:top="{(1 - hsv[2]) * 100}%"
-					style:background={hex}
-				></span>
-			</div>
+				<div
+					class="pad"
+					role="slider"
+					tabindex="0"
+					aria-label="Shade"
+					aria-valuetext="{Math.round(hsv[1] * 100)}% colour, {Math.round(hsv[2] * 100)}% light"
+					aria-valuenow={Math.round(hsv[2] * 100)}
+					style:--hue={hsv[0]}
+					use:pad
+					onkeydown={padKeys}
+				>
+					<span
+						class="knob"
+						style:left="{hsv[1] * 100}%"
+						style:top="{(1 - hsv[2]) * 100}%"
+						style:background={hex}
+					></span>
+				</div>
 
-			<input
-				class="hue"
-				type="range"
-				min="0"
-				max="359"
-				aria-label="Hue"
-				value={Math.round(hsv[0])}
-				style:--hue={hsv[0]}
-				oninput={(e) => set([Number(e.currentTarget.value), hsv[1] || 0.7, hsv[2] || 0.8])}
-				onchange={() => onchange?.(hex)}
-			/>
-
-			<div class="foot">
-				<span class="now" style:background={hex} aria-hidden="true"></span>
 				<input
-					class="input hex"
-					aria-label="Hex colour"
-					maxlength="7"
-					spellcheck="false"
-					bind:value={typed}
-					onchange={typedIn}
-					onkeydown={(e) => {
-						if (e.key === 'Enter') {
-							e.preventDefault();
-							typedIn();
-						}
-					}}
+					class="hue"
+					type="range"
+					min="0"
+					max="359"
+					aria-label="Hue"
+					value={Math.round(hsv[0])}
+					style:--hue={hsv[0]}
+					oninput={(e) => set([Number(e.currentTarget.value), hsv[1] || 0.7, hsv[2] || 0.8])}
+					onchange={() => onchange?.(hex)}
 				/>
-				<button type="button" class="btn primary small" onclick={close}>Done</button>
+
+				<div class="foot">
+					<span class="now" style:background={hex} aria-hidden="true"></span>
+					<input
+						class="input hex"
+						aria-label="Hex colour"
+						maxlength="7"
+						spellcheck="false"
+						bind:value={typed}
+						onchange={typedIn}
+						onkeydown={(e) => {
+							if (e.key === 'Enter') {
+								e.preventDefault();
+								typedIn();
+							}
+						}}
+					/>
+					<button type="button" class="btn primary small" onclick={close}>Done</button>
+				</div>
 			</div>
 		</div>
 	{/if}
@@ -276,10 +284,8 @@
 	}
 
 	.panel {
-		position: absolute;
-		z-index: 70;
-		top: calc(100% + 8px);
-		right: 0;
+		position: fixed;
+		z-index: 90;
 		width: 248px;
 		display: flex;
 		flex-direction: column;

@@ -4,7 +4,7 @@
 </script>
 
 <script lang="ts">
-	import { settings } from '#lib/settings.svelte';
+	import { settings, type MascotName } from '#lib/settings.svelte';
 
 	/**
 	 * Pip, the frog: the icon's head on a whole frog, sat on a lily pad.
@@ -12,11 +12,10 @@
 	 * One drawing, posed by CSS. Every part is in the markup and a pose shows
 	 * its own eyes, mouth and arm and moves them, so changing the pose is one
 	 * class. Pip wears whatever mascot is chosen in Settings: the bow, the
-	 * sprout, the glasses, the popcorn. The colours are the icon's own, so Pip
-	 * is the same frog in every appearance.
+	 * sprout, the glasses, the popcorn, or the sleepy, starry-eyed or
+	 * delighted face, which shows whenever a pose has no face of its own. The
+	 * colours are the icon's own, so Pip is the same frog in every appearance.
 	 */
-
-	type Wear = 'classic' | 'bow' | 'sprout' | 'cinema' | 'popcorn';
 
 	interface Props {
 		pose?: Pose;
@@ -27,10 +26,7 @@
 
 	let { pose = 'idle', size = 160, label }: Props = $props();
 
-	const wear = $derived.by((): Wear => {
-		const m = settings.current.mascot;
-		return m === 'bow' || m === 'sprout' || m === 'cinema' || m === 'popcorn' ? m : 'classic';
-	});
+	const wear = $derived<MascotName>(settings.current.mascot ?? 'classic');
 	// With animations off Pip holds still, rather than flicker through a
 	// loop the page has shortened to nothing.
 	const still = $derived(settings.current.animations === 'off');
@@ -196,10 +192,21 @@
 				<circle cx="74" cy="61" r="15" fill="#fbfaf1" />
 				<circle cx="126" cy="61" r="15" fill="#fbfaf1" />
 				<g class="pupils">
-					<circle cx="76" cy="63" r="8" fill="#11231a" />
-					<circle cx="124" cy="63" r="8" fill="#11231a" />
-					<circle cx="72.5" cy="59" r="3.2" fill="#ffffff" />
-					<circle cx="120.5" cy="59" r="3.2" fill="#ffffff" />
+					<g class="iris">
+						<circle cx="76" cy="63" r="8" fill="#11231a" />
+						<circle cx="124" cy="63" r="8" fill="#11231a" />
+						<circle cx="72.5" cy="59" r="3.2" fill="#ffffff" />
+						<circle cx="120.5" cy="59" r="3.2" fill="#ffffff" />
+					</g>
+					<!-- starry-eyed: big pupils, two shines each -->
+					<g class="iris starry">
+						<circle cx="75" cy="63" r="11.5" fill="#11231a" />
+						<circle cx="125" cy="63" r="11.5" fill="#11231a" />
+						<circle cx="70.5" cy="57.5" r="4.6" fill="#ffffff" />
+						<circle cx="120.5" cy="57.5" r="4.6" fill="#ffffff" />
+						<circle cx="79" cy="68" r="2.3" fill="#ffffff" />
+						<circle cx="129" cy="68" r="2.3" fill="#ffffff" />
+					</g>
 				</g>
 				<circle class="lid" cx="74" cy="61" r="15.5" fill="#6cc46b" />
 				<circle class="lid" cx="126" cy="61" r="15.5" fill="#6cc46b" />
@@ -301,6 +308,15 @@
 				<ellipse cx="100" cy="111" rx="7" ry="4" fill="#f4738f" />
 			</g>
 			<path class="mouth o" d="M93 104 a7 7 0 1 0 14 0 a7 7 0 1 0 -14 0" fill="#2c6b40" />
+			<path
+				class="mouth omega"
+				d="M86 101 Q93 112 100 103 Q107 112 114 101"
+				stroke="#2c6b40"
+				stroke-width="4.5"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				fill="none"
+			/>
 		</g>
 	</g>
 
@@ -398,6 +414,61 @@
 	.pip.wear-cinema .cinema,
 	.pip.wear-popcorn .popcorn {
 		display: block;
+	}
+
+	/*
+	 * The face mascots change Pip's face, but only while the pose has none of
+	 * its own: asleep, happy and dizzy keep theirs, and so does the mouth of
+	 * a lost or searching Pip.
+	 */
+	.pip .iris.starry {
+		display: none;
+	}
+	.pip.wear-starry .iris {
+		display: none;
+	}
+	.pip.wear-starry .iris.starry {
+		display: block;
+	}
+	.pip.wear-starry .blush {
+		transform-box: fill-box;
+		transform-origin: center;
+		scale: 1.22;
+		opacity: 0.95;
+	}
+	.pip.wear-sleepy:is(.pose-idle, .pose-wave, .pose-hop, .pose-lost, .pose-searching) .lid {
+		/* Half down even when held still. */
+		transform: scaleY(0.5);
+		animation-name: pip-drowsy;
+	}
+	.pip.wear-delighted:is(.pose-idle, .pose-wave, .pose-hop, .pose-lost, .pose-searching)
+		.eyes.open {
+		display: none;
+	}
+	.pip.wear-delighted:is(.pose-idle, .pose-wave, .pose-hop, .pose-lost, .pose-searching) .eyes.joy {
+		display: block;
+	}
+	.pip:is(.wear-sleepy, .wear-starry, .wear-delighted):is(.pose-idle, .pose-wave, .pose-hop)
+		.mouth.smile {
+		display: none;
+	}
+	.pip.wear-sleepy:is(.pose-idle, .pose-wave, .pose-hop) .mouth.small,
+	.pip.wear-starry:is(.pose-idle, .pose-wave, .pose-hop) .mouth.omega,
+	.pip.wear-delighted:is(.pose-idle, .pose-wave, .pose-hop) .mouth.grin {
+		display: block;
+	}
+
+	/* Heavy lids, half down, that close the rest of the way to blink. */
+	@keyframes pip-drowsy {
+		0%,
+		86%,
+		100% {
+			transform: scaleY(0.5);
+		}
+		90%,
+		95% {
+			transform: scaleY(1);
+		}
 	}
 
 	/* --- always on --------------------------------------------------------- */

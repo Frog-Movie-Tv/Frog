@@ -26,13 +26,16 @@ pub struct CalendarEntry {
     pub poster_path: Option<String>,
     pub accent: Option<String>,
     pub date: String,
+    /// The moment it comes out, when TheTVDB knows the time: the page moves
+    /// it to the day that is where the viewer is.
+    pub air_at: Option<String>,
     pub season_number: Option<i64>,
     pub episode_number: Option<i64>,
     pub episode_name: Option<String>,
     pub watched: bool,
 }
 
-/// (kind, title id, name, poster, accent, date, season, episode, ep name, watched)
+/// (kind, title id, name, poster, accent, date, season, episode, ep name, watched, air at)
 type CalendarRow = (
     String,
     i64,
@@ -44,6 +47,7 @@ type CalendarRow = (
     i64,
     Option<String>,
     i64,
+    Option<String>,
 );
 
 /// (title id, show, AniList entry name, poster, accent, premiere, season, offset)
@@ -77,13 +81,16 @@ pub async fn calendar(
         "SELECT t.kind, t.id, t.name, t.poster_path, t.accent_json,
                 e.air_date, e.season_number, e.episode_number, e.name,
                 (SELECT COUNT(*) FROM watch_event w
-                  WHERE w.user_id = ? AND w.episode_id = e.id)
+                  WHERE w.user_id = ? AND w.episode_id = e.id),
+                e.air_at
            FROM episode e
            JOIN title t ON t.id = e.title_id
            JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?
           WHERE {FOLLOWED}
             AND e.air_date IS NOT NULL
-            AND e.air_date >= ? AND e.air_date <= ?
+            -- A day either side: a timed episode can fall on the next or the
+            -- previous day where the viewer is.
+            AND e.air_date >= date(?, '-1 day') AND e.air_date <= date(?, '+1 day')
           ORDER BY e.air_date, t.name, e.season_number, e.episode_number
           LIMIT 600"
     ))
@@ -101,7 +108,7 @@ pub async fn calendar(
         .zip(keep)
         .filter_map(|(row, keep)| keep.then_some(row))
         .map(
-            |(kind, id, title, poster, accent, date, season, episode, ep_name, watched)| {
+            |(kind, id, title, poster, accent, date, season, episode, ep_name, watched, air_at)| {
                 CalendarEntry {
                     id,
                     kind,
@@ -109,6 +116,7 @@ pub async fn calendar(
                     poster_path: poster,
                     accent: accent_of(accent.as_deref()),
                     date,
+                    air_at,
                     season_number: Some(season),
                     episode_number: Some(episode),
                     episode_name: ep_name,
@@ -119,14 +127,16 @@ pub async fn calendar(
         .collect();
 
     let films: Vec<FilmRow> = sqlx::query_as(
-        "SELECT t.kind, t.id, t.name, t.poster_path, t.accent_json, t.release_date
+        "SELECT t.kind, t.id, t.name, t.poster_path, t.accent_json,
+                COALESCE(a.release_date, t.release_date) AS day
            FROM title t
            JOIN library_entry l ON l.title_id = t.id AND l.user_id = ?
+           LEFT JOIN title_airing a ON a.title_id = t.id
           WHERE t.kind = 'movie'
             AND l.status = 'planned'
-            AND t.release_date IS NOT NULL
-            AND t.release_date >= ? AND t.release_date <= ?
-          ORDER BY t.release_date",
+            AND COALESCE(a.release_date, t.release_date) >= ?
+            AND COALESCE(a.release_date, t.release_date) <= ?
+          ORDER BY day",
     )
     .bind(auth.user_id())
     .bind(&from)
@@ -144,6 +154,7 @@ pub async fn calendar(
                 poster_path: poster,
                 accent: accent_of(accent.as_deref()),
                 date,
+                air_at: None,
                 season_number: None,
                 episode_number: None,
                 episode_name: None,
@@ -183,6 +194,7 @@ pub async fn calendar(
             poster_path: poster,
             accent: accent_of(accent.as_deref()),
             date,
+            air_at: None,
             season_number: season,
             episode_number: season.map(|_| offset + 1),
             episode_name: Some(season_name),

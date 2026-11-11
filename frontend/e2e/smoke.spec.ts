@@ -1054,6 +1054,12 @@ test('a right-click on a title offers its actions, each with an undo', async ({
 	const menu = page.getByRole('menu', { name: 'Alien' });
 	await expect(menu.getByRole('menuitem', { name: 'Remove from library' })).toBeVisible();
 
+	// On a computer a choice's own choices open beside it on hover.
+	if (!isMobile) {
+		await menu.getByRole('menuitem', { name: 'Move to' }).hover();
+		await expect(menu.getByRole('menu', { name: 'Move to' })).toBeVisible();
+	}
+
 	// A second level in the same menu, and the current status is ticked.
 	await menu.getByRole('menuitem', { name: 'Move to' }).click();
 	await expect(menu.getByRole('menuitemcheckbox', { name: 'Completed' })).toHaveAttribute(
@@ -1252,7 +1258,6 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/import/apply',
 		'/api/push/subscribe',
 		'/api/push/unsubscribe',
-		'/api/push/test',
 		'/api/shelves',
 		'/api/shelves/1/items',
 		'/api/invites',

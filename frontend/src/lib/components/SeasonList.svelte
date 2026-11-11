@@ -2,7 +2,7 @@
 	import Icon from './Icon.svelte';
 	import { api, img, type ClearedWatch } from '#lib/api';
 	import { localDay } from '#lib/day';
-	import { episodeCode, prettyDate, relativeDate, runtime } from '#lib/format';
+	import { clockTime, episodeCode, prettyDate, relativeDate, runtime } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import { uniqueBy } from '#lib/unique';
@@ -250,9 +250,16 @@
 
 	const today = localDay();
 
-	/** TMDB gives an air date; anything later than today has not happened. */
+	/** Not out yet: its moment is still to come, or, with a day alone, its day. */
 	function unaired(ep: EpisodeView): boolean {
+		if (ep.air_at) return new Date(ep.air_at).getTime() > Date.now();
 		return !!ep.air_date && ep.air_date > today;
+	}
+
+	/** "Airs tomorrow · 21:00", in the viewer's zone. */
+	function airs(ep: EpisodeView): string {
+		const when = `Airs ${relativeDate(ep.air_date)}`;
+		return ep.air_at ? `${when} · ${clockTime(ep.air_at)}` : when;
 	}
 
 	/** Cards with stills, or a compact list: one choice, for every show. */
@@ -494,7 +501,7 @@
 							</div>
 							<span class="row-meta">
 								{#if unaired(ep)}
-									<span class="soon">Airs {relativeDate(ep.air_date)}</span>
+									<span class="soon">{airs(ep)}</span>
 								{:else}
 									{#if ep.air_date}<span>{prettyDate(ep.air_date)}</span>{/if}
 									{#if ep.runtime}<span>{runtime(ep.runtime)}</span>{/if}
@@ -550,7 +557,7 @@
 								</div>
 								<div class="sub">
 									{#if unaired(ep)}
-										<span class="soon">Airs {relativeDate(ep.air_date)}</span>
+										<span class="soon">{airs(ep)}</span>
 									{:else}
 										{#if ep.air_date}<span>{prettyDate(ep.air_date)}</span>{/if}
 										{#if ep.runtime}<span>{runtime(ep.runtime)}</span>{/if}
