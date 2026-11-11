@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.5.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.4.3...v1.5.0) (2026-11-11)
+
+
+### Features
+
+* 1.5.0 Goliath — the roadmap cleared, View more, and a read-only Database view ([5cc5952](https://github.com/Frog-Movie-Tv/Frog/commit/5cc59526fef576538a5656694389f17dc739f2aa))
+* a read-only Database view in Administration, with secrets kept on the server ([e69288a](https://github.com/Frog-Movie-Tv/Frog/commit/e69288a6762d2008e273e58cdb0e8936ce873b54))
+* an Airing page, and air times from AniList and TVmaze instead of TheTVDB ([9d9f2ed](https://github.com/Frog-Movie-Tv/Frog/commit/9d9f2ed9b56cddc6d4227215e0a2a4c954ab5946))
+* an Airing page, and air times from AniList and TVmaze instead of TheTVDB ([026a012](https://github.com/Frog-Movie-Tv/Frog/commit/026a0129e00da561505608238c0ae06fdc08f19f))
+* an AniList series opens as TMDB's show when TMDB has its first season ([46257b6](https://github.com/Frog-Movie-Tv/Frog/commit/46257b6f0f3f439ebdcab4389a6bf1f76c999e21))
+* Netflix episodes found by a looser name, by place, and Part 1 placed ([7bc0ac7](https://github.com/Frog-Movie-Tv/Frog/commit/7bc0ac76aeb3db1d7f2e36b0b01c0f9383d395ba))
+* Stats' people, days and streaks follow a picked bar ([9ef5ef1](https://github.com/Frog-Movie-Tv/Frog/commit/9ef5ef1bc7018f30579c8cfd561e98f4256f303d))
+* the Calendar, Stats' charts, person pages and import rows in Glass ([5c4da53](https://github.com/Frog-Movie-Tv/Frog/commit/5c4da530b525521c6d13b80e5aae4b4d6f6eda60))
+* undo a merge of two titles from Settings ([cd86753](https://github.com/Frog-Movie-Tv/Frog/commit/cd86753e00b05618fc888c5c76570e0dfa502654))
+* view more picks like a title, and a fresh Because you watched every two minutes ([00176e6](https://github.com/Frog-Movie-Tv/Frog/commit/00176e64b5d0e5e7375a210cde5343fb3bfbb29b))
+
+
+### Fixes
+
+* a smooth rating deck on phones, room under the pile, and zero stars ([68ee029](https://github.com/Frog-Movie-Tv/Frog/commit/68ee0298951da4d29df6f95457db6e70fb55d036))
+
+
+### Internal
+
+* no SQL in any route ([e19733b](https://github.com/Frog-Movie-Tv/Frog/commit/e19733bbd783596c3355e419557b23d6df8641ff))
+* SQL out of the account, admin, auth, invites, profiles, push and settings routes ([b91f867](https://github.com/Frog-Movie-Tv/Frog/commit/b91f867d4dee31068f1055c34f1418d84352abae))
+
+
+### Documentation
+
+* 1.5.0 Goliath, its notes, the About page and the README ([33f6311](https://github.com/Frog-Movie-Tv/Frog/commit/33f631187a2fbb5ca4134f0434dc73450203d82b))
+* screenshots for 1.5.0, with Airing in the bar and the shorter footer ([3d666ee](https://github.com/Frog-Movie-Tv/Frog/commit/3d666eebd20072088ff20796a547fb124e26317d))
+
 ## [1.4.3](https://github.com/Frog-Movie-Tv/Frog/compare/v1.4.2...v1.4.3) (2026-11-11)
 
 
