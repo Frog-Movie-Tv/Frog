@@ -24,8 +24,8 @@ pub const FOLLOWED: &str = "(l.status IN ('watching', 'paused', 'completed')
              OR EXISTS (SELECT 1 FROM watch_event o
                          WHERE o.user_id = l.user_id AND o.title_id = l.title_id))))";
 
-/// SQL condition: episode `e` has come out. With a time from TheTVDB
-/// (`air_at`) that is the moment itself; with a day alone, the day. TMDB
+/// SQL condition: episode `e` has come out. With a time from AniList or
+/// TVmaze (`air_at`) that is the moment itself; with a day alone, the day. TMDB
 /// lists announced episodes with no date, so an undated one only counts when
 /// a later one has aired; treating every undated episode as out is what made
 /// a season 2 that does not exist yet show up as the next thing to watch.

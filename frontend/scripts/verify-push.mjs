@@ -74,8 +74,9 @@ async function start() {
 			FROG_STATIC_DIR: join(repo, 'frontend', 'build'),
 			FROG_ADMIN_USERNAME: USER,
 			FROG_ADMIN_PASSWORD: PASS,
-			// The air times below are set by hand; TheTVDB would put the real ones back.
-			TVDB_API_KEY: '',
+			// The air times below are set by hand; TVmaze would put the real ones
+			// back, so it is pointed nowhere.
+			TVMAZE_API_URL: 'http://127.0.0.1:9',
 			TMDB_API_KEY: key,
 			RUST_LOG: 'frog=info'
 		}
@@ -239,14 +240,14 @@ await page.screenshot({ path: join(out, '2-bell-off.png') });
 
 console.log('\n== episode announcement ==');
 await stop();
-// Both pilots air a few seconds from now, at a time TheTVDB would give.
+// Both pilots air a few seconds from now, at a time TVmaze would give.
 const soon = new Date(Date.now() + 20_000);
 const stamp = soon.toISOString().replace(/\.\d{3}Z$/, 'Z');
 {
 	const db = new DatabaseSync(dbFile);
 	const moved = db
 		.prepare(
-			`UPDATE episode SET air_date = ?, air_at = ?, air_source = 'tvdb'
+			`UPDATE episode SET air_date = ?, air_at = ?, air_source = 'tvmaze'
 			  WHERE season_number = 1 AND episode_number = 1
 			    AND title_id IN (SELECT title_id FROM title_external
 			                      WHERE provider = 'tmdb' AND external_id IN (?, ?))`

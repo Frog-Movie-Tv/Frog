@@ -77,5 +77,11 @@ pub async fn put(
     .execute(&state.pool)
     .await?;
 
+    // A zone chosen in Settings is also the one notifications count midnight
+    // in; left empty, the zone the browser reports stands.
+    if let Some(zone) = body["timeZone"].as_str().filter(|z| !z.is_empty()) {
+        crate::announce::set_time_zone(&state.pool, auth.user_id(), zone).await?;
+    }
+
     Ok(Json(body))
 }

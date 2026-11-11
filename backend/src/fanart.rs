@@ -2,8 +2,8 @@
 //!
 //! A title's logo comes from TMDB. When it has none, this finds one:
 //!
-//! 1. fanart.tv, for anything TMDB knows: films by TMDB's id, shows by
-//!    TheTVDB's (from TMDB's external ids). For an anime Frog keeps from
+//! 1. fanart.tv, for anything TMDB knows: films by TMDB's id, shows by the
+//!    TheTVDB id in TMDB's external ids. For an anime Frog keeps from
 //!    AniList that is the TMDB entry `anime_map` points at.
 //! 2. The show it belongs to. AniList knows a third season's prequel and a
 //!    special's parent; their logo is this one's too. The chain is followed a
@@ -103,8 +103,8 @@ const RELATIONS_QUERY: &str = "query ($id: Int) {
   Media(id: $id, type: ANIME) { relations { edges { relationType node { id type } } } }
 }";
 
-/// fanart.tv's logo for a TMDB entry. Shows need TheTVDB's id, which TMDB's
-/// own detail carries.
+/// fanart.tv's logo for a TMDB entry. fanart.tv files shows under their
+/// TheTVDB id, which TMDB's detail carries as an external id.
 async fn from_fanart(state: &AppState, kind: &str, tmdb_id: i64) -> Option<String> {
     let client = state.config.fanart.as_ref()?;
     let path = if kind == "movie" {

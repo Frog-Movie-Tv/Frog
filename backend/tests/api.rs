@@ -51,7 +51,7 @@ impl Harness {
             session_days: 7,
             anilist: None,
             fanart: None,
-            tvdb: None,
+            tvmaze_url: "http://127.0.0.1:9".into(),
             mdblist: None,
         };
 
@@ -6153,4 +6153,192 @@ async fn a_null_rating_or_note_clears_it() {
             .await
             .unwrap();
     assert_eq!(rating, Some(60.0));
+}
+
+/// The Airing page: an episode falls on its moment's day where the viewer is,
+/// else on TMDB's day; one entry a show, films beside them, most popular
+/// first, filtered and paged.
+#[tokio::test]
+async fn the_airing_page_places_each_episode_on_the_viewers_day() {
+    use chrono::NaiveDate;
+    use frog::airing::{day, Filters, Kind};
+    let h = Harness::new().await;
+    an_owner(&h).await;
+    sqlx::query(
+        "INSERT INTO title_seed (kind, tmdb_id, name) VALUES ('tv', 81723, 'The Gilded Age')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    let gilded = h.tid("tv", 81723).await;
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, ?, 'watching', 'x', 'x')",
+    )
+    .bind(gilded)
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO airing_show (tmdb_id, name, search_name, network, genres, anime, popularity, listed_at)
+         VALUES (81723, 'The Gilded Age', 'the gilded age', 'HBO', '|Drama|', 0, 51.3, 'x'),
+                (73223, 'Black Clover', 'black clover', 'TV Tokyo', '|Animation|', 1, 45.1, 'x'),
+                (100, 'Late Talk', 'late talk', 'NBC', '|Talk|', 0, 500, 'x'),
+                (200, 'Quiet Drama', 'quiet drama', NULL, '|Drama|', 0, 3, 'x')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO airing_episode (tmdb_id, season, episode, name, air_date, air_at, air_source) VALUES
+            (81723, 4, 3, 'Ain''t That Good News', '2026-11-15', '2026-11-16T02:00:00Z', 'tvmaze'),
+            (73223, 2, 7, 'Episode 7', '2026-11-14', '2026-11-14T14:00:00Z', 'anilist'),
+            (100, 12, 40, NULL, '2026-11-16', NULL, NULL),
+            (100, 12, 41, NULL, '2026-11-16', NULL, NULL),
+            (200, 1, 1, 'Pilot', '2026-11-15', NULL, NULL)",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    // A film, with a TMDB id a show has too: TMDB's ids are unique per kind only.
+    sqlx::query(
+        "INSERT INTO airing_film (tmdb_id, name, search_name, genres, popularity, release_date,
+                                  release_type, listed_at)
+         VALUES (100, 'A Film', 'a film', '|Drama|', 80, '2026-11-16', 3, 'x')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let pool = &h.state.pool;
+    let brussels: chrono_tz::Tz = "Europe/Brussels".parse().unwrap();
+    let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+    let all = Filters::default();
+    let names =
+        |day: &frog::airing::Day| day.items.iter().map(|i| i.name.clone()).collect::<Vec<_>>();
+    let on = |zone, date: &'static str, filters: Filters, offset, limit| async move {
+        day(pool, 1, zone, d(date), &filters, offset, limit)
+            .await
+            .unwrap()
+    };
+
+    // Sunday 21:00 in New York is Monday in Brussels, under Monday.
+    assert_eq!(
+        names(&on(brussels, "2026-11-15", all.clone(), 0, 30).await),
+        ["Quiet Drama"]
+    );
+    let monday = on(brussels, "2026-11-16", all.clone(), 0, 30).await;
+    assert_eq!(names(&monday), ["Late Talk", "A Film", "The Gilded Age"]);
+    assert_eq!(monday.total, 3);
+    let talk = &monday.items[0];
+    assert_eq!(
+        (talk.episode, talk.more, talk.air_at.as_deref()),
+        (40, 1, None)
+    );
+    assert!(!talk.in_list && talk.id.is_none());
+    let film = &monday.items[1];
+    assert_eq!((film.kind.as_str(), film.release_type), ("movie", Some(3)));
+    assert!(!film.in_list && film.id.is_none());
+    let ours = &monday.items[2];
+    assert!(ours.in_list);
+    assert_eq!(ours.id, Some(gilded));
+    // In New York it stays on Sunday.
+    let new_york: chrono_tz::Tz = "America/New_York".parse().unwrap();
+    assert_eq!(
+        names(&on(new_york, "2026-11-15", all.clone(), 0, 30).await),
+        ["The Gilded Age", "Quiet Drama"]
+    );
+
+    // Filters: the library, the kind, a genre, a name.
+    let mine = Filters {
+        mine: true,
+        ..Filters::default()
+    };
+    assert_eq!(
+        names(&on(brussels, "2026-11-16", mine.clone(), 0, 30).await),
+        ["The Gilded Age"]
+    );
+    let kind = |k| Filters {
+        kind: Some(k),
+        ..Filters::default()
+    };
+    assert_eq!(
+        names(&on(brussels, "2026-11-14", kind(Kind::Anime), 0, 30).await),
+        ["Black Clover"]
+    );
+    assert!(on(brussels, "2026-11-14", kind(Kind::Shows), 0, 30)
+        .await
+        .items
+        .is_empty());
+    assert_eq!(
+        names(&on(brussels, "2026-11-16", kind(Kind::Shows), 0, 30).await),
+        ["Late Talk", "The Gilded Age"]
+    );
+    assert_eq!(
+        names(&on(brussels, "2026-11-16", kind(Kind::Films), 0, 30).await),
+        ["A Film"]
+    );
+    let drama = Filters {
+        genre: Some("Drama".into()),
+        ..Filters::default()
+    };
+    assert_eq!(
+        names(&on(brussels, "2026-11-16", drama, 0, 30).await),
+        ["A Film", "The Gilded Age"]
+    );
+    let named = Filters {
+        search: Some("gilded".into()),
+        ..Filters::default()
+    };
+    assert_eq!(
+        names(&on(brussels, "2026-11-16", named, 0, 30).await),
+        ["The Gilded Age"]
+    );
+
+    // A page at a time, the total counting them all.
+    let third = on(brussels, "2026-11-16", all.clone(), 2, 1).await;
+    assert_eq!(
+        (names(&third), third.total),
+        (vec!["The Gilded Age".to_string()], 3)
+    );
+
+    // Another account sees no badge, and its "My list" is empty.
+    sqlx::query(
+        "INSERT INTO app_user (id, username, password_hash, role, created_at)
+         VALUES (2, 'other', 'x', 'user', 'x')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    let theirs = day(pool, 2, brussels, d("2026-11-16"), &all, 0, 30)
+        .await
+        .unwrap();
+    assert!(theirs.items.iter().all(|i| !i.in_list));
+    let theirs = day(pool, 2, brussels, d("2026-11-16"), &mine, 0, 30)
+        .await
+        .unwrap();
+    assert_eq!(theirs.total, 0);
+}
+
+/// The page's week answers behind the auth wall and says when nothing is built yet.
+#[tokio::test]
+async fn the_airing_week_says_when_it_is_not_ready() {
+    let h = Harness::new().await;
+    let (status, _) = h.get("/api/airing", None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.expect("setup signs in");
+    let (status, body) = h.get("/api/airing?tz=Europe/Brussels", Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["ready"], json!(false));
+    assert_eq!(body["zone"], json!("Europe/Brussels"));
+    assert_eq!(body["days"].as_array().map(Vec::len), Some(7));
+    let (status, _) = h.get("/api/airing/day?date=nope", Some(&cookie)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }

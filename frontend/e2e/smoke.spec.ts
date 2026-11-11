@@ -109,6 +109,7 @@ test('every page names itself in the browser tab', async ({ page }) => {
 		['/library', /^Library · Frog$/],
 		['/search', /^Search · Frog$/],
 		['/calendar', /^Calendar · Frog$/],
+		['/airing', /^Airing · Frog$/],
 		['/diary', /^Diary · Frog$/],
 		['/stats', /^Stats · Frog$/],
 		['/settings', /^Settings · Frog$/],
@@ -992,6 +993,7 @@ test('a page that cannot load says so, and can try again', async ({ page }) => {
 		['/', '**/api/home'],
 		['/diary', '**/api/diary?*'],
 		['/calendar', '**/api/calendar'],
+		['/airing', '**/api/airing?*'],
 		['/stats', '**/api/stats'],
 		['/shelves', '**/api/shelves'],
 		['/people', '**/api/profiles']
@@ -1206,6 +1208,8 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/home',
 		'/api/settings',
 		'/api/calendar',
+		'/api/airing',
+		'/api/airing/day?date=2026-11-14',
 		'/api/diary',
 		'/api/export/library.json',
 		'/api/auth/two-factor',
@@ -1798,6 +1802,7 @@ test('a very long name never widens a page on a phone', async ({
 		'/stats',
 		'/diary',
 		'/calendar',
+		'/airing',
 		'/import',
 		'/whats-new'
 	];

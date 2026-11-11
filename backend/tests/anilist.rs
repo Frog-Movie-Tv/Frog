@@ -284,7 +284,7 @@ impl Harness {
                 anime_lists_url: format!("{base}/anime_lists.json"),
             }),
             fanart: None,
-            tvdb: None,
+            tvmaze_url: "http://127.0.0.1:9".into(),
             mdblist: None,
         };
         let pool = frog::db::connect(&url).await.unwrap();

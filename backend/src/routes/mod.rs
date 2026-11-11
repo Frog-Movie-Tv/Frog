@@ -1,5 +1,6 @@
 pub mod account;
 pub mod admin;
+pub mod airing;
 pub mod anilist;
 pub mod auth;
 pub mod browse;
@@ -60,6 +61,8 @@ pub fn router(state: AppState) -> Router {
         .route("/home/activity", get(home::activity))
         .route("/activity", get(home::all_activity))
         .route("/calendar", get(timeline::calendar))
+        .route("/airing", get(airing::week))
+        .route("/airing/day", get(airing::day))
         .route("/diary", get(timeline::diary))
         .route("/library", get(library::list))
         .route("/library/stats", get(library::stats))

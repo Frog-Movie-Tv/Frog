@@ -16,7 +16,7 @@
 	import { failure, idParam, type Failure } from '#lib/failure';
 	import { localDay } from '#lib/day';
 	import Avatar from '#lib/components/Avatar.svelte';
-	import { clockTime, episodeCode, prettyDate, runtime, year } from '#lib/format';
+	import { airTime, episodeCode, prettyDate, runtime, year } from '#lib/format';
 	import { providerLink } from '#lib/providers';
 	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
@@ -611,7 +611,7 @@
 									</strong>
 									{#if detail.next_up.air_date && detail.next_up.air_date > today}
 										· {prettyDate(detail.next_up.air_date)}
-										{#if detail.next_up.air_at}· {clockTime(detail.next_up.air_at)}{/if}
+										· {airTime(detail.next_up.air_at)}
 									{/if}
 								</span>
 							{/if}

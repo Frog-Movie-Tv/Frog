@@ -134,12 +134,22 @@
 		{/if}
 	</section>
 
-	<section class="block">
+	<section class="block" id="credits">
 		<h2>Data</h2>
 		<p class="muted">
 			Films, shows, artwork and episode listings come from
 			<a href="https://www.themoviedb.org" target="_blank" rel="noreferrer noopener">TMDB</a>
 			and are cached locally. This product uses the TMDB API but is not endorsed or certified by TMDB.
+		</p>
+		<p class="muted">
+			Air times come from
+			<a href="https://www.tvmaze.com" target="_blank" rel="noreferrer noopener">TVmaze</a>, under
+			<a
+				href="https://creativecommons.org/licenses/by-sa/4.0/"
+				target="_blank"
+				rel="noreferrer noopener">CC BY-SA</a
+			>, and from
+			<a href="https://anilist.co" target="_blank" rel="noreferrer noopener">AniList</a> for anime.
 		</p>
 		<a class="tmdb" href="https://www.themoviedb.org" target="_blank" rel="noreferrer noopener">
 			<Icon name="external" size={14} />

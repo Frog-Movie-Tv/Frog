@@ -23,7 +23,7 @@ pub struct AiringEpisode {
     pub episode_number: i64,
     pub name: Option<String>,
     pub air_date: Option<String>,
-    /// The moment, when TheTVDB knows the time.
+    /// The moment, when AniList or TVmaze knows the time.
     pub air_at: Option<String>,
 }
 

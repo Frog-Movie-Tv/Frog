@@ -1341,7 +1341,7 @@ pub struct NextEpisode {
     pub name: Option<String>,
     pub still_path: Option<String>,
     pub air_date: Option<String>,
-    /// The moment, when TheTVDB knows the time.
+    /// The moment, when AniList or TVmaze knows the time.
     pub air_at: Option<String>,
     pub aired: bool,
 }

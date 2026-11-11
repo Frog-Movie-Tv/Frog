@@ -13,6 +13,20 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Highlights
+
+- **Airing.** A new page with every show on air and every film out this
+  week, not only yours, most watched first. Pick a day and see it by morning,
+  afternoon and evening, with what is on next. Step back a week or up to four
+  ahead, narrow it to your list, shows, anime, films, a genre or a name, and
+  see at a glance what you already follow.
+- **The right time, every time.** Air times now follow each episode, so a
+  show that moved to a new slot shows its new one, on the day it falls on
+  where you are. When nobody has announced the time yet, Frog says time TBA
+  instead of guessing.
+- **Your time zone, your choice.** Settings → Watching sets the zone every
+  air time, day and notification follows, or leaves it to your device.
+
 ## [1.4.3] — Wood Frog — 2026-11-11
 
 The minute it airs.

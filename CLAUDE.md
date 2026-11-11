@@ -17,8 +17,13 @@ when it ships. How things work lives here, under **How things work**.
 
 - **Zero cost.** No paid APIs, no AI/LLM features, no services that need a card,
   no runtime CDNs (fonts and icons are bundled). TMDB's free key, and the free
-  MDBList, fanart.tv and TheTVDB keys (all optional), are the only credentials. If something would cost money,
-  say so and leave it out.
+  MDBList and fanart.tv keys (both optional), are the only credentials. AniList
+  and TVmaze are read without one. If something would cost money, say so and
+  leave it out.
+- **TMDB is the source of truth.** Which shows and episodes exist, their
+  names, pictures, numbers, days and popularity come from TMDB. AniList and
+  TVmaze add only the moment an episode TMDB lists airs (`airtime.rs`);
+  nothing else from them reaches the Airing page or an episode's time.
 - **AniList is read only.** Frog never writes to it. `Api::graphql` refuses
   anything that is not a query; keep it that way.
 - **Invitation only.** Several accounts, no open sign-up: an administrator
@@ -31,10 +36,10 @@ when it ships. How things work lives here, under **How things work**.
   naming whose it is fails `backend/tests/scoping.rs`, and that is a real
   guard, not a style rule — it is what stops one account seeing another's.
 - **Never print or commit `TMDB_API_KEY`, `MDBLIST_API_KEY`,
-  `FANART_API_KEY` or `TVDB_API_KEY`.** They live in `.env`, which is
+  or `FANART_API_KEY`.** They live in `.env`, which is
   gitignored. MDBList's key travels in the request's address, so errors from
   those requests are logged without it (`ratings::quiet`); fanart.tv's goes in
-  a header; TheTVDB's is exchanged for a token kept in memory.
+  a header.
 - **Product voice everywhere the user reads** — UI copy, changelog, README.
   Short, confident, neutral, like Apple TV or Letterboxd. Never explain the
   implementation or the roadmap in the UI. Never write "alpha", "finally",
@@ -55,8 +60,9 @@ backend/            Rust: axum 0.8, sqlx 0.8 (SQLite), tokio
                     media, records, sync — docs/ANILIST.md has the map
   src/ratings.rs    scores from other sites, on the title itself
   src/fanart.rs     title logos from fanart.tv where TMDB has none
-  src/tvdb.rs       TheTVDB client: release days, times, network clocks
-  src/airing.rs     TheTVDB's days and times on Frog's episodes
+  src/tvmaze.rs     TVmaze client: a show's episodes and their airstamps
+  src/airtime.rs    the moment a TMDB episode airs, from AniList or TVmaze
+  src/airing.rs     the Airing page: every show on TMDB this week, by popularity
   src/announce.rs   notifications: what is due for whom, and what it says
   src/tmdb/         TMDB client, cache, and the JSON → view mapping
   src/auth.rs       sessions, roles, the Auth and AdminAuth extractors
@@ -125,18 +131,18 @@ RELEASE-NOTES.md        source of truth for release notes (parsed into the app)
 
 In Git Bash, put cargo on PATH first: `export PATH="$HOME/.cargo/bin:$PATH"`.
 
-| What | Command |
-| --- | --- |
-| Run it (port 8080, two demo accounts) | `.\scripts\dev.ps1` (`-Fresh` to start over) |
-| Run it without Docker, no seed | `.\scripts\run-local.ps1` (development only) |
-| Backend checks | `cd backend && cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo test` |
-| Frontend types | `cd frontend && npm run check` |
-| Frontend unit tests | `cd frontend && npm test` — parsers, Netflix, the import review, the release notes' layout; no network |
-| Frontend build | `cd frontend && npm run build` (also writes `static/changelog.json`, which is not tracked) |
-| End-to-end | `cd frontend && npx playwright test` — needs `npm run build` and a built backend first |
-| Page audit | `cd frontend && npm run audit` — every page, both viewports, console errors, service worker |
-| Screenshots | `cd frontend && npm run screenshots` — needs the TMDB key, ~8 min, 1.5× (`-- --scale=2 --out=dir` to compare) |
-| Icons | `cd frontend && npm run icons` — regenerates every icon from `scripts/mascots.mjs` |
+| What                                  | Command                                                                                                       |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Run it (port 8080, two demo accounts) | `.\scripts\dev.ps1` (`-Fresh` to start over)                                                                  |
+| Run it without Docker, no seed        | `.\scripts\run-local.ps1` (development only)                                                                  |
+| Backend checks                        | `cd backend && cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo test`         |
+| Frontend types                        | `cd frontend && npm run check`                                                                                |
+| Frontend unit tests                   | `cd frontend && npm test` — parsers, Netflix, the import review, the release notes' layout; no network        |
+| Frontend build                        | `cd frontend && npm run build` (also writes `static/changelog.json`, which is not tracked)                    |
+| End-to-end                            | `cd frontend && npx playwright test` — needs `npm run build` and a built backend first                        |
+| Page audit                            | `cd frontend && npm run audit` — every page, both viewports, console errors, service worker                   |
+| Screenshots                           | `cd frontend && npm run screenshots` — needs the TMDB key, ~8 min, 1.5× (`-- --scale=2 --out=dir` to compare) |
+| Icons                                 | `cd frontend && npm run icons` — regenerates every icon from `scripts/mascots.mjs`                            |
 
 Ports: the owner's instance uses 8080. E2E uses 8098/8099, audit 8095,
 screenshots 8096, pwa-check 8094, and the verify scripts 8084–8093 and 8097 —
@@ -187,7 +193,7 @@ each with its own throwaway database.
 
 ## Conventions
 
-- Comments explain *why*, not what. Match the density of the file you are in.
+- Comments explain _why_, not what. Match the density of the file you are in.
 - Ratings are stored 0–100. Score formats are display only.
 - Errors: database and internal faults show a generic message and log the
   detail; anything the user can act on keeps its own message.
@@ -263,20 +269,40 @@ when the owner asks.
 What each part of Frog does and why, learned while building it. Read the
 part you are about to touch; change it when the code changes.
 
-- **Air times and notifications** (`backend/src/tvdb.rs`, `airing.rs`,
-  `announce.rs`). TheTVDB gives an episode's day and its show's time of day
-  on the network's clock; `tvdb::zone_for_country` turns the network's
-  country into a zone (Eastern for the US, Tokyo for Japan) and `instant`
-  makes `episode.air_at`, UTC. `airing::plan` takes TheTVDB's days season by
-  season and leaves a season TMDB numbers differently (most of its days more
-  than two days apart) on TMDB's. A TheTVDB day is marked
-  `air_source = 'tvdb'` and a TMDB refresh leaves it. `released!()` uses
-  `air_at` when there is one. Notifications are checked every minute: an
-  episode at its `air_at`, an episode or film with a day alone at midnight in
-  the account's zone (`app_setting` `time_zone`, sent by the browser with
-  every subscribe). The service worker fetches the notification's picture
-  itself, signed in, and hands it over as a data URL. `verify-push` runs it
-  through FCM with `TVDB_API_KEY` blanked, so its hand-set times stay.
+- **Air times and notifications** (`backend/src/airtime.rs`, `tvmaze.rs`,
+  `announce.rs`). TMDB gives the day; `airtime::resolve` adds the moment, as
+  UTC: AniList's `airingSchedule` for anime (Animation, origin JP), matched to
+  TMDB's episode by its day in Japan (±1 for a late-night slot) through
+  `anime_map`'s season and offset, by number only when one airing answers;
+  TVmaze's `airstamp` for the rest, by season and number when the days agree
+  within one, else by day. TVmaze writes a stand-in 12:00 UTC when it has no
+  time (`airtime` empty): that is no time, and pages say "time TBA". The
+  moment is kept in `episode.air_at` and `airing_episode.air_at` with
+  `air_source` 'anilist' or 'tvmaze'; `air_date` is always TMDB's, and a TMDB
+  refresh that moves the day drops the moment until it is worked out again.
+  `refresh_due` works every listed or tracked show out every six hours;
+  `airtime_show` keeps how a show is found, for good (a TVmaze miss is asked
+  again after a week). `released!()` uses `air_at` when there is one.
+  Notifications are checked every minute: an episode at its `air_at`, an
+  episode or film with a day alone at midnight in the account's zone
+  (`app_setting` `time_zone`: Settings → Watching's zone when chosen, else
+  the browser's, sent with every subscribe). The service worker fetches the
+  notification's picture itself, signed in, and hands it over as a data URL.
+  `verify-push` points `TVMAZE_API_URL` nowhere, so its hand-set times stay.
+  `cargo run --example airtime_check -- <tmdb id> <season> <episode>` shows
+  what one episode resolves to.
+- **The Airing page** (`airing.rs`, `routes/airing.rs`). Once a day the
+  worker reads TMDB's `/discover/movie` for films released in `FROG_REGION`
+  in the window (last week to four weeks ahead; 25 pages, in cinemas or
+  digital), then `/discover/tv`, every page, then each show and its running
+  seasons, with
+  `Tmdb::fetch`, which is never cached: kept whole, 2,700 shows would fill the
+  database. Only a few fields are kept. A day is asked for in the viewer's
+  zone (`tz`); an episode with a moment falls on that moment's day there,
+  else on TMDB's day. One entry per show or film a day, most popular first, 30 at a
+  time; the page groups a day by part of the day in the viewer's zone. There
+  is no manga on it: TMDB has none, and the page shows only TMDB's titles.
+  The page never reaches another site.
 
 - **Ratings** (`backend/src/ratings.rs`) sit in `title_rating` on Frog's own
   title, matched only by provider id. MDBList's free tier is 1,000 requests a

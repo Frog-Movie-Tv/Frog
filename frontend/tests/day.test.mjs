@@ -17,3 +17,28 @@ test('a timed release lands on the day it is here, an untimed one on its own day
 	assert.equal(airDay('2025-03-20', null), '2025-03-20');
 	assert.equal(airDay(null, 'not a date'), null);
 });
+
+import { chooseZone, viewerZone } from '../src/lib/day.ts';
+
+test('a chosen zone decides the day a moment falls on', () => {
+	try {
+		chooseZone('Europe/Brussels');
+		assert.equal(viewerZone(), 'Europe/Brussels');
+		// The Gilded Age: Sunday 21:00 in New York is Monday in Brussels.
+		assert.equal(airDay('2026-11-15', '2026-11-16T02:00:00Z'), '2026-11-16');
+		// Ranma 1/2: 00:55 on Sunday in Tokyo is still Saturday in Brussels.
+		assert.equal(airDay('2026-11-15', '2026-11-14T15:55:00Z'), '2026-11-14');
+		chooseZone('America/New_York');
+		assert.equal(airDay('2026-11-15', '2026-11-16T02:00:00Z'), '2026-11-15');
+		// Without a moment, TMDB's day stands wherever the viewer is.
+		assert.equal(airDay('2026-11-15', null), '2026-11-15');
+	} finally {
+		chooseZone(null);
+	}
+});
+
+test('a zone the browser does not know follows the device', () => {
+	chooseZone('Mars/Olympus_Mons');
+	assert.equal(viewerZone(), Intl.DateTimeFormat().resolvedOptions().timeZone);
+	chooseZone(null);
+});

@@ -12,7 +12,7 @@ use crate::store;
 use crate::tmdb::models::{self, EpisodeInfo, SearchItem};
 
 /// (season, episode, my rating, my notes, number of watches,
-///  latest watch time, whether that watch is undated)
+///  latest watch time, whether that watch is undated, air moment)
 type EpisodeStateRow = (
     i64,
     i64,
@@ -21,7 +21,6 @@ type EpisodeStateRow = (
     i64,
     Option<String>,
     Option<bool>,
-    Option<String>,
     Option<String>,
 );
 
@@ -36,7 +35,7 @@ pub struct EpisodeView {
     /// When the latest watch was, so taking back an untick restores it.
     pub watched_at: Option<String>,
     pub undated: bool,
-    /// The moment it comes out, when TheTVDB knows the time.
+    /// The moment it comes out, when AniList or TVmaze knows the time.
     pub air_at: Option<String>,
 }
 
@@ -328,8 +327,6 @@ pub async fn season(
                 (SELECT w.undated FROM watch_event w
                   WHERE w.user_id = ?1 AND w.episode_id = e.id
                   ORDER BY w.watched_at DESC LIMIT 1),
-                -- TheTVDB's day, which the stored row keeps over TMDB's.
-                CASE WHEN e.air_source = 'tvdb' THEN e.air_date END,
                 e.air_at
            FROM episode e
            LEFT JOIN episode_state s ON s.episode_id = e.id AND s.user_id = ?1
@@ -343,24 +340,19 @@ pub async fn season(
 
     let views: Vec<EpisodeView> = episodes
         .into_iter()
-        .map(|mut info| {
+        .map(|info| {
             let found = states
                 .iter()
                 .find(|row| row.0 == info.season_number && row.1 == info.episode_number);
             let (rating, notes, count, at, undated, air_at) = match found {
-                Some((_, _, r, n, c, at, u, day, air_at)) => {
-                    if day.is_some() {
-                        info.air_date = day.clone();
-                    }
-                    (
-                        *r,
-                        n.clone(),
-                        *c,
-                        at.clone(),
-                        u.unwrap_or(false),
-                        air_at.clone(),
-                    )
-                }
+                Some((_, _, r, n, c, at, u, air_at)) => (
+                    *r,
+                    n.clone(),
+                    *c,
+                    at.clone(),
+                    u.unwrap_or(false),
+                    air_at.clone(),
+                ),
                 None => (None, None, 0, None, false, None),
             };
             EpisodeView {

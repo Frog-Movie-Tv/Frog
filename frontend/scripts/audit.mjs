@@ -160,6 +160,7 @@ const ROUTES = [
 	'/library',
 	'/search',
 	'/calendar',
+	'/airing',
 	'/diary',
 	'/stats',
 	'/stats?year=2026',

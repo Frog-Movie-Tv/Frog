@@ -256,9 +256,7 @@
 
 		<footer class="attribution">
 			<p class="faint">
-				Metadata and images from
-				<a href="https://www.themoviedb.org" target="_blank" rel="noreferrer noopener">TMDB</a>.
-				This product uses the TMDB API but is not endorsed or certified by TMDB.
+				Data from TMDB, TVmaze and AniList. <a href="/about#credits">Credits</a>
 			</p>
 		</footer>
 	{/if}

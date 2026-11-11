@@ -52,8 +52,8 @@ const SCOPED_FRAGMENTS: [&str; 7] = [
 /// Statements that are global on purpose, each with its reason.
 const ALLOWED: [(&str, &str); 9] = [
     (
-        "LEFT JOIN title_airing a ON a.title_id = t.id WHERE t.kind IN",
-        "decides which shared titles anyone tracks need TheTVDB's air times;          writes only episode days and title_airing",
+        "SELECT s.tmdb_id AS tmdb_id, s.popularity AS rank, NULL AS since FROM airing_show s",
+        "decides which shared shows need their air times worked out, from the          Airing list and what anyone tracks; writes only air_at and airtime_show",
     ),
     (
         "DELETE FROM password_reset WHERE expires_at",

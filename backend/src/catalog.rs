@@ -801,9 +801,13 @@ pub async fn upsert_episodes(
                 name = excluded.name,
                 overview = excluded.overview,
                 still_path = excluded.still_path,
-                -- TheTVDB's day stands over TMDB's (crate::airing).
-                air_date = CASE WHEN episode.air_source = 'tvdb' THEN episode.air_date
-                                ELSE excluded.air_date END,
+                -- TMDB's day always. A moment worked out for another day no
+                -- longer holds; crate::airtime works it out again.
+                air_at = CASE WHEN episode.air_date IS excluded.air_date
+                              THEN episode.air_at END,
+                air_source = CASE WHEN episode.air_date IS excluded.air_date
+                                  THEN episode.air_source END,
+                air_date = excluded.air_date,
                 runtime = excluded.runtime,
                 tmdb_vote = excluded.tmdb_vote",
         )

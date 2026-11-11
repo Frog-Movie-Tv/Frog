@@ -1,7 +1,8 @@
 //! What each account is told when something it follows comes out.
 //!
-//! An episode is announced at the moment it airs when TheTVDB gave a time
-//! (`episode.air_at`), and otherwise at midnight on its day in the account's
+//! An episode is announced at the moment it airs when AniList or TVmaze gave
+//! a time (`episode.air_at`, `crate::airtime`), and otherwise at midnight on
+//! TMDB's day in the account's
 //! own time zone, which the browser reports when notifications are switched
 //! on. A film on someone's list is announced at midnight on its release day.
 //! Each is announced once (`push_sent`, `push_sent_title`), never after it
@@ -16,9 +17,9 @@ use chrono_tz::Tz;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 
+use crate::airtime::stamp;
 use crate::error::AppResult;
 use crate::state::AppState;
-use crate::tvdb::stamp;
 
 /// The latest an announcement still goes out after its moment.
 const LATE_HOURS: i64 = 36;
@@ -149,17 +150,16 @@ pub async fn due(
         }
     }
 
-    // Films: TheTVDB's first release, else TMDB's, at midnight here.
+    // Films: TMDB's release day, at midnight here.
     let films: Vec<FilmRow> = sqlx::query_as(
         "SELECT t.id, t.name, t.backdrop_path, t.poster_path
            FROM library_entry l
            JOIN title t ON t.id = l.title_id
-           LEFT JOIN title_airing a ON a.title_id = t.id
           WHERE l.user_id = ?1
             AND t.kind = 'movie'
             AND l.notify = 1
             AND l.status NOT IN ('completed', 'dropped')
-            AND COALESCE(a.release_date, t.release_date) IN (?2, ?3)
+            AND t.release_date IN (?2, ?3)
             AND NOT EXISTS (
                   SELECT 1 FROM push_sent_title p
                    WHERE p.user_id = ?1 AND p.title_id = t.id)

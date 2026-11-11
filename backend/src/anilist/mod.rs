@@ -40,6 +40,7 @@ pub mod records;
 mod sync;
 
 pub use client::{public_list, Api, Remote, View};
+pub use idmap::ensure_map;
 pub use library::{forget_place, set_part_rating};
 pub use place::{
     clean, film_on_tmdb, locate, main_run, place_tv, plain, Outcome, Placement, Target, CONFIDENT,
