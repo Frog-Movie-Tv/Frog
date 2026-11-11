@@ -40,6 +40,8 @@ In progress.
 - A Netflix import finds more episodes by name, and gives more of them the
   day you watched them. A first part of a show, such as Money Heist Part 1,
   lands in its first season on its own.
+- The Calendar, Stats' charts, a person's page and the import review share
+  the look of the rest of Frog.
 
 ## [1.4.3] — Wood Frog — 2026-11-11
 

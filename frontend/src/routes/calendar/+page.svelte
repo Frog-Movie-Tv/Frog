@@ -158,16 +158,18 @@
 		</Empty>
 	{:else if view === 'month'}
 		<div class="layout">
-			<div class="month">
+			<div class="month card">
 				<div class="monthbar">
-					<button class="nav" aria-label="Previous month" onclick={() => shift(-1)}>
-						<Icon name="chevron-left" size={17} />
-					</button>
 					<strong>{monthLabel}</strong>
-					<button class="nav" aria-label="Next month" onclick={() => shift(1)}>
-						<Icon name="chevron-right" size={17} />
-					</button>
-					<button class="btn ghost small" onclick={goToday}>Today</button>
+					<div class="stepper">
+						<button aria-label="Previous month" onclick={() => shift(-1)}>
+							<Icon name="chevron-left" size={16} />
+						</button>
+						<button class="today-btn" onclick={goToday}>Today</button>
+						<button aria-label="Next month" onclick={() => shift(1)}>
+							<Icon name="chevron-right" size={16} />
+						</button>
+					</div>
 				</div>
 
 				<div class="grid" role="grid" aria-label={monthLabel}>
@@ -233,13 +235,13 @@
 				</ul>
 			</div>
 
-			<aside class="day" aria-live="polite">
+			<aside class="day card" aria-live="polite">
 				<h2>{prettyDate(selected)}</h2>
 				{#if relativeDate(selected) !== prettyDate(selected)}
 					<p class="faint when">{relativeDate(selected)}</p>
 				{/if}
 				{#if selectedEntries.length}
-					<ul class="agenda">
+					<ul class="agenda list-pane">
 						{#each selectedEntries as entry (`${entry.id}-${entry.season_number}-${entry.episode_number}`)}
 							{@render row(entry, false)}
 						{/each}
@@ -250,7 +252,7 @@
 			</aside>
 		</div>
 	{:else}
-		<ul class="agenda">
+		<ul class="agenda list-pane">
 			{#each upcoming as entry (`${entry.id}-${entry.season_number}-${entry.episode_number}-${entry.date}`)}
 				{@render row(entry, true)}
 			{/each}
@@ -300,39 +302,57 @@
 		align-items: start;
 	}
 
+	.month {
+		padding: 16px;
+	}
+
 	.monthbar {
 		display: flex;
 		align-items: center;
+		justify-content: space-between;
 		gap: 12px;
-		margin-bottom: 14px;
+		margin: 0 2px 14px;
 	}
 
 	.monthbar strong {
-		min-width: 11ch;
 		font-family: var(--font-display);
-		font-size: 1.05rem;
+		font-size: 1.15rem;
+		letter-spacing: -0.01em;
 	}
 
-	.nav {
+	/* Previous, Today, next: one capsule, as everywhere a period is stepped. */
+	.stepper {
+		display: flex;
+		align-items: stretch;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-pill);
+		background: var(--bg-elev-2);
+		box-shadow: inset 0 1px 0 var(--shine);
+		overflow: hidden;
+	}
+
+	.stepper button {
 		display: grid;
 		place-items: center;
-		width: 32px;
-		height: 32px;
-		border-radius: 50%;
-		border: 1px solid var(--line-strong);
-		background: var(--bg-elev-2);
+		min-height: 32px;
+		padding: 0 11px;
+		border: 0;
+		background: none;
 		color: var(--text-dim);
+		font: inherit;
+		font-size: 0.8rem;
+		font-weight: 650;
 		cursor: pointer;
 	}
 
-	.nav:hover {
+	.stepper button:hover {
 		color: var(--text);
+		background: var(--bg-hover);
 	}
 
-	.btn.small {
-		margin-left: auto;
-		padding: 7px 13px;
-		font-size: 0.8rem;
+	.stepper .today-btn {
+		border-inline: 1px solid var(--line);
+		color: var(--text);
 	}
 
 	.grid {
@@ -348,6 +368,8 @@
 		padding-bottom: 4px;
 	}
 
+	/* Days are quiet tiles inside the month's pane: only a day with something
+	   on it, and the day picked, stand out. */
 	.cell {
 		min-height: 96px;
 		min-width: 0;
@@ -357,16 +379,18 @@
 		gap: 4px;
 		padding: 6px;
 		border-radius: var(--radius-sm);
-		border: 1px solid var(--line);
-		background: var(--bg-elev);
-		color: var(--text-dim);
+		border: 1px solid transparent;
+		background: none;
+		color: var(--text-faint);
 		text-align: left;
 		cursor: pointer;
-		transition: border-color var(--fast) var(--ease);
+		transition:
+			background var(--fast) var(--ease),
+			border-color var(--fast) var(--ease);
 	}
 
 	.cell:hover {
-		border-color: var(--line-strong);
+		background: var(--bg-hover);
 	}
 
 	.cell.dim {
@@ -375,6 +399,8 @@
 
 	.cell.has {
 		color: var(--text);
+		background: var(--bg-elev-2);
+		border-color: var(--line);
 	}
 
 	.cell.today .num {
@@ -390,7 +416,8 @@
 
 	.cell.picked {
 		border-color: var(--accent);
-		box-shadow: 0 0 0 1px var(--accent) inset;
+		box-shadow: inset 0 0 0 1px var(--accent);
+		background: color-mix(in srgb, var(--accent) 10%, transparent);
 	}
 
 	.num {
@@ -507,9 +534,6 @@
 		position: sticky;
 		top: calc(var(--header-h) + 16px);
 		padding: 18px;
-		border-radius: var(--radius);
-		border: 1px solid var(--line);
-		background: var(--bg-elev);
 		max-height: calc(100dvh - var(--header-h) - 40px);
 		overflow-y: auto;
 	}
@@ -527,27 +551,29 @@
 		font-size: 0.88rem;
 	}
 
+	/* Grouped rows with hairlines between them, as a list of the same kind
+	   of thing is everywhere else. */
 	.agenda {
 		list-style: none;
 		margin: 0;
 		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
+	}
+
+	.day .agenda {
+		background: var(--bg-elev-2);
+		box-shadow: none;
 	}
 
 	.agenda a {
 		display: flex;
 		align-items: center;
 		gap: 12px;
-		padding: 8px 10px;
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--line);
-		background: var(--bg-elev-2);
+		padding: 10px 12px;
+		transition: background var(--fast) var(--ease);
 	}
 
 	.agenda a:hover {
-		border-color: var(--line-strong);
+		background: var(--bg-hover);
 	}
 
 	.agenda img,

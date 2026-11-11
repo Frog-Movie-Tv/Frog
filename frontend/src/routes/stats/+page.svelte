@@ -1114,14 +1114,23 @@
 		max-width: 64px;
 	}
 
+	/* A bar of light: the accent, brighter where it ends, with the same
+	   lit top edge as every pane. */
 	.bar-v {
 		width: 100%;
 		max-width: 38px;
 		min-height: 2px;
-		border-radius: 6px 6px 2px 2px;
-		background: var(--accent);
-		opacity: 0.85;
-		transition: height var(--slow) var(--ease);
+		border-radius: 8px 8px 3px 3px;
+		background: linear-gradient(
+			to top,
+			color-mix(in srgb, var(--accent) 45%, transparent),
+			var(--accent)
+		);
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+		opacity: 0.9;
+		transition:
+			height var(--slow) var(--ease),
+			opacity var(--fast) var(--ease);
 	}
 
 	.column:hover .bar-v {
@@ -1259,6 +1268,7 @@
 		height: 10px;
 		border-radius: var(--radius-pill);
 		background: var(--bg-elev-2);
+		box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18);
 		overflow: hidden;
 	}
 
@@ -1266,7 +1276,12 @@
 		display: block;
 		height: 100%;
 		border-radius: inherit;
-		background: var(--accent);
+		background: linear-gradient(
+			to right,
+			color-mix(in srgb, var(--accent) 55%, transparent),
+			var(--accent)
+		);
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
 	}
 
 	.hcount {

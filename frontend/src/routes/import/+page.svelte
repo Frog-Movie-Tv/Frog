@@ -535,7 +535,7 @@
 			</div>
 		{/if}
 
-		<ul class="rows">
+		<ul class="rows list-pane">
 			{#each groups as group (group.key)}
 				<li>
 					{#if group.rows.length === 1}
@@ -793,13 +793,11 @@
 		font-size: 0.8rem;
 	}
 
+	/* Every row of the review in one pane, hairlines between them. */
 	.rows {
 		list-style: none;
 		margin: 0;
 		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
 	}
 
 	.bulk {
@@ -820,9 +818,6 @@
 	}
 
 	.show {
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--line);
-		background: var(--bg-elev);
 		overflow: hidden;
 	}
 

@@ -86,7 +86,7 @@
 			<a class="btn" class:primary={error.missing} href="/">Go home</a>
 		</Empty>
 	{:else if person}
-		<header class="head">
+		<header class="head card">
 			<div class="photo">
 				{#if person.profile_path}
 					<img src={img(person.profile_path, 'w342')} alt="Portrait of {person.name}" />
@@ -97,19 +97,19 @@
 
 			<div class="info">
 				<h1>{person.name}</h1>
-				<p class="muted sub">
-					{#if person.known_for_department}<span>{person.known_for_department}</span>{/if}
+				<p class="facts">
+					{#if person.known_for_department}
+						<span class="pill">{person.known_for_department}</span>
+					{/if}
 					{#if person.birthday}
-						<span class="dot" aria-hidden="true">•</span>
-						<span
+						<span class="pill"
 							>{prettyDate(person.birthday)}{person.deathday
 								? ` – ${prettyDate(person.deathday)}`
 								: ''}</span
 						>
 					{/if}
 					{#if person.place_of_birth}
-						<span class="dot" aria-hidden="true">•</span>
-						<span>{person.place_of_birth}</span>
+						<span class="pill">{person.place_of_birth}</span>
 					{/if}
 				</p>
 
@@ -124,9 +124,12 @@
 
 		<div class="section-head">
 			<h2>Filmography</h2>
-			<button class="btn ghost small" class:on={seenOnly} onclick={() => (seenOnly = !seenOnly)}>
-				{seenOnly ? 'Showing tracked' : `${seenCount} in your library`}
-			</button>
+			<div class="segmented" role="group" aria-label="Filmography">
+				<button class="chip" class:on={!seenOnly} onclick={() => (seenOnly = false)}>All</button>
+				<button class="chip" class:on={seenOnly} onclick={() => (seenOnly = true)}>
+					In your library {seenCount}
+				</button>
+			</div>
 		</div>
 
 		{#if !shown.length}
@@ -180,25 +183,29 @@
 </div>
 
 <style>
+	/* One pane: the portrait, the name as a page's title, the facts as pills. */
 	.head {
 		display: flex;
-		gap: 24px;
+		gap: 26px;
 		margin-bottom: 40px;
+		padding: 22px;
 		align-items: flex-start;
 	}
 
 	.photo {
 		flex: none;
-		width: 150px;
+		width: 168px;
 		aspect-ratio: 2 / 3;
-		border-radius: var(--radius);
+		border-radius: var(--radius-sm);
 		overflow: hidden;
 		background: var(--bg-elev-2);
 		display: grid;
 		place-items: center;
 		font-size: 2rem;
 		color: var(--text-faint);
-		box-shadow: var(--shadow-2);
+		box-shadow:
+			inset 0 1px 0 var(--shine),
+			var(--shadow-2);
 	}
 
 	.photo img {
@@ -210,20 +217,22 @@
 	.info {
 		display: flex;
 		flex-direction: column;
-		gap: 10px;
+		gap: 12px;
 		align-items: flex-start;
 		min-width: 0;
 	}
 
-	.sub {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 8px;
-		font-size: 0.86rem;
+	.info h1 {
+		font-size: clamp(2rem, 4vw, 3rem);
+		letter-spacing: -0.035em;
+		line-height: 1.05;
 	}
 
-	.dot {
-		opacity: 0.5;
+	.facts {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin: 0;
 	}
 
 	.bio {
@@ -244,11 +253,6 @@
 	.btn.small {
 		padding: 6px 12px;
 		font-size: 0.78rem;
-	}
-
-	.btn.on {
-		color: var(--accent);
-		border-color: color-mix(in srgb, var(--accent) 50%, transparent);
 	}
 
 	.credit {
@@ -281,10 +285,11 @@
 		.head {
 			flex-direction: column;
 			gap: 16px;
+			padding: 16px;
 		}
 
 		.photo {
-			width: 110px;
+			width: 120px;
 		}
 	}
 
