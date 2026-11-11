@@ -355,6 +355,11 @@ export const api = {
 
 	home: () => get<HomeData>('/api/home').then(localHome),
 	because: () => get<{ rows: BecauseRow[] }>('/api/home/because'),
+	/** More like a title, a page at a time: what "View more" lists. */
+	moreLike: (titleId: number, page: number) =>
+		get<{ seed: { id: number; name: string }; items: SearchItem[]; next_page: number | null }>(
+			`/api/t/${titleId}/more${qs({ page })}`
+		),
 	activity: () => get<{ items: ActivityItem[] }>('/api/home/activity'),
 	/** Everyone's activity, all of it, a page before `before` at a time. */
 	allActivity: (before?: string | null) =>

@@ -267,8 +267,13 @@ pub fn pick_seeds<T: Clone>(seeds: &[T], slot: i64) -> Vec<T> {
         .collect()
 }
 
-/// How long one seed leads before the next takes over.
-const SEED_HOURS: i64 = 6;
+/// How long one seed leads before the next takes over: two minutes, so a
+/// visit later in the day, or a Home left open, sees other picks.
+const SEED_SECONDS: i64 = 120;
+
+/// Pages of TMDB's recommendations, then of its similar titles, that "View
+/// more" goes through: past these the picks drift too far from the title.
+const MORE_PAGES: u32 = 3;
 
 /// "Because you watched X": TMDB's recommendations for titles you rated
 /// highly, minus everything already in your library and anything an earlier
@@ -292,7 +297,7 @@ pub async fn because(state: &AppState, me: i64) -> AppResult<Value> {
     .map(|r| r.0)
     .collect();
 
-    let slot = chrono::Utc::now().timestamp() / (SEED_HOURS * 3600);
+    let slot = chrono::Utc::now().timestamp() / SEED_SECONDS;
     let mut offered = std::collections::HashSet::new();
     let mut rows = Vec::new();
     for (title_id, key, name) in pick_seeds(&seeds(pool, me).await?, slot) {
@@ -348,6 +353,46 @@ async fn items(
 ) -> AppResult<Vec<LibraryItem>> {
     let found = rows(pool, sql, user_id).await?;
     Ok(found.into_iter().map(|row| facts.item(row)).collect())
+}
+
+/// "View more" from a title: TMDB's recommendations for it a page at a time,
+/// then its similar titles once those run out. Returns the title's name, a
+/// page of picks, and the next page when there is one.
+pub async fn more_like(
+    state: &AppState,
+    title_id: i64,
+    page: u32,
+) -> AppResult<(String, Vec<crate::tmdb::models::SearchItem>, Option<u32>)> {
+    let title = crate::catalog::get_title(&state.pool, title_id).await?;
+    let Some(ExternalId::Tmdb { kind, id }) =
+        crate::catalog::primary(&state.pool, title_id).await?
+    else {
+        // Only TMDB recommends.
+        return Ok((title.name, Vec::new(), None));
+    };
+    let page = page.clamp(1, MORE_PAGES * 2);
+    let (which, at) = if page <= MORE_PAGES {
+        ("recommendations", page)
+    } else {
+        ("similar", page - MORE_PAGES)
+    };
+    let answer = state.tmdb.related_page(&kind, id, which, at).await?;
+    let pages = answer["total_pages"].as_u64().unwrap_or(0) as u32;
+    let mut wrapped = json!({});
+    wrapped[which] = answer;
+    let items = crate::tmdb::models::related(&wrapped, which, 100);
+    let next = if which == "recommendations" {
+        // Similar titles follow, whether or not recommendations filled all
+        // their pages.
+        Some(if at < pages.min(MORE_PAGES) {
+            page + 1
+        } else {
+            MORE_PAGES + 1
+        })
+    } else {
+        (at < pages.min(MORE_PAGES)).then_some(page + 1)
+    };
+    Ok((title.name, items, next))
 }
 
 #[cfg(test)]

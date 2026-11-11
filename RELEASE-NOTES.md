@@ -29,6 +29,9 @@ In progress.
 
 ### Improvements
 
+- **View more** on Because you watched and More like this opens a full
+  page of picks for that title. Because you watched also turns to another
+  title of yours every couple of minutes.
 - Settings → Your data lists every title Frog merged into another, and any
   of them can be taken apart again. One from AniList stays apart after the
   next sync.

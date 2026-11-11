@@ -1,4 +1,4 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
@@ -552,6 +552,28 @@ pub async fn rate_season(
     .await?;
     Ok(Json(json!({
         "ratings": crate::release::rating_units(&state.pool, auth.user_id(), title_id).await?
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct MoreQuery {
+    pub page: Option<u32>,
+}
+
+/// More like a title, a page at a time, each marked when it is in the library.
+pub async fn more(
+    auth: Auth,
+    State(state): State<AppState>,
+    Path(title_id): Path<i64>,
+    Query(q): Query<MoreQuery>,
+) -> AppResult<Json<Value>> {
+    let (name, mut items, next) =
+        crate::home::more_like(&state, title_id, q.page.unwrap_or(1)).await?;
+    crate::routes::search::annotate_library(&state, auth.user_id(), &mut items).await?;
+    Ok(Json(json!({
+        "seed": { "id": title_id, "name": name },
+        "items": items,
+        "next_page": next,
     })))
 }
 

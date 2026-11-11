@@ -40,10 +40,16 @@
 		// Recommendations may need TMDB; Home does not wait for them.
 		// Read once: the effect must not rerun on every settings change.
 		if (untrack(() => settings.current.homeRows.includes('because'))) {
-			void api
-				.because()
-				.then((r) => (because = r.rows))
-				.catch(() => undefined);
+			const ask = () =>
+				void api
+					.because()
+					.then((r) => (because = r.rows))
+					.catch(() => undefined);
+			ask();
+			// Another title of yours leads the row every two minutes, and a
+			// Home left open follows it.
+			const every = setInterval(ask, 120_000);
+			return () => clearInterval(every);
 		}
 	});
 
@@ -326,7 +332,9 @@
 				{:else if row === 'because'}
 					<!-- One: a second is the same idea again. -->
 					{#each because.slice(0, 1) as group (group.seed.id)}
-						<Rail title="Because you watched {group.seed.name}">
+						{#snippet viewMore()}<a class="see-all hit" href="/t/{group.seed.id}/more">View more</a
+							>{/snippet}
+						<Rail title="Because you watched {group.seed.name}" action={viewMore}>
 							{#each uniqueBy(group.items, titleKey) as item (titleKey(item))}
 								<Poster
 									menu={menuOfFound(item)}
