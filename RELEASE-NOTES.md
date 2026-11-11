@@ -9,9 +9,13 @@ people working on Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Wood Frog —
+## Upcoming — Goliath —
 
 In progress.
+
+## [1.5.0] — Goliath — 2026-11-11
+
+Everything on air this week, at the minute it airs.
 
 ### Highlights
 
@@ -26,15 +30,15 @@ In progress.
   instead of guessing.
 - **Your time zone, your choice.** Settings → Watching sets the zone every
   air time, day and notification follows, or leaves it to your device.
+- **More like it.** View more on Because you watched and More like this
+  opens a full page of picks for that title, and Because you watched turns
+  to another title of yours every couple of minutes.
 
 ### Improvements
 
-- **Database** in Administration shows every table, read only: search it,
-  sort it and page through it, with passwords, keys and sign-ins kept on the
+- Administration has a Database view: every table, read only, to search,
+  sort and page through, with passwords, keys and sign-ins kept on the
   server.
-- **View more** on Because you watched and More like this opens a full
-  page of picks for that title. Because you watched also turns to another
-  title of yours every couple of minutes.
 - Settings → Your data lists every title Frog merged into another, and any
   of them can be taken apart again. One from AniList stays apart after the
   next sync.
@@ -946,6 +950,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.5.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.5.0
 [1.4.3]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.4.3
 [1.4.2]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.4.2
 [1.4.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.4.1

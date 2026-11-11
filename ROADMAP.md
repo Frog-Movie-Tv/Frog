@@ -4,7 +4,7 @@ What is still to build, and what is known to be broken. Nothing else lives
 here: how things work is in [CLAUDE.md](CLAUDE.md), and what shipped is in
 [RELEASE-NOTES.md](RELEASE-NOTES.md). Take an item off when it ships.
 
-**Release:** 1.4.3. **Next codename:** Goliath. **Live at** a DuckDNS hostname on Oracle Cloud Always
+**Release:** 1.5.0 Goliath. **Next codename:** Tomato Frog. **Live at** a DuckDNS hostname on Oracle Cloud Always
 Free, updating itself from each release (`docs/DEPLOY-ORACLE.md`).
 
 ## To build
