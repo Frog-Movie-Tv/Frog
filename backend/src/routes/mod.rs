@@ -104,6 +104,8 @@ pub fn router(state: AppState) -> Router {
                 .layer(DefaultBodyLimit::max(account::IMAGE_MAX_BYTES + 64 * 1024)),
         )
         .route("/account/library", delete(account::clear_library))
+        .route("/account/merges", get(account::merges))
+        .route("/account/merges/{id}/undo", post(account::undo_merge))
         .route("/account/sessions", get(account::sessions))
         .route(
             "/account/sessions/others",

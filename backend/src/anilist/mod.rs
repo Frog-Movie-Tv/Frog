@@ -50,6 +50,7 @@ pub use sync::{diagnose, due, is_syncing, sync_minutes, sync_user, Summary};
 
 use sqlx::SqlitePool;
 
+use crate::error::AppResult;
 use crate::state::AppState;
 
 /// One account's sync: whose it is, and the AniList it talks to with which
@@ -71,4 +72,21 @@ pub async fn touch(pool: &SqlitePool, user_id: i64) {
     {
         tracing::debug!(user_id, error = %e, "could not mark the AniList list for a sync");
     }
+}
+
+/// Undo one of this account's merges (`store::undo_merge`). When the copy was
+/// an AniList entry's own title, the entry leaves the title it was placed in
+/// and is kept apart, so the next sync leaves it where the person put it.
+pub async fn undo_merge(state: &AppState, user_id: i64, merge_id: i64) -> AppResult<()> {
+    let (from, _) = crate::store::undoable_merge(&state.pool, user_id, merge_id).await?;
+    let media = records::own_media(&state.pool, user_id, from).await?;
+    if let Some(media_id) = media {
+        library::forget_place(state, user_id, media_id).await?;
+    }
+    crate::store::undo_merge(&state.pool, user_id, merge_id).await?;
+    if let Some(media_id) = media {
+        records::keep_apart(&state.pool, user_id, media_id, from).await?;
+        touch(&state.pool, user_id).await;
+    }
+    Ok(())
 }

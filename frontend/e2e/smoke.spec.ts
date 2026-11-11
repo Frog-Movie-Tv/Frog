@@ -1209,6 +1209,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/settings',
 		'/api/calendar',
 		'/api/airing',
+		'/api/account/merges',
 		'/api/airing/day?date=2026-11-14',
 		'/api/diary',
 		'/api/export/library.json',

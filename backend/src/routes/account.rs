@@ -514,6 +514,23 @@ pub async fn clear_library(
     })))
 }
 
+/// This account's merges between titles, newest first, for Settings.
+pub async fn merges(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
+    Ok(Json(
+        json!({ "merges": store::merges(&state.pool, auth.user_id()).await? }),
+    ))
+}
+
+/// Undo one merge: this account's data goes back on both titles.
+pub async fn undo_merge(
+    auth: Auth,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<Value>> {
+    crate::anilist::undo_merge(&state, auth.user_id(), id).await?;
+    Ok(Json(json!({ "ok": true })))
+}
+
 #[cfg(test)]
 mod tests {
     use super::describe_agent;

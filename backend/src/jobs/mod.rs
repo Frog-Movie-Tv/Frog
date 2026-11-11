@@ -324,7 +324,10 @@ pub async fn merge_film_twins(state: &AppState) -> usize {
         "SELECT t.id, x.external_id
            FROM title t
            JOIN title_external x ON x.title_id = t.id AND x.provider = 'anilist' AND x.is_primary = 1
-          WHERE t.kind = 'movie' AND t.merged_into IS NULL",
+                    WHERE t.kind = 'movie' AND t.merged_into IS NULL
+            -- Somebody undid this merge: it stays apart.
+            AND NOT EXISTS (SELECT 1 FROM title_merge m
+                             WHERE m.from_title = t.id AND m.undone_at IS NOT NULL)",
     )
     .fetch_all(&state.pool)
     .await

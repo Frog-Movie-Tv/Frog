@@ -330,6 +330,10 @@ impl Run<'_> {
         if remote.manga {
             return self.manga(remote, prior).await;
         }
+        // Taken back out of its TMDB title by hand: it stays its own title.
+        if prior.is_some_and(|k| k.kept_apart) {
+            return self.keep_local(remote, prior).await;
+        }
         let prior_place =
             prior.and_then(|k| k.target.zip(k.title_id).filter(|_| k.state == "placed"));
 

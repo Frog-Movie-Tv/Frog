@@ -3,6 +3,7 @@ import { settings } from './settings.svelte';
 import type { TitleRef } from './titles';
 import type { WhenAnswer } from './when.svelte';
 import type {
+	TitleMerge,
 	ActivityItem,
 	AiringDay,
 	AiringFilters,
@@ -261,6 +262,9 @@ export const api = {
 	changePassword: (current: string, password: string) =>
 		send<{ ok: true; signed_out: number }>('PUT', '/api/account/password', { current, password }),
 	sessions: () => get<{ sessions: DeviceSession[] }>('/api/account/sessions'),
+	/** Titles whose data was moved onto another, newest first. */
+	merges: () => get<{ merges: TitleMerge[] }>('/api/account/merges'),
+	undoMerge: (id: number) => send<{ ok: true }>('POST', `/api/account/merges/${id}/undo`),
 	endSession: (id: string) => send<{ ok: true }>('DELETE', `/api/account/sessions/${id}`),
 	endOtherSessions: () => send<{ signed_out: number }>('DELETE', '/api/account/sessions/others'),
 	setProfilePublic: (value: boolean) =>

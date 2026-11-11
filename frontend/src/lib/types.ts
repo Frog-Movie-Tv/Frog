@@ -943,3 +943,18 @@ export interface AiringWeek {
 	genres: string[];
 	days: AiringDay[];
 }
+
+/** One title's data moved onto another, as Settings lists it. */
+export interface TitleMerge {
+	id: number;
+	from_id: number;
+	from_name: string;
+	from_poster: string | null;
+	to_id: number;
+	to_name: string;
+	to_poster: string | null;
+	/** Why it happened, in Frog's own words: an AniList placement, a duplicate film. */
+	reason: string;
+	merged_at: string;
+	undone_at: string | null;
+}

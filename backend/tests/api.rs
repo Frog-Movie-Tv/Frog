@@ -6342,3 +6342,120 @@ async fn the_airing_week_says_when_it_is_not_ready() {
     let (status, _) = h.get("/api/airing/day?date=nope", Some(&cookie)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+/// A merge can be undone from the app: both titles hold what they held
+/// before, the copy is its own again, and an AniList entry stays apart.
+#[tokio::test]
+async fn a_merge_is_undone_and_its_anilist_entry_stays_apart() {
+    let h = Harness::new().await;
+    an_owner(&h).await;
+    let pool = &h.state.pool;
+    sqlx::query(
+        "INSERT INTO title_seed (kind, tmdb_id, name) VALUES
+            ('movie', -501, 'The Copy'), ('movie', 77, 'The Film')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    let copy = h.tid("movie", -501).await;
+    let film = h.tid("movie", 77).await;
+    for sql in [
+        "INSERT INTO library_entry (user_id, title_id, status, rating, notes, added_at, updated_at)
+         VALUES (1, ?1, 'completed', 80, 'loved it', '2026-01-01', '2026-01-01'),
+                (1, ?2, 'planned', NULL, NULL, '2026-02-01', '2026-02-01')",
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, source)
+         VALUES (1, ?1, NULL, '2026-01-02T20:00:00Z', 'manual')",
+        "INSERT INTO shelf (id, user_id, name, kind, position, created_at)
+         VALUES (1, 1, 'Mine', 'manual', 0, 'x')",
+        "INSERT INTO shelf_item (shelf_id, title_id, position) VALUES (1, ?1, 3)",
+        "INSERT INTO anilist_entry (user_id, media_id, name, state, title_id, updated_at)
+         VALUES (1, 501, 'The Copy', 'placed', ?2, 'x')",
+    ] {
+        sqlx::query(sql)
+            .bind(copy)
+            .bind(film)
+            .execute(pool)
+            .await
+            .unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
+
+    assert!(
+        frog::store::move_title_data(pool, 1, copy, film, "anilist: placed on TMDB")
+            .await
+            .unwrap()
+    );
+    let merges = frog::store::merges(pool, 1).await.unwrap();
+    assert_eq!(merges.len(), 1);
+    assert_eq!(
+        (merges[0].from_name.as_str(), merges[0].to_name.as_str()),
+        ("The Copy", "The Film")
+    );
+    let id = merges[0].id;
+
+    // Somebody else cannot undo it.
+    sqlx::query(
+        "INSERT INTO app_user (id, username, password_hash, role, created_at)
+         VALUES (2, 'other', 'x', 'user', 'x')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    assert!(matches!(
+        frog::anilist::undo_merge(&h.state, 2, id).await,
+        Err(frog::error::AppError::NotFound(_))
+    ));
+
+    frog::anilist::undo_merge(&h.state, 1, id).await.unwrap();
+
+    let entry = |title: i64| async move {
+        sqlx::query_as::<_, (String, Option<f64>, Option<String>)>(
+            "SELECT status, rating, notes FROM library_entry WHERE user_id = 1 AND title_id = ?",
+        )
+        .bind(title)
+        .fetch_optional(pool)
+        .await
+        .unwrap()
+    };
+    assert_eq!(
+        entry(copy).await,
+        Some(("completed".into(), Some(80.0), Some("loved it".into())))
+    );
+    assert_eq!(entry(film).await, Some(("planned".into(), None, None)));
+    let (watches,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE user_id = 1 AND title_id = ?")
+            .bind(copy)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(watches, 1);
+    let shelved: Vec<(i64, i64)> =
+        sqlx::query_as("SELECT title_id, position FROM shelf_item WHERE shelf_id = 1")
+            .fetch_all(pool)
+            .await
+            .unwrap();
+    assert_eq!(shelved, [(copy, 3)]);
+    let (merged_into,): (Option<i64>,) =
+        sqlx::query_as("SELECT merged_into FROM title WHERE id = ?")
+            .bind(copy)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(merged_into, None);
+    let (kept, kept_on): (bool, Option<i64>) = sqlx::query_as(
+        "SELECT kept_apart, title_id FROM anilist_entry WHERE user_id = 1 AND media_id = 501",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert!(kept);
+    assert_eq!(kept_on, Some(copy));
+
+    // Once is enough.
+    assert!(matches!(
+        frog::anilist::undo_merge(&h.state, 1, id).await,
+        Err(frog::error::AppError::Conflict(_))
+    ));
+    assert!(frog::store::merges(pool, 1).await.unwrap()[0]
+        .undone_at
+        .is_some());
+}

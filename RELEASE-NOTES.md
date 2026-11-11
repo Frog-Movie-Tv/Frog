@@ -27,6 +27,12 @@ In progress.
 - **Your time zone, your choice.** Settings → Watching sets the zone every
   air time, day and notification follows, or leaves it to your device.
 
+### Improvements
+
+- Settings → Your data lists every title Frog merged into another, and any
+  of them can be taken apart again. One from AniList stays apart after the
+  next sync.
+
 ## [1.4.3] — Wood Frog — 2026-11-11
 
 The minute it airs.
