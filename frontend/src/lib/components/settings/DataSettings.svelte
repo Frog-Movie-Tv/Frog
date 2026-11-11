@@ -38,6 +38,7 @@
 	function why(reason: string): string {
 		if (reason.startsWith('anilist')) return 'Matched from AniList';
 		if (reason.includes('same film')) return 'The same film';
+		if (reason.includes('same show')) return 'The same show';
 		return 'Merged';
 	}
 

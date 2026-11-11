@@ -32,6 +32,9 @@ In progress.
 - Settings → Your data lists every title Frog merged into another, and any
   of them can be taken apart again. One from AniList stays apart after the
   next sync.
+- An anime series opened from AniList is the same title as TMDB's when TMDB
+  has its first season, so it appears once in your library, with its
+  history.
 
 ## [1.4.3] — Wood Frog — 2026-11-11
 

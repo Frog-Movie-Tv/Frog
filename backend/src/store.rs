@@ -757,6 +757,32 @@ pub async fn undo_merge(pool: &SqlitePool, user_id: i64, id: i64) -> AppResult<(
     Ok((from, to))
 }
 
+/// Watches on a series copy's first season, moved onto the same episodes of
+/// the show it is the first season of. Episodes the show does not list stay
+/// where they are, in the diary.
+pub async fn move_first_season_watches(pool: &SqlitePool, from: i64, to: i64) -> AppResult<u64> {
+    let moved = sqlx::query(
+        "UPDATE watch_event
+            SET title_id = ?2,
+                episode_id = (SELECT t.id FROM episode t
+                               WHERE t.title_id = ?2 AND t.season_number = 1
+                                 AND t.episode_number = (SELECT e.episode_number FROM episode e
+                                                          WHERE e.id = watch_event.episode_id))
+          WHERE title_id = ?1
+            AND episode_id IN (SELECT e.id FROM episode e
+                                WHERE e.title_id = ?1 AND e.season_number = 1
+                                  AND EXISTS (SELECT 1 FROM episode t
+                                               WHERE t.title_id = ?2 AND t.season_number = 1
+                                                 AND t.episode_number = e.episode_number))",
+    )
+    .bind(from)
+    .bind(to)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(moved)
+}
+
 /// Fold a copy of a title into the one it duplicates: every account that
 /// holds anything on the copy has it moved (`move_title_data`), and the copy
 /// then points at the survivor, so its links and provider ids still lead

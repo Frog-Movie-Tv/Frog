@@ -6459,3 +6459,46 @@ async fn a_merge_is_undone_and_its_anilist_entry_stays_apart() {
         .undone_at
         .is_some());
 }
+
+/// A series copy's watches move onto the same episodes of the TMDB show it
+/// is the first season of; one the show does not list stays behind.
+#[tokio::test]
+async fn a_series_copy_hands_its_watches_to_the_shows_first_season() {
+    let h = Harness::new().await;
+    an_owner(&h).await;
+    let pool = &h.state.pool;
+    sqlx::query(
+        "INSERT INTO title_seed (kind, tmdb_id, name) VALUES ('tv', -97940, 'Copy'), ('tv', 73223, 'Show')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    let (copy, show) = (h.tid("tv", -97940).await, h.tid("tv", 73223).await);
+    for sql in [
+        "INSERT INTO episode (title_id, season_number, episode_number) VALUES
+            (?1, 1, 1), (?1, 1, 2), (?1, 1, 3), (?2, 1, 1), (?2, 1, 2)",
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, source)
+         SELECT 1, ?1, id, '2026-01-0' || episode_number, 'manual' FROM episode WHERE title_id = ?1",
+    ] {
+        sqlx::query(sql).bind(copy).bind(show).execute(pool).await.unwrap();
+    }
+    let moved = frog::store::move_first_season_watches(pool, copy, show)
+        .await
+        .unwrap();
+    assert_eq!(moved, 2);
+    let on_show: Vec<(i64,)> = sqlx::query_as(
+        "SELECT e.episode_number FROM watch_event w JOIN episode e ON e.id = w.episode_id
+          WHERE w.title_id = ? AND e.title_id = w.title_id ORDER BY 1",
+    )
+    .bind(show)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert_eq!(on_show, [(1,), (2,)]);
+    let (left,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE title_id = ?")
+        .bind(copy)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 1);
+}

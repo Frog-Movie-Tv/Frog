@@ -1383,6 +1383,54 @@ pub async fn film_on_tmdb(state: &AppState, media: &Value) -> AppResult<Option<i
         .and_then(|best| best.result["id"].as_i64()))
 }
 
+/// Whether AniList names an earlier series this one follows on from.
+fn has_prequel(media: &Value) -> bool {
+    media["relations"]["edges"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|e| {
+            e["relationType"].as_str() == Some("PREQUEL")
+                && e["node"]["type"].as_str() == Some("ANIME")
+                && matches!(
+                    e["node"]["format"].as_str(),
+                    Some("TV" | "TV_SHORT" | "ONA")
+                )
+        })
+}
+
+/// The TMDB show an AniList series is the first season of, as certain as the
+/// sync requires: the id lists placing it at season 1 from episode 1, or else
+/// its name and year clearly ahead of everything else TMDB has. A later
+/// season, or a series that continues another, is left to the sync, which
+/// counts on from the first. Needs nobody's token: only public reads.
+pub async fn series_on_tmdb(state: &AppState, media: &Value) -> AppResult<Option<i64>> {
+    let remote = super::client::remote_of_media(media);
+    if remote.manga || is_film(&remote) || remote.media_id == 0 || has_prequel(media) {
+        return Ok(None);
+    }
+    if let Some(row) = map_row(state, remote.media_id).await? {
+        if let Some(found) = by_tmdb_list(state, &remote, &row).await? {
+            if found.confidence >= CONFIDENT {
+                return Ok(match found.target {
+                    Target::Show {
+                        tmdb_id,
+                        season: 1,
+                        offset: 0,
+                    } => Some(tmdb_id),
+                    // The lists put it somewhere else: not a first season.
+                    _ => None,
+                });
+            }
+        }
+    }
+    let mut searched = Searches::default();
+    let scored = scored_results(state, &remote, &mut searched).await?;
+    Ok(clear_winner(&remote, &scored)
+        .filter(|best| best.result["media_type"].as_str() == Some("tv"))
+        .and_then(|best| best.result["id"].as_i64()))
+}
+
 /// The closest TMDB titles, for the person to choose from, with what is
 /// wrong with each.
 fn candidates(scored: &[Scored]) -> Vec<Value> {
@@ -1681,6 +1729,19 @@ async fn guess(state: &AppState, target: Target) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_series_that_follows_another_has_a_prequel() {
+        let edge = |relation: &str, format: &str| json!({ "relationType": relation, "node": { "type": "ANIME", "format": format } });
+        let media = |edges: Vec<Value>| json!({ "relations": { "edges": edges } });
+        assert!(has_prequel(&media(vec![edge("PREQUEL", "TV")])));
+        // A film before it, or a sequel after it, does not make it a later season.
+        assert!(!has_prequel(&media(vec![
+            edge("PREQUEL", "MOVIE"),
+            edge("SEQUEL", "TV")
+        ])));
+        assert!(!has_prequel(&json!({})));
+    }
 
     // Jujutsu Kaisen as TMDB has it: one long season.
     const JJK: [(i64, i64); 1] = [(1, 47)];
