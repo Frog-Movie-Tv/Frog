@@ -77,69 +77,18 @@ impl ListQuery {
     }
 }
 
-pub fn to_map(rows: Vec<(String, i64)>) -> Value {
-    Value::Object(rows.into_iter().map(|(k, v)| (k, json!(v))).collect())
-}
+pub use crate::store::to_map;
 
 /// Counts for the library header and the first cut of the stats page.
 pub async fn stats(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
-    let by_status: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT status, COUNT(*) FROM library_entry WHERE user_id = ? GROUP BY status",
-    )
-    .bind(auth.user_id())
-    .fetch_all(&state.pool)
-    .await?;
-
-    let by_kind: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT t.kind, COUNT(*) FROM library_entry l JOIN title t ON t.id = l.title_id
-          WHERE l.user_id = ?
-         GROUP BY t.kind",
-    )
-    .bind(auth.user_id())
-    .fetch_all(&state.pool)
-    .await?;
-
-    // Watches of titles still in the library, as on the stats page.
-    let (films_watched, episodes_watched): (i64, i64) = sqlx::query_as(
-        "SELECT COALESCE(SUM(w.episode_id IS NULL), 0), COALESCE(SUM(w.episode_id IS NOT NULL), 0)
-           FROM watch_event w
-           JOIN library_entry l ON l.title_id = w.title_id AND l.user_id = w.user_id
-          WHERE w.user_id = ?",
-    )
-    .bind(auth.user_id())
-    .fetch_one(&state.pool)
-    .await?;
-
-    // Runtime is per-episode for shows, so this is a decent estimate rather
-    // than a precise figure, and the UI says so.
-    // SQLite types SUM() by its operands, so summing INTEGER runtimes yields
-    // an INTEGER and decoding it as f64 fails. CAST pins the type.
-    let (minutes,): (Option<f64>,) = sqlx::query_as(
-        "SELECT CAST(SUM(COALESCE(e.runtime, t.runtime, 0)) AS REAL)
-           FROM watch_event w
-           JOIN title t ON t.id = w.title_id
-           JOIN library_entry l ON l.title_id = w.title_id AND l.user_id = w.user_id
-           LEFT JOIN episode e ON e.id = w.episode_id
-          WHERE w.user_id = ?",
-    )
-    .bind(auth.user_id())
-    .fetch_one(&state.pool)
-    .await?;
-
-    let (mean_rating,): (Option<f64>,) = sqlx::query_as(
-        "SELECT AVG(rating) FROM library_entry WHERE user_id = ? AND rating IS NOT NULL",
-    )
-    .bind(auth.user_id())
-    .fetch_one(&state.pool)
-    .await?;
-
+    let f = store::library_figures(&state.pool, auth.user_id()).await?;
     Ok(Json(json!({
-        "by_status": to_map(by_status),
-        "by_kind": to_map(by_kind),
-        "films_watched": films_watched,
-        "episodes_watched": episodes_watched,
-        "minutes_watched": minutes.unwrap_or(0.0).round() as i64,
-        "mean_rating": mean_rating,
+        "by_status": to_map(f.by_status),
+        "by_kind": to_map(f.by_kind),
+        "films_watched": f.films_watched,
+        "episodes_watched": f.episodes_watched,
+        "minutes_watched": f.minutes.unwrap_or(0.0).round() as i64,
+        "mean_rating": f.mean_rating,
     })))
 }
 

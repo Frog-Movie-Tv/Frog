@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use crate::auth::Auth;
 use crate::catalog::ExternalId;
 use crate::error::{AppError, AppResult};
-use crate::routes::shelves::{self, Rules};
+use crate::shelves::{self, Rules};
 use crate::state::AppState;
 use crate::text::{self, Closeness};
 use crate::tmdb::models::{self, SearchItem};
@@ -457,15 +457,7 @@ async fn from_library(
     let typed = text::words(term);
     let rows = shelves::evaluate(&state.pool, user_id, &rules).await?;
     // Every provider id and status of this library, once.
-    let known: Vec<(i64, String, Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT l.title_id, l.status, x.provider, x.external_id
-           FROM library_entry l
-           LEFT JOIN title_external x ON x.title_id = l.title_id AND x.is_primary = 1
-          WHERE l.user_id = ?",
-    )
-    .bind(user_id)
-    .fetch_all(&state.pool)
-    .await?;
+    let known = crate::store::library_sources(&state.pool, user_id).await?;
     let known: HashMap<i64, (String, Option<ExternalId>)> = known
         .into_iter()
         .map(|(id, status, provider, key)| {
@@ -563,21 +555,6 @@ pub async fn trending(
     ))
 }
 
-/// (id, kind, primary provider, its id, name, poster, backdrop, release date,
-///  vote, genres)
-type KnownRow = (
-    i64,
-    String,
-    Option<String>,
-    Option<String>,
-    String,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<f64>,
-    String,
-);
-
 /// Titles this Frog already knows whose name starts with what was typed, or
 /// has a word that does. TMDB matches whole words only, so "inter" never
 /// finds Interstellar there; typing a few letters of something you track
@@ -595,25 +572,7 @@ async fn known_titles(
     let clean = |s: &str| s.replace(['\\', '%', '_'], "");
     let pattern = clean(&text::fold(term));
     let alternative = clean(&text::fold(&term.replace('&', "and")));
-    let rows: Vec<KnownRow> = sqlx::query_as(
-        "SELECT t.id, t.kind, x.provider, x.external_id, t.name, t.poster_path,
-                t.backdrop_path, t.release_date, t.tmdb_vote, t.genres_json
-           FROM title t
-           LEFT JOIN title_external x ON x.title_id = t.id AND x.is_primary = 1
-          WHERE t.merged_into IS NULL
-            AND (t.search_name LIKE ?1 || '%' OR t.search_name LIKE '% ' || ?1 || '%'
-                 OR t.search_name LIKE '%' || char(10) || ?1 || '%'
-                 OR t.search_name LIKE ?3 || '%' OR t.search_name LIKE '% ' || ?3 || '%')
-          ORDER BY EXISTS (SELECT 1 FROM library_entry l
-                            WHERE l.title_id = t.id AND l.user_id = ?2) DESC,
-                   t.tmdb_vote DESC
-          LIMIT 8",
-    )
-    .bind(&pattern)
-    .bind(user_id)
-    .bind(&alternative)
-    .fetch_all(&state.pool)
-    .await?;
+    let rows = crate::store::known_by_name(&state.pool, user_id, &pattern, &alternative).await?;
     Ok(rows
         .into_iter()
         .filter(|r| !(hide_animation && r.9.contains("Animation")))
@@ -740,15 +699,7 @@ pub async fn annotate_library(
     }
 
     // Every provider id of every title in the library, with its status.
-    let rows: Vec<(String, String, i64, String)> = sqlx::query_as(
-        "SELECT x.provider, x.external_id, l.title_id, l.status
-           FROM library_entry l
-           JOIN title_external x ON x.title_id = l.title_id
-          WHERE l.user_id = ?",
-    )
-    .bind(user_id)
-    .fetch_all(&state.pool)
-    .await?;
+    let rows = crate::store::library_ids(&state.pool, user_id).await?;
 
     for item in items.iter_mut() {
         let Some(source) = item.external() else {

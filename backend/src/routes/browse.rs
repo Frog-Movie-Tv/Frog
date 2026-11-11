@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use axum::extract::{Path, Query, State};
 use axum::Json;
-use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::time::timeout;
@@ -17,6 +16,7 @@ use crate::catalog::ExternalId;
 use crate::error::{AppError, AppResult};
 use crate::routes::search::annotate_library;
 use crate::state::AppState;
+use crate::studios;
 use crate::text::{self, Closeness};
 use crate::tmdb::models::{self, SearchItem};
 
@@ -160,9 +160,6 @@ async fn people(state: &AppState, term: &str) -> AppResult<Vec<Value>> {
     Ok(found.into_iter().map(|f| f.2).collect())
 }
 
-/// (id, name, logo, titles)
-type KnownStudioRow = (i64, String, Option<String>, i64);
-
 /// One company's row, ready for ranking.
 struct Studio {
     rank: (Closeness, bool),
@@ -217,17 +214,7 @@ async fn studios(state: &AppState, term: &str) -> AppResult<Vec<Value>> {
         );
     }
     let pattern = term.replace(['\\', '%', '_'], "");
-    let known: Vec<KnownStudioRow> = sqlx::query_as(
-        "SELECT tmdb_id, name, MAX(profile_path), COUNT(*)
-           FROM title_person
-          WHERE role = 'studio' AND (name LIKE ?1 || '%' OR name LIKE '% ' || ?1 || '%')
-          GROUP BY tmdb_id
-          ORDER BY COUNT(*) DESC
-          LIMIT 8",
-    )
-    .bind(&pattern)
-    .fetch_all(&state.pool)
-    .await?;
+    let known = studios::known(&state.pool, &pattern).await?;
     for (id, name, logo, _) in known {
         add(id, name, logo, None);
     }
@@ -241,24 +228,11 @@ async fn studios(state: &AppState, term: &str) -> AppResult<Vec<Value>> {
     // A studio with no logo is often a shell with nothing to its name, whose
     // page would be empty: those go. One whose titles this Frog holds, or
     // that has a logo, is kept without asking.
-    let held: Vec<i64> = sqlx::query_as::<_, (i64,)>(
-        "SELECT DISTINCT tmdb_id FROM title_person WHERE role = 'studio' AND tmdb_id IN
-           (SELECT value FROM json_each(?))",
-    )
-    .bind(
-        serde_json::to_string(
-            &found
-                .iter()
-                .filter_map(|s| s.value["id"].as_i64())
-                .collect::<Vec<_>>(),
-        )
-        .unwrap_or_default(),
-    )
-    .fetch_all(&state.pool)
-    .await?
-    .into_iter()
-    .map(|(id,)| id)
-    .collect();
+    let ids: Vec<i64> = found
+        .iter()
+        .filter_map(|s| s.value["id"].as_i64())
+        .collect();
+    let held = studios::held(&state.pool, &ids).await?;
     let checks = found.iter().map(|s| {
         let id = s.value["id"].as_i64().unwrap_or(0);
         let ask = s.value["logo_path"].is_null() && !held.contains(&id);
@@ -285,57 +259,6 @@ async fn has_titles(state: &AppState, id: i64) -> bool {
     false
 }
 
-/// The logo of the TMDB company with exactly this name, for a studio AniList
-/// names. AniList has no pictures of studios. Only a company whose whole name
-/// is the same counts, and a studio that has none is remembered as having none.
-pub async fn studio_logo(state: &AppState, name: &str) -> Option<String> {
-    const RECHECK_DAYS: i64 = 30;
-    let key = anilist::plain(name);
-    if key.is_empty() {
-        return None;
-    }
-    let kept: Option<(Option<String>, String)> =
-        sqlx::query_as("SELECT logo_path, checked_at FROM studio_match WHERE name_key = ?")
-            .bind(&key)
-            .fetch_optional(&state.pool)
-            .await
-            .ok()
-            .flatten();
-    let cutoff = (Utc::now() - chrono::Duration::days(RECHECK_DAYS)).to_rfc3339();
-    if let Some((logo, _)) = kept.as_ref().filter(|(_, at)| *at > cutoff) {
-        return logo.clone();
-    }
-
-    let raw = state.tmdb.search_company(name).await.ok()?;
-    let same: Vec<&Value> = raw["results"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|c| c["name"].as_str().map(anilist::plain).as_deref() == Some(key.as_str()))
-        .filter(|c| models::str_at(c, "logo_path").is_some())
-        .collect();
-    // AniList is anime, so a Japanese company of that name comes first.
-    let logo = same
-        .iter()
-        .find(|c| c["origin_country"].as_str() == Some("JP"))
-        .or(same.first())
-        .and_then(|c| models::str_at(c, "logo_path"));
-    let stored = sqlx::query(
-        "INSERT INTO studio_match (name_key, logo_path, checked_at) VALUES (?, ?, ?)
-         ON CONFLICT (name_key) DO UPDATE SET
-            logo_path = excluded.logo_path, checked_at = excluded.checked_at",
-    )
-    .bind(&key)
-    .bind(&logo)
-    .bind(Utc::now().to_rfc3339())
-    .execute(&state.pool)
-    .await;
-    if let Err(e) = stored {
-        tracing::debug!(error = %e, "studio logo not remembered");
-    }
-    logo
-}
-
 /// Characters from two places: the casts of every film and show this Frog
 /// holds, and AniList's character search for anime, whose casts TMDB mostly
 /// lists by voice actor alone.
@@ -347,19 +270,6 @@ async fn characters(state: &AppState, term: &str, named: &Value) -> AppResult<Ve
     Ok(out)
 }
 
-/// (title id, kind, primary provider, its id, title, poster, character, actor, actor id)
-type CastRow = (
-    i64,
-    String,
-    Option<String>,
-    Option<String>,
-    String,
-    Option<String>,
-    String,
-    Option<String>,
-    Option<i64>,
-);
-
 /// A character as search shows one: the character's own name and the title
 /// they are from. Their picture is the title's poster, never the actor's
 /// photo: a face belongs to a person, and People is where people are.
@@ -369,20 +279,7 @@ async fn cast_characters(state: &AppState, term: &str) -> AppResult<Vec<Value>> 
         return Ok(Vec::new());
     }
     let pattern = typed.join(" ").replace(['\\', '%', '_'], "");
-    let rows: Vec<CastRow> = sqlx::query_as(
-        "SELECT t.id, t.kind, x.provider, x.external_id, t.name, t.poster_path,
-                c.name, c.actor, c.actor_id
-           FROM title_character c
-           JOIN title t ON t.id = c.title_id
-           LEFT JOIN title_external x ON x.title_id = t.id AND x.is_primary = 1
-          WHERE t.merged_into IS NULL
-            AND (c.search_name LIKE ?1 || '%' OR c.search_name LIKE '% ' || ?1 || '%')
-          ORDER BY t.tmdb_vote IS NULL, c.ord, t.tmdb_vote DESC
-          LIMIT 60",
-    )
-    .bind(&pattern)
-    .fetch_all(&state.pool)
-    .await?;
+    let rows = crate::catalog::characters_named(&state.pool, &pattern).await?;
 
     let mut out: Vec<(Closeness, Value)> = Vec::new();
     for (id, kind, provider, key, title, poster, character, actor, actor_id) in rows {
@@ -453,29 +350,17 @@ async fn anime_characters(state: &AppState, term: &str, data: &Value) -> AppResu
             .filter(|s| !s.trim().is_empty())
             .or_else(|| media["title"]["romaji"].as_str());
         // Which TMDB title that is, if Fribb's list knows it.
-        let placed: Option<(String, i64)> = match media["id"].as_i64() {
-            Some(id) => {
-                sqlx::query_as(
-                    "SELECT tmdb_kind, tmdb_id FROM anime_map
-                  WHERE anilist_id = ? AND tmdb_kind IS NOT NULL AND tmdb_id IS NOT NULL",
-                )
-                .bind(id)
-                .fetch_optional(&state.pool)
-                .await?
-            }
+        let placed = match media["id"].as_i64() {
+            Some(id) => anilist::tmdb_of(&state.pool, id).await?,
             None => None,
         };
         let title = match placed {
             Some((kind, tmdb_id)) => {
-                let poster: Option<(Option<String>,)> = sqlx::query_as(
-                    "SELECT t.poster_path FROM title_external x JOIN title t ON t.id = x.title_id
-                      WHERE x.provider = 'tmdb' AND x.external_id = ?",
-                )
-                .bind(crate::catalog::ExternalId::tmdb(&kind, tmdb_id).key())
-                .fetch_optional(&state.pool)
-                .await?;
+                let poster =
+                    crate::catalog::poster_of(&state.pool, &ExternalId::tmdb(&kind, tmdb_id))
+                        .await?;
                 json!({ "kind": kind, "tmdb_id": tmdb_id, "name": show,
-                        "poster_path": poster.and_then(|p| p.0) })
+                        "poster_path": poster })
             }
             // Not on TMDB: the page Frog makes from AniList.
             None => match media["id"].as_i64() {
@@ -522,7 +407,7 @@ pub async fn studio(
         let (mut header, mut items, more) = anilist::media::studio(&state, -id, page).await?;
         annotate_library(&state, auth.user_id(), &mut items).await?;
         if let Some(name) = header["name"].as_str().map(str::to_string) {
-            header["logo_path"] = json!(studio_logo(&state, &name).await);
+            header["logo_path"] = json!(studios::logo(&state, &name).await);
         }
         header["titles"] = json!(items);
         header["next_page"] = json!(more.then_some(page + 1));

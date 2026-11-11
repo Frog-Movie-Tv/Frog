@@ -1,16 +1,15 @@
 use axum::extract::{Path, State};
 use axum::Json;
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
 
 use crate::auth::Auth;
 use crate::bulk::{tick_aired, Marking, When};
 use crate::catalog;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
-use crate::store;
+use crate::store::{self, KeptWatch};
 
 #[derive(Deserialize)]
 pub struct WatchBody {
@@ -29,34 +28,11 @@ pub struct WatchBody {
     pub restore: Vec<KeptWatch>,
 }
 
-/// One watch of an episode as an untick cleared it.
-#[derive(Debug, Deserialize, Serialize, sqlx::FromRow)]
-pub struct KeptWatch {
-    pub watched_at: String,
-    pub undated: bool,
-    pub is_rewatch: bool,
-    pub source: String,
-}
-
 /// Where a watch put back may say it came from.
 const SOURCES: [&str; 5] = ["manual", "import", "anilist", "netflix", "trakt"];
 
 fn yes() -> bool {
     true
-}
-
-async fn episode_id(pool: &SqlitePool, title_id: i64, season: i64, episode: i64) -> AppResult<i64> {
-    let row: Option<(i64,)> = sqlx::query_as(
-        "SELECT id FROM episode WHERE title_id = ? AND season_number = ? AND episode_number = ?",
-    )
-    .bind(title_id)
-    .bind(season)
-    .bind(episode)
-    .fetch_optional(pool)
-    .await?;
-
-    row.map(|r| r.0)
-        .ok_or_else(|| AppError::NotFound(format!("no S{season}E{episode} for this show")))
 }
 
 /// The show by Frog's id, with its episodes listed, so ticking one works even
@@ -76,7 +52,7 @@ pub async fn set_watched(
     Json(body): Json<WatchBody>,
 ) -> AppResult<Json<Value>> {
     let title_id = show(&state, title_id).await?;
-    let ep_id = episode_id(&state.pool, title_id, season, episode).await?;
+    let ep_id = store::episode_id(&state.pool, title_id, season, episode).await?;
 
     let mut cleared: Vec<KeptWatch> = Vec::new();
     if body.watched && !body.restore.is_empty() {
@@ -89,61 +65,22 @@ pub async fn set_watched(
             } else {
                 "manual"
             };
-            sqlx::query(
-                "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
-                                          source, undated)
-                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
-                  WHERE NOT EXISTS (SELECT 1 FROM watch_event
-                                     WHERE user_id = ?1 AND episode_id = ?3 AND watched_at = ?4)",
-            )
-            .bind(auth.user_id())
-            .bind(title_id)
-            .bind(ep_id)
-            .bind(&w.watched_at)
-            .bind(w.is_rewatch)
-            .bind(source)
-            .bind(w.undated)
-            .execute(&state.pool)
-            .await?;
+            store::restore_watch(&state.pool, auth.user_id(), title_id, ep_id, w, source).await?;
         }
     } else if body.watched {
         let when = body.watched_at.unwrap_or_else(|| Utc::now().to_rfc3339());
-        // Only my own watches make this a rewatch.
-        let seen_before: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE user_id = ? AND episode_id = ?")
-                .bind(auth.user_id())
-                .bind(ep_id)
-                .fetch_one(&state.pool)
-                .await?;
-
-        sqlx::query(
-            "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
-                                      source, undated)
-             VALUES (?, ?, ?, ?, ?, 'manual', ?)",
+        store::add_episode_watch(
+            &state.pool,
+            auth.user_id(),
+            title_id,
+            ep_id,
+            &when,
+            body.undated,
         )
-        .bind(auth.user_id())
-        .bind(title_id)
-        .bind(ep_id)
-        .bind(&when)
-        .bind(i64::from(seen_before.0 > 0))
-        .bind(i64::from(body.undated))
-        .execute(&state.pool)
         .await?;
     } else {
         // Every watch, so undo can put back the rewatches as well as the last.
-        cleared = sqlx::query_as(
-            "SELECT watched_at, undated, is_rewatch, source FROM watch_event
-              WHERE user_id = ? AND episode_id = ? ORDER BY watched_at",
-        )
-        .bind(auth.user_id())
-        .bind(ep_id)
-        .fetch_all(&state.pool)
-        .await?;
-        sqlx::query("DELETE FROM watch_event WHERE user_id = ? AND episode_id = ?")
-            .bind(auth.user_id())
-            .bind(ep_id)
-            .execute(&state.pool)
-            .await?;
+        cleared = store::clear_episode_watches(&state.pool, auth.user_id(), ep_id).await?;
     }
 
     let Json(mut answer) = after_change(&state, auth.user_id(), title_id).await?;
@@ -177,20 +114,7 @@ async fn bulk(
     body: &BulkWatchBody,
 ) -> AppResult<()> {
     if !body.watched {
-        sqlx::query(
-            "DELETE FROM watch_event
-              WHERE user_id = ?3
-                AND episode_id IN (
-                    SELECT id FROM episode
-                     WHERE title_id = ?1
-                       AND (?2 IS NOT NULL OR season_number > 0)
-                       AND (?2 IS NULL OR season_number = ?2))",
-        )
-        .bind(title_id)
-        .bind(season)
-        .bind(user_id)
-        .execute(&state.pool)
-        .await?;
+        store::clear_season_watches(&state.pool, user_id, title_id, season).await?;
         return Ok(());
     }
     let marking = Marking {
@@ -248,21 +172,9 @@ pub async fn set_state(
     Json(body): Json<EpisodeStateBody>,
 ) -> AppResult<Json<Value>> {
     let title_id = show(&state, title_id).await?;
-    let ep_id = episode_id(&state.pool, title_id, season, episode).await?;
+    let ep_id = store::episode_id(&state.pool, title_id, season, episode).await?;
 
-    sqlx::query(
-        "INSERT INTO episode_state (user_id, episode_id, rating, notes, updated_at)
-         VALUES (?, ?, NULL, ?, ?)
-         ON CONFLICT (user_id, episode_id) DO UPDATE SET
-            notes = excluded.notes,
-            updated_at = excluded.updated_at",
-    )
-    .bind(auth.user_id())
-    .bind(ep_id)
-    .bind(&body.notes)
-    .bind(Utc::now().to_rfc3339())
-    .execute(&state.pool)
-    .await?;
+    store::set_episode_notes(&state.pool, auth.user_id(), ep_id, body.notes.as_deref()).await?;
 
     Ok(Json(json!({ "ok": true })))
 }

@@ -106,9 +106,10 @@ RELEASE-NOTES.md        source of truth for release notes (parsed into the app)
   `anilist/reconcile.rs`, `transfer/matching.rs::choose`) and test it
   without a database.
 - **A domain that owns tables owns their SQL** (`anilist/records.rs` for
-  `anilist_*`). Library, title and episode reads that more than one area
-  needs go in `store.rs`. A simple read only one route uses may stay in
-  that route; move it out the moment a second caller wants it.
+  `anilist_*`, `shelves.rs` for shelves). Library, title and episode reads
+  that more than one area needs go in `store.rs`. **No SQL in a route**: a
+  new area gets a module of its own beside the others (`stats.rs`,
+  `timeline.rs`, `profiles.rs`, …).
 - **Providers are reached through their client** (`tmdb`, `anilist::client`,
   `anilist::media`). Never call TMDB or AniList from a route or from `store`
   with a hand-built request.

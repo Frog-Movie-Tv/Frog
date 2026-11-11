@@ -925,6 +925,103 @@ async fn sync_seasons(state: &AppState, title_id: i64, seasons: &[i64]) -> AppRe
     Ok(())
 }
 
+/// (season, episode, name, overview, still, air date, runtime)
+type LocalEpisodeRow = (
+    i64,
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
+);
+
+/// A season of a title as stored: what a title from AniList shows, having no
+/// TMDB season to read.
+pub async fn stored_episodes(
+    pool: &SqlitePool,
+    title_id: i64,
+    season: i64,
+) -> AppResult<Vec<EpisodeInfo>> {
+    let rows: Vec<LocalEpisodeRow> = sqlx::query_as(
+        "SELECT season_number, episode_number, name, overview, still_path, air_date, runtime
+           FROM episode WHERE title_id = ? AND season_number = ?
+          ORDER BY episode_number",
+    )
+    .bind(title_id)
+    .bind(season)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| EpisodeInfo {
+            season_number: r.0,
+            episode_number: r.1,
+            tmdb_episode_id: None,
+            name: r.2,
+            overview: r.3,
+            still_path: r.4,
+            air_date: r.5,
+            runtime: r.6,
+            tmdb_vote: None,
+        })
+        .collect())
+}
+
+/// The title a merged one now points at, if it was merged.
+pub async fn merged_into(pool: &SqlitePool, title_id: i64) -> AppResult<Option<i64>> {
+    let (moved,): (Option<i64>,) = sqlx::query_as("SELECT merged_into FROM title WHERE id = ?")
+        .bind(title_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(moved)
+}
+
+/// (title id, kind, primary provider, its id, title, poster, character, actor, actor id)
+pub type CastRow = (
+    i64,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    Option<String>,
+    String,
+    Option<String>,
+    Option<i64>,
+);
+
+/// Characters in the casts of titles this Frog holds whose folded name, or a
+/// word of it, starts with `pattern`.
+pub async fn characters_named(pool: &SqlitePool, pattern: &str) -> AppResult<Vec<CastRow>> {
+    Ok(sqlx::query_as(
+        "SELECT t.id, t.kind, x.provider, x.external_id, t.name, t.poster_path,
+                c.name, c.actor, c.actor_id
+           FROM title_character c
+           JOIN title t ON t.id = c.title_id
+           LEFT JOIN title_external x ON x.title_id = t.id AND x.is_primary = 1
+          WHERE t.merged_into IS NULL
+            AND (c.search_name LIKE ?1 || '%' OR c.search_name LIKE '% ' || ?1 || '%')
+          ORDER BY t.tmdb_vote IS NULL, c.ord, t.tmdb_vote DESC
+          LIMIT 60",
+    )
+    .bind(pattern)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// The poster of the title a provider id names, when Frog holds it.
+pub async fn poster_of(pool: &SqlitePool, id: &ExternalId) -> AppResult<Option<String>> {
+    let row: Option<(Option<String>,)> = sqlx::query_as(
+        "SELECT t.poster_path FROM title_external x JOIN title t ON t.id = x.title_id
+          WHERE x.provider = ? AND x.external_id = ?",
+    )
+    .bind(id.provider())
+    .bind(id.key())
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.and_then(|p| p.0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

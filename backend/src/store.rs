@@ -2271,3 +2271,355 @@ mod order_tests {
         );
     }
 }
+
+/// (season, episode, my rating, my notes, number of watches,
+///  latest watch time, whether that watch is undated, air moment)
+pub type EpisodeStateRow = (
+    i64,
+    i64,
+    Option<f64>,
+    Option<String>,
+    i64,
+    Option<String>,
+    Option<bool>,
+    Option<String>,
+);
+
+/// One season's episodes as one account has them: ratings, notes, watches.
+pub async fn season_states(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    season: i64,
+) -> AppResult<Vec<EpisodeStateRow>> {
+    Ok(sqlx::query_as(
+        "SELECT e.season_number,
+                e.episode_number,
+                s.rating,
+                s.notes,
+                (SELECT COUNT(*) FROM watch_event w
+                  WHERE w.user_id = ?1 AND w.episode_id = e.id),
+                (SELECT w.watched_at FROM watch_event w
+                  WHERE w.user_id = ?1 AND w.episode_id = e.id
+                  ORDER BY w.watched_at DESC LIMIT 1),
+                (SELECT w.undated FROM watch_event w
+                  WHERE w.user_id = ?1 AND w.episode_id = e.id
+                  ORDER BY w.watched_at DESC LIMIT 1),
+                e.air_at
+           FROM episode e
+           LEFT JOIN episode_state s ON s.episode_id = e.id AND s.user_id = ?1
+          WHERE e.title_id = ?2 AND e.season_number = ?3",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .bind(season)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// The library's header figures.
+pub struct LibraryFigures {
+    pub by_status: Vec<(String, i64)>,
+    pub by_kind: Vec<(String, i64)>,
+    /// Watches of titles still in the library, as on the stats page.
+    pub films_watched: i64,
+    pub episodes_watched: i64,
+    pub minutes: Option<f64>,
+    pub mean_rating: Option<f64>,
+}
+
+pub async fn library_figures(pool: &SqlitePool, user_id: i64) -> AppResult<LibraryFigures> {
+    let by_status: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT status, COUNT(*) FROM library_entry WHERE user_id = ? GROUP BY status",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    let by_kind: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT t.kind, COUNT(*) FROM library_entry l JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = ?
+         GROUP BY t.kind",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    let (films_watched, episodes_watched): (i64, i64) = sqlx::query_as(
+        "SELECT COALESCE(SUM(w.episode_id IS NULL), 0), COALESCE(SUM(w.episode_id IS NOT NULL), 0)
+           FROM watch_event w
+           JOIN library_entry l ON l.title_id = w.title_id AND l.user_id = w.user_id
+          WHERE w.user_id = ?",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    // Runtime is per-episode for shows, so this is an estimate. SQLite types
+    // SUM() by its operands, so CAST pins it to a REAL.
+    let (minutes,): (Option<f64>,) = sqlx::query_as(
+        "SELECT CAST(SUM(COALESCE(e.runtime, t.runtime, 0)) AS REAL)
+           FROM watch_event w
+           JOIN title t ON t.id = w.title_id
+           JOIN library_entry l ON l.title_id = w.title_id AND l.user_id = w.user_id
+           LEFT JOIN episode e ON e.id = w.episode_id
+          WHERE w.user_id = ?",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    let (mean_rating,): (Option<f64>,) = sqlx::query_as(
+        "SELECT AVG(rating) FROM library_entry WHERE user_id = ? AND rating IS NOT NULL",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(LibraryFigures {
+        by_status,
+        by_kind,
+        films_watched,
+        episodes_watched,
+        minutes,
+        mean_rating,
+    })
+}
+
+/// Each library title's status and primary provider id:
+/// (title id, status, provider, provider's id).
+pub async fn library_sources(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> AppResult<Vec<(i64, String, Option<String>, Option<String>)>> {
+    Ok(sqlx::query_as(
+        "SELECT l.title_id, l.status, x.provider, x.external_id
+           FROM library_entry l
+           LEFT JOIN title_external x ON x.title_id = l.title_id AND x.is_primary = 1
+          WHERE l.user_id = ?",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Every provider id of every library title, with its status:
+/// (provider, provider's id, title id, status).
+pub async fn library_ids(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> AppResult<Vec<(String, String, i64, String)>> {
+    Ok(sqlx::query_as(
+        "SELECT x.provider, x.external_id, l.title_id, l.status
+           FROM library_entry l
+           JOIN title_external x ON x.title_id = l.title_id
+          WHERE l.user_id = ?",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// (id, kind, primary provider, its id, name, poster, backdrop, release date,
+///  vote, genres)
+pub type KnownRow = (
+    i64,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<f64>,
+    String,
+);
+
+/// Titles this Frog knows whose folded name, or a word of it, starts with
+/// `pattern` or `alternative`; the account's own first.
+pub async fn known_by_name(
+    pool: &SqlitePool,
+    user_id: i64,
+    pattern: &str,
+    alternative: &str,
+) -> AppResult<Vec<KnownRow>> {
+    Ok(sqlx::query_as(
+        "SELECT t.id, t.kind, x.provider, x.external_id, t.name, t.poster_path,
+                t.backdrop_path, t.release_date, t.tmdb_vote, t.genres_json
+           FROM title t
+           LEFT JOIN title_external x ON x.title_id = t.id AND x.is_primary = 1
+          WHERE t.merged_into IS NULL
+            AND (t.search_name LIKE ?1 || '%' OR t.search_name LIKE '% ' || ?1 || '%'
+                 OR t.search_name LIKE '%' || char(10) || ?1 || '%'
+                 OR t.search_name LIKE ?3 || '%' OR t.search_name LIKE '% ' || ?3 || '%')
+          ORDER BY EXISTS (SELECT 1 FROM library_entry l
+                            WHERE l.title_id = t.id AND l.user_id = ?2) DESC,
+                   t.tmdb_vote DESC
+          LIMIT 8",
+    )
+    .bind(pattern)
+    .bind(user_id)
+    .bind(alternative)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// One watch of an episode as an untick cleared it.
+#[derive(Debug, Deserialize, Serialize, sqlx::FromRow)]
+pub struct KeptWatch {
+    pub watched_at: String,
+    pub undated: bool,
+    pub is_rewatch: bool,
+    pub source: String,
+}
+
+/// An episode of a title by its numbers.
+pub async fn episode_id(
+    pool: &SqlitePool,
+    title_id: i64,
+    season: i64,
+    episode: i64,
+) -> AppResult<i64> {
+    let row: Option<(i64,)> = sqlx::query_as(
+        "SELECT id FROM episode WHERE title_id = ? AND season_number = ? AND episode_number = ?",
+    )
+    .bind(title_id)
+    .bind(season)
+    .bind(episode)
+    .fetch_optional(pool)
+    .await?;
+    row.map(|r| r.0)
+        .ok_or_else(|| AppError::NotFound(format!("no S{season}E{episode} for this show")))
+}
+
+/// Put back a watch an untick cleared, unless one at that moment is there.
+pub async fn restore_watch(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    episode_id: i64,
+    w: &KeptWatch,
+    source: &str,
+) -> AppResult<()> {
+    sqlx::query(
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                  source, undated)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+          WHERE NOT EXISTS (SELECT 1 FROM watch_event
+                             WHERE user_id = ?1 AND episode_id = ?3 AND watched_at = ?4)",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .bind(episode_id)
+    .bind(&w.watched_at)
+    .bind(w.is_rewatch)
+    .bind(source)
+    .bind(w.undated)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// A watch ticked by hand; a rewatch when this account has seen it before.
+pub async fn add_episode_watch(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    episode_id: i64,
+    when: &str,
+    undated: bool,
+) -> AppResult<()> {
+    let seen_before: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE user_id = ? AND episode_id = ?")
+            .bind(user_id)
+            .bind(episode_id)
+            .fetch_one(pool)
+            .await?;
+    sqlx::query(
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
+                                  source, undated)
+         VALUES (?, ?, ?, ?, ?, 'manual', ?)",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .bind(episode_id)
+    .bind(when)
+    .bind(i64::from(seen_before.0 > 0))
+    .bind(i64::from(undated))
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Clear every watch of an episode, handing them back so undo can put back
+/// the rewatches as well as the last.
+pub async fn clear_episode_watches(
+    pool: &SqlitePool,
+    user_id: i64,
+    episode_id: i64,
+) -> AppResult<Vec<KeptWatch>> {
+    let cleared = sqlx::query_as(
+        "SELECT watched_at, undated, is_rewatch, source FROM watch_event
+          WHERE user_id = ? AND episode_id = ? ORDER BY watched_at",
+    )
+    .bind(user_id)
+    .bind(episode_id)
+    .fetch_all(pool)
+    .await?;
+    sqlx::query("DELETE FROM watch_event WHERE user_id = ? AND episode_id = ?")
+        .bind(user_id)
+        .bind(episode_id)
+        .execute(pool)
+        .await?;
+    Ok(cleared)
+}
+
+/// Clear one season's watches, or the whole show's but its specials.
+pub async fn clear_season_watches(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    season: Option<i64>,
+) -> AppResult<()> {
+    sqlx::query(
+        "DELETE FROM watch_event
+          WHERE user_id = ?3
+            AND episode_id IN (
+                SELECT id FROM episode
+                 WHERE title_id = ?1
+                   AND (?2 IS NOT NULL OR season_number > 0)
+                   AND (?2 IS NULL OR season_number = ?2))",
+    )
+    .bind(title_id)
+    .bind(season)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn set_episode_notes(
+    pool: &SqlitePool,
+    user_id: i64,
+    episode_id: i64,
+    notes: Option<&str>,
+) -> AppResult<()> {
+    sqlx::query(
+        "INSERT INTO episode_state (user_id, episode_id, rating, notes, updated_at)
+         VALUES (?, ?, NULL, ?, ?)
+         ON CONFLICT (user_id, episode_id) DO UPDATE SET
+            notes = excluded.notes,
+            updated_at = excluded.updated_at",
+    )
+    .bind(user_id)
+    .bind(episode_id)
+    .bind(notes)
+    .bind(Utc::now().to_rfc3339())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Counts by name as one JSON object: `{ "watching": 3, ... }`.
+pub fn to_map(rows: Vec<(String, i64)>) -> serde_json::Value {
+    serde_json::Value::Object(
+        rows.into_iter()
+            .map(|(k, v)| (k, serde_json::json!(v)))
+            .collect(),
+    )
+}

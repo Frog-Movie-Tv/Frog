@@ -14,8 +14,8 @@ use crate::auth::Auth;
 use crate::error::{AppError, AppResult};
 use crate::profiles::{self, CardRow};
 use crate::routes::library::{to_map, ListQuery};
-use crate::routes::stats::streaks;
 use crate::state::AppState;
+use crate::stats::streaks;
 use crate::store::{self, Page, SharedItem};
 use crate::taste;
 
