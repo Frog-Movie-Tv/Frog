@@ -89,6 +89,7 @@ struct EntryRow {
     tries: i64,
     next_try_at: Option<String>,
     gone_at: Option<String>,
+    kept_apart: bool,
 }
 
 pub(super) struct Known {
@@ -105,6 +106,8 @@ pub(super) struct Known {
     pub tries: i64,
     pub next_try_at: Option<String>,
     pub gone: bool,
+    /// Taken back out of its TMDB title by the person: kept as its own.
+    pub kept_apart: bool,
 }
 
 impl Known {
@@ -139,8 +142,8 @@ pub(super) async fn known_entries(
         "SELECT a.media_id, a.state, a.title_id, x.external_id AS tmdb_key, a.season,
                 a.episode_offset, a.al_status, a.al_progress, a.al_score,
                 a.frog_status, a.frog_progress, a.frog_score, a.manual, a.resolver,
-                a.episodes, a.format, a.media_status, a.start_date, a.tries, a.next_try_at,
-                a.gone_at
+                                a.episodes, a.format, a.media_status, a.start_date, a.tries, a.next_try_at,
+                a.gone_at, a.kept_apart
            FROM anilist_entry a
            LEFT JOIN title_external x
                   ON x.title_id = a.title_id AND x.provider = 'tmdb' AND x.is_primary = 1
@@ -178,6 +181,7 @@ pub(super) async fn known_entries(
                 tries: r.tries,
                 next_try_at: r.next_try_at,
                 gone: r.gone_at.is_some(),
+                kept_apart: r.kept_apart,
             },
         );
     }
@@ -749,6 +753,33 @@ pub async fn ignore(pool: &SqlitePool, user_id: i64, media_id: i64) -> AppResult
     Ok(())
 }
 
+/// The person took an entry back out of the title it was placed in: it is
+/// kept as its own AniList title from now on, until they place it by hand.
+/// Both snapshots are cleared, so the next sync treats it as new.
+pub async fn keep_apart(
+    pool: &SqlitePool,
+    user_id: i64,
+    media_id: i64,
+    title_id: i64,
+) -> AppResult<()> {
+    sqlx::query(
+        "UPDATE anilist_entry
+            SET state = 'unsure', title_id = ?, season = NULL, episode_offset = 0,
+                kept_apart = 1, manual = 1, next_try_at = NULL,
+                al_status = NULL, al_progress = NULL, al_score = NULL,
+                frog_status = NULL, frog_progress = NULL, frog_score = NULL,
+                outcome = 'kept', method = NULL, note = NULL, updated_at = ?
+          WHERE user_id = ? AND media_id = ?",
+    )
+    .bind(title_id)
+    .bind(Utc::now().to_rfc3339())
+    .bind(user_id)
+    .bind(media_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// The person says where an entry goes. Both snapshots are cleared, so the
 /// next sync treats it as new and nothing on either side is lost.
 pub async fn place_by_hand(
@@ -761,7 +792,8 @@ pub async fn place_by_hand(
 ) -> AppResult<()> {
     sqlx::query(
         "UPDATE anilist_entry
-            SET state = 'placed', title_id = ?, season = ?, episode_offset = ?, detached = 0,
+                        SET state = 'placed', title_id = ?, season = ?, episode_offset = ?, detached = 0,
+                kept_apart = 0,
                 al_status = NULL, al_progress = NULL, al_score = NULL,
                 frog_status = NULL, frog_progress = NULL, frog_score = NULL, updated_at = ?,
                 manual = 1, outcome = 'matched', method = NULL, confidence = 100, note = NULL
@@ -850,4 +882,19 @@ pub async fn listing(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Listed>> 
     .bind(user_id)
     .fetch_all(pool)
     .await?)
+}
+
+/// The AniList entry of this account whose own title `title_id` is.
+pub async fn own_media(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppResult<Option<i64>> {
+    let row: Option<(i64,)> = sqlx::query_as(
+        "SELECT a.media_id FROM anilist_entry a
+           JOIN title_external x ON x.provider = 'anilist' AND x.is_primary = 1
+                                AND x.external_id = CAST(a.media_id AS TEXT)
+          WHERE a.user_id = ? AND x.title_id = ?",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| r.0))
 }

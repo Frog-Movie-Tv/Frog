@@ -176,3 +176,14 @@ pub(super) async fn remember_media(
     .await?;
     Ok(())
 }
+
+/// The TMDB film or show the anime lists say an AniList id is.
+pub async fn tmdb_of(pool: &SqlitePool, anilist_id: i64) -> AppResult<Option<(String, i64)>> {
+    Ok(sqlx::query_as(
+        "SELECT tmdb_kind, tmdb_id FROM anime_map
+          WHERE anilist_id = ? AND tmdb_kind IN ('movie', 'tv') AND tmdb_id IS NOT NULL",
+    )
+    .bind(anilist_id)
+    .fetch_optional(pool)
+    .await?)
+}

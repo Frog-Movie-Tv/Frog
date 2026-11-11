@@ -73,6 +73,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/stats", get(stats::stats))
         .route("/stats/manga", get(stats::manga))
+        .route("/stats/narrow", get(stats::narrow))
         .route("/shelves", get(shelves::list).post(shelves::create))
         .route("/shelves/order", put(shelves::reorder))
         .route(
@@ -104,6 +105,8 @@ pub fn router(state: AppState) -> Router {
                 .layer(DefaultBodyLimit::max(account::IMAGE_MAX_BYTES + 64 * 1024)),
         )
         .route("/account/library", delete(account::clear_library))
+        .route("/account/merges", get(account::merges))
+        .route("/account/merges/{id}/undo", post(account::undo_merge))
         .route("/account/sessions", get(account::sessions))
         .route(
             "/account/sessions/others",
@@ -118,6 +121,8 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/users/{id}/reset", post(admin::reset_link))
         .route("/admin/instance", get(admin::instance))
         .route("/admin/server", get(admin::server))
+        .route("/admin/db/tables", get(admin::db_tables))
+        .route("/admin/db/tables/{name}", get(admin::db_table))
         .route("/anilist", get(anilist::status).delete(anilist::disconnect))
         .route("/anilist/connect", post(anilist::connect))
         .route("/anilist/callback", get(anilist::callback))
@@ -143,6 +148,7 @@ pub fn router(state: AppState) -> Router {
         // Everything else about a title goes by Frog's own id.
         .route("/t/{id}", get(titles::detail_by_id))
         .route("/t/{id}/scores", get(titles::scores))
+        .route("/t/{id}/more", get(titles::more))
         .route("/t/{id}/rewatch", post(titles::rewatch))
         .route("/t/{id}/seasons/{season}", get(titles::season))
         .route("/t/{id}/seasons/{season}/rating", put(titles::rate_season))

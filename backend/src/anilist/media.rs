@@ -281,13 +281,7 @@ async fn as_item(state: &AppState, media: &Value) -> AppResult<Option<Value>> {
     let mapped: Option<(String, i64)> = if kind_of(media) == "manga" {
         None
     } else {
-        sqlx::query_as(
-            "SELECT tmdb_kind, tmdb_id FROM anime_map
-              WHERE anilist_id = ? AND tmdb_kind IN ('movie', 'tv') AND tmdb_id IS NOT NULL",
-        )
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?
+        super::idmap::tmdb_of(&state.pool, id).await?
     };
     // Or a film already found to be TMDB's when someone opened it.
     let mapped = match mapped {
@@ -587,7 +581,7 @@ pub async fn as_tmdb(state: &AppState, kind: &str, media: &Value) -> AppResult<V
         let (Some(id), Some(name)) = (s["id"].as_i64(), s["name"].as_str()) else {
             continue;
         };
-        let logo = crate::routes::browse::studio_logo(state, name).await;
+        let logo = crate::studios::logo(state, name).await;
         studios.push(json!({ "id": -id, "name": name, "logo_path": logo }));
     }
 

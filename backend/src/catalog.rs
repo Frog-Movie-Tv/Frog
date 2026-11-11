@@ -444,10 +444,10 @@ async fn ensure_anilist(state: &AppState, media_id: i64) -> AppResult<(i64, Valu
         Some(title_id) => get_title(pool, title_id).await?.kind,
         None => crate::anilist::media::kind_of(&media).to_string(),
     };
-    // A film TMDB has too opens as TMDB's, with this AniList id pointing at
-    // it, rather than as a second copy of the same film.
-    if existing.is_none() && kind == "movie" {
-        if let Some(found) = tmdb_twin(state, &id, &media).await {
+    // A film, or a series' first season, that TMDB has too opens as TMDB's,
+    // with this AniList id pointing at it, rather than as a second copy.
+    if existing.is_none() && (kind == "movie" || kind == "tv") {
+        if let Some(found) = tmdb_twin(state, &id, &media, &kind).await {
             return Ok(found);
         }
     }
@@ -461,40 +461,59 @@ async fn ensure_anilist(state: &AppState, media_id: i64) -> AppResult<(i64, Valu
     Ok((title_id, detail))
 }
 
-/// The TMDB title an AniList film already is, linked to its AniList id. A
-/// failed lookup is no answer: the film opens from AniList, as before.
-async fn tmdb_twin(state: &AppState, id: &ExternalId, media: &Value) -> Option<(i64, Value)> {
-    let tmdb_id = match crate::anilist::film_on_tmdb(state, media).await {
+/// The TMDB id an AniList film, or series' first season, already is.
+async fn on_tmdb(state: &AppState, media: &Value, kind: &str) -> AppResult<Option<i64>> {
+    match kind {
+        "movie" => crate::anilist::film_on_tmdb(state, media).await,
+        "tv" => crate::anilist::series_on_tmdb(state, media).await,
+        _ => Ok(None),
+    }
+}
+
+/// The TMDB title an AniList film or first season already is, linked to its
+/// AniList id. A failed lookup is no answer: it opens from AniList, as before.
+async fn tmdb_twin(
+    state: &AppState,
+    id: &ExternalId,
+    media: &Value,
+    kind: &str,
+) -> Option<(i64, Value)> {
+    let tmdb_id = match on_tmdb(state, media, kind).await {
         Ok(found) => found?,
         Err(e) => {
-            tracing::debug!(anilist = %id.key(), error = %e, "no TMDB lookup for an AniList film");
+            tracing::debug!(anilist = %id.key(), error = %e, "no TMDB lookup for an AniList title");
             return None;
         }
     };
-    let tmdb = ExternalId::tmdb("movie", tmdb_id);
-    let (title_id, detail) = ensure_tmdb(state, &tmdb, "movie", tmdb_id).await.ok()?;
+    let tmdb = ExternalId::tmdb(kind, tmdb_id);
+    let (title_id, detail) = ensure_tmdb(state, &tmdb, kind, tmdb_id).await.ok()?;
     let mut conn = state.pool.acquire().await.ok()?;
     if let Err(e) = link(&mut conn, title_id, id, false).await {
-        tracing::debug!(anilist = %id.key(), title_id, error = %e, "AniList film not linked");
+        tracing::debug!(anilist = %id.key(), title_id, error = %e, "AniList title not linked");
     }
     Some((title_id, detail))
 }
 
-/// The TMDB film an AniList-only film is, for merging the two. `None` when
-/// it is not certain, or the title is not an AniList-only film.
-pub async fn film_twin_of(state: &AppState, title_id: i64) -> AppResult<Option<i64>> {
+/// The TMDB title an AniList-only film or first season is, for merging the
+/// two. `None` when it is not certain, or the title is not AniList-only.
+pub async fn twin_of(state: &AppState, title_id: i64) -> AppResult<Option<i64>> {
     let Some(ExternalId::AniList(media_id)) = primary(&state.pool, title_id).await? else {
         return Ok(None);
     };
+    let kind = get_title(&state.pool, title_id).await?.kind;
     let media = crate::anilist::media::fetch(state, media_id).await?;
-    if crate::anilist::media::kind_of(&media) != "movie" {
+    if crate::anilist::media::kind_of(&media) != kind {
         return Ok(None);
     }
-    let Some(tmdb_id) = crate::anilist::film_on_tmdb(state, &media).await? else {
+    let Some(tmdb_id) = on_tmdb(state, &media, &kind).await? else {
         return Ok(None);
     };
-    let (twin, _) =
-        ensure_tmdb(state, &ExternalId::tmdb("movie", tmdb_id), "movie", tmdb_id).await?;
+    let (twin, detail) =
+        ensure_tmdb(state, &ExternalId::tmdb(&kind, tmdb_id), &kind, tmdb_id).await?;
+    if kind == "tv" && twin != title_id {
+        // Its first season's episodes, so watches can move onto them.
+        ensure_episodes(state, twin, Some(&detail)).await?;
+    }
     Ok((twin != title_id).then_some(twin))
 }
 
@@ -904,6 +923,103 @@ async fn sync_seasons(state: &AppState, title_id: i64, seasons: &[i64]) -> AppRe
         upsert_episodes(&state.pool, title_id, &episodes).await?;
     }
     Ok(())
+}
+
+/// (season, episode, name, overview, still, air date, runtime)
+type LocalEpisodeRow = (
+    i64,
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
+);
+
+/// A season of a title as stored: what a title from AniList shows, having no
+/// TMDB season to read.
+pub async fn stored_episodes(
+    pool: &SqlitePool,
+    title_id: i64,
+    season: i64,
+) -> AppResult<Vec<EpisodeInfo>> {
+    let rows: Vec<LocalEpisodeRow> = sqlx::query_as(
+        "SELECT season_number, episode_number, name, overview, still_path, air_date, runtime
+           FROM episode WHERE title_id = ? AND season_number = ?
+          ORDER BY episode_number",
+    )
+    .bind(title_id)
+    .bind(season)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| EpisodeInfo {
+            season_number: r.0,
+            episode_number: r.1,
+            tmdb_episode_id: None,
+            name: r.2,
+            overview: r.3,
+            still_path: r.4,
+            air_date: r.5,
+            runtime: r.6,
+            tmdb_vote: None,
+        })
+        .collect())
+}
+
+/// The title a merged one now points at, if it was merged.
+pub async fn merged_into(pool: &SqlitePool, title_id: i64) -> AppResult<Option<i64>> {
+    let (moved,): (Option<i64>,) = sqlx::query_as("SELECT merged_into FROM title WHERE id = ?")
+        .bind(title_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(moved)
+}
+
+/// (title id, kind, primary provider, its id, title, poster, character, actor, actor id)
+pub type CastRow = (
+    i64,
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    Option<String>,
+    String,
+    Option<String>,
+    Option<i64>,
+);
+
+/// Characters in the casts of titles this Frog holds whose folded name, or a
+/// word of it, starts with `pattern`.
+pub async fn characters_named(pool: &SqlitePool, pattern: &str) -> AppResult<Vec<CastRow>> {
+    Ok(sqlx::query_as(
+        "SELECT t.id, t.kind, x.provider, x.external_id, t.name, t.poster_path,
+                c.name, c.actor, c.actor_id
+           FROM title_character c
+           JOIN title t ON t.id = c.title_id
+           LEFT JOIN title_external x ON x.title_id = t.id AND x.is_primary = 1
+          WHERE t.merged_into IS NULL
+            AND (c.search_name LIKE ?1 || '%' OR c.search_name LIKE '% ' || ?1 || '%')
+          ORDER BY t.tmdb_vote IS NULL, c.ord, t.tmdb_vote DESC
+          LIMIT 60",
+    )
+    .bind(pattern)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// The poster of the title a provider id names, when Frog holds it.
+pub async fn poster_of(pool: &SqlitePool, id: &ExternalId) -> AppResult<Option<String>> {
+    let row: Option<(Option<String>,)> = sqlx::query_as(
+        "SELECT t.poster_path FROM title_external x JOIN title t ON t.id = x.title_id
+          WHERE x.provider = ? AND x.external_id = ?",
+    )
+    .bind(id.provider())
+    .bind(id.key())
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.and_then(|p| p.0))
 }
 
 #[cfg(test)]

@@ -943,3 +943,54 @@ export interface AiringWeek {
 	genres: string[];
 	days: AiringDay[];
 }
+
+/** One title's data moved onto another, as Settings lists it. */
+export interface TitleMerge {
+	id: number;
+	from_id: number;
+	from_name: string;
+	from_poster: string | null;
+	to_id: number;
+	to_name: string;
+	to_poster: string | null;
+	/** Why it happened, in Frog's own words: an AniList placement, a duplicate film. */
+	reason: string;
+	merged_at: string;
+	undone_at: string | null;
+}
+
+/** `/api/stats/narrow`: what a pick on Stats keeps of the days and the people. */
+export interface StatsNarrow {
+	days: number;
+	/** Films and shows. */
+	streaks?: { longest: Streak; current: Streak };
+	people?: { actors: StatsPerson[]; directors: StatsPerson[]; studios: StatsPerson[] };
+	/** Manga. */
+	authors?: StatsPerson[];
+}
+
+/** Administration → Database: one table, its rows and size on disk. */
+export interface DbTable {
+	name: string;
+	rows: number;
+	bytes: number | null;
+}
+
+export interface DbColumn {
+	name: string;
+	type: string;
+	primary_key: boolean;
+	/** Kept back by the server: a secret is only whether it is set, a size its bytes. */
+	hidden: 'secret' | 'size' | null;
+}
+
+export type DbCell = string | number | boolean | null | { bytes: number };
+
+export interface DbPage {
+	table: string;
+	columns: DbColumn[];
+	rows: DbCell[][];
+	total: number;
+	page: number;
+	per_page: number;
+}

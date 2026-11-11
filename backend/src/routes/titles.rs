@@ -1,4 +1,4 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
@@ -10,19 +10,6 @@ use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::store;
 use crate::tmdb::models::{self, EpisodeInfo, SearchItem};
-
-/// (season, episode, my rating, my notes, number of watches,
-///  latest watch time, whether that watch is undated, air moment)
-type EpisodeStateRow = (
-    i64,
-    i64,
-    Option<f64>,
-    Option<String>,
-    i64,
-    Option<String>,
-    Option<bool>,
-    Option<String>,
-);
 
 #[derive(Serialize)]
 pub struct EpisodeView {
@@ -62,13 +49,7 @@ pub async fn by_address(state: &AppState, kind: &str, id: i64) -> AppResult<i64>
     }
     let address = match address {
         ExternalId::AniList(media_id) => {
-            let mapped: Option<(String, i64)> = sqlx::query_as(
-                "SELECT tmdb_kind, tmdb_id FROM anime_map
-                  WHERE anilist_id = ? AND tmdb_kind IN ('movie', 'tv') AND tmdb_id IS NOT NULL",
-            )
-            .bind(media_id)
-            .fetch_optional(&state.pool)
-            .await?;
+            let mapped = crate::anilist::tmdb_of(&state.pool, media_id).await?;
             match mapped {
                 Some((kind, tmdb_id)) => ExternalId::tmdb(&kind, tmdb_id),
                 None => address,
@@ -147,10 +128,7 @@ async fn detail_of(state: &AppState, user_id: i64, title_id: i64) -> AppResult<J
     };
 
     // An AniList-only title TMDB has since found: the page goes there.
-    let (moved,): (Option<i64>,) = sqlx::query_as("SELECT merged_into FROM title WHERE id = ?")
-        .bind(title_id)
-        .fetch_one(&state.pool)
-        .await?;
+    let moved = catalog::merged_into(&state.pool, title_id).await?;
 
     let next_up = if kind == "tv" {
         // A show kept with no episodes listed gets them behind the page, which
@@ -200,48 +178,6 @@ async fn detail_of(state: &AppState, user_id: i64, title_id: i64) -> AppResult<J
         // Kept from AniList alone: no TMDB entry, so no cast, seasons or links.
         "anilist_only": anilist_only,
     })))
-}
-
-/// (season, episode, name, overview, still, air date, runtime)
-type LocalEpisodeRow = (
-    i64,
-    i64,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<i64>,
-);
-
-/// A season of a title from AniList, as stored.
-async fn local_episodes(
-    state: &AppState,
-    title_id: i64,
-    season: i64,
-) -> AppResult<Vec<EpisodeInfo>> {
-    let rows: Vec<LocalEpisodeRow> = sqlx::query_as(
-        "SELECT season_number, episode_number, name, overview, still_path, air_date, runtime
-           FROM episode WHERE title_id = ? AND season_number = ?
-          ORDER BY episode_number",
-    )
-    .bind(title_id)
-    .bind(season)
-    .fetch_all(&state.pool)
-    .await?;
-    Ok(rows
-        .into_iter()
-        .map(|r| EpisodeInfo {
-            season_number: r.0,
-            episode_number: r.1,
-            tmdb_episode_id: None,
-            name: r.2,
-            overview: r.3,
-            still_path: r.4,
-            air_date: r.5,
-            runtime: r.6,
-            tmdb_vote: None,
-        })
-        .collect())
 }
 
 /// How long a title page waits on TMDB to name a franchise's shows. The
@@ -311,32 +247,13 @@ pub async fn season(
             (raw, episodes)
         }
         // From AniList, or kept without a provider: its episodes are stored.
-        _ => (json!({}), local_episodes(&state, title_id, season).await?),
+        _ => (
+            json!({}),
+            catalog::stored_episodes(&state.pool, title_id, season).await?,
+        ),
     };
 
-    let states: Vec<EpisodeStateRow> = sqlx::query_as(
-        "SELECT e.season_number,
-                e.episode_number,
-                s.rating,
-                s.notes,
-                (SELECT COUNT(*) FROM watch_event w
-                  WHERE w.user_id = ?1 AND w.episode_id = e.id),
-                (SELECT w.watched_at FROM watch_event w
-                  WHERE w.user_id = ?1 AND w.episode_id = e.id
-                  ORDER BY w.watched_at DESC LIMIT 1),
-                (SELECT w.undated FROM watch_event w
-                  WHERE w.user_id = ?1 AND w.episode_id = e.id
-                  ORDER BY w.watched_at DESC LIMIT 1),
-                e.air_at
-           FROM episode e
-           LEFT JOIN episode_state s ON s.episode_id = e.id AND s.user_id = ?1
-          WHERE e.title_id = ?2 AND e.season_number = ?3",
-    )
-    .bind(auth.user_id())
-    .bind(title_id)
-    .bind(season)
-    .fetch_all(&state.pool)
-    .await?;
+    let states = store::season_states(&state.pool, auth.user_id(), title_id, season).await?;
 
     let views: Vec<EpisodeView> = episodes
         .into_iter()
@@ -635,6 +552,28 @@ pub async fn rate_season(
     .await?;
     Ok(Json(json!({
         "ratings": crate::release::rating_units(&state.pool, auth.user_id(), title_id).await?
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct MoreQuery {
+    pub page: Option<u32>,
+}
+
+/// More like a title, a page at a time, each marked when it is in the library.
+pub async fn more(
+    auth: Auth,
+    State(state): State<AppState>,
+    Path(title_id): Path<i64>,
+    Query(q): Query<MoreQuery>,
+) -> AppResult<Json<Value>> {
+    let (name, mut items, next) =
+        crate::home::more_like(&state, title_id, q.page.unwrap_or(1)).await?;
+    crate::routes::search::annotate_library(&state, auth.user_id(), &mut items).await?;
+    Ok(Json(json!({
+        "seed": { "id": title_id, "name": name },
+        "items": items,
+        "next_page": next,
     })))
 }
 

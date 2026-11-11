@@ -1,33 +1,23 @@
 //! Running the instance: who has an account, what they may do, and how the
 //! instance itself is doing. Everything here sits behind `AdminAuth`.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::admin;
 use crate::auth::{self, AdminAuth, Role};
+use crate::dbview;
 use crate::error::{AppError, AppResult};
 use crate::reset;
 use crate::state::AppState;
-
-/// (id, username, role, disabled, created_at, titles tracked, last sign-in)
-type UserRow = (i64, String, String, bool, String, i64, Option<String>);
 
 pub async fn users(
     AdminAuth(_): AdminAuth,
     State(state): State<AppState>,
 ) -> AppResult<Json<Value>> {
-    let rows: Vec<UserRow> = sqlx::query_as(
-        "SELECT u.id, u.username, u.role, u.disabled, u.created_at,
-                (SELECT COUNT(*) FROM library_entry l WHERE l.user_id = u.id),
-                u.last_sign_in_at
-           FROM app_user u
-          ORDER BY CASE u.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
-                   u.username COLLATE NOCASE",
-    )
-    .fetch_all(&state.pool)
-    .await?;
+    let rows = admin::users(&state.pool).await?;
     let users: Vec<Value> = rows
         .into_iter()
         .map(
@@ -70,14 +60,9 @@ pub async fn update_user(
             "Change your own account from Settings.".into(),
         ));
     }
-    let target: Option<(String,)> = sqlx::query_as("SELECT role FROM app_user WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?;
-    let Some((target_role,)) = target else {
+    let Some((target_role, _)) = admin::standing(&state.pool, id).await? else {
         return Err(AppError::NotFound("no such account".into()));
     };
-    let target_role = Role::from_db(&target_role);
     if target_role == Role::Owner {
         return Err(AppError::Forbidden(
             "The owner's account cannot be changed.".into(),
@@ -100,19 +85,11 @@ pub async fn update_user(
                 "Only the owner can make or remove administrators.".into(),
             ));
         }
-        sqlx::query("UPDATE app_user SET role = ? WHERE id = ?")
-            .bind(role.as_db())
-            .bind(id)
-            .execute(&state.pool)
-            .await?;
+        admin::set_role(&state.pool, id, role).await?;
     }
 
     if let Some(disabled) = patch.disabled {
-        sqlx::query("UPDATE app_user SET disabled = ? WHERE id = ?")
-            .bind(disabled)
-            .bind(id)
-            .execute(&state.pool)
-            .await?;
+        admin::set_disabled(&state.pool, id, disabled).await?;
         // Sign-in checks the flag on every request anyway; dropping the sessions
         // as well means the devices list never shows a session that cannot work.
         if disabled {
@@ -126,13 +103,11 @@ pub async fn update_user(
         reset::withdraw(&state.pool, id).await?;
     }
 
-    let (role, disabled): (String, bool) =
-        sqlx::query_as("SELECT role, disabled FROM app_user WHERE id = ?")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
+    let (role, disabled) = admin::standing(&state.pool, id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("no such account".into()))?;
     Ok(Json(
-        json!({ "id": id, "role": role, "disabled": disabled }),
+        json!({ "id": id, "role": role.as_db(), "disabled": disabled }),
     ))
 }
 
@@ -150,15 +125,9 @@ pub async fn reset_link(
             "Change your own password from Settings.".into(),
         ));
     }
-    let target: Option<(String, bool)> =
-        sqlx::query_as("SELECT role, disabled FROM app_user WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&state.pool)
-            .await?;
-    let Some((target_role, disabled)) = target else {
+    let Some((target_role, disabled)) = admin::standing(&state.pool, id).await? else {
         return Err(AppError::NotFound("no such account".into()));
     };
-    let target_role = Role::from_db(&target_role);
     if target_role == Role::Owner {
         return Err(AppError::Forbidden(
             "The owner's account cannot be changed.".into(),
@@ -197,14 +166,9 @@ pub async fn delete_user(
             "Delete your own account from Settings.".into(),
         ));
     }
-    let target: Option<(String,)> = sqlx::query_as("SELECT role FROM app_user WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?;
-    let Some((target_role,)) = target else {
+    let Some((target_role, _)) = admin::standing(&state.pool, id).await? else {
         return Err(AppError::NotFound("no such account".into()));
     };
-    let target_role = Role::from_db(&target_role);
     if target_role == Role::Owner {
         return Err(AppError::Forbidden(
             "The owner's account cannot be deleted.".into(),
@@ -217,10 +181,7 @@ pub async fn delete_user(
     }
 
     auth::destroy_sessions_for(&state.pool, id, None).await?;
-    sqlx::query("DELETE FROM app_user WHERE id = ?")
-        .bind(id)
-        .execute(&state.pool)
-        .await?;
+    admin::delete_account(&state.pool, id).await?;
     tracing::info!(
         deleted = id,
         by = me.user_id(),
@@ -235,33 +196,14 @@ pub async fn instance(
     AdminAuth(_): AdminAuth,
     State(state): State<AppState>,
 ) -> AppResult<Json<Value>> {
-    let (pages, page_size): (i64, i64) = sqlx::query_as(
-        "SELECT (SELECT page_count FROM pragma_page_count()), (SELECT page_size FROM pragma_page_size())",
-    )
-    .fetch_one(&state.pool)
-    .await?;
-    let (images,): (i64,) =
-        sqlx::query_as("SELECT COALESCE(SUM(length(bytes)), 0) FROM image_cache")
-            .fetch_one(&state.pool)
-            .await?;
-    let (accounts,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM app_user")
-        .fetch_one(&state.pool)
-        .await?;
-    // Every title this Frog has come to know, by its own id; one folded into
-    // another is the same title and counts once.
-    let (titles, films, shows, manga): (i64, i64, i64, i64) = sqlx::query_as(
-        "SELECT COUNT(*), COALESCE(SUM(kind = 'movie'), 0), COALESCE(SUM(kind = 'tv'), 0),
-                COALESCE(SUM(kind = 'manga'), 0)
-           FROM title WHERE merged_into IS NULL",
-    )
-    .fetch_one(&state.pool)
-    .await?;
+    let f = admin::figures(&state.pool).await?;
+    let (titles, films, shows, manga) = f.titles;
 
     Ok(Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
-        "database_bytes": pages * page_size,
-        "image_cache_bytes": images,
-        "accounts": accounts,
+        "database_bytes": f.database_bytes,
+        "image_cache_bytes": f.image_cache_bytes,
+        "accounts": f.accounts,
         "titles": { "all": titles, "films": films, "shows": shows, "manga": manga },
         "last_backup": last_backup(&state.config.database_url),
     })))
@@ -291,4 +233,61 @@ pub fn last_backup(database_url: &str) -> Option<Value> {
     let label = parts.next().unwrap_or("").to_string();
     let pushed = parts.next() == Some("pushed");
     Some(json!({ "at": at, "label": label, "pushed": pushed }))
+}
+
+/// Administration → Database: every table with its rows and size.
+pub async fn db_tables(
+    AdminAuth(me): AdminAuth,
+    State(state): State<AppState>,
+) -> AppResult<Json<Value>> {
+    tracing::info!(admin = me.user_id(), "database: tables listed");
+    let mut conn = dbview::reader(&state.config.database_url).await?;
+    let tables = dbview::tables(&mut conn).await?;
+    Ok(Json(json!({ "tables": tables })))
+}
+
+#[derive(Deserialize)]
+pub struct TableQuery {
+    pub page: Option<u32>,
+    pub per_page: Option<u32>,
+    pub sort: Option<String>,
+    /// asc | desc
+    pub dir: Option<String>,
+    pub q: Option<String>,
+}
+
+/// One page of a table, read only, with its secrets kept back.
+pub async fn db_table(
+    AdminAuth(me): AdminAuth,
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    Query(q): Query<TableQuery>,
+) -> AppResult<Json<Value>> {
+    let descending = match q.dir.as_deref() {
+        None | Some("asc") => false,
+        Some("desc") => true,
+        Some(_) => return Err(AppError::BadRequest("Sort up or down.".into())),
+    };
+    tracing::info!(
+        admin = me.user_id(),
+        table = %name,
+        page = q.page.unwrap_or(1),
+        searched = q.q.as_deref().is_some_and(|t| !t.trim().is_empty()),
+        "database: table read"
+    );
+    let mut conn = dbview::reader(&state.config.database_url).await?;
+    let page = dbview::page(
+        &mut conn,
+        &name,
+        dbview::Ask {
+            page: q.page.unwrap_or(1),
+            per_page: q.per_page.unwrap_or(dbview::PER_PAGE),
+            sort: q.sort,
+            descending,
+            search: q.q,
+        },
+    )
+    .await?
+    .ok_or_else(|| AppError::NotFound("No such table.".into()))?;
+    Ok(Json(json!(page)))
 }

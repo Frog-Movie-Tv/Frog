@@ -404,6 +404,23 @@ impl Tmdb {
         .await
     }
 
+    /// One page of a title's recommendations or similar titles
+    /// (`which`), for looking past what its page shows.
+    pub async fn related_page(
+        &self,
+        kind: &str,
+        id: i64,
+        which: &str,
+        page: u32,
+    ) -> AppResult<Value> {
+        self.get(
+            &format!("/{kind}/{id}/{which}"),
+            &[("page", page.to_string())],
+            Duration::hours(ttl::TV_HOURS),
+        )
+        .await
+    }
+
     pub async fn person(&self, id: i64) -> AppResult<Value> {
         self.get(
             &format!("/person/{id}"),

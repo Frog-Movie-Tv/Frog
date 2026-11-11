@@ -3,6 +3,8 @@ import { settings } from './settings.svelte';
 import type { TitleRef } from './titles';
 import type { WhenAnswer } from './when.svelte';
 import type {
+	TitleMerge,
+	StatsNarrow,
 	ActivityItem,
 	AiringDay,
 	AiringFilters,
@@ -36,6 +38,8 @@ import type {
 	SharedLibrary,
 	PersonDetail,
 	SearchItem,
+	DbTable,
+	DbPage,
 	SeasonDetail,
 	FullStats,
 	MangaStats,
@@ -261,6 +265,9 @@ export const api = {
 	changePassword: (current: string, password: string) =>
 		send<{ ok: true; signed_out: number }>('PUT', '/api/account/password', { current, password }),
 	sessions: () => get<{ sessions: DeviceSession[] }>('/api/account/sessions'),
+	/** Titles whose data was moved onto another, newest first. */
+	merges: () => get<{ merges: TitleMerge[] }>('/api/account/merges'),
+	undoMerge: (id: number) => send<{ ok: true }>('POST', `/api/account/merges/${id}/undo`),
 	endSession: (id: string) => send<{ ok: true }>('DELETE', `/api/account/sessions/${id}`),
 	endOtherSessions: () => send<{ signed_out: number }>('DELETE', '/api/account/sessions/others'),
 	setProfilePublic: (value: boolean) =>
@@ -287,6 +294,11 @@ export const api = {
 	deleteUser: (id: number) => send<{ ok: true }>('DELETE', `/api/admin/users/${id}`),
 	instance: () => get<InstanceInfo>('/api/admin/instance'),
 	server: () => get<ServerStatus>('/api/admin/server'),
+	dbTables: () => get<{ tables: DbTable[] }>('/api/admin/db/tables'),
+	dbTable: (
+		name: string,
+		ask: { page?: number; per_page?: number; sort?: string; dir?: 'asc' | 'desc'; q?: string }
+	) => get<DbPage>(`/api/admin/db/tables/${encodeURIComponent(name)}${qs(ask)}`),
 
 	anilist: () => get<AniListStatus>('/api/anilist'),
 	anilistConnect: () => send<{ url: string }>('POST', '/api/anilist/connect', {}),
@@ -350,6 +362,11 @@ export const api = {
 
 	home: () => get<HomeData>('/api/home').then(localHome),
 	because: () => get<{ rows: BecauseRow[] }>('/api/home/because'),
+	/** More like a title, a page at a time: what "View more" lists. */
+	moreLike: (titleId: number, page: number) =>
+		get<{ seed: { id: number; name: string }; items: SearchItem[]; next_page: number | null }>(
+			`/api/t/${titleId}/more${qs({ page })}`
+		),
 	activity: () => get<{ items: ActivityItem[] }>('/api/home/activity'),
 	/** Everyone's activity, all of it, a page before `before` at a time. */
 	allActivity: (before?: string | null) =>
@@ -414,6 +431,9 @@ export const api = {
 	airingDay: (filters: AiringFilters, date: string, offset: number) =>
 		get<AiringDay>(`/api/airing/day${qs({ ...filters, date, offset, tz: viewerZone() })}`),
 	fullStats: (year?: number) => get<FullStats>(`/api/stats${qs({ year })}`),
+	/** Days, streaks and people for the titles a pick on Stats keeps. */
+	statsNarrow: (half: 'watching' | 'manga', ids: number[], year?: number, unit?: string) =>
+		get<StatsNarrow>(`/api/stats/narrow${qs({ half, year, unit, ids: ids.join(',') })}`),
 	mangaStats: (year?: number) => get<MangaStats>(`/api/stats/manga${qs({ year })}`),
 
 	/** A title as a provider names it (`tv/1399`, `anilist/21`): opens it, and the answer carries Frog's id. */

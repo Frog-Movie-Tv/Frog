@@ -128,8 +128,9 @@ pub async fn rebuild_title(pool: &SqlitePool) -> anyhow::Result<()> {
 /// the pre-update snapshot: if a failed update raised it, starting the
 /// previous image would look healthy (its health check is `SELECT 1`) and
 /// break on every title, so it restores the snapshot instead. Generation 1
-/// is the catalog: `title` without provider ids.
-pub const SCHEMA_GENERATION: i64 = 1;
+/// is the catalog: `title` without provider ids. Generation 2 drops
+/// `title_airing`, which 1.4.3 still reads.
+pub const SCHEMA_GENERATION: i64 = 2;
 
 async fn mark_generation(pool: &SqlitePool) -> anyhow::Result<()> {
     let (current,): (i64,) = sqlx::query_as("PRAGMA user_version")
@@ -330,6 +331,11 @@ pub fn sqlite_path(url: &str) -> Option<String> {
         return None;
     }
     Some(rest.split('?').next().unwrap_or(rest).to_string())
+}
+
+/// Whether the database answers at all, for the health checks.
+pub async fn is_up(pool: &SqlitePool) -> bool {
+    sqlx::query("SELECT 1").fetch_one(pool).await.is_ok()
 }
 
 #[cfg(test)]

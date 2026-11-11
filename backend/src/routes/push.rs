@@ -1,7 +1,6 @@
 use axum::extract::State;
 use axum::http::{header, HeaderMap};
 use axum::Json;
-use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -13,11 +12,7 @@ use crate::state::AppState;
 /// The key a browser needs to subscribe, and how many devices already have.
 pub async fn status(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
     let vapid = Vapid::load_or_create(&state.pool).await?;
-    let (devices,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM push_subscription WHERE user_id = ?")
-            .bind(auth.user_id())
-            .fetch_one(&state.pool)
-            .await?;
+    let devices = push::devices(&state.pool, auth.user_id()).await?;
     Ok(Json(json!({
         "public_key": vapid.public_key(),
         "devices": devices,
@@ -58,22 +53,14 @@ pub async fn subscribe(
         .get(header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.chars().take(200).collect::<String>());
-    sqlx::query(
-        "INSERT INTO push_subscription (user_id, endpoint, p256dh, auth, user_agent, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (user_id, endpoint) DO UPDATE SET
-            p256dh = excluded.p256dh,
-            auth = excluded.auth,
-            user_agent = excluded.user_agent,
-            failures = 0",
+    push::subscribe(
+        &state.pool,
+        auth.user_id(),
+        &sub.endpoint,
+        &sub.keys.p256dh,
+        &sub.keys.auth,
+        agent.as_deref(),
     )
-    .bind(auth.user_id())
-    .bind(&sub.endpoint)
-    .bind(&sub.keys.p256dh)
-    .bind(&sub.keys.auth)
-    .bind(agent)
-    .bind(Utc::now().to_rfc3339())
-    .execute(&state.pool)
     .await?;
     if let Some(zone) = sub.time_zone.as_deref() {
         // A zone this server does not know keeps the one it had.
@@ -92,10 +79,6 @@ pub async fn unsubscribe(
     State(state): State<AppState>,
     Json(body): Json<Endpoint>,
 ) -> AppResult<Json<Value>> {
-    sqlx::query("DELETE FROM push_subscription WHERE user_id = ? AND endpoint = ?")
-        .bind(auth.user_id())
-        .bind(&body.endpoint)
-        .execute(&state.pool)
-        .await?;
+    push::unsubscribe(&state.pool, auth.user_id(), &body.endpoint).await?;
     Ok(Json(json!({ "ok": true })))
 }

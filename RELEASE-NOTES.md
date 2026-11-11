@@ -9,9 +9,13 @@ people working on Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Wood Frog —
+## Upcoming — Goliath —
 
 In progress.
+
+## [1.5.0] — Goliath — 2026-11-11
+
+Everything on air this week, at the minute it airs.
 
 ### Highlights
 
@@ -26,6 +30,35 @@ In progress.
   instead of guessing.
 - **Your time zone, your choice.** Settings → Watching sets the zone every
   air time, day and notification follows, or leaves it to your device.
+- **More like it.** View more on Because you watched and More like this
+  opens a full page of picks for that title, and Because you watched turns
+  to another title of yours every couple of minutes.
+
+### Improvements
+
+- Administration has a Database view: every table, read only, to search,
+  sort and page through, with passwords, keys and sign-ins kept on the
+  server.
+- Settings → Your data lists every title Frog merged into another, and any
+  of them can be taken apart again. One from AniList stays apart after the
+  next sync.
+- An anime series opened from AniList is the same title as TMDB's when TMDB
+  has its first season, so it appears once in your library, with its
+  history.
+- Picking a bar on Stats narrows the actors, directors, studios, authors,
+  days and streaks as well.
+- A Netflix import finds more episodes by name, and gives more of them the
+  day you watched them. A first part of a show, such as Money Heist Part 1,
+  lands in its first season on its own.
+- The Calendar, Stats' charts, a person's page and the import review share
+  the look of the rest of Frog.
+- Stars can give a title zero stars: tap the 0 before the first one.
+
+### Fixes
+
+- Swiping a card on the rating deck stays smooth on a phone, and the page
+  around it no longer moves.
+- On the rating deck, the stars, Undo and Skip sit clear of the cards.
 
 ## [1.4.3] — Wood Frog — 2026-11-11
 
@@ -917,6 +950,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.5.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.5.0
 [1.4.3]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.4.3
 [1.4.2]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.4.2
 [1.4.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.4.1

@@ -1,7 +1,11 @@
 <script lang="ts">
+	import { api } from '#lib/api';
 	import Icon from '#lib/components/Icon.svelte';
+	import { prettyDate } from '#lib/format';
+	import { session } from '#lib/session.svelte';
 	import { DEFAULTS, settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
+	import type { TitleMerge } from '#lib/types';
 
 	/** Your data: bringing a library in, taking copies of it out. */
 	const s = $derived(settings.current);
@@ -17,6 +21,38 @@
 			homeRowsSeen: before.homeRowsSeen
 		});
 		toasts.undoable('Settings reset', () => settings.replace(before));
+	}
+
+	/** Titles Frog folded into another, for taking back. */
+	let merges = $state<TitleMerge[]>([]);
+	let undoing = $state<number | null>(null);
+
+	$effect(() => {
+		if (!session.authenticated) return;
+		api
+			.merges()
+			.then((answer) => (merges = answer.merges))
+			.catch(() => (merges = []));
+	});
+
+	function why(reason: string): string {
+		if (reason.startsWith('anilist')) return 'Matched from AniList';
+		if (reason.includes('same film')) return 'The same film';
+		if (reason.includes('same show')) return 'The same show';
+		return 'Merged';
+	}
+
+	async function undo(merge: TitleMerge) {
+		undoing = merge.id;
+		try {
+			await api.undoMerge(merge.id);
+			merges = (await api.merges()).merges;
+			toasts.push(`${merge.from_name} is its own title again`);
+		} catch (e) {
+			toasts.error(e);
+		} finally {
+			undoing = null;
+		}
 	}
 </script>
 
@@ -65,6 +101,36 @@
 	</div>
 </section>
 
+{#if merges.length}
+	<section class="block">
+		<div class="section-head"><h2>Merged titles</h2></div>
+		<p class="faint lead">
+			When two titles turn out to be one, your history moves onto the one Frog keeps. Undo puts it
+			back as it was.
+		</p>
+		<div class="rows list-pane">
+			{#each merges as merge (merge.id)}
+				<div class="row merge">
+					<span class="label">
+						<strong
+							><a href="/t/{merge.from_id}">{merge.from_name}</a> →
+							<a href="/t/{merge.to_id}">{merge.to_name}</a></strong
+						>
+						<span class="faint">{why(merge.reason)} · {prettyDate(merge.merged_at)}</span>
+					</span>
+					{#if merge.undone_at}
+						<span class="faint undone">Undone</span>
+					{:else}
+						<button class="btn ghost small" disabled={undoing !== null} onclick={() => undo(merge)}>
+							{undoing === merge.id ? 'Undoing…' : 'Undo'}
+						</button>
+					{/if}
+				</div>
+			{/each}
+		</div>
+	</section>
+{/if}
+
 <style>
 	.reset {
 		margin-top: 14px;
@@ -100,5 +166,29 @@
 
 	.link-row:hover {
 		border-color: var(--line-strong);
+	}
+
+	.lead {
+		margin: -6px 0 14px;
+		font-size: 0.86rem;
+	}
+
+	.merge {
+		cursor: default;
+	}
+
+	.merge a:hover {
+		text-decoration: underline;
+	}
+
+	.btn.small {
+		flex: none;
+		padding: 7px 13px;
+		font-size: 0.8rem;
+	}
+
+	.undone {
+		flex: none;
+		font-size: 0.8rem;
 	}
 </style>

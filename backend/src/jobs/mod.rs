@@ -62,7 +62,7 @@ pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
         let twins = tokio::spawn({
             let state = state.clone();
             async move {
-                merge_film_twins(&state).await;
+                merge_twins(&state).await;
             }
         });
         let _twins_guard = AbortOnDrop(twins);
@@ -311,27 +311,30 @@ async fn backfill_credits(state: AppState) {
     }
 }
 
-/// AniList-only films that TMDB has too, from before opening one checked:
-/// each account's history moves to TMDB's title and the copy points there,
-/// so nobody sees the same film twice. Once a start; a film someone's
-/// AniList list keeps is left to the sync, which places it by the same rule
-/// and would otherwise bring the copy back.
-pub async fn merge_film_twins(state: &AppState) -> usize {
+/// AniList-only films, and series' first seasons, that TMDB has too, from
+/// before opening one checked: each account's history moves to TMDB's title
+/// and the copy points there, so nobody sees the same title twice. Once a
+/// start; one someone's AniList list keeps is left to the sync, which places
+/// it by the same rule and would otherwise bring the copy back.
+pub async fn merge_twins(state: &AppState) -> usize {
     if !state.tmdb.is_configured() {
         return 0;
     }
-    let copies: Vec<(i64, String)> = sqlx::query_as(
-        "SELECT t.id, x.external_id
+    let copies: Vec<(i64, String, String)> = sqlx::query_as(
+        "SELECT t.id, x.external_id, t.kind
            FROM title t
            JOIN title_external x ON x.title_id = t.id AND x.provider = 'anilist' AND x.is_primary = 1
-          WHERE t.kind = 'movie' AND t.merged_into IS NULL",
+                              WHERE t.kind IN ('movie', 'tv') AND t.merged_into IS NULL
+            -- Somebody undid this merge: it stays apart.
+            AND NOT EXISTS (SELECT 1 FROM title_merge m
+                             WHERE m.from_title = t.id AND m.undone_at IS NOT NULL)",
     )
     .fetch_all(&state.pool)
     .await
     .unwrap_or_default();
 
     let mut merged = 0;
-    for (from, media_id) in copies {
+    for (from, media_id, kind) in copies {
         let listed: Option<(i64,)> =
             sqlx::query_as("SELECT user_id FROM anilist_entry WHERE media_id = ? LIMIT 1")
                 .bind(media_id.parse::<i64>().unwrap_or(0))
@@ -341,21 +344,34 @@ pub async fn merge_film_twins(state: &AppState) -> usize {
         if listed.is_some() {
             continue;
         }
-        let to = match catalog::film_twin_of(state, from).await {
+        let to = match catalog::twin_of(state, from).await {
             Ok(Some(to)) => to,
             Ok(None) => continue,
             Err(e) => {
-                tracing::debug!(title_id = from, error = %e, "film duplicates paused");
+                tracing::debug!(title_id = from, error = %e, "duplicates paused");
                 break;
             }
         };
-        match crate::store::merge_copy(&state.pool, from, to, "the same film on TMDB").await {
+        let reason = if kind == "tv" {
+            // Its episodes' watches go to the same episodes there first.
+            if let Err(e) = crate::store::move_first_season_watches(&state.pool, from, to).await {
+                tracing::warn!(from, to, error = %e, "could not move a duplicate show's watches");
+                continue;
+            }
+            "the same show on TMDB"
+        } else {
+            "the same film on TMDB"
+        };
+        match crate::store::merge_copy(&state.pool, from, to, reason).await {
             Ok(()) => merged += 1,
-            Err(e) => tracing::warn!(from, to, error = %e, "could not merge a duplicate film"),
+            Err(e) => tracing::warn!(from, to, error = %e, "could not merge a duplicate title"),
         }
     }
     if merged > 0 {
-        tracing::info!(merged, "merged AniList films into the TMDB films they are");
+        tracing::info!(
+            merged,
+            "merged AniList titles into the TMDB titles they are"
+        );
     }
     merged
 }

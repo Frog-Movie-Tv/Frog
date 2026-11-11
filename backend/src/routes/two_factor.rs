@@ -1,55 +1,19 @@
-//! Turning two-factor sign-in on and off. The login check itself lives in
-//! `routes::auth`.
+//! Turning two-factor sign-in on and off. The code check at sign-in is
+//! `two_factor::second_factor_ok`.
 
 use axum::extract::State;
 use axum::Json;
-use chrono::Utc;
-use rand::Rng;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
-use crate::auth::{verify_password, Auth};
+use crate::auth::Auth;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::totp;
-
-const RECOVERY_CODES: usize = 10;
-
-/// Recovery codes are compared without case, spaces or dashes, so they can
-/// be typed however they were written down.
-pub fn hash_recovery(code: &str) -> String {
-    let clean: String = code
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .map(|c| c.to_ascii_lowercase())
-        .collect();
-    hex::encode(Sha256::digest(clean.as_bytes()))
-}
-
-fn new_recovery_code() -> String {
-    // No 0/o or 1/l, which are easy to misread on paper.
-    const CHARS: &[u8] = b"abcdefghijkmnpqrstuvwxyz23456789";
-    let mut rng = rand::rngs::OsRng;
-    let mut pick = |n: usize| -> String {
-        (0..n)
-            .map(|_| CHARS[rng.gen_range(0..CHARS.len())] as char)
-            .collect()
-    };
-    format!("{}-{}", pick(5), pick(5))
-}
+use crate::two_factor;
 
 pub async fn status(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
-    let (enabled,): (bool,) =
-        sqlx::query_as("SELECT totp_secret IS NOT NULL FROM app_user WHERE id = ?")
-            .bind(auth.user_id())
-            .fetch_one(&state.pool)
-            .await?;
-    let (left,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM recovery_code WHERE user_id = ? AND used_at IS NULL")
-            .bind(auth.user_id())
-            .fetch_one(&state.pool)
-            .await?;
+    let (enabled, left) = two_factor::status(&state.pool, auth.user_id()).await?;
     Ok(Json(
         json!({ "enabled": enabled, "recovery_codes_left": left }),
     ))
@@ -57,23 +21,7 @@ pub async fn status(auth: Auth, State(state): State<AppState>) -> AppResult<Json
 
 /// A new secret to scan. It only takes effect once a code from it is confirmed.
 pub async fn start(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
-    let (username, enabled): (String, bool) =
-        sqlx::query_as("SELECT username, totp_secret IS NOT NULL FROM app_user WHERE id = ?")
-            .bind(auth.user_id())
-            .fetch_one(&state.pool)
-            .await?;
-    if enabled {
-        return Err(AppError::Conflict(
-            "Two-factor sign-in is already on.".into(),
-        ));
-    }
-
-    let secret = totp::generate_secret();
-    sqlx::query("UPDATE app_user SET totp_pending = ? WHERE id = ?")
-        .bind(&secret)
-        .bind(auth.user_id())
-        .execute(&state.pool)
-        .await?;
+    let (username, secret) = two_factor::begin(&state.pool, auth.user_id()).await?;
 
     let uri = totp::provisioning_uri(&secret, &username);
     let qr = qrcode::QrCode::new(uri.as_bytes())
@@ -106,44 +54,7 @@ pub async fn confirm(
     State(state): State<AppState>,
     Json(body): Json<ConfirmBody>,
 ) -> AppResult<Json<Value>> {
-    let (pending,): (Option<String>,) =
-        sqlx::query_as("SELECT totp_pending FROM app_user WHERE id = ?")
-            .bind(auth.user_id())
-            .fetch_one(&state.pool)
-            .await?;
-    let Some(secret) = pending else {
-        return Err(AppError::BadRequest("Start setup again.".into()));
-    };
-    let Some(step) = totp::verify(&secret, &body.code, Utc::now().timestamp()) else {
-        return Err(AppError::BadRequest(
-            "That code didn't work. Check the time on your phone and try the next one.".into(),
-        ));
-    };
-
-    let codes: Vec<String> = (0..RECOVERY_CODES).map(|_| new_recovery_code()).collect();
-
-    let mut tx = state.pool.begin().await?;
-    sqlx::query(
-        "UPDATE app_user SET totp_secret = totp_pending, totp_pending = NULL, totp_last_step = ?
-          WHERE id = ?",
-    )
-    .bind(step)
-    .bind(auth.user_id())
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query("DELETE FROM recovery_code WHERE user_id = ?")
-        .bind(auth.user_id())
-        .execute(&mut *tx)
-        .await?;
-    for code in &codes {
-        sqlx::query("INSERT INTO recovery_code (user_id, code_hash) VALUES (?, ?)")
-            .bind(auth.user_id())
-            .bind(hash_recovery(code))
-            .execute(&mut *tx)
-            .await?;
-    }
-    tx.commit().await?;
-
+    let codes = two_factor::confirm(&state.pool, auth.user_id(), &body.code).await?;
     Ok(Json(json!({ "recovery_codes": codes })))
 }
 
@@ -152,37 +63,13 @@ pub struct PasswordBody {
     pub password: String,
 }
 
-async fn check_password(state: &AppState, user_id: i64, password: &str) -> AppResult<()> {
-    let (hash,): (String,) = sqlx::query_as("SELECT password_hash FROM app_user WHERE id = ?")
-        .bind(user_id)
-        .fetch_one(&state.pool)
-        .await?;
-    if verify_password(password, &hash) {
-        Ok(())
-    } else {
-        Err(AppError::BadRequest("That password is not right.".into()))
-    }
-}
-
 pub async fn disable(
     auth: Auth,
     State(state): State<AppState>,
     Json(body): Json<PasswordBody>,
 ) -> AppResult<Json<Value>> {
-    check_password(&state, auth.user_id(), &body.password).await?;
-    let mut tx = state.pool.begin().await?;
-    sqlx::query(
-        "UPDATE app_user SET totp_secret = NULL, totp_pending = NULL, totp_last_step = 0
-          WHERE id = ?",
-    )
-    .bind(auth.user_id())
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query("DELETE FROM recovery_code WHERE user_id = ?")
-        .bind(auth.user_id())
-        .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
+    crate::auth::check_password(&state.pool, auth.user_id(), &body.password).await?;
+    two_factor::disable(&state.pool, auth.user_id()).await?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -192,30 +79,7 @@ pub async fn new_recovery_codes(
     State(state): State<AppState>,
     Json(body): Json<PasswordBody>,
 ) -> AppResult<Json<Value>> {
-    check_password(&state, auth.user_id(), &body.password).await?;
-    let (enabled,): (bool,) =
-        sqlx::query_as("SELECT totp_secret IS NOT NULL FROM app_user WHERE id = ?")
-            .bind(auth.user_id())
-            .fetch_one(&state.pool)
-            .await?;
-    if !enabled {
-        return Err(AppError::BadRequest(
-            "Turn on two-factor sign-in first.".into(),
-        ));
-    }
-    let codes: Vec<String> = (0..RECOVERY_CODES).map(|_| new_recovery_code()).collect();
-    let mut tx = state.pool.begin().await?;
-    sqlx::query("DELETE FROM recovery_code WHERE user_id = ?")
-        .bind(auth.user_id())
-        .execute(&mut *tx)
-        .await?;
-    for code in &codes {
-        sqlx::query("INSERT INTO recovery_code (user_id, code_hash) VALUES (?, ?)")
-            .bind(auth.user_id())
-            .bind(hash_recovery(code))
-            .execute(&mut *tx)
-            .await?;
-    }
-    tx.commit().await?;
+    crate::auth::check_password(&state.pool, auth.user_id(), &body.password).await?;
+    let codes = two_factor::new_codes(&state.pool, auth.user_id()).await?;
     Ok(Json(json!({ "recovery_codes": codes })))
 }

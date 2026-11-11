@@ -6,10 +6,10 @@ use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use axum::Json;
 use axum_extra::extract::CookieJar;
-use chrono::Utc;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::account::{self, ProfileField};
 use crate::auth::{self, Auth, Role};
 use crate::error::{AppError, AppResult};
 use crate::reset;
@@ -20,39 +20,9 @@ use crate::store;
 /// It cannot be turned back into a token, so showing it gives nothing away.
 const SESSION_ID_LEN: usize = 16;
 
-/// (username, role, created_at, profile_public, has two-factor,
-///  display name, bio, banner backdrop, pins)
-type AccountRow = (
-    String,
-    String,
-    String,
-    bool,
-    bool,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    String,
-);
-
 pub async fn get(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
-    let row: AccountRow = sqlx::query_as(
-        "SELECT username, role, created_at, profile_public, totp_secret IS NOT NULL,
-                display_name, bio, banner_backdrop, pins_json
-           FROM app_user WHERE id = ?",
-    )
-    .bind(auth.user_id())
-    .fetch_one(&state.pool)
-    .await?;
-    let images: Vec<(String,)> = sqlx::query_as("SELECT kind FROM user_image WHERE user_id = ?")
-        .bind(auth.user_id())
-        .fetch_all(&state.pool)
-        .await?;
-    let has = |kind: &str| images.iter().any(|(k,)| k == kind);
-    let (banner_position,): (Option<String>,) =
-        sqlx::query_as("SELECT banner_position FROM app_user WHERE id = ?")
-            .bind(auth.user_id())
-            .fetch_one(&state.pool)
-            .await?;
+    let (row, images, banner_position) = account::details(&state.pool, auth.user_id()).await?;
+    let has = |kind: &str| images.iter().any(|k| k == kind);
     Ok(Json(json!({
         "id": auth.user_id(),
         "username": row.0,
@@ -70,18 +40,6 @@ pub async fn get(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Va
     })))
 }
 
-async fn check_password(state: &AppState, user_id: i64, password: &str) -> AppResult<()> {
-    let (hash,): (String,) = sqlx::query_as("SELECT password_hash FROM app_user WHERE id = ?")
-        .bind(user_id)
-        .fetch_one(&state.pool)
-        .await?;
-    if auth::verify_password(password, &hash) {
-        Ok(())
-    } else {
-        Err(AppError::BadRequest("That password is not right.".into()))
-    }
-}
-
 #[derive(Deserialize)]
 pub struct PasswordBody {
     pub current: String,
@@ -95,17 +53,18 @@ pub async fn change_password(
     State(state): State<AppState>,
     Json(body): Json<PasswordBody>,
 ) -> AppResult<Json<Value>> {
-    check_password(&state, auth.user_id(), &body.current).await?;
+    auth::check_password(&state.pool, auth.user_id(), &body.current).await?;
     if !auth::password_long_enough(&body.password) {
         return Err(AppError::BadRequest(
             "A new password needs at least 8 characters.".into(),
         ));
     }
-    sqlx::query("UPDATE app_user SET password_hash = ? WHERE id = ?")
-        .bind(auth::hash_password(&body.password)?)
-        .bind(auth.user_id())
-        .execute(&state.pool)
-        .await?;
+    account::set_password_hash(
+        &state.pool,
+        auth.user_id(),
+        &auth::hash_password(&body.password)?,
+    )
+    .await?;
     let signed_out =
         auth::destroy_sessions_for(&state.pool, auth.user_id(), Some(&auth.token)).await?;
     reset::withdraw(&state.pool, auth.user_id()).await?;
@@ -126,35 +85,20 @@ pub async fn change_username(
     State(state): State<AppState>,
     Json(body): Json<UsernameBody>,
 ) -> AppResult<Json<Value>> {
-    check_password(&state, auth.user_id(), &body.password).await?;
+    auth::check_password(&state.pool, auth.user_id(), &body.password).await?;
     auth::check_username(&body.username)?;
     let name = body.username.trim();
     let _one_at_a_time = state.names.lock().await;
     if auth::username_taken(&state.pool, name, Some(auth.user_id())).await? {
         return Err(AppError::Conflict("that username is taken".into()));
     }
-    sqlx::query("UPDATE app_user SET username = ? WHERE id = ?")
-        .bind(name)
-        .bind(auth.user_id())
-        .execute(&state.pool)
-        .await?;
+    account::set_username(&state.pool, auth.user_id(), name).await?;
     Ok(Json(json!({ "username": name })))
 }
 
-/// (token hash, created_at, expires_at, user agent)
-type SessionRow = (String, String, String, Option<String>);
-
 pub async fn sessions(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
     let current = auth::token_fingerprint(&auth.token);
-    let rows: Vec<SessionRow> = sqlx::query_as(
-        "SELECT token_hash, created_at, expires_at, user_agent
-           FROM session WHERE user_id = ? AND expires_at > ?
-          ORDER BY created_at DESC",
-    )
-    .bind(auth.user_id())
-    .bind(chrono::Utc::now().to_rfc3339())
-    .fetch_all(&state.pool)
-    .await?;
+    let rows = account::sessions(&state.pool, auth.user_id()).await?;
     let sessions: Vec<Value> = rows
         .into_iter()
         .map(|(hash, created_at, expires_at, agent)| {
@@ -212,14 +156,7 @@ pub async fn end_session(
     if id.len() != SESSION_ID_LEN || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(AppError::NotFound("no such session".into()));
     }
-    let gone =
-        sqlx::query("DELETE FROM session WHERE user_id = ? AND substr(token_hash, 1, ?) = ?")
-            .bind(auth.user_id())
-            .bind(SESSION_ID_LEN as i64)
-            .bind(&id)
-            .execute(&state.pool)
-            .await?
-            .rows_affected();
+    let gone = account::end_session(&state.pool, auth.user_id(), &id).await?;
     if gone == 0 {
         return Err(AppError::NotFound("no such session".into()));
     }
@@ -288,25 +225,15 @@ pub async fn set_profile(
     let pool = &state.pool;
     let me = auth.user_id();
     if let Some(public) = body.public {
-        sqlx::query("UPDATE app_user SET profile_public = ? WHERE id = ?")
-            .bind(public)
-            .bind(me)
-            .execute(pool)
-            .await?;
+        account::set_profile_field(pool, me, ProfileField::Public(public)).await?;
     }
     if let Some(name) = &body.display_name {
-        sqlx::query("UPDATE app_user SET display_name = ? WHERE id = ?")
-            .bind(text(name, NAME_MAX, "your name")?)
-            .bind(me)
-            .execute(pool)
-            .await?;
+        let name = text(name, NAME_MAX, "your name")?;
+        account::set_profile_field(pool, me, ProfileField::DisplayName(name.as_deref())).await?;
     }
     if let Some(bio) = &body.bio {
-        sqlx::query("UPDATE app_user SET bio = ? WHERE id = ?")
-            .bind(text(bio, BIO_MAX, "your about text")?)
-            .bind(me)
-            .execute(pool)
-            .await?;
+        let bio = text(bio, BIO_MAX, "your about text")?;
+        account::set_profile_field(pool, me, ProfileField::Bio(bio.as_deref())).await?;
     }
     if let Some(position) = &body.banner_position {
         let position = position.trim();
@@ -315,11 +242,8 @@ pub async fn set_profile(
                 "That banner position cannot be used.".into(),
             ));
         }
-        sqlx::query("UPDATE app_user SET banner_position = ? WHERE id = ?")
-            .bind((!position.is_empty()).then_some(position))
-            .bind(me)
-            .execute(pool)
-            .await?;
+        let position = (!position.is_empty()).then_some(position);
+        account::set_profile_field(pool, me, ProfileField::BannerPosition(position)).await?;
     }
     if let Some(path) = &body.banner_backdrop {
         // Only a TMDB image path: it is drawn through Frog's own image proxy.
@@ -333,19 +257,7 @@ pub async fn set_profile(
         if !valid {
             return Err(AppError::BadRequest("That banner cannot be used.".into()));
         }
-        sqlx::query("UPDATE app_user SET banner_backdrop = ? WHERE id = ?")
-            .bind((!path.is_empty()).then_some(path))
-            .bind(me)
-            .execute(pool)
-            .await?;
-        // One banner at a time: a backdrop chosen replaces a picture uploaded,
-        // which would otherwise go on being drawn over it.
-        if !path.is_empty() {
-            sqlx::query("DELETE FROM user_image WHERE user_id = ? AND kind = 'banner'")
-                .bind(me)
-                .execute(pool)
-                .await?;
-        }
+        account::set_banner_backdrop(pool, me, (!path.is_empty()).then_some(path)).await?;
     }
     if let Some(pins) = &body.pins {
         if pins.len() > PINS_MAX {
@@ -360,11 +272,8 @@ pub async fn set_profile(
                 ));
             }
         }
-        sqlx::query("UPDATE app_user SET pins_json = ? WHERE id = ?")
-            .bind(serde_json::to_string(pins)?)
-            .bind(me)
-            .execute(pool)
-            .await?;
+        let pins = serde_json::to_string(pins)?;
+        account::set_profile_field(pool, me, ProfileField::Pins(&pins)).await?;
     }
     get(auth, State(state)).await
 }
@@ -408,25 +317,7 @@ pub async fn set_image(
             "Use a JPEG, PNG, WebP or GIF picture.".into(),
         ));
     };
-    sqlx::query(
-        "INSERT INTO user_image (user_id, kind, mime, bytes, updated_at) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (user_id, kind) DO UPDATE SET
-            mime = excluded.mime, bytes = excluded.bytes, updated_at = excluded.updated_at",
-    )
-    .bind(auth.user_id())
-    .bind(&kind)
-    .bind(mime)
-    .bind(body.to_vec())
-    .bind(Utc::now().to_rfc3339())
-    .execute(&state.pool)
-    .await?;
-    // And the other way round: a banner uploaded replaces a backdrop chosen.
-    if kind == "banner" {
-        sqlx::query("UPDATE app_user SET banner_backdrop = NULL WHERE id = ?")
-            .bind(auth.user_id())
-            .execute(&state.pool)
-            .await?;
-    }
+    account::put_image(&state.pool, auth.user_id(), &kind, mime, body.to_vec()).await?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -435,11 +326,7 @@ pub async fn remove_image(
     State(state): State<AppState>,
     Path(kind): Path<String>,
 ) -> AppResult<Json<Value>> {
-    sqlx::query("DELETE FROM user_image WHERE user_id = ? AND kind = ?")
-        .bind(auth.user_id())
-        .bind(&kind)
-        .execute(&state.pool)
-        .await?;
+    account::remove_image(&state.pool, auth.user_id(), &kind).await?;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -462,11 +349,8 @@ pub async fn delete(
             "The owner's account cannot be deleted.".into(),
         ));
     }
-    check_password(&state, auth.user_id(), &body.password).await?;
-    sqlx::query("DELETE FROM app_user WHERE id = ?")
-        .bind(auth.user_id())
-        .execute(&state.pool)
-        .await?;
+    auth::check_password(&state.pool, auth.user_id(), &body.password).await?;
+    crate::admin::delete_account(&state.pool, auth.user_id()).await?;
     let jar = jar.add(auth::clear_cookie(state.config.secure_cookies));
     Ok((jar, Json(json!({ "ok": true }))))
 }
@@ -497,7 +381,7 @@ pub async fn clear_library(
             "Type {CLEAR_PHRASE} to confirm."
         )));
     }
-    check_password(&state, auth.user_id(), &body.password).await?;
+    auth::check_password(&state.pool, auth.user_id(), &body.password).await?;
 
     let gone = store::empty_library(&state.pool, auth.user_id()).await?;
     tracing::info!(
@@ -512,6 +396,23 @@ pub async fn clear_library(
         "watches": gone.watches,
         "shelves": gone.shelves,
     })))
+}
+
+/// This account's merges between titles, newest first, for Settings.
+pub async fn merges(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
+    Ok(Json(
+        json!({ "merges": store::merges(&state.pool, auth.user_id()).await? }),
+    ))
+}
+
+/// Undo one merge: this account's data goes back on both titles.
+pub async fn undo_merge(
+    auth: Auth,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<Value>> {
+    crate::anilist::undo_merge(&state, auth.user_id(), id).await?;
+    Ok(Json(json!({ "ok": true })))
 }
 
 #[cfg(test)]

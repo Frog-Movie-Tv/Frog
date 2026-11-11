@@ -332,6 +332,54 @@ pub async fn broadcast(
     Ok(out)
 }
 
+/// How many devices an account receives notifications on.
+pub async fn devices(pool: &SqlitePool, user_id: i64) -> AppResult<i64> {
+    let (devices,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM push_subscription WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_one(pool)
+            .await?;
+    Ok(devices)
+}
+
+/// Keep a browser's subscription, or bring one it had up to date.
+pub async fn subscribe(
+    pool: &SqlitePool,
+    user_id: i64,
+    endpoint: &str,
+    p256dh: &str,
+    auth: &str,
+    agent: Option<&str>,
+) -> AppResult<()> {
+    sqlx::query(
+        "INSERT INTO push_subscription (user_id, endpoint, p256dh, auth, user_agent, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (user_id, endpoint) DO UPDATE SET
+            p256dh = excluded.p256dh,
+            auth = excluded.auth,
+            user_agent = excluded.user_agent,
+            failures = 0",
+    )
+    .bind(user_id)
+    .bind(endpoint)
+    .bind(p256dh)
+    .bind(auth)
+    .bind(agent)
+    .bind(chrono::Utc::now().to_rfc3339())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn unsubscribe(pool: &SqlitePool, user_id: i64, endpoint: &str) -> AppResult<()> {
+    sqlx::query("DELETE FROM push_subscription WHERE user_id = ? AND endpoint = ?")
+        .bind(user_id)
+        .bind(endpoint)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -6342,3 +6342,400 @@ async fn the_airing_week_says_when_it_is_not_ready() {
     let (status, _) = h.get("/api/airing/day?date=nope", Some(&cookie)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+/// A merge can be undone from the app: both titles hold what they held
+/// before, the copy is its own again, and an AniList entry stays apart.
+#[tokio::test]
+async fn a_merge_is_undone_and_its_anilist_entry_stays_apart() {
+    let h = Harness::new().await;
+    an_owner(&h).await;
+    let pool = &h.state.pool;
+    sqlx::query(
+        "INSERT INTO title_seed (kind, tmdb_id, name) VALUES
+            ('movie', -501, 'The Copy'), ('movie', 77, 'The Film')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    let copy = h.tid("movie", -501).await;
+    let film = h.tid("movie", 77).await;
+    for sql in [
+        "INSERT INTO library_entry (user_id, title_id, status, rating, notes, added_at, updated_at)
+         VALUES (1, ?1, 'completed', 80, 'loved it', '2026-01-01', '2026-01-01'),
+                (1, ?2, 'planned', NULL, NULL, '2026-02-01', '2026-02-01')",
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, source)
+         VALUES (1, ?1, NULL, '2026-01-02T20:00:00Z', 'manual')",
+        "INSERT INTO shelf (id, user_id, name, kind, position, created_at)
+         VALUES (1, 1, 'Mine', 'manual', 0, 'x')",
+        "INSERT INTO shelf_item (shelf_id, title_id, position) VALUES (1, ?1, 3)",
+        "INSERT INTO anilist_entry (user_id, media_id, name, state, title_id, updated_at)
+         VALUES (1, 501, 'The Copy', 'placed', ?2, 'x')",
+    ] {
+        sqlx::query(sql)
+            .bind(copy)
+            .bind(film)
+            .execute(pool)
+            .await
+            .unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
+
+    assert!(
+        frog::store::move_title_data(pool, 1, copy, film, "anilist: placed on TMDB")
+            .await
+            .unwrap()
+    );
+    let merges = frog::store::merges(pool, 1).await.unwrap();
+    assert_eq!(merges.len(), 1);
+    assert_eq!(
+        (merges[0].from_name.as_str(), merges[0].to_name.as_str()),
+        ("The Copy", "The Film")
+    );
+    let id = merges[0].id;
+
+    // Somebody else cannot undo it.
+    sqlx::query(
+        "INSERT INTO app_user (id, username, password_hash, role, created_at)
+         VALUES (2, 'other', 'x', 'user', 'x')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    assert!(matches!(
+        frog::anilist::undo_merge(&h.state, 2, id).await,
+        Err(frog::error::AppError::NotFound(_))
+    ));
+
+    frog::anilist::undo_merge(&h.state, 1, id).await.unwrap();
+
+    let entry = |title: i64| async move {
+        sqlx::query_as::<_, (String, Option<f64>, Option<String>)>(
+            "SELECT status, rating, notes FROM library_entry WHERE user_id = 1 AND title_id = ?",
+        )
+        .bind(title)
+        .fetch_optional(pool)
+        .await
+        .unwrap()
+    };
+    assert_eq!(
+        entry(copy).await,
+        Some(("completed".into(), Some(80.0), Some("loved it".into())))
+    );
+    assert_eq!(entry(film).await, Some(("planned".into(), None, None)));
+    let (watches,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE user_id = 1 AND title_id = ?")
+            .bind(copy)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(watches, 1);
+    let shelved: Vec<(i64, i64)> =
+        sqlx::query_as("SELECT title_id, position FROM shelf_item WHERE shelf_id = 1")
+            .fetch_all(pool)
+            .await
+            .unwrap();
+    assert_eq!(shelved, [(copy, 3)]);
+    let (merged_into,): (Option<i64>,) =
+        sqlx::query_as("SELECT merged_into FROM title WHERE id = ?")
+            .bind(copy)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(merged_into, None);
+    let (kept, kept_on): (bool, Option<i64>) = sqlx::query_as(
+        "SELECT kept_apart, title_id FROM anilist_entry WHERE user_id = 1 AND media_id = 501",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert!(kept);
+    assert_eq!(kept_on, Some(copy));
+
+    // Once is enough.
+    assert!(matches!(
+        frog::anilist::undo_merge(&h.state, 1, id).await,
+        Err(frog::error::AppError::Conflict(_))
+    ));
+    assert!(frog::store::merges(pool, 1).await.unwrap()[0]
+        .undone_at
+        .is_some());
+}
+
+/// A series copy's watches move onto the same episodes of the TMDB show it
+/// is the first season of; one the show does not list stays behind.
+#[tokio::test]
+async fn a_series_copy_hands_its_watches_to_the_shows_first_season() {
+    let h = Harness::new().await;
+    an_owner(&h).await;
+    let pool = &h.state.pool;
+    sqlx::query(
+        "INSERT INTO title_seed (kind, tmdb_id, name) VALUES ('tv', -97940, 'Copy'), ('tv', 73223, 'Show')",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    let (copy, show) = (h.tid("tv", -97940).await, h.tid("tv", 73223).await);
+    for sql in [
+        "INSERT INTO episode (title_id, season_number, episode_number) VALUES
+            (?1, 1, 1), (?1, 1, 2), (?1, 1, 3), (?2, 1, 1), (?2, 1, 2)",
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, source)
+         SELECT 1, ?1, id, '2026-01-0' || episode_number, 'manual' FROM episode WHERE title_id = ?1",
+    ] {
+        sqlx::query(sql).bind(copy).bind(show).execute(pool).await.unwrap();
+    }
+    let moved = frog::store::move_first_season_watches(pool, copy, show)
+        .await
+        .unwrap();
+    assert_eq!(moved, 2);
+    let on_show: Vec<(i64,)> = sqlx::query_as(
+        "SELECT e.episode_number FROM watch_event w JOIN episode e ON e.id = w.episode_id
+          WHERE w.title_id = ? AND e.title_id = w.title_id ORDER BY 1",
+    )
+    .bind(show)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert_eq!(on_show, [(1,), (2,)]);
+    let (left,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE title_id = ?")
+        .bind(copy)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 1);
+}
+
+/// Under a pick, Stats' days, streaks and people count only the titles kept.
+#[tokio::test]
+async fn stats_narrow_days_streaks_and_people_to_a_pick() {
+    let h = Harness::new().await;
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.expect("setup signs in");
+    let pool = &h.state.pool;
+    sqlx::query("INSERT INTO title_seed (kind, tmdb_id, name, runtime) VALUES ('movie', 1, 'One', 100), ('movie', 2, 'Two', 90)")
+        .execute(pool)
+        .await
+        .unwrap();
+    let (one, two) = (h.tid("movie", 1).await, h.tid("movie", 2).await);
+    for sql in [
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, ?1, 'completed', 'x', 'x'), (1, ?2, 'completed', 'x', 'x')",
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, source) VALUES
+            (1, ?1, NULL, '2026-03-01T20:00:00Z', 'manual'),
+            (1, ?1, NULL, '2026-03-02T20:00:00Z', 'manual'),
+            (1, ?2, NULL, '2026-04-10T20:00:00Z', 'manual')",
+        "INSERT INTO title_person (title_id, tmdb_id, name, role, ord) VALUES
+            (?1, 500, 'Lead One', 'cast', 0), (?2, 600, 'Lead Two', 'cast', 0)",
+    ] {
+        sqlx::query(sql)
+            .bind(one)
+            .bind(two)
+            .execute(pool)
+            .await
+            .unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
+
+    let (status, all) = h.get("/api/stats", Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{all}");
+    assert_eq!(all["totals"]["days"], json!(3));
+
+    let (status, picked) = h
+        .get(&format!("/api/stats/narrow?ids={one}"), Some(&cookie))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{picked}");
+    assert_eq!(picked["days"], json!(2));
+    assert_eq!(picked["streaks"]["longest"]["days"], json!(2));
+    let actors: Vec<&str> = picked["people"]["actors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|a| a["name"].as_str())
+        .collect();
+    assert_eq!(actors, ["Lead One"]);
+
+    // A month picked as well: only what was watched in it.
+    let (_, april) = h
+        .get(
+            &format!("/api/stats/narrow?ids={one},{two}&unit=2026-04"),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(april["days"], json!(1));
+
+    for bad in ["ids=1;DROP", "ids=1&unit=2026-4x", "ids=1&unit=x"] {
+        let (status, _) = h
+            .get(&format!("/api/stats/narrow?{bad}"), Some(&cookie))
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+}
+
+/// Administration → Database: administrators only, secrets kept back, names
+/// checked against the schema, and nothing it answers can write.
+#[tokio::test]
+async fn the_database_view_is_read_only_and_keeps_secrets_back() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    sqlx::query(
+        "INSERT INTO tmdb_cache (cache_key, body, fetched_at, expires_at)
+         VALUES ('/movie/1', '{\"title\":\"a cached answer\"}', '2026-11-11', '2099-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let (code, _) = h.get("/api/admin/db/tables", Some(&guest)).await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    let (code, _) = h.get("/api/admin/db/tables/app_user", Some(&guest)).await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    let (code, _) = h.get("/api/admin/db/tables", None).await;
+    assert_eq!(code, StatusCode::UNAUTHORIZED);
+
+    let (code, body) = h.get("/api/admin/db/tables", Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK);
+    let users = body["tables"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "app_user")
+        .expect("app_user is listed");
+    assert_eq!(users["rows"], json!(2));
+    assert!(
+        !body.to_string().contains("sqlite_sequence"),
+        "SQLite's own tables stay out"
+    );
+
+    // Secrets go out as whether they are set, never as themselves.
+    let (code, body) = h.get("/api/admin/db/tables/app_user", Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    let text = body.to_string();
+    assert!(!text.contains("$argon2"), "a password hash left: {text}");
+    let at = body["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|c| c["name"] == "password_hash")
+        .unwrap();
+    assert_eq!(body["columns"][at]["hidden"], "secret");
+    assert_eq!(body["rows"][0][at], json!(true));
+    let (_, body) = h.get("/api/admin/db/tables/session", Some(&owner)).await;
+    let at = body["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|c| c["name"] == "token_hash")
+        .unwrap();
+    assert!(body["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|r| r[at] == json!(true)));
+
+    // Nor can a secret be found by searching or sorting on it.
+    let (_, body) = h
+        .get("/api/admin/db/tables/app_user?q=argon2", Some(&owner))
+        .await;
+    assert_eq!(body["total"], json!(0), "{body}");
+    let (code, _) = h
+        .get(
+            "/api/admin/db/tables/app_user?sort=password_hash",
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+
+    // A cached answer is its size.
+    let (_, body) = h.get("/api/admin/db/tables/tmdb_cache", Some(&owner)).await;
+    assert!(!body.to_string().contains("a cached answer"), "{body}");
+    let at = body["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|c| c["name"] == "body")
+        .unwrap();
+    assert_eq!(body["rows"][0][at], json!(27), "its length in bytes");
+
+    // Searching, sorting and paging what is plain.
+    let (_, body) = h
+        .get("/api/admin/db/tables/app_user?q=MIHAI", Some(&owner))
+        .await;
+    assert_eq!(body["total"], json!(1), "LIKE ignores case: {body}");
+    let (_, body) = h
+        .get(
+            "/api/admin/db/tables/app_user?sort=username&dir=desc&per_page=1",
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(body["total"], json!(2));
+    assert_eq!(body["rows"].as_array().unwrap().len(), 1);
+    let (_, body) = h
+        .get("/api/admin/db/tables/app_user?per_page=5000", Some(&owner))
+        .await;
+    assert_eq!(body["per_page"], json!(200), "the most a page holds");
+    let (_, body) = h
+        .get("/api/admin/db/tables/app_user?q=%25", Some(&owner))
+        .await;
+    assert_eq!(
+        body["total"],
+        json!(0),
+        "a % is searched for, not a wildcard"
+    );
+
+    // Names the schema does not know are refused, whatever they hold.
+    for path in [
+        "/api/admin/db/tables/nope",
+        "/api/admin/db/tables/sqlite_master",
+        "/api/admin/db/tables/app_user%3B%20DROP%20TABLE%20title",
+    ] {
+        let (code, _) = h.get(path, Some(&owner)).await;
+        assert_eq!(code, StatusCode::NOT_FOUND, "{path}");
+    }
+    for query in [
+        "sort=nope",
+        "sort=username%3B%20DROP%20TABLE%20title",
+        "dir=sideways",
+    ] {
+        let (code, _) = h
+            .get(
+                &format!("/api/admin/db/tables/app_user?{query}"),
+                Some(&owner),
+            )
+            .await;
+        assert_eq!(code, StatusCode::BAD_REQUEST, "{query}");
+    }
+    let (_, body) = h
+        .get(
+            "/api/admin/db/tables/app_user?q=%27%3B%20DELETE%20FROM%20app_user%3B%20--",
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(body["total"], json!(0));
+
+    // No way in writes.
+    let (code, _, _) = h
+        .post("/api/admin/db/tables/app_user", json!({}), Some(&owner))
+        .await;
+    assert!(!code.is_success(), "{code}");
+    let (code, _, _) = h
+        .delete("/api/admin/db/tables/app_user", Some(&owner))
+        .await;
+    assert!(!code.is_success(), "{code}");
+    let (code, _, _) = h
+        .put("/api/admin/db/tables/app_user", json!({}), Some(&owner))
+        .await;
+    assert!(!code.is_success(), "{code}");
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM app_user")
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 2);
+    let (_, body) = h.get("/api/admin/db/tables", Some(&owner)).await;
+    assert!(
+        body.to_string().contains("\"title\""),
+        "title is still there"
+    );
+}

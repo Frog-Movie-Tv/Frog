@@ -66,7 +66,8 @@ export function formatScore(value: number | null, format: ScoreFormat): string {
 		case 'star5': {
 			const full = Math.floor(shown);
 			const half = shown - full >= 0.5;
-			return '★'.repeat(full) + (half ? '½' : '') || '–';
+			// Zero stars is a rating, not the dash of none.
+			return '★'.repeat(full) + (half ? '½' : '') || '0★';
 		}
 		case 'smiley3':
 			return SMILEYS[Math.max(1, Math.min(3, Math.round(shown)))] ?? '–';
@@ -162,4 +163,12 @@ export function episodeCode(season: number, episode: number): string {
 /** "1 show", "2 shows", "0 films". */
 export function plural(count: number, one: string, many = `${one}s`): string {
 	return `${count} ${count === 1 ? one : many}`;
+}
+
+/** A size on disk: bytes, KB, MB or GB. */
+export function fileSize(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+	if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+	return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }

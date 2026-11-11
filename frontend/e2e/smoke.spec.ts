@@ -287,7 +287,7 @@ test('the about page credits its sources', async ({ page }) => {
 	await page.goto('/about');
 
 	await expect(page.getByRole('heading', { name: 'Frog', level: 1 })).toBeVisible();
-	await expect(page.getByText('Wood Frog')).toBeVisible();
+	await expect(page.getByText('Goliath')).toBeVisible();
 	await expect(page.getByRole('link', { name: /TMDB/ }).first()).toBeVisible();
 	await expect(page.getByRole('link', { name: /Phosphor/ })).toBeVisible();
 });
@@ -1209,6 +1209,8 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/settings',
 		'/api/calendar',
 		'/api/airing',
+		'/api/account/merges',
+		'/api/t/1/more',
 		'/api/airing/day?date=2026-11-14',
 		'/api/diary',
 		'/api/export/library.json',
@@ -1232,6 +1234,8 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/admin/users',
 		'/api/admin/instance',
 		'/api/admin/server',
+		'/api/admin/db/tables',
+		'/api/admin/db/tables/app_user',
 		'/api/profiles',
 		'/api/profiles/someone',
 		'/api/profiles/someone/library',
@@ -1792,6 +1796,8 @@ test('a very long name never widens a page on a phone', async ({
 		'/settings#connections',
 		'/settings#data',
 		'/admin',
+		'/admin/database',
+		'/admin/database/app_user',
 		'/about',
 		'/shelves',
 		`/shelves/${shelf}`,

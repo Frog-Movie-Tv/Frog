@@ -893,7 +893,9 @@
 
 			{#if recommendations.length}
 				<section class="block">
-					<Rail title="More like this">
+					{#snippet viewMore()}<a class="see-all hit" href="/t/{titleId}/more">View more</a
+						>{/snippet}
+					<Rail title="More like this" action={viewMore}>
 						{#each recommendations as rec (titleKey(rec))}
 							<Poster
 								kind={rec.kind}

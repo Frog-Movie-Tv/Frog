@@ -7,14 +7,15 @@ use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use chrono::{NaiveDate, Utc};
+use chrono::Utc;
 use serde_json::{json, Value};
 
 use crate::auth::Auth;
 use crate::error::{AppError, AppResult};
+use crate::profiles::{self, CardRow};
 use crate::routes::library::{to_map, ListQuery};
-use crate::routes::stats::streaks;
 use crate::state::AppState;
+use crate::stats::streaks;
 use crate::store::{self, Page, SharedItem};
 use crate::taste;
 
@@ -22,31 +23,15 @@ use crate::taste;
 const SHARED_PAGE: i64 = 60;
 const SHARED_MOST: i64 = 1000;
 
-/// (username, display name, me, has a picture)
-type ListRow = (String, Option<String>, bool, bool);
-
 /// Accounts whose profile is on, plus your own.
 pub async fn list(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
-    let rows: Vec<ListRow> = sqlx::query_as(
-        "SELECT u.username, u.display_name, u.id = ?,
-                EXISTS (SELECT 1 FROM user_image i WHERE i.user_id = u.id AND i.kind = 'avatar')
-           FROM app_user u
-          WHERE u.disabled = 0 AND (u.profile_public = 1 OR u.id = ?)
-          ORDER BY u.username COLLATE NOCASE",
-    )
-    .bind(auth.user_id())
-    .bind(auth.user_id())
-    .fetch_all(&state.pool)
-    .await?;
+    let rows = profiles::listed(&state.pool, auth.user_id()).await?;
     Ok(Json(json!({
         "profiles": rows.into_iter().map(|(username, display_name, me, avatar)| json!({
             "username": username, "display_name": display_name, "me": me, "avatar": avatar,
         })).collect::<Vec<_>>()
     })))
 }
-
-/// (kind, title id, name, poster_path, rating)
-type CardRow = (String, i64, String, Option<String>, Option<f64>);
 
 fn cards(rows: Vec<CardRow>) -> Vec<Value> {
     rows.into_iter()
@@ -80,20 +65,13 @@ async fn watching_cards(
             let read = store::counted_progress(pool, user_id, id)
                 .await?
                 .unwrap_or(0);
-            let (total,): (Option<i64>,) =
-                sqlx::query_as("SELECT episode_count FROM title WHERE id = ?")
-                    .bind(id)
-                    .fetch_one(pool)
-                    .await?;
-            card["progress"] = json!({ "watched": read, "total": total.unwrap_or(0) });
+            let total = profiles::chapter_count(pool, id).await?;
+            card["progress"] = json!({ "watched": read, "total": total });
         }
         out.push(card);
     }
     Ok(out)
 }
-
-/// (kind, id, name, poster, status, rating)
-type RatedRow = (String, i64, String, Option<String>, String, Option<f64>);
 
 /// Everything someone has rated, best first, each show with its seasons'
 /// ratings: what a profile's Ratings tab lists.
@@ -104,24 +82,7 @@ pub async fn ratings(
 ) -> AppResult<Json<Value>> {
     let user_id = visible(&state, &auth, &username).await?.0;
     let pool = &state.pool;
-    let seasons: Vec<(i64, i64, i64, f64)> = sqlx::query_as(
-        "SELECT title_id, season_number, first_episode, rating FROM season_rating
-          WHERE user_id = ? ORDER BY title_id, season_number, first_episode",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
-    let rows: Vec<RatedRow> = sqlx::query_as(
-        "SELECT t.kind, t.id, t.name, t.poster_path, l.status, l.rating
-           FROM library_entry l JOIN title t ON t.id = l.title_id
-          WHERE l.user_id = ?
-            AND (l.rating IS NOT NULL
-                 OR EXISTS (SELECT 1 FROM season_rating s
-                             WHERE s.user_id = l.user_id AND s.title_id = l.title_id))",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
+    let (rows, seasons) = profiles::rated(pool, user_id).await?;
     let mut list: Vec<Value> = rows
         .into_iter()
         .map(|(kind, id, name, poster_path, status, rating)| {
@@ -175,19 +136,7 @@ pub async fn compare(
     let mut ids: Vec<i64> = mine.iter().chain(&theirs).map(|h| h.title_id).collect();
     ids.sort_unstable();
     ids.dedup();
-    let mut titles: std::collections::HashMap<i64, (String, String, Option<String>)> =
-        Default::default();
-    for chunk in ids.chunks(400) {
-        let marks = vec!["?"; chunk.len()].join(", ");
-        let sql = format!("SELECT id, kind, name, poster_path FROM title WHERE id IN ({marks})");
-        let mut q = sqlx::query_as::<_, (i64, String, String, Option<String>)>(&sql);
-        for id in chunk {
-            q = q.bind(id);
-        }
-        for (id, kind, name, poster) in q.fetch_all(pool).await? {
-            titles.insert(id, (kind, name, poster));
-        }
-    }
+    let titles = profiles::titles_by_id(pool, &ids).await?;
     let card = |h: &taste::Held| {
         let (kind, name, poster) = titles.get(&h.title_id).cloned().unwrap_or_default();
         json!({ "id": h.title_id, "kind": kind, "name": name, "poster_path": poster,
@@ -204,39 +153,10 @@ pub async fn compare(
     })))
 }
 
-/// (id, username, created_at, profile_public, display name, bio, banner backdrop, pins)
-type UserRow = (
-    i64,
-    String,
-    String,
-    bool,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    String,
-);
-
 /// Find an account whose profile this viewer may see.
-async fn visible(state: &AppState, auth: &Auth, username: &str) -> AppResult<UserRow> {
-    let found: Option<UserRow> = sqlx::query_as(
-        "SELECT id, username, created_at, profile_public, display_name, bio, banner_backdrop,
-                pins_json
-           FROM app_user WHERE username = ? COLLATE NOCASE AND disabled = 0",
-    )
-    .bind(username)
-    .fetch_optional(&state.pool)
-    .await?;
-    match found {
-        Some(row) if row.3 || row.0 == auth.user_id() => Ok(row),
-        _ => Err(AppError::NotFound("no such profile".into())),
-    }
+async fn visible(state: &AppState, auth: &Auth, username: &str) -> AppResult<profiles::UserRow> {
+    profiles::visible(&state.pool, auth.user_id(), username).await
 }
-
-/// (films, episodes, shows, minutes)
-type TotalsRow = (i64, i64, i64, f64);
-
-/// (in library, completed, favourites, mean rating)
-type LibraryRow = (i64, i64, i64, Option<f64>);
 
 pub async fn get(
     auth: Auth,
@@ -246,122 +166,11 @@ pub async fn get(
     let (user_id, username, joined, public, display_name, bio, banner_backdrop, pins_json) =
         visible(&state, &auth, &username).await?;
     let pool = &state.pool;
-    let (banner_position,): (Option<String>,) =
-        sqlx::query_as("SELECT banner_position FROM app_user WHERE id = ?")
-            .bind(user_id)
-            .fetch_one(pool)
-            .await?;
-
-    let watching: Vec<CardRow> = sqlx::query_as(
-        "SELECT t.kind, t.id, t.name, t.poster_path, l.rating
-           FROM library_entry l JOIN title t ON t.id = l.title_id
-          WHERE l.user_id = ? AND l.status = 'watching'
-          ORDER BY l.updated_at DESC LIMIT 18",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
-    let favourites: Vec<CardRow> = sqlx::query_as(
-        "SELECT t.kind, t.id, t.name, t.poster_path, l.rating
-           FROM library_entry l JOIN title t ON t.id = l.title_id
-          WHERE l.user_id = ? AND l.favourite = 1
-          ORDER BY l.rating IS NULL, l.rating DESC, l.updated_at DESC LIMIT 18",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
-    let recent: Vec<CardRow> = sqlx::query_as(
-        "SELECT t.kind, t.id, t.name, t.poster_path, l.rating
-           FROM watch_event w
-           JOIN title t ON t.id = w.title_id
-           JOIN library_entry l ON l.title_id = t.id AND l.user_id = w.user_id
-          WHERE w.user_id = ? AND w.undated = 0
-          GROUP BY t.id
-          ORDER BY MAX(w.watched_at) DESC LIMIT 18",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
-
-    // Pinned titles, in the order chosen, skipping any no longer tracked.
-    let pins: Vec<i64> = serde_json::from_str::<Vec<Value>>(&pins_json)
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|p| p["title_id"].as_i64())
-        .collect();
-    let mut pinned = Vec::new();
-    for title_id in crate::tmdb::models::unique_by(pins, |id| *id) {
-        let row: Option<CardRow> = sqlx::query_as(
-            "SELECT t.kind, t.id, t.name, t.poster_path, l.rating
-               FROM library_entry l JOIN title t ON t.id = l.title_id
-              WHERE l.user_id = ? AND t.id = ?",
-        )
-        .bind(user_id)
-        .bind(title_id)
-        .fetch_optional(pool)
-        .await?;
-        pinned.extend(row);
-    }
-
-    // The same figures as the stats page: watches of titles in the library.
-    let (films, episodes, shows, minutes): TotalsRow = sqlx::query_as(
-        "SELECT COALESCE(SUM(w.episode_id IS NULL), 0),
-                COALESCE(SUM(w.episode_id IS NOT NULL), 0),
-                COUNT(DISTINCT CASE WHEN w.episode_id IS NOT NULL THEN w.title_id END),
-                CAST(COALESCE(SUM(COALESCE(e.runtime, t.runtime, 0)), 0) AS REAL)
-           FROM watch_event w
-           JOIN title t ON t.id = w.title_id
-           JOIN library_entry l ON l.title_id = w.title_id AND l.user_id = w.user_id
-           LEFT JOIN episode e ON e.id = w.episode_id
-          WHERE w.user_id = ?",
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await?;
-    // Chapters read, of every manga in the library.
-    let (chapters,): (i64,) = sqlx::query_as(
-        "SELECT COALESCE(SUM(l.progress), 0) FROM library_entry l
-           JOIN title t ON t.id = l.title_id
-          WHERE l.user_id = ? AND t.kind = 'manga'",
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await?;
-    let (in_library, completed, favourite_count, mean_rating): LibraryRow = sqlx::query_as(
-        "SELECT COUNT(*), COALESCE(SUM(status = 'completed'), 0), COALESCE(SUM(favourite), 0),
-                AVG(rating)
-           FROM library_entry WHERE user_id = ?",
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await?;
-    let genres: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT g.value, COUNT(*) FROM library_entry l
-           JOIN title t ON t.id = l.title_id, json_each(t.genres_json) g
-          WHERE l.user_id = ? AND l.status IN ('watching', 'completed')
-          GROUP BY g.value ORDER BY 2 DESC, 1 LIMIT 5",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
-    let days: Vec<(String,)> = sqlx::query_as(
-        "SELECT DISTINCT substr(watched_at, 1, 10) FROM watch_event
-          WHERE user_id = ? AND undated = 0 ORDER BY 1",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
-    let days: Vec<NaiveDate> = days
-        .into_iter()
-        .filter_map(|(d,)| NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok())
-        .collect();
-    let (longest, current) = streaks(&days, Utc::now().date_naive());
-
-    let images: Vec<(String, String)> =
-        sqlx::query_as("SELECT kind, updated_at FROM user_image WHERE user_id = ?")
-            .bind(user_id)
-            .fetch_all(pool)
-            .await?;
+    let facts = profiles::facts(pool, user_id, &pins_json).await?;
+    let (films, episodes, shows, minutes) = facts.totals;
+    let (in_library, completed, favourite_count, mean_rating) = facts.library;
+    let (longest, current) = streaks(&facts.days, Utc::now().date_naive());
+    let images = facts.images;
     let image_url = |kind: &str| {
         images
             .iter()
@@ -388,12 +197,12 @@ pub async fn get(
         "avatar": image_url("avatar"),
         "banner": image_url("banner"),
         "banner_backdrop": banner_backdrop,
-        "banner_position": banner_position,
+        "banner_position": facts.banner_position,
         "stats": {
             "films": films,
             "episodes": episodes,
             "shows": shows,
-            "chapters": chapters,
+            "chapters": facts.chapters,
             "minutes": minutes.round() as i64,
             "library": in_library,
             "completed": completed,
@@ -402,11 +211,11 @@ pub async fn get(
             "streak": current.days,
             "longest_streak": longest.days,
         },
-        "genres": genres.into_iter().map(|(name, titles)| json!({ "name": name, "titles": titles })).collect::<Vec<_>>(),
-        "pinned": cards(pinned),
-        "watching": watching_cards(pool, user_id, watching).await?,
-        "favourites": cards(favourites),
-        "recent": cards(recent),
+        "genres": facts.genres.into_iter().map(|(name, titles)| json!({ "name": name, "titles": titles })).collect::<Vec<_>>(),
+        "pinned": cards(facts.pinned),
+        "watching": watching_cards(pool, user_id, facts.watching).await?,
+        "favourites": cards(facts.favourites),
+        "recent": cards(facts.recent),
     })))
 }
 
@@ -461,13 +270,7 @@ pub async fn image(
     headers: HeaderMap,
 ) -> AppResult<Response> {
     let user = visible(&state, &auth, &username).await?;
-    let row: Option<(String, Vec<u8>, String)> = sqlx::query_as(
-        "SELECT mime, bytes, updated_at FROM user_image WHERE user_id = ? AND kind = ?",
-    )
-    .bind(user.0)
-    .bind(&kind)
-    .fetch_optional(&state.pool)
-    .await?;
+    let row = profiles::picture(&state.pool, user.0, &kind).await?;
     let Some((mime, bytes, updated_at)) = row else {
         return Err(AppError::NotFound("no picture".into()));
     };

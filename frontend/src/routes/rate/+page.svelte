@@ -204,17 +204,21 @@
 
 	// Drag a card sideways and let go past the line to skip it. A pointer
 	// reports far more often than the screen draws, so the card moves once a
-	// frame, to where the pointer last was.
+	// frame, to where the pointer last was, and it is moved directly: going
+	// through the page's state would redraw the card sixty times a second,
+	// which a phone cannot keep up with. The state catches up on letting go.
 	const THROW = 110;
 	let startX = 0;
 	let lastX = 0;
 	let frame = 0;
+	let held: HTMLElement | null = null;
 
 	function down(e: PointerEvent) {
 		if (busy || e.button !== 0 || (e.target as HTMLElement).closest('a, button')) return;
+		held = e.currentTarget as HTMLElement;
 		dragging = true;
 		startX = lastX = e.clientX;
-		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		held.setPointerCapture(e.pointerId);
 	}
 
 	function move(e: PointerEvent) {
@@ -222,7 +226,10 @@
 		lastX = e.clientX;
 		frame ||= requestAnimationFrame(() => {
 			frame = 0;
-			if (dragging) drag = lastX - startX;
+			if (!dragging || !held) return;
+			const dx = lastX - startX;
+			held.style.transform = `translateX(${dx}px) rotate(${dx / 22}deg)`;
+			held.style.setProperty('--pull', String(Math.min(1, Math.abs(dx) / THROW)));
 		});
 	}
 
@@ -232,10 +239,18 @@
 		cancelAnimationFrame(frame);
 		frame = 0;
 		const moved = lastX - startX;
+		const card = held;
+		held = null;
+		card?.style.removeProperty('--pull');
 		if (Math.abs(moved) > THROW) {
 			drag = moved;
 			skip(moved < 0 ? -1 : 1);
-		} else drag = 0;
+		} else {
+			drag = 0;
+			// Back to where the page has it: the transform it drew is the same
+			// as before the drag, so it would not write it again.
+			if (card) card.style.transform = placed(0);
+		}
 	}
 
 	/** Where a card in the pile sits: the top one follows the hand. */
@@ -379,10 +394,8 @@
 									size={34}
 								/>{:else}{leaving.stamp}{/if}
 						</span>
-					{:else if depth === 0 && !leaving && Math.abs(drag) > 24}
-						<span class="stamp skip" style:opacity={Math.min(1, Math.abs(drag) / THROW)}>
-							Skip
-						</span>
+					{:else if depth === 0 && !leaving}
+						<span class="stamp skip" aria-hidden="true">Skip</span>
 					{/if}
 				</article>
 			{/each}
@@ -424,8 +437,11 @@
 </div>
 
 <style>
+	/* A card dragged past the edge never widens the page: a wider page moves
+	   everything on it, every frame of the drag. */
 	.page {
 		max-width: 720px;
+		overflow-x: clip;
 	}
 
 	.sub {
@@ -451,10 +467,12 @@
 	/* The pile: cards on top of each other, the top one in hand. */
 	/* Tall enough for the card, short enough that the scores below it are
 	   always on screen: the deck is never scrolled to be used. */
+	/* The cards under the top one sit up to two places lower (`placed`), so
+	   the pile keeps that much room under it for the stars and buttons. */
 	.table {
 		position: relative;
-		height: clamp(300px, calc(100dvh - 400px), 560px);
-		margin-bottom: 22px;
+		height: clamp(300px, calc(100dvh - 420px), 560px);
+		margin-bottom: 46px;
 	}
 
 	.card {
@@ -502,6 +520,8 @@
 	.card.dragging {
 		cursor: grabbing;
 		transition: none;
+		/* A lighter shadow while it moves: less to draw each frame. */
+		box-shadow: var(--shadow-2);
 	}
 
 	.card.gone {
@@ -645,8 +665,11 @@
 		}
 	}
 
-	/* While a card is dragged, the side it would go says so. */
+	/* While a card is dragged, the side it would go says so, as far as the
+	   drag has gone (`--pull`, set as it moves). */
 	.stamp.skip {
+		opacity: calc((var(--pull, 0) - 0.2) * 1.25);
+		transition: none;
 		top: 22px;
 		left: 22px;
 		padding: 6px 16px;
@@ -742,8 +765,8 @@
 		}
 
 		.table {
-			height: clamp(280px, calc(100dvh - 430px), 520px);
-			margin-bottom: 16px;
+			height: clamp(270px, calc(100dvh - 450px), 520px);
+			margin-bottom: 42px;
 		}
 
 		.progress {

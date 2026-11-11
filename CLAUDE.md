@@ -106,9 +106,10 @@ RELEASE-NOTES.md        source of truth for release notes (parsed into the app)
   `anilist/reconcile.rs`, `transfer/matching.rs::choose`) and test it
   without a database.
 - **A domain that owns tables owns their SQL** (`anilist/records.rs` for
-  `anilist_*`). Library, title and episode reads that more than one area
-  needs go in `store.rs`. A simple read only one route uses may stay in
-  that route; move it out the moment a second caller wants it.
+  `anilist_*`, `shelves.rs` for shelves). Library, title and episode reads
+  that more than one area needs go in `store.rs`. **No SQL in a route**: a
+  new area gets a module of its own beside the others (`stats.rs`,
+  `timeline.rs`, `profiles.rs`, …).
 - **Providers are reached through their client** (`tmdb`, `anilist::client`,
   `anilist::media`). Never call TMDB or AniList from a route or from `store`
   with a hand-built request.
@@ -349,7 +350,9 @@ part you are about to touch; change it when the code changes.
   **Migrations stay additive**: a failed update rolls back to the previous
   image, which skips migrations it does not know (`set_ignore_missing`) and
   has to run on the newer schema. A destructive change takes two releases;
-  `docs/CONTRIBUTING.md` has the rule. If the previous image still fails,
+  `docs/CONTRIBUTING.md` has the rule. One taken in a single release raises
+  `db::SCHEMA_GENERATION` (2 since 1.5.0 dropped `title_airing`), so a failed
+  update restores the snapshot instead. If the previous image still fails,
   `update.sh` puts back the plain snapshot it took just before the update.
   `db::heal_line_endings` forgives a checksum that differs only in line
   endings, which is what lets a database move between a Windows checkout and
@@ -398,6 +401,11 @@ part you are about to touch; change it when the code changes.
 - **Shelves have one place on Home**, the Your shelves row. A shelf used to be
   able to add a row of its own, which showed it twice; saved layouts lose those
   rows as they load (`introduceRows`).
+- **Administration → Database is read only and keeps secrets back**
+  (`backend/src/dbview.rs`). A new column named with hash, secret, token,
+  key, p256dh or auth fails `tests/dbview.rs` until it goes in `HIDDEN` or,
+  with the reason, in `PLAIN`. Hidden columns are never searched or sorted
+  on, since either would let someone guess them.
 - **Administration shows initials on purpose.** A picture is served only to those
   who can see the profile (`visible` in `routes/profiles.rs`), so drawing one
   there would show it for an account that has its profile off.

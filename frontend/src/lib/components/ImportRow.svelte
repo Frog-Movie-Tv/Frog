@@ -107,39 +107,43 @@
 </div>
 
 <style>
+	/* A row of the review's pane: the pane draws the hairlines. */
 	.row {
 		display: grid;
 		grid-template-columns: auto 40px minmax(0, 1fr) auto;
 		align-items: center;
 		gap: 14px;
-		padding: 10px 14px;
-		border-radius: var(--radius-sm);
-		border: 1px solid var(--line);
-		background: var(--bg-elev);
+		padding: 11px 16px;
+		transition:
+			background var(--fast) var(--ease),
+			opacity var(--fast) var(--ease);
+	}
+
+	.row:hover {
+		background: var(--bg-hover);
 	}
 
 	.row.grouped {
 		grid-template-columns: auto minmax(0, 1fr) auto;
-		padding: 8px 14px;
-		border: none;
-		border-radius: 0;
+		padding: 8px 16px 8px 30px;
 		border-top: 1px solid var(--line);
-		background: none;
 	}
 
 	.row.off {
 		opacity: 0.45;
 	}
 
+	/* Nothing matched: a mark down its edge, not a box around it. */
 	.row.unmatched {
-		border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+		box-shadow: inset 3px 0 0 var(--warn);
 	}
 
 	.row img,
 	.no-art {
 		width: 40px;
 		aspect-ratio: 2 / 3;
-		border-radius: 4px;
+		border-radius: 5px;
+		box-shadow: inset 0 1px 0 var(--shine);
 		display: grid;
 		place-items: center;
 		background: var(--bg-elev-2);
@@ -206,19 +210,25 @@
 		margin-top: 4px;
 	}
 
+	/* Other matches to choose, as the chips are everywhere else. */
 	.cand {
-		padding: 3px 9px;
+		padding: 4px 11px;
 		border-radius: var(--radius-pill);
-		border: 1px solid var(--line-strong);
-		background: transparent;
+		border: 1px solid var(--line);
+		background: var(--bg-elev-2);
+		box-shadow: inset 0 1px 0 var(--shine);
 		color: var(--text-dim);
 		font-size: 0.74rem;
+		font-weight: 600;
 		cursor: pointer;
+		transition:
+			background var(--fast) var(--ease),
+			color var(--fast) var(--ease);
 	}
 
 	.cand:hover {
 		color: var(--text);
-		border-color: var(--accent);
+		background: var(--bg-hover);
 	}
 
 	.pill.tiny {

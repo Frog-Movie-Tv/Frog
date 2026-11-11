@@ -81,6 +81,8 @@ export interface StatsView {
 	ratings: number[];
 	top_shows: StatsTitle[];
 	top_films: StatsTitle[];
+	/** The titles watched under the selection, for what the server narrows. */
+	ids: number[];
 }
 
 /** Every chart under a selection. `units` is the timeline's own bars, in order. */
@@ -186,7 +188,8 @@ export function view(facts: StatsFact[], filter: StatsFilter, units: string[]): 
 		decades,
 		ratings,
 		top_shows,
-		top_films
+		top_films,
+		ids: watched.map((f) => f.id)
 	};
 }
 
@@ -273,6 +276,8 @@ export interface MangaView {
 		chapters: number;
 		rating: number | null;
 	}[];
+	/** The manga kept by the selection, for what the server narrows. */
+	ids: number[];
 }
 
 /** Every manga chart under a selection, each from every pick but its own. */
@@ -343,7 +348,8 @@ export function mangaView(
 			.slice(0, 12),
 		ratings,
 		by_status,
-		top
+		top,
+		ids: kept.map((f) => f.id)
 	};
 }
 

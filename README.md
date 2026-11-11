@@ -139,11 +139,13 @@ whole seasons once they have finished, and leave a note on any episode.
 
 **Know what is next.** Home opens on whatever you are in the middle of and
 names the exact next episode, then everything else you are following, your
-shelves and the week's new episodes. The calendar shows the month ahead, and
-the diary reads back everything you have watched, day by day.
+shelves and the week's new episodes. The calendar shows the month ahead,
+Airing shows everything on air this week, yours or not, and the diary reads
+back everything you have watched, day by day.
 
-**Hear about it the day it lands.** Turn on notifications and Frog tells you
-when a show you follow has a new episode out. Mute any show with the bell on
+**Hear about it the minute it lands.** Turn on notifications and Frog tells
+you the moment a show you follow has a new episode out, in your own time
+zone. Mute any show with the bell on
 its page.
 
 **See your year.** Time watched, streaks, genres, decades, how you rate, and
@@ -201,8 +203,8 @@ Frog assumes everyone on it wants to be left alone, including from each other.
   outside.
 - Everything sits behind a password, with two-factor sign-in if you want it.
 - Nothing leaves the machine except requests for details, artwork and
-  scores: to TMDB, to AniList, and to MDBList and fanart.tv if you gave them
-  a key. None of them is told who you are, and what comes back is cached so
+  scores: to TMDB, to AniList and TVmaze for air times, and to MDBList and
+  fanart.tv if you gave them a key. None of them is told who you are, and what comes back is cached so
   most requests happen once.
 - There is no analytics of any kind, and no "anonymous usage data".
 
