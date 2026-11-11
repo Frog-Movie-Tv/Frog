@@ -785,6 +785,8 @@ function tooMany(
  */
 export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Date()): T[] {
 	const gone = new Set<T>();
+	/** The days of a row's episodes TMDB found no name for, in watch order. */
+	const unnamedDays = new Map<Incoming, string[]>();
 	/** Titles sent on their own that now stand for their show. */
 	const promoted = new Set<T>();
 	/** Rows split off another because its episodes span several seasons. */
@@ -826,6 +828,8 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 			episode: p.episode,
 			watched_at: watchedOn(days[p.index])
 		}));
+		const named = new Set(placed.map((p) => p.index));
+		unnamedDays.set(inc, days.filter((day, i) => !named.has(i) && day).sort());
 	}
 
 	// Films that turned out to be the same film.
@@ -952,11 +956,23 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 					for (let n = hi + 1; n <= size; n++) around.push(n);
 					if (!numberStands) for (let n = lo - 1; n >= 1; n--) around.push(n);
 					const fill = around.slice(0, missing);
-					list.push(...fill.map((episode) => ({ season: main, episode, watched_at: null })));
 					// Also certain: everything from episode 1 on, unbroken, as when a
 					// whole season was watched.
-					const ticked = list.map((w) => w.episode);
+					const ticked = [...list.map((w) => w.episode), ...fill];
 					const fromStart = Math.min(...ticked) === 1 && Math.max(...ticked) === ticked.length;
+					// Where they can only be those episodes, each takes its own day:
+					// in watch order, as a season is watched from its start.
+					const spare = unnamedDays.get(inc) ?? [];
+					const certain = fill.length === missing && (gaps.length === missing || fromStart);
+					const dated = certain && spare.length === fill.length;
+					const ordered = [...fill].sort((a, b) => a - b);
+					list.push(
+						...ordered.map((episode, i) => ({
+							season: main,
+							episode,
+							watched_at: dated ? watchedOn(spare[i]) : null
+						}))
+					);
 					if (
 						!numberStands &&
 						(fill.length !== missing || (gaps.length !== missing && !fromStart))
@@ -1026,9 +1042,16 @@ export function settleNetflix<T extends Settling>(rows: T[], now: Date = new Dat
 				}
 			} else if (meta.seasonKind === 'part') {
 				const byName = seasonByName(meta.seasonName ?? '', regular);
+				const first = regular.find((s) => s.number === 1);
 				if (byName) {
 					inc.season = byName.number;
 					inc.info = `Netflix calls this ${meta.seasonName}; season ${byName.number} on TMDB`;
+				} else if (meta.part === 1 && meta.numbers && first && meta.numbers[1] <= first.episodes) {
+					// A first part starts where the show does, whatever Netflix
+					// calls its later parts: "Part 1: Episode 2" is season 1's.
+					inc.season = 1;
+					inc.warning = undefined;
+					inc.info = `Netflix calls this ${meta.seasonName}; season 1 on TMDB`;
 				} else {
 					inc.season = meta.part ?? null;
 					inc.warning = `Netflix calls this ${meta.seasonName}; check the season`;

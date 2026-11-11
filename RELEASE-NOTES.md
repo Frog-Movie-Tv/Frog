@@ -37,6 +37,9 @@ In progress.
   history.
 - Picking a bar on Stats narrows the actors, directors, studios, authors,
   days and streaks as well.
+- A Netflix import finds more episodes by name, and gives more of them the
+  day you watched them. A first part of a show, such as Money Heist Part 1,
+  lands in its first season on its own.
 
 ## [1.4.3] — Wood Frog — 2026-11-11
 

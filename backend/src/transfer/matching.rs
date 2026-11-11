@@ -503,15 +503,42 @@ async fn place_episodes(
     placed_by_name(&by_name, names)
 }
 
-/// Which of `names` exactly one episode in `by_name` has.
+/// Shortest name a looser match compares: "Tip Off" is enough, "Two" is not.
+const LOOSE_KEY: usize = 6;
+
+/// The one episode whose name holds this one, or that this one holds:
+/// "Kuroko's Basketball: Tip Off" is TMDB's "Tip Off", "The Order: Lethal
+/// Weapon, Part One" its "Lethal Weapon". Never when two episodes would do.
+fn loosely<'a>(
+    by_name: &'a HashMap<String, Vec<(i64, i64)>>,
+    key: &str,
+) -> Option<&'a Vec<(i64, i64)>> {
+    if key.chars().count() < LOOSE_KEY {
+        return None;
+    }
+    let mut hits = by_name.iter().filter(|(k, hits)| {
+        hits.len() == 1
+            && k.chars().count() >= LOOSE_KEY
+            && (k.contains(key) || key.contains(k.as_str()))
+    });
+    let (_, first) = hits.next()?;
+    hits.next().is_none().then_some(first)
+}
+
+/// Which of `names` exactly one episode in `by_name` has: by the whole name,
+/// by its last part, then loosely.
 fn placed_by_name(by_name: &HashMap<String, Vec<(i64, i64)>>, names: &[String]) -> Vec<Placed> {
     let mut out = Vec::new();
     for (index, name) in names.iter().enumerate() {
         let tail = name.rsplit(": ").next().unwrap_or(name);
-        let found = [episode_key(name), episode_key(tail)]
+        let keys: Vec<String> = [episode_key(name), episode_key(tail)]
             .into_iter()
             .filter(|k| !k.is_empty())
-            .find_map(|k| by_name.get(&k).filter(|hits| hits.len() == 1));
+            .collect();
+        let found = keys
+            .iter()
+            .find_map(|k| by_name.get(k).filter(|hits| hits.len() == 1))
+            .or_else(|| keys.iter().find_map(|k| loosely(by_name, k)));
         if let Some(&[(season, episode)]) = found.map(Vec::as_slice) {
             out.push(Placed {
                 index,
@@ -808,6 +835,31 @@ mod tests {
             .map(|p| (p.index, p.season, p.episode))
             .collect();
         assert_eq!(got, vec![(0, 1, 1), (2, 1, 1)]);
+    }
+
+    #[test]
+    fn a_name_written_differently_is_found_when_only_one_episode_fits() {
+        let mut by_name: HashMap<String, Vec<(i64, i64)>> = HashMap::new();
+        by_name.insert(episode_key("Tip Off"), vec![(1, 1)]);
+        by_name.insert(episode_key("Lethal Weapon"), vec![(1, 4)]);
+        by_name.insert(episode_key("The Rematch"), vec![(2, 3)]);
+        by_name.insert(episode_key("The Rematch, Part Two"), vec![(2, 4)]);
+        by_name.insert(episode_key("Win"), vec![(1, 9)]);
+        let names: Vec<String> = [
+            "Kuroko's Basketball: Tip Off",
+            "Lethal Weapon, Part One",
+            // Held by two episodes' names: no guess.
+            "The Rematch Part",
+            // Too short to compare loosely.
+            "Wins",
+        ]
+        .map(String::from)
+        .to_vec();
+        let got: Vec<(usize, i64, i64)> = placed_by_name(&by_name, &names)
+            .iter()
+            .map(|p| (p.index, p.season, p.episode))
+            .collect();
+        assert_eq!(got, vec![(0, 1, 1), (1, 1, 4)]);
     }
 
     #[test]

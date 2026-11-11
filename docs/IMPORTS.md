@@ -24,19 +24,19 @@ a new source is a new reader and nothing else.
 
 ## Where things are
 
-| | |
-| --- | --- |
-| `frontend/src/lib/import/common.ts` | `Incoming`, CSV reading, date and year helpers, `newRow` |
-| `frontend/src/lib/import/parsers.ts` | One reader per format (Letterboxd, IMDb, Trakt, TV Time, Frog backup), unzipping, `dedupe` |
-| `frontend/src/lib/import/anime.ts` | Anime trackers: season and part from a title (`animeTitle`), MyAnimeList XML |
-| `frontend/src/lib/import/netflix.ts` | Netflix viewing history: grouping plays into shows and seasons, then settling them with TMDB's answer |
-| `frontend/src/lib/import/rows.ts` | Turning settled rows into what `apply` takes |
-| `frontend/src/lib/import/list.ts` | A list pasted onto a shelf: a title a line, links and ids, or a Letterboxd list export, in its order |
-| `frontend/src/lib/import/review.ts` | Sorting rows for review: the kind of problem, grouping by title, what can be kept in bulk, what was barely watched |
-| `backend/src/transfer/matching.rs` | Which TMDB title a row means: ids, then names, by year, spelling and season; episodes by name |
-| `backend/src/transfer/apply.rs` | Conflict modes, `merged_status`, ticking seasons and episodes, film diary entries |
-| `backend/src/transfer/export.rs` | `frog-library` JSON (version 2) and the CSV sheet |
-| `backend/src/routes/transfer.rs` | Batch size, the account, the download headers |
+|                                      |                                                                                                                    |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `frontend/src/lib/import/common.ts`  | `Incoming`, CSV reading, date and year helpers, `newRow`                                                           |
+| `frontend/src/lib/import/parsers.ts` | One reader per format (Letterboxd, IMDb, Trakt, TV Time, Frog backup), unzipping, `dedupe`                         |
+| `frontend/src/lib/import/anime.ts`   | Anime trackers: season and part from a title (`animeTitle`), MyAnimeList XML                                       |
+| `frontend/src/lib/import/netflix.ts` | Netflix viewing history: grouping plays into shows and seasons, then settling them with TMDB's answer              |
+| `frontend/src/lib/import/rows.ts`    | Turning settled rows into what `apply` takes                                                                       |
+| `frontend/src/lib/import/list.ts`    | A list pasted onto a shelf: a title a line, links and ids, or a Letterboxd list export, in its order               |
+| `frontend/src/lib/import/review.ts`  | Sorting rows for review: the kind of problem, grouping by title, what can be kept in bulk, what was barely watched |
+| `backend/src/transfer/matching.rs`   | Which TMDB title a row means: ids, then names, by year, spelling and season; episodes by name                      |
+| `backend/src/transfer/apply.rs`      | Conflict modes, `merged_status`, ticking seasons and episodes, film diary entries                                  |
+| `backend/src/transfer/export.rs`     | `frog-library` JSON (version 2) and the CSV sheet                                                                  |
+| `backend/src/routes/transfer.rs`     | Batch size, the account, the download headers                                                                      |
 
 ## Rules that must not change by accident
 
@@ -131,9 +131,17 @@ a new source is a new reader and nothing else.
   `backend/src/transfer/matching.rs`): a row sure of its season reads that
   one, one in doubt reads the whole show, and a name placed there settles the
   exact episode and its date. In doubt it also settles the season and proves
-  the match; a numbered season stays where Netflix put it, and names not found
-  count from its first episode, undated, with no warning. "Episode N" needs
-  no lookup at all. Rows are matched six at a time (`MATCH_AT_ONCE`).
+  the match; a numbered season stays where Netflix put it. A name not found
+  as written is tried loosely: one name holding the other ("Kuroko's
+  Basketball: Tip Off" is "Tip Off"), at least six letters, and only when a
+  single episode fits. Names still not found go next to the ones found (the
+  gaps first); where they can only be those episodes (the gaps are exactly as
+  many, or the season is then unbroken from episode 1) each takes its own
+  day, in watch order, and otherwise they count undated. "Episode N" needs no
+  lookup at all. A first part ("Money Heist: Part 1: Episode 2") is season 1
+  from its first episode, since a show starts where its first part does;
+  later parts are flagged unless TMDB names a season after them, because
+  Netflix's parts and TMDB's seasons split a show differently. Rows are matched six at a time (`MATCH_AT_ONCE`).
   `npm test` runs it against `tests/fixtures/netflix-viewing-history.csv`,
   real titles with made-up dates; `node --test` reads the TypeScript directly
   through `tests/ts-paths.mjs`.

@@ -647,3 +647,46 @@ test('a name that differs only in punctuation is not a problem', () => {
 		'Closest match by name'
 	);
 });
+
+test('episodes found by place take their own days when they can only be those', () => {
+	const parsed = read().rows.find((r) => r.label === 'Squid Game: Season 2');
+	const answer = show(93405, 'Squid Game', [
+		[1, 9],
+		[2, 7],
+		[3, 6]
+	]);
+	// Episode 2 found by name; the other play can only be episode 1.
+	const row = byLabel(
+		settled({
+			'Squid Game: Season 2': { ...answer, placed: [{ index: 0, season: 2, episode: 2 }] }
+		}),
+		'Squid Game: Season 2'
+	);
+	const other = parsed.netflix.days[1];
+	assert.deepEqual(
+		row.watches.map((w) => [w.episode, w.watched_at]),
+		[
+			[2, `${parsed.netflix.days[0]}T20:00:00Z`],
+			[1, `${other}T20:00:00Z`]
+		]
+	);
+	assert.equal(row.warning, undefined);
+});
+
+test('a first part of episodes numbered from one is season 1, each on its day', () => {
+	const parsed = read().rows.find((r) => r.label === 'Money Heist: Part 1');
+	const rows = settled({
+		'Money Heist: Part 1': show(71446, 'Money Heist', [
+			[1, 15],
+			[2, 16],
+			[3, 10]
+		])
+	});
+	const row = byLabel(rows, 'Money Heist: Part 1');
+	assert.equal(row.season, 1);
+	assert.equal(row.warning, undefined);
+	assert.deepEqual(
+		row.watches.map((w) => [w.season, w.episode]),
+		parsed.netflix.numbered.map((n) => [1, n])
+	);
+});
