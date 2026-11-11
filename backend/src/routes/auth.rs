@@ -3,7 +3,6 @@ use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use axum::Json;
 use axum_extra::extract::cookie::CookieJar;
-use chrono::Utc;
 use serde::Deserialize;
 use serde_json::json;
 use std::net::SocketAddr;
@@ -11,7 +10,6 @@ use std::net::SocketAddr;
 use crate::auth::{self as session, ClientAddr, Role};
 use crate::error::{AppError, AppResult};
 use crate::reset;
-use crate::routes::{invites, two_factor};
 use crate::state::AppState;
 use crate::store;
 use crate::throttle;
@@ -68,10 +66,7 @@ fn too_many_tries(seconds: u64) -> AppError {
 /// True while the instance has no accounts at all, which is the only time the
 /// setup screen is reachable.
 pub async fn needs_setup(state: &AppState) -> AppResult<bool> {
-    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM app_user")
-        .fetch_one(&state.pool)
-        .await?;
-    Ok(count == 0)
+    Ok(session::account_count(&state.pool).await? == 0)
 }
 
 /// The one endpoint the SvelteKit shell calls before anything else: it decides
@@ -88,13 +83,9 @@ pub async fn status(
     // The profile picture's address, so the top bar draws it without asking
     // for a picture that is not there.
     let avatar = match &identity {
-        Some(i) => sqlx::query_as::<_, (String,)>(
-            "SELECT updated_at FROM user_image WHERE user_id = ? AND kind = 'avatar'",
-        )
-        .bind(i.user_id)
-        .fetch_optional(&state.pool)
-        .await?
-        .map(|(at,)| store::picture_address(&i.username, "avatar", &at)),
+        Some(i) => session::avatar_changed_at(&state.pool, i.user_id)
+            .await?
+            .map(|at| store::picture_address(&i.username, "avatar", &at)),
         None => None,
     };
 
@@ -140,7 +131,7 @@ pub async fn register(
 ) -> AppResult<impl IntoResponse> {
     validate(&body.credentials)?;
 
-    let role = invites::claim(&state, &body.invite).await?;
+    let role = crate::invites::claim(&state.pool, &body.invite).await?;
     let user_id = match create_account(
         &state,
         &body.credentials.username,
@@ -153,17 +144,14 @@ pub async fn register(
         Err(e) => {
             // The invite is only spent once an account actually exists, so a
             // clash over the username does not burn the link.
-            invites::release(&state, &body.invite).await;
+            crate::invites::release(&state.pool, &body.invite).await;
             return Err(e);
         }
     };
-    invites::mark_used(&state, &body.invite, user_id).await?;
+    crate::invites::mark_used(&state.pool, &body.invite, user_id).await?;
 
     issue(state, jar, headers, user_id, body.credentials.remember).await
 }
-
-/// (id, username, password hash, totp secret, disabled)
-type LoginRow = (i64, String, String, Option<String>, i64);
 
 pub async fn login(
     State(state): State<AppState>,
@@ -183,13 +171,7 @@ pub async fn login(
     state.login_failures.admit(&keys).map_err(too_many_tries)?;
 
     // NOCASE so signing in is not a spelling test, and one row per username.
-    let row: Option<LoginRow> = sqlx::query_as(
-        "SELECT id, username, password_hash, totp_secret, disabled
-           FROM app_user WHERE username = ? COLLATE NOCASE",
-    )
-    .bind(body.username.trim())
-    .fetch_optional(&state.pool)
-    .await?;
+    let row = session::sign_in_row(&state.pool, &body.username).await?;
 
     // Same message whichever part was wrong: never leak which usernames exist.
     // The password work happens either way, so the answer takes as long for a
@@ -217,7 +199,7 @@ pub async fn login(
                 "Enter the code from your authenticator app.".into(),
             ));
         }
-        if !second_factor_ok(&state, user_id, &secret, code).await? {
+        if !crate::two_factor::second_factor_ok(&state.pool, user_id, &secret, code).await? {
             return Err(AppError::TwoFactor("That code didn't work.".into()));
         }
     }
@@ -270,40 +252,6 @@ pub async fn reset_password(
         .clear(&throttle::sign_in_keys(&username, &client));
     tracing::info!("a password was changed with a reset link");
     Ok(Json(json!({ "ok": true })))
-}
-
-/// Checks an authenticator code, or else spends one of this account's
-/// recovery codes.
-async fn second_factor_ok(
-    state: &AppState,
-    user_id: i64,
-    secret: &str,
-    code: &str,
-) -> AppResult<bool> {
-    if let Some(step) = crate::totp::verify(secret, code, Utc::now().timestamp()) {
-        // Only a step later than the last accepted one, so a code seen over
-        // someone's shoulder cannot be used again.
-        let used = sqlx::query(
-            "UPDATE app_user SET totp_last_step = ? WHERE id = ? AND totp_last_step < ?",
-        )
-        .bind(step)
-        .bind(user_id)
-        .bind(step)
-        .execute(&state.pool)
-        .await?;
-        return Ok(used.rows_affected() == 1);
-    }
-
-    let spent = sqlx::query(
-        "UPDATE recovery_code SET used_at = ?
-          WHERE user_id = ? AND code_hash = ? AND used_at IS NULL",
-    )
-    .bind(Utc::now().to_rfc3339())
-    .bind(user_id)
-    .bind(two_factor::hash_recovery(code))
-    .execute(&state.pool)
-    .await?;
-    Ok(spent.rows_affected() == 1)
 }
 
 pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> AppResult<impl IntoResponse> {
@@ -366,17 +314,7 @@ pub async fn create_account(
         return Err(AppError::Conflict("that username is taken".into()));
     }
 
-    let row: (i64,) = sqlx::query_as(
-        "INSERT INTO app_user (username, password_hash, role, created_at)
-         VALUES (?, ?, ?, ?) RETURNING id",
-    )
-    .bind(name)
-    .bind(hash)
-    .bind(role.as_db())
-    .bind(Utc::now().to_rfc3339())
-    .fetch_one(&state.pool)
-    .await?;
-    Ok(row.0)
+    session::insert_user(&state.pool, name, &hash, role).await
 }
 
 /// Called at startup: if the env hands us credentials and there is no account,

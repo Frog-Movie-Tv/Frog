@@ -1,4 +1,6 @@
+pub mod account;
 pub mod activity;
+pub mod admin;
 pub mod airing;
 pub mod airtime;
 pub mod anilist;
@@ -12,9 +14,12 @@ pub mod error;
 pub mod fanart;
 pub mod franchise;
 pub mod images;
+pub mod invites;
 pub mod jobs;
 pub mod ops;
 pub mod palette;
+pub mod prefs;
+pub mod profiles;
 pub mod push;
 pub mod ratings;
 pub mod release;
@@ -29,5 +34,6 @@ pub mod tmdb;
 pub mod totp;
 pub mod transfer;
 pub mod tvmaze;
+pub mod two_factor;
 
 pub use state::AppState;

@@ -406,7 +406,7 @@ pub async fn reconcile(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppRes
         }
     }
     let state = show_state(pool, user_id, title_id).await?;
-    let auto = crate::routes::settings::auto_complete(pool, user_id).await;
+    let auto = crate::prefs::auto_complete(pool, user_id).await;
     if let Some(status) = desired_status(Some(&entry.status), &state, auto) {
         let patch = store::LibraryPatch {
             status: Some(status.to_string()),

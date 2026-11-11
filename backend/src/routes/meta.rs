@@ -10,7 +10,7 @@ use crate::state::AppState;
 /// and outside the auth wall: a load balancer cannot sign in, and it tells
 /// an unauthenticated caller nothing but the version.
 pub async fn healthz(State(state): State<AppState>) -> (StatusCode, Json<Value>) {
-    let db_ok = sqlx::query("SELECT 1").fetch_one(&state.pool).await.is_ok();
+    let db_ok = crate::db::is_up(&state.pool).await;
     let code = if db_ok {
         StatusCode::OK
     } else {
@@ -26,7 +26,7 @@ pub async fn healthz(State(state): State<AppState>) -> (StatusCode, Json<Value>)
 }
 
 pub async fn health(State(state): State<AppState>) -> Json<Value> {
-    let db_ok = sqlx::query("SELECT 1").fetch_one(&state.pool).await.is_ok();
+    let db_ok = crate::db::is_up(&state.pool).await;
 
     Json(json!({
         "ok": db_ok,

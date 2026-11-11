@@ -11,8 +11,9 @@ use chrono::{Duration, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::auth::{hash_code, new_code, AdminAuth, Role};
+use crate::auth::{new_code, AdminAuth, Role};
 use crate::error::{AppError, AppResult};
+use crate::invites;
 use crate::state::AppState;
 
 /// How long an invite lasts unless asked otherwise, and the most it may last.
@@ -55,16 +56,14 @@ pub async fn create(
     let now = Utc::now();
     let expires = now + Duration::days(days);
 
-    sqlx::query(
-        "INSERT INTO invite (code_hash, role, created_by, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?)",
+    invites::create(
+        &state.pool,
+        &code,
+        role,
+        auth.user_id(),
+        &now.to_rfc3339(),
+        &expires.to_rfc3339(),
     )
-    .bind(hash_code(&code))
-    .bind(role.as_db())
-    .bind(auth.user_id())
-    .bind(now.to_rfc3339())
-    .bind(expires.to_rfc3339())
-    .execute(&state.pool)
     .await?;
 
     Ok(Json(json!({
@@ -75,32 +74,11 @@ pub async fn create(
     })))
 }
 
-/// (code hash, role, created by, created at, expires at, used at, used by)
-type InviteRow = (
-    String,
-    String,
-    Option<String>,
-    String,
-    String,
-    Option<String>,
-    Option<String>,
-);
-
 pub async fn list(
     AdminAuth(_): AdminAuth,
     State(state): State<AppState>,
 ) -> AppResult<Json<Value>> {
-    let rows: Vec<InviteRow> = sqlx::query_as(
-        "SELECT i.code_hash, i.role, c.username, i.created_at, i.expires_at,
-                i.used_at, u.username
-           FROM invite i
-           LEFT JOIN app_user c ON c.id = i.created_by
-           LEFT JOIN app_user u ON u.id = i.used_by
-          ORDER BY i.created_at DESC
-          LIMIT 200",
-    )
-    .fetch_all(&state.pool)
-    .await?;
+    let rows = invites::list(&state.pool).await?;
 
     let now = Utc::now().to_rfc3339();
     let invites: Vec<Value> = rows
@@ -137,62 +115,8 @@ pub async fn revoke(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> AppResult<Json<Value>> {
-    let gone = sqlx::query("DELETE FROM invite WHERE code_hash = ? AND used_at IS NULL")
-        .bind(id)
-        .execute(&state.pool)
-        .await?;
-    if gone.rows_affected() == 0 {
+    if !invites::revoke(&state.pool, &id).await? {
         return Err(AppError::NotFound("no open invite with that id".into()));
     }
     Ok(Json(json!({ "ok": true })))
-}
-
-/// Spend an invite, returning the role it grants.
-///
-/// Marking it used is the same statement that checks it, so two people
-/// redeeming the same link at the same moment cannot both get in. If the
-/// account then fails to be created, `release` puts it back.
-pub async fn claim(state: &AppState, code: &str) -> AppResult<Role> {
-    let hash = hash_code(code);
-    let now = Utc::now().to_rfc3339();
-
-    let taken = sqlx::query(
-        "UPDATE invite SET used_at = ?
-          WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?",
-    )
-    .bind(&now)
-    .bind(&hash)
-    .bind(&now)
-    .execute(&state.pool)
-    .await?;
-
-    if taken.rows_affected() != 1 {
-        return Err(AppError::Forbidden(
-            "That invite link has been used already, or it has expired.".into(),
-        ));
-    }
-
-    let (role,): (String,) = sqlx::query_as("SELECT role FROM invite WHERE code_hash = ?")
-        .bind(&hash)
-        .fetch_one(&state.pool)
-        .await?;
-    Ok(Role::from_db(&role))
-}
-
-/// Put a claimed invite back, for when the account could not be created.
-pub async fn release(state: &AppState, code: &str) {
-    let _ = sqlx::query("UPDATE invite SET used_at = NULL WHERE code_hash = ? AND used_by IS NULL")
-        .bind(hash_code(code))
-        .execute(&state.pool)
-        .await;
-}
-
-/// Record who used it, once the account exists.
-pub async fn mark_used(state: &AppState, code: &str, user_id: i64) -> AppResult<()> {
-    sqlx::query("UPDATE invite SET used_by = ? WHERE code_hash = ?")
-        .bind(user_id)
-        .bind(hash_code(code))
-        .execute(&state.pool)
-        .await?;
-    Ok(())
 }

@@ -332,6 +332,11 @@ pub fn sqlite_path(url: &str) -> Option<String> {
     Some(rest.split('?').next().unwrap_or(rest).to_string())
 }
 
+/// Whether the database answers at all, for the health checks.
+pub async fn is_up(pool: &SqlitePool) -> bool {
+    sqlx::query("SELECT 1").fetch_one(pool).await.is_ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::sqlite_path;

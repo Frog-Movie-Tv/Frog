@@ -400,6 +400,68 @@ impl FromRequestParts<AppState> for AdminAuth {
     }
 }
 
+/// How many accounts there are: none means the instance still needs setting up.
+pub async fn account_count(pool: &SqlitePool) -> AppResult<i64> {
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM app_user")
+        .fetch_one(pool)
+        .await?;
+    Ok(count)
+}
+
+/// When the account's profile picture last changed, if it has one.
+pub async fn avatar_changed_at(pool: &SqlitePool, user_id: i64) -> AppResult<Option<String>> {
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT updated_at FROM user_image WHERE user_id = ? AND kind = 'avatar'")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.map(|r| r.0))
+}
+
+/// (id, username, password hash, totp secret, disabled)
+pub type LoginRow = (i64, String, String, Option<String>, i64);
+
+/// The account a name signs in to. NOCASE so signing in is not a spelling
+/// test, and one row per username.
+pub async fn sign_in_row(pool: &SqlitePool, username: &str) -> AppResult<Option<LoginRow>> {
+    Ok(sqlx::query_as(
+        "SELECT id, username, password_hash, totp_secret, disabled
+           FROM app_user WHERE username = ? COLLATE NOCASE",
+    )
+    .bind(username.trim())
+    .fetch_optional(pool)
+    .await?)
+}
+
+/// A new account with a hashed password. Returns its id.
+pub async fn insert_user(pool: &SqlitePool, name: &str, hash: &str, role: Role) -> AppResult<i64> {
+    let row: (i64,) = sqlx::query_as(
+        "INSERT INTO app_user (username, password_hash, role, created_at)
+         VALUES (?, ?, ?, ?) RETURNING id",
+    )
+    .bind(name)
+    .bind(hash)
+    .bind(role.as_db())
+    .bind(Utc::now().to_rfc3339())
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+/// The account's own password, checked before anything that changes how it
+/// signs in or what it holds.
+pub async fn check_password(pool: &SqlitePool, user_id: i64, password: &str) -> AppResult<()> {
+    let (hash,): (String,) = sqlx::query_as("SELECT password_hash FROM app_user WHERE id = ?")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await?;
+    if verify_password(password, &hash) {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest("That password is not right.".into()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,13 +1,11 @@
 use axum::extract::State;
 use axum::Json;
-use chrono::Utc;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::auth::Auth;
 use crate::error::{AppError, AppResult};
+use crate::prefs;
 use crate::state::AppState;
-
-const KEY: &str = "preferences";
 
 /// Preferences are stored as one opaque JSON blob.
 ///
@@ -18,34 +16,7 @@ const KEY: &str = "preferences";
 const MAX_BYTES: usize = 128 * 1024;
 
 pub async fn get(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT value FROM app_setting WHERE user_id = ? AND key = ?")
-            .bind(auth.user_id())
-            .bind(KEY)
-            .fetch_optional(&state.pool)
-            .await?;
-
-    let stored = row
-        .and_then(|(v,)| serde_json::from_str::<Value>(&v).ok())
-        .unwrap_or_else(|| json!({}));
-
-    Ok(Json(stored))
-}
-
-/// "Complete automatically" in Watching: whether ticking a show's last
-/// episode marks it completed. On unless it was turned off.
-pub async fn auto_complete(pool: &sqlx::SqlitePool, user_id: i64) -> bool {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT value FROM app_setting WHERE user_id = ? AND key = ?")
-            .bind(user_id)
-            .bind(KEY)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
-    row.and_then(|(v,)| serde_json::from_str::<Value>(&v).ok())
-        .and_then(|v| v["autoComplete"].as_bool())
-        .unwrap_or(true)
+    Ok(Json(prefs::get(&state.pool, auth.user_id()).await?))
 }
 
 pub async fn put(
@@ -63,19 +34,7 @@ pub async fn put(
             "preferences are too large; trim custom CSS or saved themes".into(),
         ));
     }
-
-    sqlx::query(
-        "INSERT INTO app_setting (user_id, key, value, updated_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT (user_id, key) DO UPDATE SET
-            value = excluded.value,
-            updated_at = excluded.updated_at",
-    )
-    .bind(auth.user_id())
-    .bind(KEY)
-    .bind(&encoded)
-    .bind(Utc::now().to_rfc3339())
-    .execute(&state.pool)
-    .await?;
+    prefs::put(&state.pool, auth.user_id(), &encoded).await?;
 
     // A zone chosen in Settings is also the one notifications count midnight
     // in; left empty, the zone the browser reports stands.
