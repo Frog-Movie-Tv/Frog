@@ -350,7 +350,9 @@ part you are about to touch; change it when the code changes.
   **Migrations stay additive**: a failed update rolls back to the previous
   image, which skips migrations it does not know (`set_ignore_missing`) and
   has to run on the newer schema. A destructive change takes two releases;
-  `docs/CONTRIBUTING.md` has the rule. If the previous image still fails,
+  `docs/CONTRIBUTING.md` has the rule. One taken in a single release raises
+  `db::SCHEMA_GENERATION` (2 since 1.5.0 dropped `title_airing`), so a failed
+  update restores the snapshot instead. If the previous image still fails,
   `update.sh` puts back the plain snapshot it took just before the update.
   `db::heal_line_endings` forgives a checksum that differs only in line
   endings, which is what lets a database move between a Windows checkout and

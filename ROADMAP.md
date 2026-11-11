@@ -9,33 +9,7 @@ Free, updating itself from each release (`docs/DEPLOY-ORACLE.md`).
 
 ## To build
 
-1. **Undo a merge from the app.** Every move of one account's data between
-   titles is in `title_merge` with what both sides held, but undoing one is
-   SQL by hand. Decide first: a merge comes from an AniList placement, so an
-   undo lasts only until the next sync while the placement stands.
-2. **Series copies from AniList.** An AniList series the sync has not placed
-   still gets a title of its own beside TMDB's. Place a series' first season
-   the way films already are, once that can run without someone's token.
-3. **Stats' people and streaks under a pick.** Picking a bar narrows every
-   chart but actors, directors, studios, authors, days and streaks. Needs the
-   credits and days per title in the facts the page filters.
-4. **Netflix: the 405 undated episodes.** On the 4,054-line test file, 405
-   episodes have names TMDB writes differently or not at all (Kuroko's
-   Basketball, The Order) and are counted undated. Match them by a looser
-   name, or by position within the season.
-5. **Netflix "Part N" seasons named only "Episode 3".** Money Heist Part 1
-   still waits for a person to place it.
-6. **SQL out of the route files.** Move each route's queries into `store` or
-   its domain module when that route is next touched: `account`,
-   `two_factor` (beside `auth.rs`), `profiles`, `shelves`, `timeline`,
-   `stats`, `titles`, `episodes`, `home`, `search`, `browse`, `admin`,
-   `invites`, `auth`, `push`, `settings`.
-7. **Redraw the last pre-Glass parts:** the Calendar's month grid and day
-   panel, Stats' charts, a person's page, and the import review's rows.
-8. **Drop `title_airing` once the Airing release is live.** It is emptied
-   and no longer read; the previous image still reads it on a rollback, so
-   the migration that drops it waits for the release after
-   (`docs/CONTRIBUTING.md`, two releases for a destructive change).
+Nothing at the moment.
 
 ## To check by hand
 

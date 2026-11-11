@@ -59,14 +59,24 @@ title_external               who else knows a title, and as what
   `catalog::find` follows `merged_into`, so an old AniList id or link still
   lands on the survivor. `catalog::externals` lists a survivor's own ids and
   those of titles merged into it; backups carry both.
-- **AniList's film is TMDB's film.** Opening an AniList film Frog has not
-  seen asks `anilist::film_on_tmdb` (the id lists, then name and year clearly
-  ahead, the sync's own bar) and, when it is certain, opens TMDB's title with
-  the AniList id linked to it rather than making a copy. Related rails then
-  lead there too. Copies made before that are folded in once a start by
-  `jobs::merge_film_twins` (`store::merge_copy`); a film somebody's AniList
-  list holds is left to the sync, which would otherwise bring the copy back.
-  Series are not matched this way: their seasons need the sync's walk.
+- **AniList's film is TMDB's film, and a first season TMDB's show.** Opening
+  an AniList film Frog has not seen asks `anilist::film_on_tmdb` (the id
+  lists, then name and year clearly ahead, the sync's own bar); a series
+  asks `anilist::series_on_tmdb`, which takes only a first season (no anime
+  prequel) the lists put at TMDB's season 1 from episode 1, or a clear name
+  and year winner, with public reads and no token. When it is certain,
+  TMDB's title opens with the AniList id linked to it rather than a copy.
+  Copies made before that are folded in once a start by `jobs::merge_twins`
+  (`store::merge_copy`, a show's first-season watches moved onto the same
+  episodes first); one somebody's AniList list holds is left to the sync,
+  and one somebody took apart again stays apart. Later seasons still need
+  the sync's walk.
+- **A merge can be undone** (Settings → Your data, `store::undo_merge`):
+  `title_merge` keeps both entries as they were, the film watches that
+  moved and the shelves, so the account gets them back and the copy is its
+  own title again. Episode watches that moved stay where they went. The
+  AniList entry is kept apart (`anilist_entry.kept_apart`) so the next sync
+  does not place it again.
 - **A provider id changes**: it is a new id. The old row keeps `gone_at`.
 
 ## Episodes
