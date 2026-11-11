@@ -4,7 +4,8 @@
 
 	/*
 	 * Stars filled in to rate. The row starts empty; a hand over it fills it up
-	 * to where it is, and letting go gives that many. The left half of a star
+	 * to where it is, and letting go gives that many. Left of the first star is
+	 * zero stars, a rating of its own. The left half of a star
 	 * is half of it, when halves are on. A finger can slide along the row before
 	 * it lets go, and the arrow keys move it a step at a time, Enter to give it.
 	 * Where a touch lands is `starsAt`, tested in `tests/score-entry.test.mjs`.
@@ -29,9 +30,12 @@
 	let preview = $state<number | null>(null);
 	let held = $state(false);
 	let row: HTMLElement | undefined = $state();
+	/** The stars themselves, without the zero before them. */
+	let stars: HTMLElement | undefined = $state();
 
-	const shown = $derived(preview ?? value ?? 0);
-	const words = $derived(shown > 0 ? `${starWords(shown)} of ${STARS}` : 'Not rated');
+	const given = $derived(preview ?? value);
+	const shown = $derived(given ?? 0);
+	const words = $derived(given !== null ? `${starWords(shown)} of ${STARS}` : 'Not rated');
 
 	$effect(() => {
 		void reset;
@@ -46,11 +50,12 @@
 	function starWords(n: number): string {
 		const whole = Math.floor(n);
 		const half = n - whole >= 0.5;
-		return whole ? `${whole}${half ? '½' : ''}` : '½';
+		if (!whole) return half ? '½' : '0';
+		return `${whole}${half ? '½' : ''}`;
 	}
 
 	function at(e: PointerEvent): number {
-		const box = row?.getBoundingClientRect();
+		const box = stars?.getBoundingClientRect();
 		if (!box || !box.width) return halves ? 0.5 : 1;
 		return starsAt((e.clientX - box.left) / box.width, halves);
 	}
@@ -81,13 +86,12 @@
 	}
 
 	function key(e: KeyboardEvent) {
-		const unit = halves ? 0.5 : 1;
 		let next: number | null = null;
 		if (e.key === 'ArrowRight' || e.key === 'ArrowUp') next = starStep(shown, 1, halves);
 		else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') next = starStep(shown, -1, halves);
-		else if (e.key === 'Home') next = unit;
+		else if (e.key === 'Home') next = 0;
 		else if (e.key === 'End') next = STARS;
-		else if ((e.key === 'Enter' || e.key === ' ') && shown > 0) {
+		else if ((e.key === 'Enter' || e.key === ' ') && given !== null) {
 			e.preventDefault();
 			e.stopPropagation();
 			onpick(shown);
@@ -127,18 +131,21 @@
 			if (!held) preview = null;
 		}}
 	>
-		{#each { length: STARS }, i (i)}
-			<span class="star" class:lit={fill(i) > 0}>
-				<svg class="outline" viewBox="0 0 256 256" width={size} height={size} aria-hidden="true">
-					<path d={ICONS.star[0]} fill="currentColor" />
-				</svg>
-				<span class="fill" style:width="{fill(i) * 100}%">
-					<svg viewBox="0 0 256 256" width={size} height={size} aria-hidden="true">
-						<path d={ICONS.star[1]} fill="currentColor" />
+		<span class="zero" class:on={given === 0} aria-hidden="true">0</span>
+		<span class="stars" bind:this={stars}>
+			{#each { length: STARS }, i (i)}
+				<span class="star" class:lit={fill(i) > 0}>
+					<svg class="outline" viewBox="0 0 256 256" width={size} height={size} aria-hidden="true">
+						<path d={ICONS.star[0]} fill="currentColor" />
 					</svg>
+					<span class="fill" style:width="{fill(i) * 100}%">
+						<svg viewBox="0 0 256 256" width={size} height={size} aria-hidden="true">
+							<path d={ICONS.star[1]} fill="currentColor" />
+						</svg>
+					</span>
 				</span>
-			</span>
-		{/each}
+			{/each}
+		</span>
 	</div>
 	<span class="words" aria-hidden="true">{words}</span>
 </div>
@@ -166,6 +173,28 @@
 	.row:focus-visible {
 		outline: 2px solid var(--accent);
 		outline-offset: 2px;
+	}
+
+	.stars {
+		display: flex;
+		gap: calc(var(--size) / 6);
+	}
+
+	/* Zero stars: a mark before the first, lit when it is the rating. */
+	.zero {
+		display: grid;
+		place-items: center;
+		width: calc(var(--size) * 0.55);
+		color: var(--text-faint);
+		font-size: calc(var(--size) * 0.36);
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+		opacity: 0.7;
+	}
+
+	.zero.on {
+		color: var(--accent);
+		opacity: 1;
 	}
 
 	.star {

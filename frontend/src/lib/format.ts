@@ -66,7 +66,8 @@ export function formatScore(value: number | null, format: ScoreFormat): string {
 		case 'star5': {
 			const full = Math.floor(shown);
 			const half = shown - full >= 0.5;
-			return '★'.repeat(full) + (half ? '½' : '') || '–';
+			// Zero stars is a rating, not the dash of none.
+			return '★'.repeat(full) + (half ? '½' : '') || '0★';
 		}
 		case 'smiley3':
 			return SMILEYS[Math.max(1, Math.min(3, Math.round(shown)))] ?? '–';

@@ -41,11 +41,12 @@ export const STARS = 5;
 /**
  * The stars a touch fills, from how far along the row it lands (0 at the left
  * edge, 1 at the right). The left half of a star is half of it, when halves
- * are on; otherwise any part of a star is the whole star. Never less than the
- * smallest score: a touch on the row always gives one.
+ * are on; otherwise any part of a star is the whole star. Before the first
+ * star is none at all: zero stars is a rating too.
  */
 export function starsAt(along: number, halves: boolean): number {
 	const unit = halves ? 0.5 : 1;
+	if (along < 0) return 0;
 	const held = Math.min(1, Math.max(0, Number.isFinite(along) ? along : 0));
 	const filled = Math.ceil((held * STARS) / unit - 1e-9) * unit;
 	return Math.min(STARS, Math.max(unit, filled));
@@ -55,5 +56,5 @@ export function starsAt(along: number, halves: boolean): number {
 export function starStep(stars: number, by: number, halves: boolean): number {
 	const unit = halves ? 0.5 : 1;
 	const on = Math.round(stars / unit) * unit;
-	return Math.min(STARS, Math.max(unit, on + by * unit));
+	return Math.min(STARS, Math.max(0, on + by * unit));
 }

@@ -42,6 +42,13 @@ In progress.
   lands in its first season on its own.
 - The Calendar, Stats' charts, a person's page and the import review share
   the look of the rest of Frog.
+- Stars can give a title zero stars: tap the 0 before the first one.
+
+### Fixes
+
+- Swiping a card on the rating deck stays smooth on a phone, and the page
+  around it no longer moves.
+- On the rating deck, the stars, Undo and Skip sit clear of the cards.
 
 ## [1.4.3] — Wood Frog — 2026-11-11
 

@@ -52,7 +52,8 @@ test('a touch fills the stars up to where it lands', () => {
 	assert.equal(starsAt(0.71, true), 4);
 	assert.equal(starsAt(1, true), 5);
 	assert.equal(starsAt(1.4, true), 5, 'past the end is all five');
-	assert.equal(starsAt(-1, true), 0.5, 'before the start is the least there is');
+	assert.equal(starsAt(-1, true), 0, 'before the first star is zero stars');
+	assert.equal(starsAt(-0.01, false), 0);
 	assert.equal(starsAt(Number.NaN, true), 0.5);
 });
 
@@ -66,6 +67,7 @@ test('arrow keys move by a half or a whole, within the row', () => {
 	assert.equal(starStep(3, 1, true), 3.5);
 	assert.equal(starStep(3, -1, false), 2);
 	assert.equal(starStep(5, 1, true), 5);
-	assert.equal(starStep(0, -1, true), 0.5);
+	assert.equal(starStep(0, -1, true), 0, 'zero stars is as low as it goes');
+	assert.equal(starStep(0.5, -1, true), 0);
 	assert.equal(starStep(2.5, 1, false), 4, 'a half star rounds to the scale first');
 });
