@@ -5,7 +5,7 @@
 	import Select from '#lib/components/Select.svelte';
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
-	import { relativeDate } from '#lib/format';
+	import { relativeDate, fileSize } from '#lib/format';
 	import type {
 		AdminUser,
 		InstanceInfo,
@@ -142,11 +142,7 @@
 		});
 	}
 
-	function size(bytes: number): string {
-		if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-		if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-		return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
-	}
+	const size = fileSize;
 
 	async function load() {
 		loading = true;
@@ -229,6 +225,11 @@
 			<h1>Administration</h1>
 			<p class="sub">This instance, and who can reach it.</p>
 		</div>
+		{#if !denied}
+			<div class="actions">
+				<a class="btn" href="/admin/database"><Icon name="database" size={16} /> Database</a>
+			</div>
+		{/if}
 	</header>
 
 	{#if denied}

@@ -968,3 +968,29 @@ export interface StatsNarrow {
 	/** Manga. */
 	authors?: StatsPerson[];
 }
+
+/** Administration → Database: one table, its rows and size on disk. */
+export interface DbTable {
+	name: string;
+	rows: number;
+	bytes: number | null;
+}
+
+export interface DbColumn {
+	name: string;
+	type: string;
+	primary_key: boolean;
+	/** Kept back by the server: a secret is only whether it is set, a size its bytes. */
+	hidden: 'secret' | 'size' | null;
+}
+
+export type DbCell = string | number | boolean | null | { bytes: number };
+
+export interface DbPage {
+	table: string;
+	columns: DbColumn[];
+	rows: DbCell[][];
+	total: number;
+	page: number;
+	per_page: number;
+}

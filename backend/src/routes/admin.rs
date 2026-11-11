@@ -1,13 +1,14 @@
 //! Running the instance: who has an account, what they may do, and how the
 //! instance itself is doing. Everything here sits behind `AdminAuth`.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::admin;
 use crate::auth::{self, AdminAuth, Role};
+use crate::dbview;
 use crate::error::{AppError, AppResult};
 use crate::reset;
 use crate::state::AppState;
@@ -232,4 +233,61 @@ pub fn last_backup(database_url: &str) -> Option<Value> {
     let label = parts.next().unwrap_or("").to_string();
     let pushed = parts.next() == Some("pushed");
     Some(json!({ "at": at, "label": label, "pushed": pushed }))
+}
+
+/// Administration → Database: every table with its rows and size.
+pub async fn db_tables(
+    AdminAuth(me): AdminAuth,
+    State(state): State<AppState>,
+) -> AppResult<Json<Value>> {
+    tracing::info!(admin = me.user_id(), "database: tables listed");
+    let mut conn = dbview::reader(&state.config.database_url).await?;
+    let tables = dbview::tables(&mut conn).await?;
+    Ok(Json(json!({ "tables": tables })))
+}
+
+#[derive(Deserialize)]
+pub struct TableQuery {
+    pub page: Option<u32>,
+    pub per_page: Option<u32>,
+    pub sort: Option<String>,
+    /// asc | desc
+    pub dir: Option<String>,
+    pub q: Option<String>,
+}
+
+/// One page of a table, read only, with its secrets kept back.
+pub async fn db_table(
+    AdminAuth(me): AdminAuth,
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    Query(q): Query<TableQuery>,
+) -> AppResult<Json<Value>> {
+    let descending = match q.dir.as_deref() {
+        None | Some("asc") => false,
+        Some("desc") => true,
+        Some(_) => return Err(AppError::BadRequest("Sort up or down.".into())),
+    };
+    tracing::info!(
+        admin = me.user_id(),
+        table = %name,
+        page = q.page.unwrap_or(1),
+        searched = q.q.as_deref().is_some_and(|t| !t.trim().is_empty()),
+        "database: table read"
+    );
+    let mut conn = dbview::reader(&state.config.database_url).await?;
+    let page = dbview::page(
+        &mut conn,
+        &name,
+        dbview::Ask {
+            page: q.page.unwrap_or(1),
+            per_page: q.per_page.unwrap_or(dbview::PER_PAGE),
+            sort: q.sort,
+            descending,
+            search: q.q,
+        },
+    )
+    .await?
+    .ok_or_else(|| AppError::NotFound("No such table.".into()))?;
+    Ok(Json(json!(page)))
 }

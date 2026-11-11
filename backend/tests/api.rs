@@ -6573,3 +6573,169 @@ async fn stats_narrow_days_streaks_and_people_to_a_pick() {
         assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
     }
 }
+
+/// Administration → Database: administrators only, secrets kept back, names
+/// checked against the schema, and nothing it answers can write.
+#[tokio::test]
+async fn the_database_view_is_read_only_and_keeps_secrets_back() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    sqlx::query(
+        "INSERT INTO tmdb_cache (cache_key, body, fetched_at, expires_at)
+         VALUES ('/movie/1', '{\"title\":\"a cached answer\"}', '2026-11-11', '2099-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let (code, _) = h.get("/api/admin/db/tables", Some(&guest)).await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    let (code, _) = h.get("/api/admin/db/tables/app_user", Some(&guest)).await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    let (code, _) = h.get("/api/admin/db/tables", None).await;
+    assert_eq!(code, StatusCode::UNAUTHORIZED);
+
+    let (code, body) = h.get("/api/admin/db/tables", Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK);
+    let users = body["tables"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "app_user")
+        .expect("app_user is listed");
+    assert_eq!(users["rows"], json!(2));
+    assert!(
+        !body.to_string().contains("sqlite_sequence"),
+        "SQLite's own tables stay out"
+    );
+
+    // Secrets go out as whether they are set, never as themselves.
+    let (code, body) = h.get("/api/admin/db/tables/app_user", Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    let text = body.to_string();
+    assert!(!text.contains("$argon2"), "a password hash left: {text}");
+    let at = body["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|c| c["name"] == "password_hash")
+        .unwrap();
+    assert_eq!(body["columns"][at]["hidden"], "secret");
+    assert_eq!(body["rows"][0][at], json!(true));
+    let (_, body) = h.get("/api/admin/db/tables/session", Some(&owner)).await;
+    let at = body["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|c| c["name"] == "token_hash")
+        .unwrap();
+    assert!(body["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|r| r[at] == json!(true)));
+
+    // Nor can a secret be found by searching or sorting on it.
+    let (_, body) = h
+        .get("/api/admin/db/tables/app_user?q=argon2", Some(&owner))
+        .await;
+    assert_eq!(body["total"], json!(0), "{body}");
+    let (code, _) = h
+        .get(
+            "/api/admin/db/tables/app_user?sort=password_hash",
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+
+    // A cached answer is its size.
+    let (_, body) = h.get("/api/admin/db/tables/tmdb_cache", Some(&owner)).await;
+    assert!(!body.to_string().contains("a cached answer"), "{body}");
+    let at = body["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|c| c["name"] == "body")
+        .unwrap();
+    assert_eq!(body["rows"][0][at], json!(27), "its length in bytes");
+
+    // Searching, sorting and paging what is plain.
+    let (_, body) = h
+        .get("/api/admin/db/tables/app_user?q=MIHAI", Some(&owner))
+        .await;
+    assert_eq!(body["total"], json!(1), "LIKE ignores case: {body}");
+    let (_, body) = h
+        .get(
+            "/api/admin/db/tables/app_user?sort=username&dir=desc&per_page=1",
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(body["total"], json!(2));
+    assert_eq!(body["rows"].as_array().unwrap().len(), 1);
+    let (_, body) = h
+        .get("/api/admin/db/tables/app_user?per_page=5000", Some(&owner))
+        .await;
+    assert_eq!(body["per_page"], json!(200), "the most a page holds");
+    let (_, body) = h
+        .get("/api/admin/db/tables/app_user?q=%25", Some(&owner))
+        .await;
+    assert_eq!(
+        body["total"],
+        json!(0),
+        "a % is searched for, not a wildcard"
+    );
+
+    // Names the schema does not know are refused, whatever they hold.
+    for path in [
+        "/api/admin/db/tables/nope",
+        "/api/admin/db/tables/sqlite_master",
+        "/api/admin/db/tables/app_user%3B%20DROP%20TABLE%20title",
+    ] {
+        let (code, _) = h.get(path, Some(&owner)).await;
+        assert_eq!(code, StatusCode::NOT_FOUND, "{path}");
+    }
+    for query in [
+        "sort=nope",
+        "sort=username%3B%20DROP%20TABLE%20title",
+        "dir=sideways",
+    ] {
+        let (code, _) = h
+            .get(
+                &format!("/api/admin/db/tables/app_user?{query}"),
+                Some(&owner),
+            )
+            .await;
+        assert_eq!(code, StatusCode::BAD_REQUEST, "{query}");
+    }
+    let (_, body) = h
+        .get(
+            "/api/admin/db/tables/app_user?q=%27%3B%20DELETE%20FROM%20app_user%3B%20--",
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(body["total"], json!(0));
+
+    // No way in writes.
+    let (code, _, _) = h
+        .post("/api/admin/db/tables/app_user", json!({}), Some(&owner))
+        .await;
+    assert!(!code.is_success(), "{code}");
+    let (code, _, _) = h
+        .delete("/api/admin/db/tables/app_user", Some(&owner))
+        .await;
+    assert!(!code.is_success(), "{code}");
+    let (code, _, _) = h
+        .put("/api/admin/db/tables/app_user", json!({}), Some(&owner))
+        .await;
+    assert!(!code.is_success(), "{code}");
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM app_user")
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 2);
+    let (_, body) = h.get("/api/admin/db/tables", Some(&owner)).await;
+    assert!(
+        body.to_string().contains("\"title\""),
+        "title is still there"
+    );
+}

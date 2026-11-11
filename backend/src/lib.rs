@@ -10,6 +10,7 @@ pub mod bulk;
 pub mod catalog;
 pub mod config;
 pub mod db;
+pub mod dbview;
 pub mod error;
 pub mod fanart;
 pub mod franchise;

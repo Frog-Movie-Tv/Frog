@@ -401,6 +401,11 @@ part you are about to touch; change it when the code changes.
 - **Shelves have one place on Home**, the Your shelves row. A shelf used to be
   able to add a row of its own, which showed it twice; saved layouts lose those
   rows as they load (`introduceRows`).
+- **Administration → Database is read only and keeps secrets back**
+  (`backend/src/dbview.rs`). A new column named with hash, secret, token,
+  key, p256dh or auth fails `tests/dbview.rs` until it goes in `HIDDEN` or,
+  with the reason, in `PLAIN`. Hidden columns are never searched or sorted
+  on, since either would let someone guess them.
 - **Administration shows initials on purpose.** A picture is served only to those
   who can see the profile (`visible` in `routes/profiles.rs`), so drawing one
   there would show it for an account that has its profile off.

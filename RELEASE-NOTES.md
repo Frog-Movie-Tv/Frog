@@ -29,6 +29,9 @@ In progress.
 
 ### Improvements
 
+- **Database** in Administration shows every table, read only: search it,
+  sort it and page through it, with passwords, keys and sign-ins kept on the
+  server.
 - **View more** on Because you watched and More like this opens a full
   page of picks for that title. Because you watched also turns to another
   title of yours every couple of minutes.

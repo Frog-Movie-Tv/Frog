@@ -121,6 +121,8 @@ pub fn router(state: AppState) -> Router {
         .route("/admin/users/{id}/reset", post(admin::reset_link))
         .route("/admin/instance", get(admin::instance))
         .route("/admin/server", get(admin::server))
+        .route("/admin/db/tables", get(admin::db_tables))
+        .route("/admin/db/tables/{name}", get(admin::db_table))
         .route("/anilist", get(anilist::status).delete(anilist::disconnect))
         .route("/anilist/connect", post(anilist::connect))
         .route("/anilist/callback", get(anilist::callback))

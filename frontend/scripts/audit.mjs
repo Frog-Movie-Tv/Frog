@@ -177,6 +177,8 @@ const ROUTES = [
 	'/whats-new',
 	'/reset',
 	'/admin',
+	'/admin/database',
+	'/admin/database/title',
 	'/title/tv/95396',
 	'/title/movie/157336',
 	'/person/73457'

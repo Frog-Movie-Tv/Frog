@@ -38,6 +38,8 @@ import type {
 	SharedLibrary,
 	PersonDetail,
 	SearchItem,
+	DbTable,
+	DbPage,
 	SeasonDetail,
 	FullStats,
 	MangaStats,
@@ -292,6 +294,11 @@ export const api = {
 	deleteUser: (id: number) => send<{ ok: true }>('DELETE', `/api/admin/users/${id}`),
 	instance: () => get<InstanceInfo>('/api/admin/instance'),
 	server: () => get<ServerStatus>('/api/admin/server'),
+	dbTables: () => get<{ tables: DbTable[] }>('/api/admin/db/tables'),
+	dbTable: (
+		name: string,
+		ask: { page?: number; per_page?: number; sort?: string; dir?: 'asc' | 'desc'; q?: string }
+	) => get<DbPage>(`/api/admin/db/tables/${encodeURIComponent(name)}${qs(ask)}`),
 
 	anilist: () => get<AniListStatus>('/api/anilist'),
 	anilistConnect: () => send<{ url: string }>('POST', '/api/anilist/connect', {}),
