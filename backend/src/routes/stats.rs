@@ -23,10 +23,15 @@ pub struct StatsQuery {
     pub year: Option<i32>,
 }
 
-/// Which watches a figure is computed over: whose they are, and when.
+/// Which watches a figure is computed over: whose they are, and when; and,
+/// under a pick on the page, which titles and which month or year.
 struct Scope {
     user_id: i64,
     year: Option<String>,
+    /// Frog's title ids, already checked to be numbers, joined by commas.
+    titles: Option<String>,
+    /// A month (YYYY-MM) or year (YYYY), already checked to be one.
+    unit: Option<String>,
 }
 
 impl Scope {
@@ -47,6 +52,16 @@ impl Scope {
         );
         if self.year.is_some() {
             filter.push_str(" AND w.undated = 0 AND substr(w.watched_at, 1, 4) = ?");
+        }
+        // Both were checked to hold only digits, commas and a dash.
+        if let Some(titles) = &self.titles {
+            filter.push_str(&format!(" AND w.title_id IN ({titles})"));
+        }
+        if let Some(unit) = &self.unit {
+            filter.push_str(&format!(
+                " AND w.undated = 0 AND substr(w.watched_at, 1, {}) = '{unit}'",
+                unit.len()
+            ));
         }
         format!("WITH scoped AS (SELECT w.* FROM watch_event w WHERE {filter}) {body}")
     }
@@ -171,6 +186,8 @@ pub async fn stats(
     let scope = Scope {
         user_id: auth.user_id(),
         year: q.year.map(|y| y.to_string()),
+        titles: None,
+        unit: None,
     };
     let pool = &state.pool;
 
@@ -291,19 +308,7 @@ pub async fn stats(
         )
         .await?;
 
-    let watch_days: Vec<(String,)> = scope
-        .all(
-            pool,
-            "SELECT DISTINCT substr(watched_at, 1, 10) FROM scoped
-              WHERE undated = 0 ORDER BY 1",
-        )
-        .await?;
-    let watch_days: Vec<NaiveDate> = watch_days
-        .into_iter()
-        .filter_map(|(d,)| NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok())
-        .collect();
-    let today = Utc::now().date_naive();
-    let (longest, current) = streaks(&watch_days, today);
+    let (longest, current) = scope_streaks(&scope, pool).await?;
 
     let mine = scope.mine();
 
@@ -681,6 +686,151 @@ pub async fn manga(
     })))
 }
 
+/// The longest and current streak of days with a watch, in a scope.
+async fn scope_streaks(scope: &Scope, pool: &SqlitePool) -> AppResult<(Streak, Streak)> {
+    let watch_days: Vec<(String,)> = scope
+        .all(
+            pool,
+            "SELECT DISTINCT substr(watched_at, 1, 10) FROM scoped
+              WHERE undated = 0 ORDER BY 1",
+        )
+        .await?;
+    let watch_days: Vec<NaiveDate> = watch_days
+        .into_iter()
+        .filter_map(|(d,)| NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok())
+        .collect();
+    Ok(streaks(&watch_days, Utc::now().date_naive()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NarrowQuery {
+    /// `manga` for the reading half; anything else is films and shows.
+    pub half: Option<String>,
+    pub year: Option<i32>,
+    /// The month (YYYY-MM) or year (YYYY) picked on the page, if one is.
+    pub unit: Option<String>,
+    /// The titles the page's picks keep, by Frog's id, comma separated.
+    pub ids: String,
+}
+
+/// Titles a pick can keep at once; a library is not bigger.
+const NARROW_MOST: usize = 5000;
+
+/// The ids as SQL can take them: numbers only, or a refusal.
+fn id_list(raw: &str) -> AppResult<String> {
+    let ids: Vec<i64> = raw
+        .split(',')
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.trim().parse::<i64>())
+        .collect::<Result<_, _>>()
+        .map_err(|_| AppError::BadRequest("ids are numbers".into()))?;
+    if ids.len() > NARROW_MOST {
+        return Err(AppError::BadRequest("too many titles".into()));
+    }
+    // An empty pick keeps nothing; 0 is no title's id.
+    Ok(if ids.is_empty() {
+        "0".into()
+    } else {
+        ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",")
+    })
+}
+
+/// A month or year as the page names one.
+fn unit_of(raw: Option<&str>) -> AppResult<Option<String>> {
+    let Some(unit) = raw.filter(|u| !u.is_empty()) else {
+        return Ok(None);
+    };
+    let shape = unit.len() == 4 || (unit.len() == 7 && unit.as_bytes()[4] == b'-');
+    let digits = unit
+        .chars()
+        .enumerate()
+        .all(|(i, c)| i == 4 || c.is_ascii_digit());
+    if !(shape && digits) {
+        return Err(AppError::BadRequest("unit is YYYY or YYYY-MM".into()));
+    }
+    Ok(Some(unit.to_string()))
+}
+
+/// What the page cannot work out from the facts it holds, for the titles a
+/// pick keeps: the days and streaks, and the people. Films and shows give
+/// active days, streaks, actors, directors and studios; manga gives days
+/// reading and authors.
+pub async fn narrow(
+    auth: Auth,
+    State(state): State<AppState>,
+    Query(q): Query<NarrowQuery>,
+) -> AppResult<Json<Value>> {
+    if q.year.is_some_and(|y| !(1900..=2100).contains(&y)) {
+        return Err(AppError::BadRequest(
+            "year must be between 1900 and 2100".into(),
+        ));
+    }
+    let titles = id_list(&q.ids)?;
+    let unit = unit_of(q.unit.as_deref())?;
+    let pool = &state.pool;
+
+    if q.half.as_deref() == Some("manga") {
+        let me = auth.user_id();
+        let year = q.year.map(|y| y.to_string()).unwrap_or_default();
+        let unit = unit.unwrap_or_default();
+        let (days,): (i64,) = sqlx::query_as(&format!(
+            "SELECT COUNT(DISTINCT substr(r.read_at, 1, 10)) FROM chapter_read r
+              WHERE r.user_id = ?1 AND (?2 = '' OR substr(r.read_at, 1, 4) = ?2)
+                AND (?3 = '' OR substr(r.read_at, 1, length(?3)) = ?3)
+                AND r.title_id IN ({titles})"
+        ))
+        .bind(me)
+        .bind(&year)
+        .bind(&unit)
+        .fetch_one(pool)
+        .await?;
+        let authors: Vec<PersonRow> = sqlx::query_as(&format!(
+            "SELECT p.tmdb_id, MAX(p.name), MAX(p.profile_path), COUNT(DISTINCT p.title_id) AS n
+               FROM title_person p
+              WHERE p.role = 'creator'
+                AND p.title_id IN (SELECT l.title_id FROM library_entry l
+                                    WHERE l.user_id = ?1 AND l.title_id IN ({titles}))
+              GROUP BY p.tmdb_id
+              ORDER BY n DESC, MIN(p.ord), MAX(p.name)
+              LIMIT 10"
+        ))
+        .bind(me)
+        .fetch_all(pool)
+        .await?;
+        return Ok(Json(json!({
+            "days": days,
+            "authors": authors.into_iter().map(person_json).collect::<Vec<_>>(),
+        })));
+    }
+
+    let scope = Scope {
+        user_id: auth.user_id(),
+        year: q.year.map(|y| y.to_string()),
+        titles: Some(titles),
+        unit,
+    };
+    let (days,): (i64,) = scope
+        .one(
+            pool,
+            "SELECT COUNT(DISTINCT substr(watched_at, 1, 10)) FROM scoped WHERE undated = 0",
+        )
+        .await?;
+    let (longest, current) = scope_streaks(&scope, pool).await?;
+    Ok(Json(json!({
+        "days": days,
+        "streaks": { "longest": longest, "current": current },
+        "people": {
+            "actors": people(&scope, pool, "'cast'").await?,
+            "directors": people(&scope, pool, "'director', 'creator'").await?,
+            "studios": people(&scope, pool, "'studio'").await?,
+        },
+    })))
+}
+
+fn person_json((tmdb_id, name, image, titles): PersonRow) -> Value {
+    json!({ "tmdb_id": tmdb_id, "name": name, "image": image, "titles": titles })
+}
+
 async fn people(scope: &Scope, pool: &SqlitePool, roles: &str) -> AppResult<Vec<Value>> {
     // Ties go to whoever is billed highest, so a lead outranks a cameo.
     let rows: Vec<PersonRow> = scope
@@ -697,12 +847,7 @@ async fn people(scope: &Scope, pool: &SqlitePool, roles: &str) -> AppResult<Vec<
             ),
         )
         .await?;
-    Ok(rows
-        .into_iter()
-        .map(|(tmdb_id, name, image, titles)| {
-            json!({ "tmdb_id": tmdb_id, "name": name, "image": image, "titles": titles })
-        })
-        .collect())
+    Ok(rows.into_iter().map(person_json).collect())
 }
 
 fn top_json((kind, id, name, poster_path, watches, minutes, rating): TopRow) -> Value {

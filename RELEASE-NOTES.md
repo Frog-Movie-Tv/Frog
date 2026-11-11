@@ -35,6 +35,8 @@ In progress.
 - An anime series opened from AniList is the same title as TMDB's when TMDB
   has its first season, so it appears once in your library, with its
   history.
+- Picking a bar on Stats narrows the actors, directors, studios, authors,
+  days and streaks as well.
 
 ## [1.4.3] — Wood Frog — 2026-11-11
 

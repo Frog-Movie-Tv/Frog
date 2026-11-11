@@ -15,7 +15,14 @@
 	import { failure, type Failure } from '#lib/failure';
 	import { formatScore, longRuntime, plural, runtime } from '#lib/format';
 	import { settings } from '#lib/settings.svelte';
-	import type { FullStats, MangaStats, StatsPerson, StatsTitle, Status } from '#lib/types';
+	import type {
+		FullStats,
+		MangaStats,
+		StatsNarrow,
+		StatsPerson,
+		StatsTitle,
+		Status
+	} from '#lib/types';
 	import { STATUSES, statusLabel } from '#lib/types';
 	import {
 		decadeOf,
@@ -119,8 +126,8 @@
 
 	/*
 	 * The manga half is a dashboard too: a bar picked narrows the rest, from
-	 * one row per manga (`mangaView`). Days reading and the authors are set
-	 * aside while something is picked, as they count the whole period.
+	 * one row per manga (`mangaView`). Days reading and the authors come from
+	 * the server for the manga a pick keeps (`narrowed people` below).
 	 */
 	let mangaFilter = $state<MangaFilter>({});
 	$effect(() => {
@@ -246,6 +253,55 @@
 	const ratingBars = $derived(narrowed?.ratings ?? stats?.ratings ?? []);
 	const topShows = $derived(narrowed?.top_shows ?? stats?.top_shows ?? []);
 	const topFilms = $derived(narrowed?.top_films ?? stats?.top_films ?? []);
+
+	/*
+	 * Days, streaks and people need every watch and credit, which the facts do
+	 * not carry: under a pick, the server counts them for the titles kept.
+	 */
+	let extra = $state<StatsNarrow | null>(null);
+	let mangaExtra = $state<StatsNarrow | null>(null);
+	function narrowFrom(
+		half: 'watching' | 'manga',
+		ids: number[] | undefined,
+		unit: string | undefined,
+		year: number | null,
+		set: (n: StatsNarrow | null) => void
+	) {
+		if (!ids) {
+			set(null);
+			return;
+		}
+		let stale = false;
+		const timer = setTimeout(() => {
+			api
+				.statsNarrow(half, ids, year ?? undefined, unit)
+				.then((n) => !stale && set(n))
+				.catch(() => !stale && set(null));
+		}, 120);
+		return () => {
+			stale = true;
+			clearTimeout(timer);
+		};
+	}
+	$effect(() =>
+		narrowFrom('watching', narrowed?.ids, filter.unit, stats?.year ?? null, (n) => (extra = n))
+	);
+	$effect(() =>
+		narrowFrom(
+			'manga',
+			mangaNarrowed?.ids,
+			mangaFilter.unit,
+			manga?.year ?? null,
+			(n) => (mangaExtra = n)
+		)
+	);
+	const days = $derived(picked ? extra?.days : stats?.totals.days);
+	const streaksShown = $derived(picked ? extra?.streaks : stats?.streaks);
+	const peopleShown = $derived(picked ? (extra?.people ?? null) : (stats?.people ?? null));
+	const mangaDays = $derived(mangaPicked ? mangaExtra?.days : manga?.totals.days);
+	const authorsShown = $derived(
+		mangaPicked ? (mangaExtra?.authors ?? null) : (manga?.authors ?? null)
+	);
 
 	const timelineMax = $derived(Math.max(1, ...timeline.map((t) => t.minutes)));
 	const genreMax = $derived(Math.max(1, ...genres.map((g) => g.titles)));
@@ -395,12 +451,10 @@
 					<span class="eyebrow">Completed</span>
 					<strong>{mTotals.completed.toLocaleString()}</strong>
 				</div>
-				{#if !mangaPicked}
-					<div class="tile card">
-						<span class="eyebrow">Days reading</span>
-						<strong>{manga.totals.days.toLocaleString()}</strong>
-					</div>
-				{/if}
+				<div class="tile card">
+					<span class="eyebrow">Days reading</span>
+					<strong>{mangaDays === undefined ? '…' : mangaDays.toLocaleString()}</strong>
+				</div>
 				<div class="tile card">
 					<span class="eyebrow">Mean rating</span>
 					<strong><Score value={mTotals.mean_rating} /></strong>
@@ -577,11 +631,8 @@
 				{/if}
 			</div>
 
-			{#if mangaPicked && manga.authors.length}
-				<p class="faint note">The authors below count everything in this period.</p>
-			{/if}
-			<div class="grid people-row">
-				{@render people('Authors', manga.authors, '/person')}
+			<div class="grid people-row" class:settling={mangaPicked && !mangaExtra}>
+				{@render people('Authors', authorsShown ?? manga.authors, '/person')}
 			</div>
 		</div>
 	{/if}
@@ -674,26 +725,25 @@
 						<span class="eyebrow">Titles</span>
 						<strong>{totals.titles.toLocaleString()}</strong>
 					</div>
-				{:else}
-					<div class="tile card">
-						<span class="eyebrow">Days watching</span>
-						<strong>{stats.totals.days.toLocaleString()}</strong>
-					</div>
-					<div class="tile card">
-						<span class="eyebrow">Longest streak</span>
-						<strong>{plural(stats.streaks.longest.days, 'day')}</strong>
-						{#if stats.streaks.longest.days > 1}
-							<span class="faint">
-								{shortDate(stats.streaks.longest.from)} – {shortDate(stats.streaks.longest.to)}
-							</span>
-						{/if}
-					</div>
 				{/if}
-				{#if stats.streaks.current.days > 0 && !picked}
+				<div class="tile card">
+					<span class="eyebrow">Days watching</span>
+					<strong>{days === undefined ? '…' : days.toLocaleString()}</strong>
+				</div>
+				<div class="tile card">
+					<span class="eyebrow">Longest streak</span>
+					<strong>{streaksShown ? plural(streaksShown.longest.days, 'day') : '…'}</strong>
+					{#if streaksShown && streaksShown.longest.days > 1}
+						<span class="faint">
+							{shortDate(streaksShown.longest.from)} – {shortDate(streaksShown.longest.to)}
+						</span>
+					{/if}
+				</div>
+				{#if streaksShown && streaksShown.current.days > 0}
 					<div class="tile card">
 						<span class="eyebrow">Current streak</span>
 						<strong class="streak"
-							><Icon name="flame" size={22} />{plural(stats.streaks.current.days, 'day')}</strong
+							><Icon name="flame" size={22} />{plural(streaksShown.current.days, 'day')}</strong
 						>
 					</div>
 				{/if}
@@ -850,13 +900,14 @@
 
 			<!-- The people get a row of their own, side by side, rather than
 			     filling whatever gap the charts above leave. -->
-			{#if picked}
-				<p class="faint note">The people below count everything in this period.</p>
-			{/if}
-			<div class="grid people-row">
-				{@render people('Actors', stats.people.actors, '/person')}
-				{@render people('Directors and creators', stats.people.directors, '/person')}
-				{@render people('Studios', stats.people.studios, '/studio', true)}
+			<div class="grid people-row" class:settling={picked && !extra}>
+				{@render people('Actors', (peopleShown ?? stats.people).actors, '/person')}
+				{@render people(
+					'Directors and creators',
+					(peopleShown ?? stats.people).directors,
+					'/person'
+				)}
+				{@render people('Studios', (peopleShown ?? stats.people).studios, '/studio', true)}
 			</div>
 
 			{#if stats.credits_pending > 0}
@@ -1018,6 +1069,12 @@
 	}
 
 	/* Three across, or one under the other: never two and a straggler. */
+	/* Waiting for the people under a new pick: the old ones, faded. */
+	.settling {
+		opacity: 0.5;
+		transition: opacity var(--fast) var(--ease);
+	}
+
 	.people-row {
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}

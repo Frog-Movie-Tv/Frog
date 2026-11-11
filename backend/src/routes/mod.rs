@@ -73,6 +73,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/stats", get(stats::stats))
         .route("/stats/manga", get(stats::manga))
+        .route("/stats/narrow", get(stats::narrow))
         .route("/shelves", get(shelves::list).post(shelves::create))
         .route("/shelves/order", put(shelves::reorder))
         .route(

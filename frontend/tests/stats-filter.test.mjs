@@ -150,3 +150,9 @@ test('a ratings bar keeps the rated manga under it', () => {
 	assert.equal(v.totals.mean_rating, 90);
 	assert.deepEqual(toggleManga({ rating: 8 }, 'rating', 8), {});
 });
+
+test('a pick says which titles it keeps, for the days and people', () => {
+	assert.deepEqual(view(facts, {}, units).ids, [1, 2, 3]);
+	assert.deepEqual(view(facts, { genre: 'Comedy' }, units).ids, [2, 3]);
+	assert.deepEqual(view(facts, { unit: '2026-01' }, units).ids, [1, 2]);
+});

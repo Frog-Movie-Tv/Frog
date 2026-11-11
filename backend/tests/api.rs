@@ -6502,3 +6502,74 @@ async fn a_series_copy_hands_its_watches_to_the_shows_first_season() {
         .unwrap();
     assert_eq!(left, 1);
 }
+
+/// Under a pick, Stats' days, streaks and people count only the titles kept.
+#[tokio::test]
+async fn stats_narrow_days_streaks_and_people_to_a_pick() {
+    let h = Harness::new().await;
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.expect("setup signs in");
+    let pool = &h.state.pool;
+    sqlx::query("INSERT INTO title_seed (kind, tmdb_id, name, runtime) VALUES ('movie', 1, 'One', 100), ('movie', 2, 'Two', 90)")
+        .execute(pool)
+        .await
+        .unwrap();
+    let (one, two) = (h.tid("movie", 1).await, h.tid("movie", 2).await);
+    for sql in [
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, ?1, 'completed', 'x', 'x'), (1, ?2, 'completed', 'x', 'x')",
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, source) VALUES
+            (1, ?1, NULL, '2026-03-01T20:00:00Z', 'manual'),
+            (1, ?1, NULL, '2026-03-02T20:00:00Z', 'manual'),
+            (1, ?2, NULL, '2026-04-10T20:00:00Z', 'manual')",
+        "INSERT INTO title_person (title_id, tmdb_id, name, role, ord) VALUES
+            (?1, 500, 'Lead One', 'cast', 0), (?2, 600, 'Lead Two', 'cast', 0)",
+    ] {
+        sqlx::query(sql)
+            .bind(one)
+            .bind(two)
+            .execute(pool)
+            .await
+            .unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
+
+    let (status, all) = h.get("/api/stats", Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{all}");
+    assert_eq!(all["totals"]["days"], json!(3));
+
+    let (status, picked) = h
+        .get(&format!("/api/stats/narrow?ids={one}"), Some(&cookie))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{picked}");
+    assert_eq!(picked["days"], json!(2));
+    assert_eq!(picked["streaks"]["longest"]["days"], json!(2));
+    let actors: Vec<&str> = picked["people"]["actors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|a| a["name"].as_str())
+        .collect();
+    assert_eq!(actors, ["Lead One"]);
+
+    // A month picked as well: only what was watched in it.
+    let (_, april) = h
+        .get(
+            &format!("/api/stats/narrow?ids={one},{two}&unit=2026-04"),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(april["days"], json!(1));
+
+    for bad in ["ids=1;DROP", "ids=1&unit=2026-4x", "ids=1&unit=x"] {
+        let (status, _) = h
+            .get(&format!("/api/stats/narrow?{bad}"), Some(&cookie))
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+}

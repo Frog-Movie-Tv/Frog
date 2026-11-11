@@ -50,7 +50,15 @@ const SCOPED_FRAGMENTS: [&str; 7] = [
 ];
 
 /// Statements that are global on purpose, each with its reason.
-const ALLOWED: [(&str, &str); 9] = [
+const ALLOWED: [(&str, &str); 11] = [
+    (
+        "SELECT t.id, x.external_id, t.kind FROM title t JOIN title_external x",
+        "decides which shared AniList copies are TMDB's titles at start; reads          title_merge only to leave alone a copy somebody took apart again",
+    ),
+    (
+        "UPDATE watch_event SET title_id = ?2, episode_id = (SELECT t.id FROM episode t",
+        "folds a duplicate show into TMDB's for everyone who holds it, as          store::merge_copy does: each watch keeps its owner",
+    ),
     (
         "SELECT s.tmdb_id AS tmdb_id, s.popularity AS rank, NULL AS since FROM airing_show s",
         "decides which shared shows need their air times worked out, from the          Airing list and what anyone tracks; writes only air_at and airtime_show",

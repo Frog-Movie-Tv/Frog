@@ -958,3 +958,13 @@ export interface TitleMerge {
 	merged_at: string;
 	undone_at: string | null;
 }
+
+/** `/api/stats/narrow`: what a pick on Stats keeps of the days and the people. */
+export interface StatsNarrow {
+	days: number;
+	/** Films and shows. */
+	streaks?: { longest: Streak; current: Streak };
+	people?: { actors: StatsPerson[]; directors: StatsPerson[]; studios: StatsPerson[] };
+	/** Manga. */
+	authors?: StatsPerson[];
+}

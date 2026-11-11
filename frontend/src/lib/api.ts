@@ -4,6 +4,7 @@ import type { TitleRef } from './titles';
 import type { WhenAnswer } from './when.svelte';
 import type {
 	TitleMerge,
+	StatsNarrow,
 	ActivityItem,
 	AiringDay,
 	AiringFilters,
@@ -418,6 +419,9 @@ export const api = {
 	airingDay: (filters: AiringFilters, date: string, offset: number) =>
 		get<AiringDay>(`/api/airing/day${qs({ ...filters, date, offset, tz: viewerZone() })}`),
 	fullStats: (year?: number) => get<FullStats>(`/api/stats${qs({ year })}`),
+	/** Days, streaks and people for the titles a pick on Stats keeps. */
+	statsNarrow: (half: 'watching' | 'manga', ids: number[], year?: number, unit?: string) =>
+		get<StatsNarrow>(`/api/stats/narrow${qs({ half, year, unit, ids: ids.join(',') })}`),
 	mangaStats: (year?: number) => get<MangaStats>(`/api/stats/manga${qs({ year })}`),
 
 	/** A title as a provider names it (`tv/1399`, `anilist/21`): opens it, and the answer carries Frog's id. */
