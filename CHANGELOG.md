@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.4.3](https://github.com/Frog-Movie-Tv/Frog/compare/v1.4.2...v1.4.3) (2026-11-11)
+
+
+### Features
+
+* air times from TheTVDB, notifications the minute it airs (1.4.3) ([e8b4b31](https://github.com/Frog-Movie-Tv/Frog/commit/e8b4b31bd71f5d2d5652cfca00c012d4390be29f))
+* air times from TheTVDB, notifications the minute it airs, and the 10 November batch ([591b6b8](https://github.com/Frog-Movie-Tv/Frog/commit/591b6b8c34a5d9c0bb291cb93d343f0c741c261d))
+
+
+### Fixes
+
+* a padded hour on the 24-hour clock, and the notification switch in its own words ([360065b](https://github.com/Frog-Movie-Tv/Frog/commit/360065bf9338263bfc47bc136bb3771d2d324d2e))
+
 ## [1.4.2](https://github.com/Frog-Movie-Tv/Frog/compare/v1.4.1...v1.4.2) (2026-11-10)
 
 
