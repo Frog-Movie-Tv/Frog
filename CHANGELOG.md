@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.1](https://github.com/Frog-Movie-Tv/Frog/compare/v1.5.0...v1.5.1) (2026-11-12)
+
+
+### Fixes
+
+* air times matched by name, day and number, with the provider's day ([045484f](https://github.com/Frog-Movie-Tv/Frog/commit/045484f9a9bb5fb8ef0286194eef1f967edb8bc2))
+* air times matched by name, day and number, with the provider's day (1.5.1) ([a79c93d](https://github.com/Frog-Movie-Tv/Frog/commit/a79c93dee46a89b3265004f769ccbe27dcedc343))
+
 ## [1.5.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.4.3...v1.5.0) (2026-11-11)
 
 
