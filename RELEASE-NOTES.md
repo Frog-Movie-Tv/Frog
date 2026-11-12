@@ -13,6 +13,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+## [1.5.1] — Goliath — 2026-11-12
+
+A few improvements and fixes.
+
 ### Fixes
 
 - Every episode in your library has its air time, nightly shows included.
@@ -956,6 +960,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.5.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.5.1
 [1.5.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.5.0
 [1.4.3]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.4.3
 [1.4.2]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.4.2
