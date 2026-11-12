@@ -34,12 +34,15 @@ pub struct Episode {
     pub airdate: Option<NaiveDate>,
     /// The moment, only when TVmaze knows the time of day.
     pub at: Option<DateTime<Utc>>,
+    /// For pairing with TMDB's episode by name.
+    pub name: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct RawEpisode {
     season: Option<i64>,
     number: Option<i64>,
+    name: Option<String>,
     airdate: Option<String>,
     airtime: Option<String>,
     airstamp: Option<String>,
@@ -66,6 +69,7 @@ pub fn parse_episodes(body: &[u8]) -> AppResult<Vec<Episode>> {
             Some(Episode {
                 season: e.season?,
                 number: e.number,
+                name: e.name,
                 airdate: e
                     .airdate
                     .as_deref()

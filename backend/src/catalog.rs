@@ -820,13 +820,17 @@ pub async fn upsert_episodes(
                 name = excluded.name,
                 overview = excluded.overview,
                 still_path = excluded.still_path,
-                -- TMDB's day always. A moment worked out for another day no
-                -- longer holds; crate::airtime works it out again.
-                air_at = CASE WHEN episode.air_date IS excluded.air_date
+                                -- While TVmaze or AniList dates an episode, its day and moment
+                -- are theirs (crate::airtime). Otherwise TMDB's day, and a
+                -- moment worked out for another day no longer holds.
+                air_at = CASE WHEN episode.air_source IN ('tvmaze', 'anilist')
+                                   OR episode.air_date IS excluded.air_date
                               THEN episode.air_at END,
-                air_source = CASE WHEN episode.air_date IS excluded.air_date
+                air_source = CASE WHEN episode.air_source IN ('tvmaze', 'anilist')
+                                       OR episode.air_date IS excluded.air_date
                                   THEN episode.air_source END,
-                air_date = excluded.air_date,
+                air_date = CASE WHEN episode.air_source IN ('tvmaze', 'anilist')
+                                THEN episode.air_date ELSE excluded.air_date END,
                 runtime = excluded.runtime,
                 tmdb_vote = excluded.tmdb_vote",
         )

@@ -689,3 +689,93 @@ async fn a_catalog_from_before_manga_takes_manga_and_loses_nothing() {
         "the release before still runs on it"
     );
 }
+
+/// While TVmaze or AniList dates an episode, a TMDB refresh leaves its day and
+/// moment alone; an episode no provider has takes TMDB's day, and loses a
+/// moment worked out for another one.
+#[tokio::test]
+async fn a_providers_day_outlasts_a_tmdb_refresh() {
+    let dir = tempfile::tempdir().unwrap();
+    let pool = frog::db::connect(&url_in(&dir)).await.unwrap();
+    sqlx::query(
+        "INSERT INTO title (id, kind, name, genres_json) VALUES (1, 'tv', 'A Talk Show', '[]')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    for (episode, day, at, source) in [
+        (
+            1,
+            "2026-11-08",
+            Some("2026-11-09T02:00:00Z"),
+            Some("tvmaze"),
+        ),
+        (2, "2026-11-09", None, Some("tvmaze")),
+        (3, "2026-11-10", Some("2026-11-11T02:00:00Z"), None),
+        (4, "2026-11-11", None, None),
+    ] {
+        sqlx::query(
+            "INSERT INTO episode (title_id, season_number, episode_number, air_date, air_at, air_source)
+             VALUES (1, 1, ?, ?, ?, ?)",
+        )
+        .bind(episode)
+        .bind(day)
+        .bind(at)
+        .bind(source)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    // TMDB's days, each one earlier than stored.
+    let tmdb = |episode: i64, day: &str| frog::tmdb::models::EpisodeInfo {
+        season_number: 1,
+        episode_number: episode,
+        tmdb_episode_id: None,
+        name: Some(format!("Episode {episode}")),
+        overview: None,
+        still_path: None,
+        air_date: Some(day.to_string()),
+        runtime: None,
+        tmdb_vote: None,
+    };
+    catalog::upsert_episodes(
+        &pool,
+        1,
+        &[
+            tmdb(1, "2026-11-07"),
+            tmdb(2, "2026-11-08"),
+            tmdb(3, "2026-11-09"),
+            tmdb(4, "2026-11-11"),
+        ],
+    )
+    .await
+    .unwrap();
+    let rows: Vec<(i64, String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT episode_number, air_date, air_at, air_source FROM episode ORDER BY episode_number",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let row = |e: i64, day: &str, at: Option<&str>, source: Option<&str>| {
+        (
+            e,
+            day.to_string(),
+            at.map(str::to_string),
+            source.map(str::to_string),
+        )
+    };
+    assert_eq!(
+        rows,
+        [
+            row(
+                1,
+                "2026-11-08",
+                Some("2026-11-09T02:00:00Z"),
+                Some("tvmaze")
+            ),
+            row(2, "2026-11-09", None, Some("tvmaze")),
+            row(3, "2026-11-09", None, None),
+            row(4, "2026-11-11", None, None),
+        ]
+    );
+}

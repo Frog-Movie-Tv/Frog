@@ -20,10 +20,12 @@ when it ships. How things work lives here, under **How things work**.
   MDBList and fanart.tv keys (both optional), are the only credentials. AniList
   and TVmaze are read without one. If something would cost money, say so and
   leave it out.
-- **TMDB is the source of truth.** Which shows and episodes exist, their
-  names, pictures, numbers, days and popularity come from TMDB. AniList and
-  TVmaze add only the moment an episode TMDB lists airs (`airtime.rs`);
-  nothing else from them reaches the Airing page or an episode's time.
+- **TMDB is the source of truth for what exists.** Which shows and episodes
+  exist, their names, pictures, numbers and popularity come from TMDB. When an
+  episode TMDB lists airs, its day and its moment, comes from AniList for
+  anime and TVmaze for the rest (`airtime.rs`), matched to TMDB's episode;
+  TMDB's day stays only for an episode neither has. Nothing else from them
+  reaches the Airing page or an episode.
 - **AniList is read only.** Frog never writes to it. `Api::graphql` refuses
   anything that is not a query; keep it that way.
 - **Invitation only.** Several accounts, no open sign-up: an administrator
@@ -271,16 +273,23 @@ What each part of Frog does and why, learned while building it. Read the
 part you are about to touch; change it when the code changes.
 
 - **Air times and notifications** (`backend/src/airtime.rs`, `tvmaze.rs`,
-  `announce.rs`). TMDB gives the day; `airtime::resolve` adds the moment, as
-  UTC: AniList's `airingSchedule` for anime (Animation, origin JP), matched to
-  TMDB's episode by its day in Japan (±1 for a late-night slot) through
-  `anime_map`'s season and offset, by number only when one airing answers;
-  TVmaze's `airstamp` for the rest, by season and number when the days agree
-  within one, else by day. TVmaze writes a stand-in 12:00 UTC when it has no
-  time (`airtime` empty): that is no time, and pages say "time TBA". The
-  moment is kept in `episode.air_at` and `airing_episode.air_at` with
-  `air_source` 'anilist' or 'tvmaze'; `air_date` is always TMDB's, and a TMDB
-  refresh that moves the day drops the moment until it is worked out again.
+  `announce.rs`). `airtime::resolve` gives each TMDB episode its day and,
+  when known, its moment as UTC: AniList's `airingSchedule` for anime
+  (Animation, origin JP), matched by the day in Japan (±1 for a late-night
+  slot) through `anime_map`'s season and offset, by number only when one
+  airing answers; TVmaze for the rest, and for anime episodes AniList cannot
+  place. `match_tvmaze` pairs episodes the way imports pair names: name (same
+  words in any order; "Episode 12" says nothing), then day, then number, the
+  surest pairs first, each used once, a tie placing nothing. TVmaze numbers
+  talk shows differently, so no signal decides alone (Watch What Happens Live
+  runs one behind TMDB). TVmaze writes a stand-in 12:00 UTC when it has no
+  time (`airtime` empty): the day stands, the time is TBA. The provider's day
+  goes in `air_date` and the moment in `air_at`, in `episode` and
+  `airing_episode`, with `air_source` 'anilist' or 'tvmaze'; while it is set,
+  TMDB refreshes and the Airing list leave both alone, and when a provider
+  loses the episode TMDB's day comes back at the next refresh.
+  `cargo run --example airtime_check -- <tmdb id> <season> all` prints a
+  season's pairing.
   `refresh_due` works every listed or tracked show out every six hours;
   `airtime_show` keeps how a show is found, for good (a TVmaze miss is asked
   again after a week). `released!()` uses `air_at` when there is one.
