@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { backCloses } from '#lib/layers.svelte';
-	import { onScreen, SHEET_QUERY } from '#lib/onscreen';
+	import { anchorTo, onScreen, SHEET_QUERY } from '#lib/onscreen';
 	import Icon from './Icon.svelte';
 
 	interface Option {
@@ -30,6 +30,7 @@
 		() => (open = false)
 	);
 	let root: HTMLDivElement | undefined = $state();
+	let trigger: HTMLButtonElement | undefined = $state();
 	let cursor = $state(0);
 
 	const current = $derived(options.find((o) => o.value === value) ?? options[0]);
@@ -50,15 +51,23 @@
 	}
 
 	/**
-	 * On a phone the menu is a sheet over everything, so it moves to the end
-	 * of the page while open: a title's hero is a layer of its own, and a sheet
-	 * left inside it opened under the tab bar with its last choice hidden.
-	 * Rating's menu does the same. On a computer it stays a dropdown in place.
+	 * The menu moves to the end of the page while open. On a phone it is a
+	 * sheet over everything: a title's hero is a layer of its own, and a sheet
+	 * left inside it opened under the tab bar with its last choice hidden. On a
+	 * computer it is a dropdown pinned to its button (`anchorTo`): left inside
+	 * a pane with `overflow: hidden`, as every settings row is, it was cut off.
+	 * Inside a dialog it stays where it is, a dropdown over the dialog.
 	 */
-	function sheet(node: HTMLElement, inPlace: boolean) {
-		if (inPlace || !window.matchMedia(SHEET_QUERY).matches) return;
-		document.body.appendChild(node);
+	function lift(node: HTMLElement, inPlace: boolean) {
+		if (!inPlace) document.body.appendChild(node);
 	}
+
+	function place(node: HTMLElement, inPlace: boolean) {
+		return inPlace ? onScreen(node, false) : anchorTo(node, trigger);
+	}
+
+	/** On a phone, the sheet: its own CSS places it. */
+	const isSheet = () => window.matchMedia(SHEET_QUERY).matches;
 
 	function onKey(event: KeyboardEvent) {
 		if (!open) {
@@ -93,6 +102,7 @@
 
 <div class="select" class:compact class:full bind:this={root}>
 	<button
+		bind:this={trigger}
 		type="button"
 		class="trigger"
 		aria-haspopup="listbox"
@@ -107,13 +117,14 @@
 	</button>
 
 	{#if open}
-		<div class="layer" use:sheet={nested}>
+		<div class="layer" use:lift={nested}>
 			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 			<div class="scrim" class:nested onclick={() => (open = false)}></div>
 			<ul
 				class="menu"
 				class:nested
-				use:onScreen={!nested}
+				class:lifted={!nested && !isSheet()}
+				use:place={nested}
 				role="listbox"
 				aria-label={label}
 				tabindex="-1"
@@ -227,6 +238,16 @@
 			var(--shadow-3);
 		/* Grows out of what opened it. */
 		animation: pop 180ms var(--spring) backwards;
+	}
+
+	/* Out of the page's panes and pinned to its button. */
+	.menu.lifted {
+		position: fixed;
+		z-index: 200;
+		top: 0;
+		left: 0;
+		right: auto;
+		min-width: 0;
 	}
 
 	.option {

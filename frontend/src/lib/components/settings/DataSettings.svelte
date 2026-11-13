@@ -23,8 +23,9 @@
 		toasts.undoable('Settings reset', () => settings.replace(before));
 	}
 
-	/** Titles Frog folded into another, for taking back. */
+	/** Titles Frog folded into another, for taking back. Shown on request. */
 	let merges = $state<TitleMerge[]>([]);
+	let showMerges = $state(false);
 	let undoing = $state<number | null>(null);
 
 	$effect(() => {
@@ -63,26 +64,74 @@
 		<a class="row link-row" href="/import">
 			<span class="label">
 				<strong>Import</strong>
-				<span class="faint">
-					Letterboxd, Trakt, IMDb, MyAnimeList, TV Time, Netflix or a Frog backup
-				</span>
+				<span class="faint">From another tracker or a Frog backup</span>
 			</span>
 			<Icon name="chevron-right" size={18} />
 		</a>
-		<a class="row link-row" href="/api/export/library.json" download>
+
+		<div class="row">
 			<span class="label">
-				<strong>Download backup</strong>
-				<span class="faint">Everything, as JSON</span>
+				<strong>Download a copy</strong>
+				<span class="faint">Everything you track</span>
 			</span>
-			<Icon name="download" size={18} />
-		</a>
-		<a class="row link-row" href="/api/export/library.csv" download>
-			<span class="label">
-				<strong>Download spreadsheet</strong>
-				<span class="faint">Your library, as CSV</span>
+			<span class="buttons">
+				<a class="btn ghost small" href="/api/export/library.json" download>
+					<Icon name="download" size={14} /> Backup
+				</a>
+				<a class="btn ghost small" href="/api/export/library.csv" download>
+					<Icon name="download" size={14} /> Spreadsheet
+				</a>
 			</span>
-			<Icon name="download" size={18} />
-		</a>
+		</div>
+
+		{#if merges.length}
+			<div class="row">
+				<span class="label">
+					<strong>Merged titles</strong>
+					<span class="faint">Titles Frog found to be one</span>
+				</span>
+				<button
+					class="btn ghost small"
+					aria-expanded={showMerges}
+					onclick={() => (showMerges = !showMerges)}
+				>
+					{showMerges ? 'Hide' : `Show (${merges.length})`}
+				</button>
+			</div>
+			{#if showMerges}
+				<ul class="merges">
+					{#each merges as merge (merge.id)}
+						<li>
+							<span class="label">
+								<strong
+									><a href="/t/{merge.from_id}">{merge.from_name}</a> →
+									<a href="/t/{merge.to_id}">{merge.to_name}</a></strong
+								>
+								<span class="faint">{why(merge.reason)} · {prettyDate(merge.merged_at)}</span>
+							</span>
+							{#if merge.undone_at}
+								<span class="faint undone">Undone</span>
+							{:else}
+								<button
+									class="btn ghost small"
+									disabled={undoing !== null}
+									onclick={() => undo(merge)}
+								>
+									{undoing === merge.id ? 'Undoing…' : 'Undo'}
+								</button>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		{/if}
+	</div>
+</section>
+
+<section class="block">
+	<div class="section-head"><h2>This device</h2></div>
+
+	<div class="rows list-pane">
 		<label class="row">
 			<span class="label">
 				<strong>Data saver</strong>
@@ -95,49 +144,21 @@
 				onchange={(e) => settings.set('dataSaver', e.currentTarget.checked)}
 			/>
 		</label>
-	</div>
-	<div class="reset">
-		<button class="btn ghost" onclick={resetSettings}>Reset all settings</button>
+		<div class="row">
+			<span class="label">
+				<strong>Reset settings</strong>
+				<span class="faint">Every setting back as it came</span>
+			</span>
+			<button class="btn ghost small" aria-label="Reset all settings" onclick={resetSettings}
+				>Reset</button
+			>
+		</div>
 	</div>
 </section>
 
-{#if merges.length}
-	<section class="block">
-		<div class="section-head"><h2>Merged titles</h2></div>
-		<p class="faint lead">
-			When two titles turn out to be one, your history moves onto the one Frog keeps. Undo puts it
-			back as it was.
-		</p>
-		<div class="rows list-pane">
-			{#each merges as merge (merge.id)}
-				<div class="row merge">
-					<span class="label">
-						<strong
-							><a href="/t/{merge.from_id}">{merge.from_name}</a> →
-							<a href="/t/{merge.to_id}">{merge.to_name}</a></strong
-						>
-						<span class="faint">{why(merge.reason)} · {prettyDate(merge.merged_at)}</span>
-					</span>
-					{#if merge.undone_at}
-						<span class="faint undone">Undone</span>
-					{:else}
-						<button class="btn ghost small" disabled={undoing !== null} onclick={() => undo(merge)}>
-							{undoing === merge.id ? 'Undoing…' : 'Undo'}
-						</button>
-					{/if}
-				</div>
-			{/each}
-		</div>
-	</section>
-{/if}
-
 <style>
-	.reset {
-		margin-top: 14px;
-	}
-
 	.block {
-		margin-bottom: 44px;
+		margin-bottom: 36px;
 	}
 
 	.row {
@@ -147,6 +168,10 @@
 		gap: 20px;
 		padding: 15px 18px;
 		cursor: pointer;
+	}
+
+	div.row {
+		cursor: default;
 	}
 
 	.label {
@@ -164,21 +189,11 @@
 		color: inherit;
 	}
 
-	.link-row:hover {
-		border-color: var(--line-strong);
-	}
-
-	.lead {
-		margin: -6px 0 14px;
-		font-size: 0.86rem;
-	}
-
-	.merge {
-		cursor: default;
-	}
-
-	.merge a:hover {
-		text-decoration: underline;
+	.buttons {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		gap: 6px;
 	}
 
 	.btn.small {
@@ -187,8 +202,43 @@
 		font-size: 0.8rem;
 	}
 
+	/* The merges, opened under their row, inside the same pane. */
+	.merges {
+		list-style: none;
+		margin: 0;
+		padding: 4px 18px 10px;
+		background: var(--bg-elev-2);
+	}
+
+	.merges li {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		padding: 10px 0;
+	}
+
+	.merges li + li {
+		border-top: 1px solid var(--line);
+	}
+
+	.merges strong {
+		font-size: 0.86rem;
+		font-weight: 600;
+	}
+
+	.merges a:hover {
+		text-decoration: underline;
+	}
+
 	.undone {
 		flex: none;
 		font-size: 0.8rem;
+	}
+
+	@media (max-width: 600px) {
+		.row {
+			flex-wrap: wrap;
+		}
 	}
 </style>
