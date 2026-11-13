@@ -253,6 +253,8 @@ export interface TitleDetail {
 	homepage: string | null;
 	cast: CastMember[];
 	crew: CrewMember[];
+	/** Who made it, as TMDB (or AniList) credits them. A negative id is AniList's studio. */
+	studios?: StudioResult[];
 	trailers: Trailer[];
 	providers: ProviderGroup;
 	provider_region: string;
