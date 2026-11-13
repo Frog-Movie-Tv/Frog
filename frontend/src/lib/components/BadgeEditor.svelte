@@ -56,7 +56,13 @@
 	let reading = $state(false);
 	let saving = $state(false);
 	/** What a tap on the picture does, while the background is being taken out. */
-	let tool = $state<'move' | 'pick' | 'spot'>('move');
+	let tool = $state<'move' | 'pick' | 'spot' | 'erase' | 'restore'>('move');
+	/** The brush, as a share of the crop: small for an edge, large for a patch. */
+	let brush = $state(5);
+	/** Where the brush is over the frame, to draw its circle. */
+	let hover = $state<{ x: number; y: number } | null>(null);
+	let painting = false;
+	const brushing = $derived(tool === 'erase' || tool === 'restore');
 	let found = $state<Rgb | null>(null);
 	let previewLarge = $state<string | null>(null);
 	let previewSmall = $state<string | null>(null);
@@ -235,9 +241,38 @@
 		};
 	};
 
+	/** A spot on the frame as a fraction of the picture, kept to three decimals. */
+	function onPicture(event: PointerEvent): [number, number] | null {
+		if (!settings || !source) return null;
+		const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		const x = settings.crop.x + ((event.clientX - box.left) / box.width) * settings.crop.size;
+		const y = settings.crop.y + ((event.clientY - box.top) / box.height) * settings.crop.size;
+		const round = (n: number) => Math.round(n * 1000) / 1000;
+		return [round(x / source.width), round(y / source.height)];
+	}
+
 	function down(event: PointerEvent) {
 		if (!settings) return;
-		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		try {
+			(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		} catch {
+			// A pointer the browser no longer knows; the gesture works without it.
+		}
+		if (brushing && pointers.size === 0) {
+			const at = onPicture(event);
+			if (!at) return;
+			painting = true;
+			pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+			settings.strokes = [
+				...settings.strokes,
+				{
+					mode: tool as 'erase' | 'restore',
+					width: Math.round((brush / 100) * settings.crop.size * 10) / 10,
+					points: [at]
+				}
+			];
+			return;
+		}
 		pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 		const c = centre();
 		gesture = {
@@ -251,6 +286,22 @@
 	}
 
 	function move(event: PointerEvent) {
+		if (brushing) {
+			const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+			hover = { x: event.clientX - box.left, y: event.clientY - box.top };
+		}
+		if (painting && settings && source && pointers.has(event.pointerId)) {
+			const at = onPicture(event);
+			const stroke = settings.strokes.at(-1);
+			if (!at || !stroke) return;
+			const last = stroke.points.at(-1);
+			// A point every quarter of the brush is smooth enough, and keeps
+			// what is saved small.
+			const gap = stroke.width / 4 / Math.max(source.width, source.height);
+			if (!last || Math.hypot(at[0] - last[0], at[1] - last[1]) >= gap)
+				stroke.points = [...stroke.points, at];
+			return;
+		}
 		if (!gesture || !pointers.has(event.pointerId)) return;
 		pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 		const c = centre();
@@ -273,6 +324,11 @@
 	}
 
 	function up(event: PointerEvent) {
+		if (painting) {
+			painting = false;
+			pointers.delete(event.pointerId);
+			return;
+		}
 		if (!pointers.has(event.pointerId)) return;
 		const tapped = pointers.size === 1 && (gesture?.moved ?? 0) < 5 && event.type === 'pointerup';
 		pointers.delete(event.pointerId);
@@ -391,7 +447,8 @@
 			{#if settings && source}
 				<div
 					class="frame"
-					class:tapping={tool !== 'move' && settings.removal.on}
+					class:tapping={(tool === 'pick' || tool === 'spot') && settings.removal.on}
+					class:brushing
 					bind:clientWidth={frameSize}
 					role="slider"
 					tabindex="0"
@@ -403,6 +460,7 @@
 					onpointermove={move}
 					onpointerup={up}
 					onpointercancel={up}
+					onpointerleave={() => (hover = null)}
 					onwheel={wheel}
 					onkeydown={key}
 				>
@@ -425,6 +483,16 @@
 						aria-hidden="true"
 					></canvas>
 					<span class="hole" aria-hidden="true"></span>
+					{#if brushing && hover}
+						<span
+							class="brush"
+							aria-hidden="true"
+							style:width="{(brush / 100) * frameSize}px"
+							style:height="{(brush / 100) * frameSize}px"
+							style:left="{hover.x}px"
+							style:top="{hover.y}px"
+						></span>
+					{/if}
 				</div>
 				<label class="zoom">
 					<span>Zoom</span>
@@ -552,6 +620,45 @@
 									}}>Start over</button
 								>
 							{/if}
+						</p>
+					{/if}
+				</section>
+
+				<section class="group">
+					<strong>Touch up</strong>
+					<p class="faint small hint">
+						Paint over what the fill missed: Erase clears it, Restore brings the picture back.
+					</p>
+					<div class="tools segmented" role="group" aria-label="Brush">
+						<button
+							class:on={tool === 'erase'}
+							aria-pressed={tool === 'erase'}
+							onclick={() => (tool = tool === 'erase' ? 'move' : 'erase')}>Erase</button
+						>
+						<button
+							class:on={tool === 'restore'}
+							aria-pressed={tool === 'restore'}
+							onclick={() => (tool = tool === 'restore' ? 'move' : 'restore')}>Restore</button
+						>
+					</div>
+					{#if brushing}
+						<label class="slider">
+							<span>Brush size <em class="faint">{brush}</em></span>
+							<input type="range" min="1" max="20" step="1" bind:value={brush} />
+						</label>
+					{/if}
+					{#if settings.strokes.length}
+						<p class="faint small seed">
+							{settings.strokes.length}
+							{settings.strokes.length === 1 ? 'stroke' : 'strokes'}
+							<button
+								class="link"
+								onclick={() => settings && (settings.strokes = settings.strokes.slice(0, -1))}
+								>Undo stroke</button
+							>
+							<button class="link" onclick={() => settings && (settings.strokes = [])}
+								>Clear all</button
+							>
 						</p>
 					{/if}
 				</section>
@@ -724,6 +831,24 @@
 
 	.frame.tapping {
 		cursor: crosshair;
+	}
+
+	.frame.brushing {
+		cursor: none;
+	}
+
+	/* The brush's reach, following the pointer. */
+	.brush {
+		position: absolute;
+		border-radius: 50%;
+		border: 1.5px solid #fff;
+		box-shadow: 0 0 0 1px rgb(0 0 0 / 0.6);
+		transform: translate(-50%, -50%);
+		pointer-events: none;
+	}
+
+	.hint {
+		margin: -4px 0 0;
 	}
 
 	.frame:focus-visible {

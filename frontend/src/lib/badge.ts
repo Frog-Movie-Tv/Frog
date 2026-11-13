@@ -43,6 +43,19 @@ export interface BadgeSettings {
 	fill: Fill;
 	shade: ProfileShade;
 	ring: boolean;
+	/** Touched up by hand, in order: painted clear, or the picture painted back. */
+	strokes: Stroke[];
+}
+
+/**
+ * One brush stroke. Points are fractions of the picture's width and height,
+ * and the width is in the picture's own pixels, so a stroke stays on what it
+ * covered when the crop moves.
+ */
+export interface Stroke {
+	mode: 'erase' | 'restore';
+	width: number;
+	points: [number, number][];
 }
 
 export function startingSettings(width: number, height: number): BadgeSettings {
@@ -52,7 +65,8 @@ export function startingSettings(width: number, height: number): BadgeSettings {
 		removal: { on: false, tolerance: 10, softness: 40, seed: null, spots: [] },
 		fill: 'none',
 		shade: 'medium',
-		ring: false
+		ring: false,
+		strokes: []
 	};
 }
 
@@ -74,7 +88,8 @@ export function restoreSettings(
 		removal: { ...start.removal, ...(s.removal ?? {}) },
 		fill: s.fill ?? start.fill,
 		shade: s.shade ?? start.shade,
-		ring: s.ring ?? start.ring
+		ring: s.ring ?? start.ring,
+		strokes: Array.isArray(s.strokes) ? s.strokes : []
 	};
 }
 
@@ -308,6 +323,8 @@ export async function render(
 		pctx.putImageData(new ImageData(done.data, size, size), 0, 0);
 	}
 
+	if (s.strokes.length) touchUp(pctx, source, s, size, k);
+
 	const out = canvasOf(size, size);
 	const ctx = context(out);
 	const r = size / 2;
@@ -332,6 +349,67 @@ export async function render(
 		ctx.stroke();
 	}
 	return { canvas: out, seed };
+}
+
+/**
+ * The strokes painted by hand, over what the fill left: an erase clears
+ * where it goes; a restore puts the picture back there, as it was before
+ * the fill, so a detail the fill took returns whole.
+ */
+function touchUp(
+	pctx: CanvasRenderingContext2D,
+	source: Source,
+	s: BadgeSettings,
+	size: number,
+	k: number
+) {
+	const at = ([x, y]: [number, number]): [number, number] => [
+		(x * source.width - s.crop.x) * k,
+		(y * source.height - s.crop.y) * k
+	];
+	let original: HTMLCanvasElement | null = null;
+	for (const stroke of s.strokes) {
+		if (!stroke.points.length) continue;
+		const mask = canvasOf(size, size);
+		const m = context(mask);
+		m.lineCap = 'round';
+		m.lineJoin = 'round';
+		m.lineWidth = Math.max(1, stroke.width * k);
+		m.strokeStyle = m.fillStyle = '#000';
+		const [first, ...rest] = stroke.points.map(at);
+		if (!rest.length) {
+			m.beginPath();
+			m.arc(first[0], first[1], m.lineWidth / 2, 0, Math.PI * 2);
+			m.fill();
+		} else {
+			m.beginPath();
+			m.moveTo(first[0], first[1]);
+			for (const [x, y] of rest) m.lineTo(x, y);
+			m.stroke();
+		}
+		if (stroke.mode === 'erase') {
+			pctx.globalCompositeOperation = 'destination-out';
+			pctx.drawImage(mask, 0, 0);
+			pctx.globalCompositeOperation = 'source-over';
+			continue;
+		}
+		if (!original) {
+			original = canvasOf(size, size);
+			context(original).drawImage(
+				source.canvas,
+				-s.crop.x * k,
+				-s.crop.y * k,
+				source.width * k,
+				source.height * k
+			);
+		}
+		const back = canvasOf(size, size);
+		const b = context(back);
+		b.drawImage(original, 0, 0);
+		b.globalCompositeOperation = 'destination-in';
+		b.drawImage(mask, 0, 0);
+		pctx.drawImage(back, 0, 0);
+	}
 }
 
 /**

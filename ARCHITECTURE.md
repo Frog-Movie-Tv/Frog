@@ -364,7 +364,9 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
   person crops under a round frame, and `lib/badge-fill.ts` takes the
   background out: a flood fill from the border and any spot tapped, never
   machine learning, with a soft band whose pixels have the background taken
-  out of their colour so a cut-out keeps no halo. It runs in
+  out of their colour so a cut-out keeps no halo. Brush strokes (erase, or restore
+  the picture as it was) are kept in the picture's own coordinates and drawn
+  after the fill. The fill runs in
   `badge-fill.worker.ts` so the sliders stay smooth. The badge is cut to a
   circle on the canvas, saved as a lossless 1024 px PNG and a 128 px one made
   by halving step by step, and sent with the original and the editor's

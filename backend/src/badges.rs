@@ -20,8 +20,9 @@ pub const LARGE_MAX_BYTES: usize = 4 * 1024 * 1024;
 pub const SMALL_MAX_BYTES: usize = 256 * 1024;
 /// The upload as it was, already shrunk past 4 MB by the editor.
 pub const ORIGINAL_MAX_BYTES: usize = 8 * 1024 * 1024;
-/// The editor's own settings: a crop, a few sliders, a colour or two.
-const SETTINGS_MAX_BYTES: usize = 16 * 1024;
+/// The editor's own settings: a crop, a few sliders, a colour or two, and
+/// the brush strokes painted by hand.
+const SETTINGS_MAX_BYTES: usize = 128 * 1024;
 
 pub const NAME_MAX: usize = 32;
 pub const DESCRIPTION_MAX: usize = 140;
