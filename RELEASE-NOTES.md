@@ -9,16 +9,26 @@ people working on Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Goliath —
+## Upcoming — Tomato Frog —
 
 In progress.
 
-### New
+## [1.6.0] — Tomato Frog — 2026-11-13
+
+Profiles of your own: badges, a colour and a banner that stands up.
+
+![Your profile, with a banner standing beside it](docs/screenshots/profile-desktop-pond.png)
+
+### Highlights
 
 - **Badges.** Administrators make badges and give them to people. Up to three
   sit beside your name on your profile, and small ones on People. Tap one to
   see it large, with what it is for and the day it was given. In Settings, show
   or hide each one you hold and drag them into your order.
+- **A badge editor that does the fiddly part.** Crop to a circle, take the
+  background out with clean edges, touch up by hand with a steady brush, and
+  pick a fill and a ring. See it at every size, on a light page and a dark
+  one, before you save.
 - **Your colour.** Give your profile one of ten colours, in a light, medium or
   dark shade. Everyone who opens your profile sees it in your colour, on every
   theme.
@@ -991,6 +1001,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.6.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.6.0
 [1.5.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.5.1
 [1.5.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.5.0
 [1.4.3]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.4.3
