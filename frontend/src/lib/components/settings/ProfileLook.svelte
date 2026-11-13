@@ -16,9 +16,49 @@
 	interface Props {
 		account: Account | null;
 		save: (edit: ProfileEdit, message?: string) => Promise<void>;
+		/** The banner's picture, when there is one. */
+		banner?: string | null;
 	}
 
-	let { account, save }: Props = $props();
+	let { account, save, banner = null }: Props = $props();
+
+	// The vertical column, and what a phone shows of it, in a portrait frame
+	// of its own. The same position as the wide banner, so moving either
+	// moves both.
+	const position = (value: string | null | undefined) => {
+		const m = value?.match(/^([\d.]+)% ([\d.]+)%$/);
+		return m ? { x: Number(m[1]), y: Number(m[2]) } : { x: 50, y: 50 };
+	};
+	let pos = $derived(position(account?.banner_position));
+	let held: { x: number; y: number; from: { x: number; y: number } } | null = null;
+
+	function down(event: PointerEvent) {
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		held = { x: event.clientX, y: event.clientY, from: { ...pos } };
+	}
+
+	function move(event: PointerEvent) {
+		if (!held) return;
+		const el = event.currentTarget as HTMLImageElement;
+		const box = el.getBoundingClientRect();
+		const scale = Math.max(box.width / el.naturalWidth, box.height / el.naturalHeight);
+		const spareX = el.naturalWidth * scale - box.width;
+		const spareY = el.naturalHeight * scale - box.height;
+		const clamp = (n: number) => Math.min(100, Math.max(0, n));
+		pos = {
+			x: spareX > 1 ? clamp(held.from.x - ((event.clientX - held.x) / spareX) * 100) : pos.x,
+			y: spareY > 1 ? clamp(held.from.y - ((event.clientY - held.y) / spareY) * 100) : pos.y
+		};
+	}
+
+	function up() {
+		if (!held) return;
+		held = null;
+		void save(
+			{ banner_position: `${pos.x.toFixed(1)}% ${pos.y.toFixed(1)}%` },
+			'Banner position saved'
+		);
+	}
 
 	const colour = $derived.by(() => {
 		const c = account?.profile_color;
@@ -101,8 +141,8 @@
 		<span class="faint">
 			{layout === 'vertical'
 				? 'A portrait column beside everything else, and tall across the top on a phone.'
-				: 'Across the top of your profile.'}
-			Drag the picture above to choose what shows. A tap on it opens it whole.
+				: 'Across the top of your profile. Drag the picture above to choose what shows.'}
+			A tap on it opens it whole.
 		</span>
 	</div>
 	<div class="choices">
@@ -129,6 +169,25 @@
 			</div>
 		{/if}
 	</div>
+	{#if layout === 'vertical' && banner}
+		<div class="column">
+			<span class="portrait">
+				<img
+					src={banner}
+					alt=""
+					draggable="false"
+					style:object-position="{pos.x}% {pos.y}%"
+					onpointerdown={down}
+					onpointermove={move}
+					onpointerup={up}
+					onpointercancel={up}
+				/>
+			</span>
+			<span class="faint small">
+				Drag to choose what the column shows. A phone shows the same part, across the top.
+			</span>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -183,6 +242,34 @@
 
 	.shades {
 		align-self: flex-start;
+	}
+
+	.column {
+		display: flex;
+		align-items: center;
+		gap: 14px;
+	}
+
+	.portrait {
+		flex: none;
+		width: 108px;
+		aspect-ratio: 3 / 4;
+		border-radius: 12px;
+		overflow: hidden;
+		background: var(--bg-elev-2);
+	}
+
+	.portrait img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		cursor: grab;
+		touch-action: none;
+		user-select: none;
+	}
+
+	.portrait img:active {
+		cursor: grabbing;
 	}
 
 	.choices {

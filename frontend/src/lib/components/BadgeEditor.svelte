@@ -87,6 +87,7 @@
 	});
 
 	onDestroy(() => {
+		clearTimeout(settle);
 		worker?.terminate();
 		for (const url of [previewLarge, previewSmall, source?.url]) if (url) URL.revokeObjectURL(url);
 	});
@@ -128,28 +129,69 @@
 	}
 
 	// --- the preview -----------------------------------------------------
+	/*
+	 * The finished badge is drawn into the frame's circle as fast as the
+	 * fill keeps up: while one drawing is under way, the next waits and then
+	 * takes whatever the settings are by then, so sliders feel live without a
+	 * queue of stale drawings. The sizes beside it follow once it settles.
+	 */
+	let frameCanvas: HTMLCanvasElement | undefined = $state();
+	/** The crop the frame's drawing was made for; moved since, the raw picture shows. */
+	let drawnCrop = $state('');
+	let drawing = false;
+	let again = false;
 	let ticket = 0;
-	$effect(() => {
-		const s = settings && $state.snapshot(settings);
-		const src = source;
-		if (!s || !src) return;
-		const mine = ++ticket;
-		const timer = setTimeout(async () => {
-			try {
-				const { canvas, seed } = await render(src, s as BadgeSettings, PREVIEW, filler);
-				if (mine !== ticket) return;
-				const [large, small] = await Promise.all([toPng(canvas), toPng(halve(canvas, SMALL))]);
-				if (mine !== ticket) return;
-				for (const url of [previewLarge, previewSmall]) if (url) URL.revokeObjectURL(url);
-				previewLarge = URL.createObjectURL(large);
-				previewSmall = URL.createObjectURL(small);
+	let settle: ReturnType<typeof setTimeout> | undefined;
+
+	async function draw() {
+		if (drawing) {
+			again = true;
+			return;
+		}
+		drawing = true;
+		try {
+			do {
+				again = false;
+				const src = source;
+				const s = settings && ($state.snapshot(settings) as BadgeSettings);
+				if (!src || !s) break;
+				const mine = ++ticket;
+				const { canvas, seed } = await render(src, s, PREVIEW, filler);
+				if (mine !== ticket || src !== source) continue;
 				found = seed;
-			} catch (e) {
-				toasts.error(e);
-			}
-		}, 90);
-		return () => clearTimeout(timer);
+				const ctx = frameCanvas?.getContext('2d');
+				if (ctx && frameCanvas) {
+					ctx.clearRect(0, 0, frameCanvas.width, frameCanvas.height);
+					ctx.drawImage(canvas, 0, 0, frameCanvas.width, frameCanvas.height);
+					drawnCrop = JSON.stringify(s.crop);
+				}
+				clearTimeout(settle);
+				settle = setTimeout(() => void sizes(canvas, mine), 160);
+			} while (again);
+		} catch (e) {
+			toasts.error(e);
+		} finally {
+			drawing = false;
+		}
+	}
+
+	/** The badge at the sizes it is seen at, once the drawing has settled. */
+	async function sizes(canvas: HTMLCanvasElement, mine: number) {
+		const [large, small] = await Promise.all([toPng(canvas), toPng(halve(canvas, SMALL))]);
+		if (mine !== ticket) return;
+		for (const url of [previewLarge, previewSmall]) if (url) URL.revokeObjectURL(url);
+		previewLarge = URL.createObjectURL(large);
+		previewSmall = URL.createObjectURL(small);
+	}
+
+	$effect(() => {
+		// Read deeply so any change to the settings draws again.
+		void (settings && $state.snapshot(settings));
+		void source;
+		void frameCanvas;
+		void draw();
 	});
+	const finished = $derived(!!settings && drawnCrop === JSON.stringify(settings.crop));
 
 	// --- the frame: drag, pinch, wheel and keys ---------------------------
 	const k = $derived(settings && source ? frameSize / settings.crop.size : 1);
@@ -373,6 +415,15 @@
 						style:left="{-settings.crop.x * k}px"
 						style:top="{-settings.crop.y * k}px"
 					/>
+					<!-- The finished badge, over the picture, while the crop holds still. -->
+					<canvas
+						class="finished"
+						class:shown={finished}
+						bind:this={frameCanvas}
+						width={PREVIEW}
+						height={PREVIEW}
+						aria-hidden="true"
+					></canvas>
 					<span class="hole" aria-hidden="true"></span>
 				</div>
 				<label class="zoom">
@@ -684,6 +735,30 @@
 		position: absolute;
 		max-width: none;
 		pointer-events: none;
+	}
+
+	/* Clear parts of the finished badge show the checkerboard, not the
+	   picture under it, so what the fill took out is plain to see. */
+	.finished {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		border-radius: 50%;
+		pointer-events: none;
+		opacity: 0;
+		background-color: #e8e8ee;
+		background-image:
+			linear-gradient(45deg, #c9c9d2 25%, transparent 25%, transparent 75%, #c9c9d2 75%),
+			linear-gradient(45deg, #c9c9d2 25%, transparent 25%, transparent 75%, #c9c9d2 75%);
+		background-size: 16px 16px;
+		background-position:
+			0 0,
+			8px 8px;
+	}
+
+	.finished.shown {
+		opacity: 1;
 	}
 
 	.hole {

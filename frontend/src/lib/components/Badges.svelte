@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { prettyDate } from '#lib/format';
 	import { backCloses } from '#lib/layers.svelte';
+	import { portal } from '#lib/portal';
 	import type { HeldBadge } from '#lib/types';
 	import Icon from './Icon.svelte';
 
@@ -62,31 +63,34 @@
 {/if}
 
 {#if current && open !== null}
-	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-	<div class="scrim" onclick={() => (open = null)}></div>
-	<div class="card sheet" role="dialog" aria-modal="true" aria-labelledby="badge-card-name">
-		<button class="btn ghost small close" aria-label="Close" onclick={() => (open = null)}>
-			<Icon name="x" size={16} />
-		</button>
-		<img class="large" src={current.large} alt="" />
-		<h3 id="badge-card-name">{current.name}</h3>
-		{#if current.description}<p class="about">{current.description}</p>{/if}
-		<p class="faint small">Given {prettyDate(current.awarded_at)}</p>
-		{#if badges.length > 1}
-			<div class="all" role="group" aria-label="Badges">
-				{#each badges as b, i (b.id)}
-					<button
-						class="badge"
-						class:on={i === open}
-						aria-label={b.name}
-						aria-pressed={i === open}
-						onclick={() => (open = i)}
-					>
-						<img src={b.small} alt="" width="30" height="30" />
-					</button>
-				{/each}
-			</div>
-		{/if}
+	<!-- At the end of the page, so no card's own layer can sit over it. -->
+	<div use:portal>
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+		<div class="scrim" onclick={() => (open = null)}></div>
+		<div class="card sheet" role="dialog" aria-modal="true" aria-labelledby="badge-card-name">
+			<button class="btn ghost small close" aria-label="Close" onclick={() => (open = null)}>
+				<Icon name="x" size={16} />
+			</button>
+			<img class="large" src={current.large} alt="" />
+			<h3 id="badge-card-name">{current.name}</h3>
+			{#if current.description}<p class="about">{current.description}</p>{/if}
+			<p class="faint small">Given {prettyDate(current.awarded_at)}</p>
+			{#if badges.length > 1}
+				<div class="all" role="group" aria-label="Badges">
+					{#each badges as b, i (b.id)}
+						<button
+							class="badge"
+							class:on={i === open}
+							aria-label={b.name}
+							aria-pressed={i === open}
+							onclick={() => (open = i)}
+						>
+							<img src={b.small} alt="" width="30" height="30" />
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
 	</div>
 {/if}
 

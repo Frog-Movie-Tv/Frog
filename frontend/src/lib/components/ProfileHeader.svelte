@@ -9,6 +9,7 @@
 	import Icon from './Icon.svelte';
 	import { prettyDate } from '#lib/format';
 	import { backCloses } from '#lib/layers.svelte';
+	import { portal } from '#lib/portal';
 	import type { Profile } from '#lib/types';
 
 	interface Props {
@@ -114,6 +115,7 @@
 	<!-- The whole picture, uncropped. A tap anywhere, Escape or Back closes it. -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div
+		use:portal
 		class="whole"
 		role="dialog"
 		aria-modal="true"
@@ -173,8 +175,11 @@
 		height: auto;
 	}
 
+	/* As much of the picture as fits under a ceiling: a tall one is cut
+	   there, where its position says. */
 	.full .banner img {
 		height: auto;
+		max-height: min(80vh, 860px);
 		display: block;
 	}
 
@@ -428,9 +433,10 @@
 
 		.vertical .side {
 			grid-area: side;
+			/* Held where the page puts it, so it never moves at all. */
 			position: sticky;
-			top: 88px;
-			max-height: calc(100dvh - 104px);
+			top: calc(var(--header-h) + 24px);
+			max-height: calc(100dvh - var(--header-h) - 40px);
 			overflow-y: auto;
 			scrollbar-width: none;
 			padding-bottom: 8px;

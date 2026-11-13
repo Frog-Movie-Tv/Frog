@@ -124,12 +124,19 @@
 		.profile.vertical {
 			display: grid;
 			grid-template-columns: minmax(240px, 330px) minmax(0, 1fr);
-			grid-template-rows: auto 1fr;
+			/* The page's own bottom space is a row of the grid here, so the
+			   column has room to stay put right to the end of the page. */
+			grid-template-rows: auto 1fr 96px;
 			grid-template-areas:
 				'side tabs'
-				'side body';
+				'side body'
+				'side .';
 			column-gap: clamp(20px, 3vw, 40px);
 			align-items: start;
+		}
+
+		.page:has(> .profile.vertical) {
+			padding-bottom: 0;
 		}
 
 		.profile.vertical .tab-body {
