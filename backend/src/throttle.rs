@@ -34,6 +34,13 @@ const SIGN_IN_WINDOW: Duration = Duration::from_secs(10 * 60);
 const RESET_ATTEMPTS: usize = 8;
 const RESET_WINDOW: Duration = Duration::from_secs(10 * 60);
 
+/// Wrong extension tokens, per caller address. A token is 256 random bits, so
+/// this, like the reset link's, only has to stop anyone trying. Every request
+/// is admitted and a good token hands its attempt back, so the room is for an
+/// extension's own bursts.
+const TOKEN_ATTEMPTS: usize = 20;
+const TOKEN_WINDOW: Duration = Duration::from_secs(10 * 60);
+
 fn key(kind: &str, value: &str) -> Key {
     Sha256::new()
         .chain_update(kind)
@@ -59,6 +66,11 @@ pub fn reset_keys(client: &str) -> [Key; 1] {
     [key("reset", client)]
 }
 
+/// Who to throttle when a token is wrong: it names nobody until it is right.
+pub fn token_keys(client: &str) -> [Key; 1] {
+    [key("token", client)]
+}
+
 pub struct Throttle {
     limit: usize,
     window: Duration,
@@ -77,6 +89,10 @@ impl Throttle {
 
     pub fn for_resets() -> Self {
         Self::new(RESET_ATTEMPTS, RESET_WINDOW)
+    }
+
+    pub fn for_tokens() -> Self {
+        Self::new(TOKEN_ATTEMPTS, TOKEN_WINDOW)
     }
 
     fn with_cap(limit: usize, window: Duration, cap: usize) -> Self {

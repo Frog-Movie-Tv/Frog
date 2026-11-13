@@ -417,6 +417,24 @@ pub async fn reconcile(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppRes
     Ok(())
 }
 
+/// After any watch change: a show ticked while not in the library goes in
+/// as Watching, then its status follows what has been watched against what
+/// has come out (`desired_status`). The title page's checkmark and the
+/// browser extension both end here, so they cannot disagree.
+pub async fn after_watch(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppResult<()> {
+    if store::get_entry(pool, user_id, title_id).await?.is_none() {
+        let progress = store::progress(pool, user_id, title_id).await?;
+        if progress.watched > 0 {
+            let patch = store::LibraryPatch {
+                status: Some("watching".into()),
+                ..Default::default()
+            };
+            store::apply_patch(pool, user_id, title_id, &patch).await?;
+        }
+    }
+    reconcile(pool, user_id, title_id).await
+}
+
 /// The status a title kept as a count should take once the count moves: a
 /// manga's chapters, or an AniList-only show with no episode list. Paused and
 /// dropped are the person's word. The end of something that has finished is

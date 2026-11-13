@@ -305,6 +305,45 @@ pub fn token_from_headers(headers: &axum::http::HeaderMap) -> Option<String> {
         })
 }
 
+/// The caller's address. `X-Forwarded-For` is trusted because the only
+/// supported deployment puts Caddy directly in front of Frog; without a proxy
+/// the socket address is used. A spoofed header can only dodge the per-address
+/// bucket, never the per-account one.
+pub fn client_key(headers: &axum::http::HeaderMap, peer: Option<std::net::SocketAddr>) -> String {
+    for name in ["x-forwarded-for", "x-real-ip"] {
+        if let Some(raw) = headers.get(name).and_then(|v| v.to_str().ok()) {
+            if let Some(first) = raw.split(',').next() {
+                let trimmed = first.trim();
+                if !trimmed.is_empty() {
+                    return trimmed.to_string();
+                }
+            }
+        }
+    }
+    peer.map(|p| p.ip().to_string())
+        .unwrap_or_else(|| "unknown".into())
+}
+
+/// The wait a throttle asked for, as a person reads it.
+pub fn too_many_tries(seconds: u64) -> AppError {
+    let minutes = seconds.div_ceil(60);
+    AppError::TooManyRequests(format!(
+        "Too many tries. Try again in {minutes} {}.",
+        if minutes == 1 { "minute" } else { "minutes" }
+    ))
+}
+
+/// The token in `Authorization: Bearer …`, if the request carries one.
+pub fn bearer_token(headers: &axum::http::HeaderMap) -> Option<String> {
+    let raw = headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
+    let (scheme, token) = raw.split_once(' ')?;
+    let token = token.trim();
+    (scheme.eq_ignore_ascii_case("bearer") && !token.is_empty()).then(|| token.to_string())
+}
+
 /// The caller's socket address, when the server was started with connect info
 /// and something is actually listening on a socket. It is None under the test
 /// harness, so this extractor never fails a request.
@@ -375,7 +414,16 @@ impl FromRequestParts<AppState> for Auth {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let token = token_from_headers(&parts.headers).ok_or(AppError::Unauthorised)?;
+        let Some(token) = token_from_headers(&parts.headers) else {
+            // A browser extension's token is good for /api/ext only. Saying so,
+            // rather than "sign in", is what tells its owner why it stopped.
+            if bearer_token(&parts.headers).is_some() {
+                return Err(AppError::Forbidden(
+                    "This token only reaches the browser extension's endpoints.".into(),
+                ));
+            }
+            return Err(AppError::Unauthorised);
+        };
         let identity = session_user(&state.pool, &token)
             .await
             .ok_or(AppError::Unauthorised)?;

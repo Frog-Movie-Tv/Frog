@@ -37,6 +37,7 @@ pub const HIDDEN: &[(&str, &str, Hide)] = &[
     ("app_user", "totp_secret", Hide::Secret),
     ("app_user", "totp_pending", Hide::Secret),
     ("session", "token_hash", Hide::Secret),
+    ("api_token", "token_hash", Hide::Secret),
     ("invite", "code_hash", Hide::Secret),
     ("password_reset", "code_hash", Hide::Secret),
     ("recovery_code", "code_hash", Hide::Secret),
@@ -62,6 +63,11 @@ pub const PLAIN: &[(&str, &str, &str)] = &[
         "the TMDB address an answer was cached for",
     ),
     ("studio_match", "name_key", "a studio's folded name"),
+    (
+        "extension_log",
+        "token_id",
+        "which token made a log, by its row id, never the token",
+    ),
 ];
 
 /// Words in a column name that mean it may hold a secret.

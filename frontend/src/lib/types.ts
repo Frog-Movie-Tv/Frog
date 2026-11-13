@@ -579,6 +579,14 @@ export interface DeviceSession {
 	current: boolean;
 }
 
+/** A token for the browser extension. The token itself is shown once, when made. */
+export interface ApiToken {
+	id: number;
+	name: string;
+	created_at: string;
+	last_used_at: string | null;
+}
+
 export interface AdminUser {
 	id: number;
 	username: string;

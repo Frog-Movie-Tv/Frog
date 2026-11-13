@@ -13,6 +13,13 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Highlights
+
+- **Frog in your browser.** An extension for Firefox and Chrome notices what
+  you watch on any site and logs it when you are nearly done, with a moment
+  to undo. When it is not sure, it asks, and it remembers your answer for
+  that site. Get it, and its token, in Settings → Connections.
+
 ### Improvements
 
 - A title's page lists the studios behind it, each with its logo. Open one to

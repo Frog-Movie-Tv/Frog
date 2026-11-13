@@ -29,7 +29,14 @@ pub struct WatchBody {
 }
 
 /// Where a watch put back may say it came from.
-const SOURCES: [&str; 5] = ["manual", "import", "anilist", "netflix", "trakt"];
+const SOURCES: [&str; 6] = [
+    "manual",
+    "import",
+    "anilist",
+    "netflix",
+    "trakt",
+    "extension",
+];
 
 fn yes() -> bool {
     true
@@ -179,25 +186,10 @@ pub async fn set_state(
     Ok(Json(json!({ "ok": true })))
 }
 
-/// After any watch change, move the library entry to match what has been
-/// watched against what has come out; `release::desired_status` has the rules.
+/// After any watch change, the entry follows (`release::after_watch`), and the
+/// page gets the title back as it now stands.
 async fn after_change(state: &AppState, user_id: i64, title_id: i64) -> AppResult<Json<Value>> {
-    // Ticking an episode of a show not in the library puts it there.
-    if store::get_entry(&state.pool, user_id, title_id)
-        .await?
-        .is_none()
-    {
-        let progress = store::progress(&state.pool, user_id, title_id).await?;
-        if progress.watched > 0 {
-            let patch = store::LibraryPatch {
-                status: Some("watching".into()),
-                ..Default::default()
-            };
-            store::apply_patch(&state.pool, user_id, title_id, &patch).await?;
-        }
-    }
-    crate::release::reconcile(&state.pool, user_id, title_id).await?;
-
+    crate::release::after_watch(&state.pool, user_id, title_id).await?;
     let row = catalog::get_title(&state.pool, title_id).await?;
     let item = store::build_item(&state.pool, user_id, row).await?;
     Ok(Json(json!({ "item": item })))

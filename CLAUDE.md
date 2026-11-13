@@ -33,8 +33,8 @@ when it ships. How things work lives here, under **How things work**.
   anyone without an account.
 - **Every personal row names its owner.** Library, ratings, episodes, diary,
   shelves, settings, sessions, two-factor and notifications all carry a
-  `user_id`; only titles, episodes, credits, the TMDB and image caches and the
-  push keys are shared. A query that reads or writes personal data without
+  `user_id` (so do the extension's tokens and logs); only titles, episodes,
+  credits, the TMDB and image caches and the push keys are shared. A query that reads or writes personal data without
   naming whose it is fails `backend/tests/scoping.rs`, and that is a real
   guard, not a style rule — it is what stops one account seeing another's.
 - **Never print or commit `TMDB_API_KEY`, `MDBLIST_API_KEY`,
@@ -61,6 +61,8 @@ backend/            Rust: axum 0.8, sqlx 0.8 (SQLite), tokio
   src/anilist/      AniList: client, idmap, place, reconcile, library, local,
                     media, records, sync — docs/ANILIST.md has the map
   src/ratings.rs    scores from other sites, on the title itself
+  src/tokens.rs     personal tokens and TokenAuth, the extension's only way in
+  src/extension.rs  the extension: resolve a page, log, undo, the popup's list
   src/fanart.rs     title logos from fanart.tv where TMDB has none
   src/tvmaze.rs     TVmaze client: a show's episodes and their airstamps
   src/airtime.rs    the moment a TMDB episode airs, from AniList or TVmaze
@@ -72,6 +74,10 @@ backend/            Rust: axum 0.8, sqlx 0.8 (SQLite), tokio
   migrations/       timestamped .sql files, embedded at compile time
   tests/            api, anilist, catalog, images, transfer, scoping, migrations;
                     common/ has the fixtures (title_seed, title_id)
+extension/          the browser extension: WXT + Svelte 5, Manifest V3, Chromium and Firefox
+  src/entrypoints/  content (every frame), background (the decisions), popup, options
+  src/lib/          signals, rules, playback, queue: pure, tested with node --test
+  e2e/              fixture pages, a stand-in Frog, Playwright against the built extension
 frontend/           SvelteKit 3 + Svelte 5 runes, adapter-static SPA, Vite 8
   src/lib/components/   Icon, Select, Rating, Poster, Rail, Empty, …
   src/lib/components/settings/   one component per Settings group
@@ -89,6 +95,7 @@ docs/CATALOG-IDENTITY.md  Frog's own title ids, provider ids, merges, addresses
 docs/INSTALL.md     install, updating, backups
 docs/CONTRIBUTING.md  how the two of us work on it
 docs/DEPLOY-ORACLE.md the live deployment, and the research behind it
+docs/EXTENSION.md   the browser extension: install, tokens, detection, site rules
 RELEASE-NOTES.md        source of truth for release notes (parsed into the app)
 ```
 
@@ -146,8 +153,10 @@ In Git Bash, put cargo on PATH first: `export PATH="$HOME/.cargo/bin:$PATH"`.
 | Page audit                            | `cd frontend && npm run audit` — every page, both viewports, console errors, service worker                   |
 | Screenshots                           | `cd frontend && npm run screenshots` — needs the TMDB key, ~8 min, 1.5× (`-- --scale=2 --out=dir` to compare) |
 | Icons                                 | `cd frontend && npm run icons` — regenerates every icon from `scripts/mascots.mjs`                            |
+| Extension                             | `cd extension && npm run check && npm test && npm run build && npx playwright test`                           |
 
-Ports: the owner's instance uses 8080. E2E uses 8098/8099, audit 8095,
+Ports: the owner's instance uses 8080. E2E uses 8098/8099, the extension's
+e2e 8071 (a stand-in Frog) and 8072 (fixture pages), audit 8095,
 screenshots 8096, pwa-check 8094, and the verify scripts 8084–8093 and 8097 —
 each with its own throwaway database.
 
@@ -543,13 +552,38 @@ part you are about to touch; change it when the code changes.
   names past AniList's episode count. Everything else works as for any title
   (`tests/anilist.rs`, `verify-leapfrog`).
 - **Server messages are English only**, like the interface.
+- **The browser extension** (`extension/`, `docs/EXTENSION.md`) knows no
+  site. Each frame reports its own address, its iframes' addresses, JSON-LD,
+  meta tags, the media session, its title and headings; `lib/signals.ts`
+  turns those into clues and picks ids before text. An id read from an
+  address shape alone (`/tv/123/1/2`) is weak: exact only once Frog's name for
+  it agrees with the page, or a site rule says so. A confirmed or corrected
+  match teaches a rule for that domain (`lib/rules.ts`); no domain is written
+  in the code. Only resolve's fields leave the browser, never an address.
+  The token reaches `/api/ext` and nothing else (`tokens::TokenAuth`, and
+  `Auth` answers a bearer token with 403); a log is the title page's tick
+  (`release::after_watch`), idempotent per token for six hours
+  (`extension_log`). Releases attach it under fixed names (`frog-extension-firefox.xpi`,
+  `frog-extension-chrome.zip`, `updates.json`), so `releases/latest/download`
+  is always the newest: Settings → Connections links there and Firefox's
+  `update_url` reads it. Frog serves the Firefox file itself as
+  `application/x-xpinstall` (`addon.rs`, `/extension/frog.xpi`), which is
+  what lets Firefox install from one click: fetched once per version from
+  `FROG_EXTENSION_RELEASES`, opened by a key from `/api/extension/link`
+  that lasts an hour, and sent on to GitHub's copy when it has none.
+  Releases sign the Firefox build as unlisted in
+  `release-please.yml`, since a tag made with `GITHUB_TOKEN` starts no
+  workflow. Playwright's own Chromium will not start on the owner's Windows
+  machine ("side-by-side configuration"); `E2E_CHANNEL=msedge` runs the suite
+  in Edge there, and CI uses Chromium.
 
 ## Decided against
 
 - **Jellyfin scrobbling, and the generic webhook it needed.** It only sees
   what plays through a Jellyfin server; the owners watch through streaming
-  sites, so it would track nothing. Anime arrives through the AniList sync and
-  the rest is ticked by hand, on purpose.
+  sites, so it would track nothing. The browser extension covers streaming
+  sites instead, anime arrives through the AniList sync, and the rest is
+  ticked by hand.
 - **Plex.** Its webhooks need a paid Plex Pass.
 - **Interface languages.** English only, decided 2026-10-26.
 - **Moving Netflix shows left On hold.** A show an import left On hold with

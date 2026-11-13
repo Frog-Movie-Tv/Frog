@@ -26,6 +26,12 @@ off, or turns it into a fix above.
 - **AniList on the live list:** Settings → Connections, "Needs a check" and
   the "Matched" methods, manga included. And connecting AniList once from a
   laptop with the Frog-Dev client in `.env`.
+- **The browser extension on real sites:** Load unpacked in Brave, the signed
+  `.xpi` in Zen installed from Frog's own Firefox button in one click, and Zen
+  picking up the next release by itself, a token from Settings → Connections, then an episode on a
+  site with a cross-origin player and one with nothing but a title, through
+  to the diary. And the first release's signing, once `AMO_JWT_ISSUER` and
+  `AMO_JWT_SECRET` are set in the repository (`docs/EXTENSION.md`).
 - **Netflix's personal-data ZIP** (`CONTENT_INTERACTION/ViewingActivity.csv`),
   read from its documented columns but never from a real one; and the show
   threshold (3) on a second person's file.

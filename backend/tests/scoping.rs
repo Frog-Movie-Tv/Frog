@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 /// Tables that gained a `user_id` in migration 0008, and personal tables
 /// added since.
-const PERSONAL: [&str; 18] = [
+const PERSONAL: [&str; 20] = [
     "password_reset",
     "season_rating",
     "title_merge",
@@ -35,6 +35,8 @@ const PERSONAL: [&str; 18] = [
     "push_sent_title",
     "recovery_code",
     "chapter_read",
+    "api_token",
+    "extension_log",
 ];
 
 /// Fragments that are pasted into a statement and carry the account
