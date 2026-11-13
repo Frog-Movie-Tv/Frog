@@ -566,7 +566,12 @@ part you are about to touch; change it when the code changes.
   (`extension_log`). Releases attach it under fixed names (`frog-extension-firefox.xpi`,
   `frog-extension-chrome.zip`, `updates.json`), so `releases/latest/download`
   is always the newest: Settings → Connections links there and Firefox's
-  `update_url` reads it. Releases sign the Firefox build as unlisted in
+  `update_url` reads it. Frog serves the Firefox file itself as
+  `application/x-xpinstall` (`addon.rs`, `/extension/frog.xpi`), which is
+  what lets Firefox install from one click: fetched once per version from
+  `FROG_EXTENSION_RELEASES`, opened by a key from `/api/extension/link`
+  that lasts an hour, and sent on to GitHub's copy when it has none.
+  Releases sign the Firefox build as unlisted in
   `release-please.yml`, since a tag made with `GITHUB_TOKEN` starts no
   workflow. Playwright's own Chromium will not start on the owner's Windows
   machine ("side-by-side configuration"); `E2E_CHANNEL=msedge` runs the suite

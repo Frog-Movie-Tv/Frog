@@ -1,5 +1,6 @@
 pub mod account;
 pub mod activity;
+pub mod addon;
 pub mod admin;
 pub mod airing;
 pub mod airtime;

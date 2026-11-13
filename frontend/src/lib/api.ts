@@ -276,6 +276,8 @@ export const api = {
 	createToken: (name: string) =>
 		send<{ token: ApiToken; secret: string }>('POST', '/api/account/tokens', { name }),
 	revokeToken: (id: number) => send<{ ok: true }>('DELETE', `/api/account/tokens/${id}`),
+	/** A link that installs the Firefox build from this Frog, good for an hour. */
+	extensionLink: () => get<{ url: string }>('/api/extension/link'),
 	setProfilePublic: (value: boolean) =>
 		send<Account>('PUT', '/api/account/profile', { public: value }),
 	updateProfile: (edit: ProfileEdit) => send<Account>('PUT', '/api/account/profile', edit),

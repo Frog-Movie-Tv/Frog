@@ -27,6 +27,11 @@ enum Who<'a> {
 
 impl Harness {
     async fn new() -> Self {
+        Self::with_releases("http://127.0.0.1:9").await
+    }
+
+    /// Releases served from `releases`, for the Firefox build Settings installs.
+    async fn with_releases(releases: &str) -> Self {
         let dir = tempfile::tempdir().expect("temp dir");
         let url = format!(
             "sqlite:{}?mode=rwc",
@@ -49,6 +54,7 @@ impl Harness {
             anilist: None,
             fanart: None,
             tvmaze_url: "http://127.0.0.1:9".into(),
+            extension_releases: releases.into(),
             mdblist: None,
         };
         let pool = frog::db::connect(&url).await.expect("database");
@@ -87,6 +93,25 @@ impl Harness {
             status,
             serde_json::from_slice(&bytes).unwrap_or(Value::Null),
         )
+    }
+
+    /// A plain GET, giving the status, the headers and the body as it is.
+    async fn raw(
+        &self,
+        path: &str,
+        cookie: Option<&str>,
+    ) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+        let mut req = Request::builder().uri(path);
+        if let Some(c) = cookie {
+            req = req.header(header::COOKIE, c);
+        }
+        let res = frog::routes::router(self.state.clone())
+            .oneshot(req.body(Body::empty()).unwrap())
+            .await
+            .expect("response");
+        let (parts, body) = res.into_parts();
+        let bytes = body.collect().await.expect("body").to_bytes().to_vec();
+        (parts.status, parts.headers, bytes)
     }
 
     /// The owner, signed in. Gives the session cookie.
@@ -698,4 +723,87 @@ async fn one_account_never_sees_another_through_the_extension() {
         )
         .await;
     assert_eq!(found["match"]["in_library"], json!(false));
+}
+
+/// A stand-in for the release pages: the signed build for one version, and
+/// how many times it was asked for.
+async fn releases(file: &'static [u8]) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let hits = std::sync::Arc::new(AtomicUsize::new(0));
+    let counted = hits.clone();
+    let path = format!(
+        "/download/v{}/frog-extension-firefox.xpi",
+        env!("CARGO_PKG_VERSION")
+    );
+    let app = axum::Router::new().route(
+        &path,
+        axum::routing::get(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+            async move { file }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (format!("http://{address}"), hits)
+}
+
+const XPI: &[u8] = b"PK a signed add-on";
+
+#[tokio::test]
+async fn firefox_installs_the_extension_from_frog_with_a_link_from_settings() {
+    use std::sync::atomic::Ordering;
+    let (base, hits) = releases(XPI).await;
+    let h = Harness::with_releases(&base).await;
+    let cookie = h.owner().await;
+
+    // Only a signed-in page gets a link.
+    let (status, _) = h
+        .call("GET", "/api/extension/link", Who::Nobody, None)
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, link) = h
+        .call("GET", "/api/extension/link", Who::Session(&cookie), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let url = link["url"].as_str().unwrap().to_string();
+    assert!(url.starts_with("/extension/frog.xpi?key="), "{url}");
+
+    // The link needs no cookie, since Firefox may fetch it on its own.
+    let (status, headers, body) = h.raw(&url, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CONTENT_TYPE], "application/x-xpinstall");
+    assert_eq!(body, XPI);
+
+    // Fetched once, then served from memory.
+    let (status, _, body) = h.raw(&url, None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, XPI);
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
+
+    // Without a link from Settings there is nothing here.
+    for path in ["/extension/frog.xpi", "/extension/frog.xpi?key=guessed"] {
+        let (status, _, _) = h.raw(path, Some(&cookie)).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+    }
+}
+
+#[tokio::test]
+async fn without_a_build_to_give_the_link_goes_to_the_release_page() {
+    // GitHub away, or a page that is not an add-on.
+    for h in [
+        Harness::new().await,
+        Harness::with_releases(&releases(b"<html>not found</html>").await.0).await,
+    ] {
+        let cookie = h.owner().await;
+        let (_, link) = h
+            .call("GET", "/api/extension/link", Who::Session(&cookie), None)
+            .await;
+        let (status, headers, _) = h.raw(link["url"].as_str().unwrap(), None).await;
+        assert_eq!(status, StatusCode::SEE_OTHER);
+        assert!(headers[header::LOCATION]
+            .to_str()
+            .unwrap()
+            .ends_with("/latest/download/frog-extension-firefox.xpi"));
+    }
 }

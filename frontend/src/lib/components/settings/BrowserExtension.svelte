@@ -15,6 +15,17 @@
 	 */
 	const DOWNLOADS = 'https://github.com/Frog-Movie-Tv/Frog/releases/latest/download';
 
+	/**
+	 * Firefox installs from this Frog in one click, because Frog sends the
+	 * file as an add-on and GitHub does not. Until the link arrives, and if it
+	 * cannot, the release page's copy stands in.
+	 */
+	let firefox = $state(`${DOWNLOADS}/frog-extension-firefox.xpi`);
+	api
+		.extensionLink()
+		.then((link) => (firefox = link.url))
+		.catch(() => {});
+
 	/** Long enough for the toast's Undo, which lasts 7 s. */
 	const REVOKE_AFTER = 7500;
 
@@ -126,11 +137,8 @@
 		</div>
 
 		<div class="get">
-			<a
-				class="btn small"
-				href="{DOWNLOADS}/frog-extension-firefox.xpi"
-				target="_blank"
-				rel="noopener noreferrer"><Icon name="download" size={15} /> Firefox</a
+			<a class="btn small" href={firefox} data-sveltekit-reload
+				><Icon name="download" size={15} /> Firefox</a
 			>
 			<a
 				class="btn small"

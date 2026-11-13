@@ -117,6 +117,7 @@ pub fn router(state: AppState) -> Router {
         .route("/account/sessions/{id}", delete(account::end_session))
         .route("/account/tokens", get(tokens::list).post(tokens::create))
         .route("/account/tokens/{id}", delete(tokens::revoke))
+        .route("/extension/link", get(tokens::addon_link))
         .route("/admin/users", get(admin::users))
         .route(
             "/admin/users/{id}",
@@ -186,6 +187,9 @@ pub fn router(state: AppState) -> Router {
         .nest("/api", api)
         .route("/img/{size}/{*path}", get(images::proxy))
         .route("/healthz", get(meta::healthz))
+        // Outside /api, so the service worker treats it as a page and lets it
+        // through; a link from /api/extension/link opens it.
+        .route("/extension/frog.xpi", get(tokens::addon_file))
         .route("/robots.txt", get(robots))
         .fallback_service(spa(&state))
         // This is one person's private watch history. Even behind Tailscale,

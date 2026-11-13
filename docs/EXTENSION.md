@@ -14,12 +14,22 @@ two buttons, which always give the newest version.
 
 **Firefox**
 
-1. Choose **Firefox** and open the file it downloads.
-2. Allow the install, and allow Frog on every site when asked. It needs them
-   all to find players; see [what leaves the browser](#what-leaves-the-browser).
+1. Choose **Firefox**. Firefox asks whether your Frog may install add-ons:
+   choose **Allow**, then **Add**.
+2. Allow Frog on every site when asked. It needs them all to find players;
+   see [what leaves the browser](#what-leaves-the-browser).
 
 It updates itself from then on. Mozilla signs it as unlisted: it installs
-from the file and is never published on addons.mozilla.org.
+from your Frog or from the release page, and is never published on
+addons.mozilla.org.
+
+Your Frog serves the file itself (`backend/src/addon.rs`), because Firefox
+only installs straight from a link when the site says the file is an add-on,
+and GitHub sends it as a plain download. Frog fetches the signed build for its
+own version from the release once and keeps it in memory. The button asks Frog
+for a link first, good for an hour, since Firefox may fetch the file without
+your session. If Frog cannot get the build, the link goes to the release
+page's copy, which downloads; open it from the downloads list to install.
 
 **Chrome**
 
