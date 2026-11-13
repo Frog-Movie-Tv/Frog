@@ -159,6 +159,7 @@ async fn detail_of(state: &AppState, user_id: i64, title_id: i64) -> AppResult<J
         "homepage": models::str_at(&raw, "homepage"),
         "cast": models::cast(&raw, 24),
         "crew": models::key_crew(&raw),
+        "studios": models::studios(&raw),
         "trailers": models::trailers(&raw),
         "providers": models::providers(&raw, state.tmdb.region()),
         "provider_region": state.tmdb.region(),

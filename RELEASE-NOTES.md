@@ -13,6 +13,11 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Improvements
+
+- A title's page lists the studios behind it, each with its logo. Open one to
+  see everything else it made.
+
 ## [1.5.1] — Goliath — 2026-11-12
 
 A few improvements and fixes.
