@@ -5,6 +5,7 @@ pub mod anilist;
 pub mod auth;
 pub mod browse;
 pub mod episodes;
+pub mod ext;
 pub mod home;
 pub mod images;
 pub mod invites;
@@ -18,6 +19,7 @@ pub mod shelves;
 pub mod stats;
 pub mod timeline;
 pub mod titles;
+pub mod tokens;
 pub mod transfer;
 pub mod two_factor;
 
@@ -113,6 +115,8 @@ pub fn router(state: AppState) -> Router {
             delete(account::end_other_sessions),
         )
         .route("/account/sessions/{id}", delete(account::end_session))
+        .route("/account/tokens", get(tokens::list).post(tokens::create))
+        .route("/account/tokens/{id}", delete(tokens::revoke))
         .route("/admin/users", get(admin::users))
         .route(
             "/admin/users/{id}",
@@ -170,7 +174,13 @@ pub fn router(state: AppState) -> Router {
             post(episodes::set_season_watched),
         )
         .route("/t/{id}/episodes/watch", post(episodes::set_show_watched))
-        .route("/diary/redate", post(timeline::redate));
+        .route("/diary/redate", post(timeline::redate))
+        // The browser extension, with a personal token rather than a session.
+        // `TokenAuth` is taken here and nowhere else.
+        .route("/ext/me", get(ext::me))
+        .route("/ext/resolve", post(ext::resolve))
+        .route("/ext/log", post(ext::log))
+        .route("/ext/undo", post(ext::undo));
 
     Router::new()
         .nest("/api", api)

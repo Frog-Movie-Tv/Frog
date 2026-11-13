@@ -23,6 +23,7 @@ import type {
 	ImportSummary,
 	Account,
 	AdminUser,
+	ApiToken,
 	DeviceSession,
 	InstanceInfo,
 	ServerStatus,
@@ -270,6 +271,11 @@ export const api = {
 	undoMerge: (id: number) => send<{ ok: true }>('POST', `/api/account/merges/${id}/undo`),
 	endSession: (id: string) => send<{ ok: true }>('DELETE', `/api/account/sessions/${id}`),
 	endOtherSessions: () => send<{ signed_out: number }>('DELETE', '/api/account/sessions/others'),
+	tokens: () => get<{ tokens: ApiToken[] }>('/api/account/tokens'),
+	/** `secret` is the token, in this answer and never again. */
+	createToken: (name: string) =>
+		send<{ token: ApiToken; secret: string }>('POST', '/api/account/tokens', { name }),
+	revokeToken: (id: number) => send<{ ok: true }>('DELETE', `/api/account/tokens/${id}`),
 	setProfilePublic: (value: boolean) =>
 		send<Account>('PUT', '/api/account/profile', { public: value }),
 	updateProfile: (edit: ProfileEdit) => send<Account>('PUT', '/api/account/profile', edit),

@@ -1231,6 +1231,8 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/activity',
 		'/api/account',
 		'/api/account/sessions',
+		'/api/account/tokens',
+		'/api/ext/me',
 		'/api/admin/users',
 		'/api/admin/instance',
 		'/api/admin/server',
@@ -1274,7 +1276,11 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/t/1/episodes/watch',
 		'/api/t/1/episodes/1/watch',
 		'/api/t/1/episodes/1/1/watch',
-		'/api/t/1/rewatch'
+		'/api/t/1/rewatch',
+		'/api/account/tokens',
+		'/api/ext/resolve',
+		'/api/ext/log',
+		'/api/ext/undo'
 	]) {
 		const res = await request.post(path, { data: {} });
 		expect(res.status(), `POST ${path} should be 401`).toBe(401);
@@ -1295,7 +1301,12 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 	});
 	expect(rename.status(), 'PUT a username should be 401').toBe(401);
 
-	for (const path of ['/api/account', '/api/account/library', '/api/t/1/library']) {
+	for (const path of [
+		'/api/account',
+		'/api/account/library',
+		'/api/t/1/library',
+		'/api/account/tokens/1'
+	]) {
 		const res = await request.delete(path, { data: {} });
 		expect(res.status(), `DELETE ${path} should be 401`).toBe(401);
 	}

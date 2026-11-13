@@ -5,7 +5,6 @@ use axum::Json;
 use axum_extra::extract::cookie::CookieJar;
 use serde::Deserialize;
 use serde_json::json;
-use std::net::SocketAddr;
 
 use crate::auth::{self as session, ClientAddr, Role};
 use crate::error::{AppError, AppResult};
@@ -33,34 +32,6 @@ pub struct Registration {
     #[serde(flatten)]
     pub credentials: Credentials,
     pub invite: String,
-}
-
-/// The caller's address. `X-Forwarded-For` is trusted because the only
-/// supported deployment puts Caddy directly in front of Frog; without a proxy
-/// the socket address is used. A spoofed header can only dodge the per-address
-/// bucket, never the per-account one.
-fn client_key(headers: &HeaderMap, peer: Option<SocketAddr>) -> String {
-    for name in ["x-forwarded-for", "x-real-ip"] {
-        if let Some(raw) = headers.get(name).and_then(|v| v.to_str().ok()) {
-            if let Some(first) = raw.split(',').next() {
-                let trimmed = first.trim();
-                if !trimmed.is_empty() {
-                    return trimmed.to_string();
-                }
-            }
-        }
-    }
-    peer.map(|p| p.ip().to_string())
-        .unwrap_or_else(|| "unknown".into())
-}
-
-/// The wait a throttle asked for, as a person reads it.
-fn too_many_tries(seconds: u64) -> AppError {
-    let minutes = seconds.div_ceil(60);
-    AppError::TooManyRequests(format!(
-        "Too many tries. Try again in {minutes} {}.",
-        if minutes == 1 { "minute" } else { "minutes" }
-    ))
 }
 
 /// True while the instance has no accounts at all, which is the only time the
@@ -165,10 +136,13 @@ pub async fn login(
         return Err(AppError::WrongCredentials);
     }
 
-    let client = client_key(&headers, peer);
+    let client = session::client_key(&headers, peer);
     let keys = throttle::sign_in_keys(&body.username, &client);
 
-    state.login_failures.admit(&keys).map_err(too_many_tries)?;
+    state
+        .login_failures
+        .admit(&keys)
+        .map_err(session::too_many_tries)?;
 
     // NOCASE so signing in is not a spelling test, and one row per username.
     let row = session::sign_in_row(&state.pool, &body.username).await?;
@@ -228,9 +202,12 @@ pub async fn reset_password(
     ClientAddr(peer): ClientAddr,
     Json(body): Json<ResetBody>,
 ) -> AppResult<impl IntoResponse> {
-    let client = client_key(&headers, peer);
+    let client = session::client_key(&headers, peer);
     let keys = throttle::reset_keys(&client);
-    state.reset_failures.admit(&keys).map_err(too_many_tries)?;
+    state
+        .reset_failures
+        .admit(&keys)
+        .map_err(session::too_many_tries)?;
 
     // Says nothing about the code, so it can come first and costs no try.
     if !session::password_long_enough(&body.password) {
@@ -356,7 +333,7 @@ mod tests {
     fn a_proxy_header_names_the_caller_and_the_socket_is_the_fallback() {
         let mut headers = HeaderMap::new();
         headers.insert("x-forwarded-for", "203.0.113.9, 10.0.0.1".parse().unwrap());
-        assert_eq!(client_key(&headers, None), "203.0.113.9");
-        assert_eq!(client_key(&HeaderMap::new(), None), "unknown");
+        assert_eq!(session::client_key(&headers, None), "203.0.113.9");
+        assert_eq!(session::client_key(&HeaderMap::new(), None), "unknown");
     }
 }

@@ -81,6 +81,7 @@ const STALE_TMDB_DAYS: i64 = 7;
 async fn tick(state: &AppState) -> anyhow::Result<()> {
     state.login_failures.sweep();
     state.reset_failures.sweep();
+    state.token_failures.sweep();
     crate::reset::purge_expired(&state.pool).await?;
 
     let expired = crate::auth::purge_expired_sessions(&state.pool).await?;
