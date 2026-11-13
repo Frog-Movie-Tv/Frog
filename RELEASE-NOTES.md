@@ -17,6 +17,11 @@ In progress.
 
 - A title's page lists the studios behind it, each with its logo. Open one to
   see everything else it made.
+- Settings is calmer. Navigation is a switch and a tab-bar button a page,
+  score formats show each scale once, and Your data keeps merged titles and
+  emptying your library out of the way until you ask.
+- Dropdowns open whole, even near the bottom of the window.
+- Trailers behind a title start sooner and show nothing but the film.
 
 ## [1.5.1] — Goliath — 2026-11-12
 

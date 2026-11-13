@@ -520,8 +520,13 @@ part you are about to touch; change it when the code changes.
   (Frog loops by `seekTo` on state 0 instead); and a player that is never
   hidden, because a browser pauses a muted video nobody can see and YouTube
   flashes its button on resuming. So it plays under the title's picture,
-  which lifts 3 s after the player says it is playing (`AMBIENT_SETTLE`), and
-  starts 12 s in, past the studio logos (`AMBIENT_FROM`).
+  which loads 0.8 s after the page (`AMBIENT_AFTER`), lifts 1.2 s after the
+  player says it is playing (`AMBIENT_SETTLE`), and starts 12 s in, past the
+  studio logos (`AMBIENT_FROM`). The picture fades only as it lifts: when the
+  player buffers, ends or the tab is hidden it is back at once, since a fade
+  back let YouTube's play button show through. It loops 3 s before the end
+  (`AMBIENT_LOOP`, from the player's `infoDelivery` times), so the end
+  screen and its replay button never come.
 - **Manga search is ranked here** (`media::rank_manga`): AniList answers by
   synonym and description too, so only what a title answers is kept,
   synonyms after titles, light novels left out.

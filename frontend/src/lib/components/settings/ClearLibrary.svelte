@@ -3,7 +3,8 @@
 	import { toasts } from '#lib/toast.svelte';
 
 	// Emptying the library. The phrase has to be typed out: a button alone is
-	// too easy to press by accident for something with no undo.
+	// too easy to press by accident for something with no undo. All of it stays
+	// folded away until asked for, so the page does not lead with it.
 	const CLEAR_PHRASE = 'delete my library';
 	let open = $state(false);
 	let phrase = $state('');
@@ -36,24 +37,24 @@
 </script>
 
 <section class="block">
-	<div class="section-head"><h2>Start again</h2></div>
-
-	<div class="danger-zone card">
-		<div class="label">
-			<strong>Empty your library</strong>
-			<span class="faint">
-				Removes every title you track, everything you have watched, your episode ratings and notes,
-				and your shelves. Your account, your settings and your devices stay. This cannot be undone.
+	<div class="rows list-pane" class:open>
+		<div class="row">
+			<span class="label">
+				<strong>Empty your library</strong>
+				<span class="faint">Start again with nothing tracked</span>
 			</span>
+			{#if !open}
+				<button class="btn ghost small danger-text" onclick={() => (open = true)}>Empty…</button>
+			{/if}
 		</div>
 
-		{#if !open}
-			<div class="actions">
-				<a class="btn ghost" href="/api/export/library.json" download> Download a backup first </a>
-				<button class="btn danger-btn" onclick={() => (open = true)}> Empty my library </button>
-			</div>
-		{:else}
+		{#if open}
 			<div class="confirm">
+				<p class="warning">
+					Every title, watch, note and shelf goes. Your account and settings stay. This cannot be
+					undone. <a href="/api/export/library.json" download>Download a backup first</a>.
+				</p>
+
 				<label class="field">
 					<span>Type <code>{CLEAR_PHRASE}</code> to confirm</span>
 					<input
@@ -77,7 +78,7 @@
 				</label>
 
 				<div class="actions">
-					<button class="btn ghost" onclick={close} disabled={busy}> Keep my library </button>
+					<button class="btn ghost" onclick={close} disabled={busy}>Keep my library</button>
 					<button class="btn danger-btn" onclick={clearLibrary} disabled={!ready || busy}>
 						{busy ? 'Emptying…' : 'Empty it for good'}
 					</button>
@@ -89,7 +90,15 @@
 
 <style>
 	.block {
-		margin-bottom: 44px;
+		margin-bottom: 36px;
+	}
+
+	.row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 20px;
+		padding: 15px 18px;
 	}
 
 	.label {
@@ -103,29 +112,45 @@
 		font-size: 0.78rem;
 	}
 
+	/* Only once opened does it look like what it is. */
+	.list-pane.open {
+		border-color: color-mix(in oklab, var(--bad) 35%, transparent);
+	}
+
+	.btn.small {
+		flex: none;
+		padding: 7px 13px;
+		font-size: 0.8rem;
+	}
+
+	.danger-text {
+		color: var(--bad);
+	}
+
+	.confirm {
+		display: grid;
+		gap: 13px;
+		padding: 0 18px 18px;
+	}
+
+	.warning {
+		margin: 0;
+		max-width: 60ch;
+		font-size: 0.84rem;
+		line-height: 1.5;
+		color: var(--text-dim);
+	}
+
+	.warning a {
+		color: var(--accent);
+		text-decoration: underline;
+	}
+
 	.actions {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 9px;
 		align-items: center;
-	}
-
-	/* Visibly not an ordinary row: this one does not come back. */
-	.danger-zone {
-		display: grid;
-		gap: 14px;
-		padding: 18px;
-		border: 1px solid color-mix(in oklab, var(--bad) 35%, transparent);
-	}
-
-	.danger-zone .label {
-		display: grid;
-		gap: 5px;
-	}
-
-	.danger-zone .faint {
-		max-width: 60ch;
-		line-height: 1.5;
 	}
 
 	.danger-btn {
@@ -144,19 +169,9 @@
 		filter: none;
 	}
 
-	.confirm {
-		display: grid;
-		gap: 13px;
-		padding-top: 14px;
-		border-top: 1px solid var(--line, rgba(128, 128, 128, 0.25));
-	}
-
-	.confirm code {
-		font-size: 0.92em;
-	}
-
 	code {
 		font-family: var(--font-mono);
+		font-size: 0.92em;
 		background: var(--bg-elev-2);
 		padding: 1px 5px;
 		border-radius: 4px;

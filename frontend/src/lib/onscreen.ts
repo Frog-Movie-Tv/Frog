@@ -38,28 +38,46 @@ export function onScreen(node: HTMLElement, sheet = true) {
 
 /**
  * Places a `position: fixed` element under its button, right edges lined up,
- * inside the window, and above the button when there is no room below. It
- * follows the button through scrolling. For a panel moved out of its
- * container with `portal`; on a phone it is left to its sheet CSS.
+ * inside the window, and above the button when there is no room below. When
+ * it fits on neither side it takes the roomier one and shrinks to it, so a
+ * long list scrolls inside the window instead of running off it. It follows
+ * the button through scrolling, and is never narrower than the button. For a
+ * panel moved out of its container with `portal`, since a pane with
+ * `overflow: hidden` cuts off anything drawn inside it; on a phone it is left
+ * to its sheet CSS.
  */
 export function anchorTo(node: HTMLElement, anchor: HTMLElement | undefined) {
 	const pad = 8;
 	const gap = 8;
 	const place = () => {
+		node.style.maxHeight = '';
 		if (!anchor || window.matchMedia(SHEET_QUERY).matches) {
 			node.style.left = '';
 			node.style.top = '';
+			node.style.minWidth = '';
 			return;
 		}
 		const a = anchor.getBoundingClientRect();
+		node.style.minWidth = `${Math.round(a.width)}px`;
 		const r = node.getBoundingClientRect();
 		const left = Math.min(
 			Math.max(pad, a.right - r.width),
 			Math.max(pad, window.innerWidth - pad - r.width)
 		);
+		const below = window.innerHeight - pad - (a.bottom + gap);
+		const above = a.top - gap - pad;
+		let height = r.height;
 		let top = a.bottom + gap;
-		if (top + r.height > window.innerHeight - pad && a.top - gap - r.height >= pad) {
-			top = a.top - gap - r.height;
+		if (height > below) {
+			if (height <= above) {
+				top = a.top - gap - height;
+			} else if (above > below) {
+				height = above;
+				top = pad;
+			} else {
+				height = below;
+			}
+			if (height < r.height) node.style.maxHeight = `${Math.floor(height)}px`;
 		}
 		node.style.left = `${Math.round(left)}px`;
 		node.style.top = `${Math.round(top)}px`;

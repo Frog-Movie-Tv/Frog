@@ -11,13 +11,13 @@
 	/** Watching: how ratings read, and what tracking does by default. */
 	const s = $derived(settings.current);
 
-	/** What each format is, under its sample. */
-	const ABOUT: Record<ScoreFormat, string> = {
+	/** The one line under each sample: the sample already says the rest. */
+	const SCALE: Record<ScoreFormat, string> = {
 		pt100: 'Out of 100',
-		pt10dec: 'Out of 10, with tenths',
+		pt10dec: 'Out of 10.0',
 		pt10: 'Out of 10',
-		star5: 'Five stars, halves too',
-		smiley3: 'Disliked, fine or loved'
+		star5: 'Stars',
+		smiley3: 'Smileys'
 	};
 
 	/** A rating to try the chosen format on; not saved anywhere. */
@@ -70,24 +70,25 @@
 				onclick={() => settings.set('scoreFormat', f.id as ScoreFormat)}
 			>
 				<span class="sample"><Score value={preview ?? 78} format={f.id} /></span>
-				<strong>{f.label}</strong>
-				<span class="faint">{ABOUT[f.id]}</span>
+				<span class="scale">{SCALE[f.id]}</span>
 			</button>
 		{/each}
 	</div>
 
 	<div class="rows list-pane">
-		<label class="row">
-			<span class="label">
-				<strong>Half stars</strong>
-			</span>
-			<input
-				type="checkbox"
-				class="toggle-switch"
-				checked={s.halfStars}
-				onchange={(e) => settings.set('halfStars', e.currentTarget.checked)}
-			/>
-		</label>
+		{#if s.scoreFormat === 'star5'}
+			<label class="row">
+				<span class="label">
+					<strong>Half stars</strong>
+				</span>
+				<input
+					type="checkbox"
+					class="toggle-switch"
+					checked={s.halfStars}
+					onchange={(e) => settings.set('halfStars', e.currentTarget.checked)}
+				/>
+			</label>
+		{/if}
 
 		<div class="row">
 			<span class="label"><strong>Preview</strong></span>
@@ -248,7 +249,7 @@
 	   ringed in the accent, as in a segmented control. */
 	.tiles {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+		grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
 		gap: 6px;
 		margin-bottom: 14px;
 		padding: 8px;
@@ -263,15 +264,15 @@
 	.tile {
 		display: flex;
 		flex-direction: column;
-		align-items: flex-start;
-		gap: 3px;
-		padding: 14px 14px 12px;
+		align-items: center;
+		gap: 2px;
+		padding: 14px 10px 12px;
 		border: 0;
 		border-radius: var(--radius-sm);
 		background: none;
 		color: inherit;
 		cursor: pointer;
-		text-align: left;
+		text-align: center;
 		transition: background var(--fast) var(--ease);
 	}
 
@@ -284,16 +285,20 @@
 		box-shadow: inset 0 0 0 1.5px var(--accent);
 	}
 
-	.tile .faint {
-		font-size: 0.74rem;
+	.scale {
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: var(--text-dim);
+		white-space: nowrap;
 	}
 
 	/* The format itself, drawn as it will read everywhere. */
 	.sample {
 		display: flex;
 		align-items: center;
+		justify-content: center;
 		height: 34px;
-		margin-bottom: 4px;
+		margin-bottom: 2px;
 		font-size: 1.55rem;
 		font-weight: 750;
 		font-variant-numeric: tabular-nums;
