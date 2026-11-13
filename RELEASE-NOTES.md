@@ -26,6 +26,11 @@ In progress.
   profile, or keep it across the top in short, tall or full height. Tap any
   banner to see the whole picture.
 
+### Improvements
+
+- Pin any title in your library: find it by name, and take a pin off with
+  one tap.
+
 ## [1.5.1] — Goliath — 2026-11-12
 
 A few improvements and fixes.

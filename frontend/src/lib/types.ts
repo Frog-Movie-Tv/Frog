@@ -551,6 +551,8 @@ export interface Account {
 	banner_height: string | null;
 	/** Frog ids of titles in the library, in order. */
 	pins: { title_id: number }[];
+	/** The same titles, to show: any no longer in the library are left out. */
+	pinned: { id: number; kind: Kind; name: string; poster_path: string | null }[];
 	/** Whether a picture of each kind is uploaded. */
 	avatar: boolean;
 	banner: boolean;

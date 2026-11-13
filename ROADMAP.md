@@ -11,9 +11,6 @@ Free, updating itself from each release (`docs/DEPLOY-ORACLE.md`).
 
 Left from the badges and profiles batch (branch `feat/badges-and-profiles`):
 
-- **Pins:** show every pinned title with a way to take it off, and search the
-  whole library when choosing (the chooser lists only 40 top-rated titles, so
-  a pin outside them cannot be removed).
 - **Ratings:** test every rating control by mouse, touch and keyboard in each
   score format; clearing by tapping the current score, the popover's place on
   a phone, quick taps saving out of order, a window listener per episode row,

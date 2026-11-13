@@ -210,24 +210,7 @@ pub async fn facts(pool: &SqlitePool, user_id: i64, pins_json: &str) -> AppResul
     .fetch_all(pool)
     .await?;
 
-    let pins: Vec<i64> = serde_json::from_str::<Vec<Value>>(pins_json)
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|p| p["title_id"].as_i64())
-        .collect();
-    let mut pinned = Vec::new();
-    for title_id in crate::tmdb::models::unique_by(pins, |id| *id) {
-        let row: Option<CardRow> = sqlx::query_as(
-            "SELECT t.kind, t.id, t.name, t.poster_path, l.rating
-               FROM library_entry l JOIN title t ON t.id = l.title_id
-              WHERE l.user_id = ? AND t.id = ?",
-        )
-        .bind(user_id)
-        .bind(title_id)
-        .fetch_optional(pool)
-        .await?;
-        pinned.extend(row);
-    }
+    let pinned = pinned(pool, user_id, pins_json).await?;
 
     let totals: TotalsRow = sqlx::query_as(
         "SELECT COALESCE(SUM(w.episode_id IS NULL), 0),
@@ -298,6 +281,29 @@ pub async fn facts(pool: &SqlitePool, user_id: i64, pins_json: &str) -> AppResul
         days,
         images,
     })
+}
+
+/// Pinned titles, in the order chosen, skipping any no longer in the library.
+pub async fn pinned(pool: &SqlitePool, user_id: i64, pins_json: &str) -> AppResult<Vec<CardRow>> {
+    let pins: Vec<i64> = serde_json::from_str::<Vec<Value>>(pins_json)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|p| p["title_id"].as_i64())
+        .collect();
+    let mut pinned = Vec::new();
+    for title_id in crate::tmdb::models::unique_by(pins, |id| *id) {
+        let row: Option<CardRow> = sqlx::query_as(
+            "SELECT t.kind, t.id, t.name, t.poster_path, l.rating
+               FROM library_entry l JOIN title t ON t.id = l.title_id
+              WHERE l.user_id = ? AND t.id = ?",
+        )
+        .bind(user_id)
+        .bind(title_id)
+        .fetch_optional(pool)
+        .await?;
+        pinned.extend(row);
+    }
+    Ok(pinned)
 }
 
 /// How many chapters a manga has, as its title keeps it.

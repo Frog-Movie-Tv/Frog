@@ -78,6 +78,24 @@
 		</div>
 	{/if}
 
+	<!-- Your profile in miniature, in the colour picked. -->
+	<div class="preview" style={preview} aria-hidden="true">
+		<span class="banner"></span>
+		<span class="row">
+			<span class="face">{name.slice(0, 1).toUpperCase()}</span>
+			<span class="who">
+				<b>{name}</b>
+				<span class="taste"><strong>87%</strong> taste match</span>
+			</span>
+			<span class="button">Compare</span>
+		</span>
+		<span class="tiles">
+			<span class="tile"><span>Films</span><b>42</b></span>
+			<span class="tile"><span>Episodes</span><b>318</b></span>
+			<span class="tile"><span>Streak</span><b>6 days</b></span>
+		</span>
+	</div>
+
 	<div class="head">
 		<strong>Banner</strong>
 		<span class="faint">
@@ -110,24 +128,6 @@
 				{/each}
 			</div>
 		{/if}
-	</div>
-
-	<!-- Your profile in miniature, in the colour picked. -->
-	<div class="preview" style={preview} aria-hidden="true">
-		<span class="banner"></span>
-		<span class="row">
-			<span class="face">{name.slice(0, 1).toUpperCase()}</span>
-			<span class="who">
-				<b>{name}</b>
-				<span class="taste"><strong>87%</strong> taste match</span>
-			</span>
-			<span class="button">Compare</span>
-		</span>
-		<span class="tiles">
-			<span class="tile"><span>Films</span><b>42</b></span>
-			<span class="tile"><span>Episodes</span><b>318</b></span>
-			<span class="tile"><span>Streak</span><b>6 days</b></span>
-		</span>
 	</div>
 </div>
 

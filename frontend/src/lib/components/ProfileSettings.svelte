@@ -153,11 +153,35 @@
 	const username = $derived(session.status?.username ?? account?.username ?? '');
 	const imageUrl = (kind: 'avatar' | 'banner') =>
 		`/api/profiles/${encodeURIComponent(username)}/images/${kind}?v=${version}`;
-	const pinned = $derived(
-		(account?.pins ?? [])
-			.map((p) => titles.find((t) => t.id === p.title_id))
-			.filter((t): t is LibraryItem => !!t)
-	);
+	const pinned = $derived(account?.pinned ?? []);
+
+	// Finding a title to pin: the best rated to start, then the whole library
+	// by name as you type.
+	let pinTerm = $state('');
+	let pinFound = $state<LibraryItem[]>([]);
+	$effect(() => {
+		const q = pinTerm.trim();
+		if (!q) {
+			pinFound = [];
+			return;
+		}
+		let current = true;
+		const timer = setTimeout(() => {
+			void api
+				.library({ q, sort: 'name', order: 'asc', limit: 40 })
+				.then((r) => {
+					if (current) pinFound = r.items;
+				})
+				.catch(() => {
+					if (current) pinFound = [];
+				});
+		}, 200);
+		return () => {
+			current = false;
+			clearTimeout(timer);
+		};
+	});
+	const pinChoices = $derived(pinTerm.trim() ? pinFound : titles.slice(0, 24));
 	const backdrops = $derived(titles.filter((t) => t.backdrop_path).slice(0, 18));
 
 	async function load() {
@@ -397,31 +421,58 @@
 	<div class="pins">
 		<div class="pins-head">
 			<span class="label">
-				<strong>Pinned</strong>
+				<strong>Pinned <em class="faint">{pinned.length}/{PINS_MAX}</em></strong>
 				<span class="faint">Up to four titles at the top of your profile.</span>
 			</span>
-			<button class="btn ghost small" onclick={() => (choosingPins = !choosingPins)}>
-				{choosingPins ? 'Done' : 'Choose'}
+			<button
+				class="btn ghost small"
+				onclick={() => {
+					choosingPins = !choosingPins;
+					pinTerm = '';
+				}}
+			>
+				{choosingPins ? 'Done' : 'Add'}
 			</button>
 		</div>
 		{#if pinned.length}
-			<div class="pinned">
+			<ul class="pinned">
 				{#each pinned as t (t.id)}
-					<span class="pin">
+					<li class="pin">
 						{#if img(t.poster_path, 'w92')}<img src={img(t.poster_path, 'w92')} alt="" />{/if}
-						<span>{t.name}</span>
-					</span>
+						<span class="pin-name">{t.name}</span>
+						<button class="unpin hit" aria-label="Unpin {t.name}" onclick={() => togglePin(t.id)}>
+							<Icon name="x" size={14} />
+						</button>
+					</li>
 				{/each}
-			</div>
+			</ul>
 		{/if}
 		{#if choosingPins}
-			<div class="choices">
-				{#each titles.slice(0, 40) as t (t.id)}
-					{@const on = (account?.pins ?? []).some((p) => p.title_id === t.id)}
-					<button class="choice" class:on aria-pressed={on} onclick={() => togglePin(t.id)}>
-						{t.name}
-					</button>
-				{/each}
+			<div class="finder">
+				<input
+					class="input"
+					type="search"
+					bind:value={pinTerm}
+					placeholder="Find a title in your library"
+					aria-label="Find a title to pin"
+					autocomplete="off"
+					spellcheck="false"
+				/>
+				<div class="choices">
+					{#each pinChoices as t (t.id)}
+						{@const on = (account?.pins ?? []).some((p) => p.title_id === t.id)}
+						<button class="choice" class:on aria-pressed={on} onclick={() => togglePin(t.id)}>
+							{#if on}<Icon name="check" size={13} />{/if}
+							{t.name}
+						</button>
+					{:else}
+						<p class="faint small">
+							{pinTerm.trim()
+								? 'Nothing in your library by that name.'
+								: 'Add titles to your library to pin them.'}
+						</p>
+					{/each}
+				</div>
 			</div>
 		{/if}
 	</div>
@@ -889,16 +940,57 @@
 		display: flex;
 		gap: 10px;
 		flex-wrap: wrap;
+		margin: 0;
+		padding: 0;
+		list-style: none;
 	}
 
 	.pin {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 4px 10px 4px 4px;
+		padding: 4px 4px 4px 4px;
 		border-radius: var(--radius-sm);
 		background: var(--bg-elev-2);
 		font-size: 0.85rem;
+		min-width: 0;
+		max-width: 100%;
+	}
+
+	.pin-name {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.unpin {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 28px;
+		height: 28px;
+		border: 0;
+		border-radius: 50%;
+		background: none;
+		color: var(--text-dim);
+		cursor: pointer;
+	}
+
+	.unpin:hover {
+		background: var(--bg-hover);
+		color: var(--text);
+	}
+
+	.finder {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.pins-head em {
+		font-style: normal;
+		font-weight: 400;
 	}
 
 	.pin img {
@@ -926,6 +1018,16 @@
 	.choice.on {
 		border-color: var(--accent);
 		color: var(--accent);
+	}
+
+	.choice {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.row {

@@ -12,6 +12,8 @@ use tower::ServiceExt;
 use frog::config::Config;
 use frog::state::AppState;
 
+mod common;
+
 struct Harness {
     state: AppState,
     _dir: tempfile::TempDir,
@@ -44,10 +46,9 @@ impl Harness {
             mdblist: None,
         };
         let pool = frog::db::connect(&url).await.expect("database");
-        Self {
-            state: AppState::new(pool, config),
-            _dir: dir,
-        }
+        let state = AppState::new(pool, config);
+        common::add_title_seed(&state).await;
+        Self { state, _dir: dir }
     }
 
     async fn send(
@@ -580,4 +581,53 @@ async fn a_banner_takes_only_the_layouts_and_heights_offered() {
         .await;
     assert_eq!(me["banner_layout"], Value::Null);
     assert_eq!(me["banner_height"], Value::Null);
+}
+
+#[tokio::test]
+async fn every_pin_comes_back_wherever_it_sits_in_the_library() {
+    let h = Harness::new().await;
+    let (_, member) = two_accounts(&h).await;
+    // Seventy titles, the one pinned rated lowest: far past the first page.
+    for i in 1..=70 {
+        sqlx::query("INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (?, 'movie', ?, ?)")
+            .bind(i)
+            .bind(i)
+            .bind(format!("Film {i}"))
+            .execute(&h.state.pool)
+            .await
+            .unwrap();
+        let (code, body) = h
+            .put(
+                &format!("/api/t/{i}/library"),
+                json!({ "status": "completed", "rating": if i == 70 { 5 } else { 90 } }),
+                Some(&member),
+            )
+            .await;
+        assert_eq!(code, StatusCode::OK, "{body:?}");
+    }
+    let (code, me) = h
+        .put(
+            "/api/account/profile",
+            json!({ "pins": [{ "title_id": 70 }, { "title_id": 3 }] }),
+            Some(&member),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{me:?}");
+    let names: Vec<&str> = me["pinned"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["Film 70", "Film 3"], "in the order chosen");
+
+    // And it can be taken off.
+    let (_, me) = h
+        .put(
+            "/api/account/profile",
+            json!({ "pins": [{ "title_id": 3 }] }),
+            Some(&member),
+        )
+        .await;
+    assert_eq!(me["pinned"].as_array().unwrap().len(), 1);
 }

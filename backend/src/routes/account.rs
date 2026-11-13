@@ -24,6 +24,15 @@ const SESSION_ID_LEN: usize = 16;
 pub async fn get(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
     let (row, images, look) = account::details(&state.pool, auth.user_id()).await?;
     let has = |kind: &str| images.iter().any(|k| k == kind);
+    // Each pin as a card, so Settings can show and unpin any of them, wherever
+    // it sits in the library.
+    let pinned: Vec<Value> = profiles::pinned(&state.pool, auth.user_id(), &row.8)
+        .await?
+        .into_iter()
+        .map(|(kind, id, name, poster_path, _)| {
+            json!({ "id": id, "kind": kind, "name": name, "poster_path": poster_path })
+        })
+        .collect();
     Ok(Json(json!({
         "id": auth.user_id(),
         "username": row.0,
@@ -40,6 +49,7 @@ pub async fn get(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Va
         "banner_layout": look.banner_layout,
         "banner_height": look.banner_height,
         "pins": serde_json::from_str::<Value>(&row.8).unwrap_or(json!([])),
+        "pinned": pinned,
         "avatar": has("avatar"),
         "banner": has("banner"),
     })))
