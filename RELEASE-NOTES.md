@@ -22,6 +22,9 @@ In progress.
 - **Your colour.** Give your profile one of ten colours, in a light, medium or
   dark shade. Everyone who opens your profile sees it in your colour, on every
   theme.
+- **Banners your way.** Stand your banner as a tall column beside your
+  profile, or keep it across the top in short, tall or full height. Tap any
+  banner to see the whole picture.
 
 ## [1.5.1] — Goliath — 2026-11-12
 

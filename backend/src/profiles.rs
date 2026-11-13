@@ -87,6 +87,26 @@ pub fn check_colour(
     }
 }
 
+/// Where a banner goes: across the top, or a portrait column on the left.
+pub const LAYOUTS: [&str; 2] = ["classic", "vertical"];
+/// How tall a banner across the top is; full shows the whole picture.
+pub const HEIGHTS: [&str; 3] = ["short", "tall", "full"];
+
+/// One word from `allowed`, or nothing for an empty one (the default).
+pub fn check_choice(value: &str, allowed: &[&str], what: &str) -> AppResult<Option<String>> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if allowed.contains(&value) {
+        Ok(Some(value.to_string()))
+    } else {
+        Err(AppError::BadRequest(format!(
+            "That {what} is not one Frog offers."
+        )))
+    }
+}
+
 /// How a profile looks, as its owner set it.
 #[derive(Debug, Default, Clone, serde::Serialize)]
 pub struct Look {
@@ -94,22 +114,36 @@ pub struct Look {
     pub banner_position: Option<String>,
     pub profile_color: Option<String>,
     pub profile_shade: Option<String>,
+    /// "classic" or "vertical"; nothing is classic.
+    pub banner_layout: Option<String>,
+    /// "short", "tall" or "full"; nothing is short.
+    pub banner_height: Option<String>,
 }
 
-/// (banner position, colour, shade)
-type LookRow = (Option<String>, Option<String>, Option<String>);
+/// (banner position, colour, shade, layout, height)
+type LookRow = (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
 
 pub async fn look(pool: &SqlitePool, user_id: i64) -> AppResult<Look> {
-    let (banner_position, profile_color, profile_shade): LookRow = sqlx::query_as(
-        "SELECT banner_position, profile_color, profile_shade FROM app_user WHERE id = ?",
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await?;
+    let (banner_position, profile_color, profile_shade, banner_layout, banner_height): LookRow =
+        sqlx::query_as(
+            "SELECT banner_position, profile_color, profile_shade, banner_layout, banner_height
+               FROM app_user WHERE id = ?",
+        )
+        .bind(user_id)
+        .fetch_one(pool)
+        .await?;
     Ok(Look {
         banner_position,
         profile_color,
         profile_shade,
+        banner_layout,
+        banner_height,
     })
 }
 
@@ -362,5 +396,21 @@ mod tests {
         assert!(check_colour(Some("#ff0000"), None).is_err());
         assert!(check_colour(Some("Teal"), None).is_err());
         assert!(check_colour(Some("teal"), Some("pale")).is_err());
+    }
+
+    #[test]
+    fn a_banner_takes_only_the_layouts_and_heights_offered() {
+        use super::{check_choice, HEIGHTS, LAYOUTS};
+        assert_eq!(
+            check_choice("vertical", &LAYOUTS, "layout").unwrap(),
+            Some("vertical".into())
+        );
+        assert_eq!(check_choice(" ", &LAYOUTS, "layout").unwrap(), None);
+        assert!(check_choice("sideways", &LAYOUTS, "layout").is_err());
+        assert_eq!(
+            check_choice("full", &HEIGHTS, "height").unwrap(),
+            Some("full".into())
+        );
+        assert!(check_choice("Full", &HEIGHTS, "height").is_err());
     }
 }

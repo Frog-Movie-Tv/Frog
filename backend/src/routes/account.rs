@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use crate::account::{self, ProfileField};
 use crate::auth::{self, Auth, Role};
 use crate::error::{AppError, AppResult};
+use crate::profiles;
 use crate::reset;
 use crate::state::AppState;
 use crate::store;
@@ -36,6 +37,8 @@ pub async fn get(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Va
         "banner_position": look.banner_position,
         "profile_color": look.profile_color,
         "profile_shade": look.profile_shade,
+        "banner_layout": look.banner_layout,
+        "banner_height": look.banner_height,
         "pins": serde_json::from_str::<Value>(&row.8).unwrap_or(json!([])),
         "avatar": has("avatar"),
         "banner": has("banner"),
@@ -188,6 +191,10 @@ pub struct ProfileBody {
     /// A colour from the list, or empty for the theme's own.
     pub profile_color: Option<String>,
     pub profile_shade: Option<String>,
+    /// "classic" or "vertical"; empty goes back to classic.
+    pub banner_layout: Option<String>,
+    /// "short", "tall" or "full"; empty goes back to short.
+    pub banner_height: Option<String>,
 }
 
 #[derive(Deserialize, serde::Serialize)]
@@ -265,10 +272,8 @@ pub async fn set_profile(
         account::set_banner_backdrop(pool, me, (!path.is_empty()).then_some(path)).await?;
     }
     if body.profile_color.is_some() || body.profile_shade.is_some() {
-        let (color, shade) = crate::profiles::check_colour(
-            body.profile_color.as_deref(),
-            body.profile_shade.as_deref(),
-        )?;
+        let (color, shade) =
+            profiles::check_colour(body.profile_color.as_deref(), body.profile_shade.as_deref())?;
         let field = match (&body.profile_color, &shade) {
             (Some(_), _) => Some(ProfileField::Colour(color.as_deref(), shade.as_deref())),
             (None, Some(shade)) => Some(ProfileField::Shade(shade)),
@@ -277,6 +282,14 @@ pub async fn set_profile(
         if let Some(field) = field {
             account::set_profile_field(pool, me, field).await?;
         }
+    }
+    if let Some(layout) = &body.banner_layout {
+        let layout = profiles::check_choice(layout, &profiles::LAYOUTS, "banner layout")?;
+        account::set_profile_field(pool, me, ProfileField::BannerLayout(layout.as_deref())).await?;
+    }
+    if let Some(height) = &body.banner_height {
+        let height = profiles::check_choice(height, &profiles::HEIGHTS, "banner height")?;
+        account::set_profile_field(pool, me, ProfileField::BannerHeight(height.as_deref())).await?;
     }
     if let Some(pins) = &body.pins {
         if pins.len() > PINS_MAX {

@@ -108,14 +108,36 @@
 			<a class="btn" href="/people">Everyone sharing</a>
 		</Empty>
 	{:else}
-		<ProfileHeader {profile} {tab} />
-		<div class="tab-body">
-			{@render children(profile)}
+		<div class="profile" class:vertical={profile.banner_layout === 'vertical'}>
+			<ProfileHeader {profile} {tab} />
+			<div class="tab-body">
+				{@render children(profile)}
+			</div>
 		</div>
 	{/if}
 </div>
 
 <style>
+	/* Vertical on a wide screen: the banner column on the left, the tabs and
+	   what they show beside it (ProfileHeader puts its parts in the areas). */
+	@media (min-width: 900px) {
+		.profile.vertical {
+			display: grid;
+			grid-template-columns: minmax(240px, 330px) minmax(0, 1fr);
+			grid-template-rows: auto 1fr;
+			grid-template-areas:
+				'side tabs'
+				'side body';
+			column-gap: clamp(20px, 3vw, 40px);
+			align-items: start;
+		}
+
+		.profile.vertical .tab-body {
+			grid-area: body;
+			min-width: 0;
+		}
+	}
+
 	.tab-body {
 		animation: tab-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 	}

@@ -547,6 +547,8 @@ export interface Account {
 	/** The colour the profile wears, from `PROFILE_COLOURS`, or null for the theme's. */
 	profile_color: string | null;
 	profile_shade: string | null;
+	banner_layout: string | null;
+	banner_height: string | null;
 	/** Frog ids of titles in the library, in order. */
 	pins: { title_id: number }[];
 	/** Whether a picture of each kind is uploaded. */
@@ -565,6 +567,9 @@ export interface ProfileEdit {
 	/** Empty for the theme's own colour. */
 	profile_color?: string;
 	profile_shade?: string;
+	/** Empty for the banner across the top, short. */
+	banner_layout?: string;
+	banner_height?: string;
 }
 
 export interface PersonSummary {
@@ -787,6 +792,10 @@ export interface Profile {
 	banner_position: string | null;
 	profile_color: string | null;
 	profile_shade: string | null;
+	/** "vertical", or null for the banner across the top. */
+	banner_layout: string | null;
+	/** "tall" or "full", or null for short. */
+	banner_height: string | null;
 	/** The badges they show, in their order. */
 	badges: HeldBadge[];
 	stats: {

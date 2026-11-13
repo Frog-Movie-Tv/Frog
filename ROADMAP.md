@@ -9,7 +9,22 @@ Free, updating itself from each release (`docs/DEPLOY-ORACLE.md`).
 
 ## To build
 
-Nothing at the moment.
+Left from the badges and profiles batch (branch `feat/badges-and-profiles`):
+
+- **Pins:** show every pinned title with a way to take it off, and search the
+  whole library when choosing (the chooser lists only 40 top-rated titles, so
+  a pin outside them cannot be removed).
+- **Ratings:** test every rating control by mouse, touch and keyboard in each
+  score format; clearing by tapping the current score, the popover's place on
+  a phone, quick taps saving out of order, a window listener per episode row,
+  and the `★` glyph. A Playwright test for each fix.
+- **The title page's picture grows and shrinks** when a status or rating is
+  saved. Reproduce in the running app and fix.
+- **Remove the colour editor:** `ThemeEditor.svelte`, `customTheme` and
+  `savedThemes`; old settings must load cleanly.
+- **Finish:** seed a demo account with a colour, a vertical banner and a
+  badge; run the full backend suite, `npm run build`, a release build,
+  `npx playwright test` and `npm run audit`; look at both layouts on a phone.
 
 ## To check by hand
 

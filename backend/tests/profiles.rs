@@ -528,3 +528,56 @@ async fn a_profile_wears_only_colours_from_the_list() {
     assert_eq!(me["profile_color"], Value::Null);
     assert_eq!(me["profile_shade"], Value::Null);
 }
+
+#[tokio::test]
+async fn a_banner_takes_only_the_layouts_and_heights_offered() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&member),
+    )
+    .await;
+
+    let (code, me) = h
+        .put(
+            "/api/account/profile",
+            json!({ "banner_layout": "vertical", "banner_height": "full", "banner_position": "30% 70%" }),
+            Some(&member),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{me:?}");
+    assert_eq!(me["banner_layout"], "vertical");
+    assert_eq!(me["banner_height"], "full");
+    assert_eq!(
+        me["banner_position"], "30% 70%",
+        "the position stays its own"
+    );
+
+    let (_, profile) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert_eq!(profile["banner_layout"], "vertical");
+    assert_eq!(profile["banner_height"], "full");
+
+    for bad in [
+        json!({ "banner_layout": "sideways" }),
+        json!({ "banner_layout": "Vertical" }),
+        json!({ "banner_height": "huge" }),
+        json!({ "banner_height": "100vh" }),
+    ] {
+        let (code, _) = h
+            .put("/api/account/profile", bad.clone(), Some(&member))
+            .await;
+        assert_eq!(code, StatusCode::BAD_REQUEST, "{bad}");
+    }
+
+    let (_, me) = h
+        .put(
+            "/api/account/profile",
+            json!({ "banner_layout": "", "banner_height": "" }),
+            Some(&member),
+        )
+        .await;
+    assert_eq!(me["banner_layout"], Value::Null);
+    assert_eq!(me["banner_height"], Value::Null);
+}

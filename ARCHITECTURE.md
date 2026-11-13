@@ -354,6 +354,10 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
   page's own root, never on the theme. The values live only in
   `lib/profile-colours.ts`, one for the light themes and one for the dark,
   and `tests/profile-colours.test.mjs` holds every pair to 4.5:1.
+  `banner_layout` (classic or vertical) and `banner_height` (short, tall,
+  full) sit beside `banner_position`, which serves both shapes. Vertical on
+  a wide screen, `ProfileShell` is a grid and `ProfileHeader` goes
+  `display: contents`, so its column and its tabs land in their own areas.
 - **Badges are finished in the browser.** `BadgeEditor` (Administration →
   Badges) reads an upload with `lib/badge.ts`: an SVG is drawn to 2048 px and
   only its pixels go further; an animated file gives its first frame. The

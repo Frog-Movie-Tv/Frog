@@ -31,6 +31,8 @@
 	const tone = $derived(currentTone());
 	const preview = $derived(profileStyle(colour, shade, tone));
 	const name = $derived(account?.display_name || account?.username || '');
+	const layout = $derived(account?.banner_layout ?? 'classic');
+	const height = $derived(account?.banner_height ?? 'short');
 </script>
 
 <div class="look">
@@ -75,6 +77,40 @@
 			{/each}
 		</div>
 	{/if}
+
+	<div class="head">
+		<strong>Banner</strong>
+		<span class="faint">
+			{layout === 'vertical'
+				? 'A portrait column beside everything else, and tall across the top on a phone.'
+				: 'Across the top of your profile.'}
+			Drag the picture above to choose what shows. A tap on it opens it whole.
+		</span>
+	</div>
+	<div class="choices">
+		<div class="segmented" role="radiogroup" aria-label="Banner layout">
+			{#each [['classic', 'Classic'], ['vertical', 'Vertical']] as [id, label] (id)}
+				<button
+					class:on={layout === id}
+					role="radio"
+					aria-checked={layout === id}
+					onclick={() => save({ banner_layout: id === 'classic' ? '' : id })}>{label}</button
+				>
+			{/each}
+		</div>
+		{#if layout !== 'vertical'}
+			<div class="segmented" role="radiogroup" aria-label="Banner height">
+				{#each [['short', 'Short'], ['tall', 'Tall'], ['full', 'Full']] as [id, label] (id)}
+					<button
+						class:on={height === id}
+						role="radio"
+						aria-checked={height === id}
+						onclick={() => save({ banner_height: id === 'short' ? '' : id })}>{label}</button
+					>
+				{/each}
+			</div>
+		{/if}
+	</div>
 
 	<!-- Your profile in miniature, in the colour picked. -->
 	<div class="preview" style={preview} aria-hidden="true">
@@ -147,6 +183,12 @@
 
 	.shades {
 		align-self: flex-start;
+	}
+
+	.choices {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
 	}
 
 	.preview {

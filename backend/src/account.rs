@@ -99,6 +99,10 @@ pub enum ProfileField<'a> {
     /// A colour and its shade, both names from `profiles::COLOURS`.
     Colour(Option<&'a str>, Option<&'a str>),
     Shade(&'a str),
+    /// "classic" or "vertical", from `profiles::LAYOUTS`.
+    BannerLayout(Option<&'a str>),
+    /// "short", "tall" or "full", from `profiles::HEIGHTS`.
+    BannerHeight(Option<&'a str>),
 }
 
 pub async fn set_profile_field(
@@ -127,6 +131,12 @@ pub async fn set_profile_field(
         }
         ProfileField::Shade(shade) => {
             sqlx::query("UPDATE app_user SET profile_shade = ? WHERE id = ?").bind(shade)
+        }
+        ProfileField::BannerLayout(layout) => {
+            sqlx::query("UPDATE app_user SET banner_layout = ? WHERE id = ?").bind(layout)
+        }
+        ProfileField::BannerHeight(height) => {
+            sqlx::query("UPDATE app_user SET banner_height = ? WHERE id = ?").bind(height)
         }
     };
     query.bind(user_id).execute(pool).await?;

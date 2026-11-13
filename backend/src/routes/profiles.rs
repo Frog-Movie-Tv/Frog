@@ -207,6 +207,8 @@ pub async fn get(
         "banner_position": facts.look.banner_position,
         "profile_color": facts.look.profile_color,
         "profile_shade": facts.look.profile_shade,
+        "banner_layout": facts.look.banner_layout,
+        "banner_height": facts.look.banner_height,
         "badges": shaped(&username, &badges::held(pool, user_id, false).await?),
         "stats": {
             "films": films,

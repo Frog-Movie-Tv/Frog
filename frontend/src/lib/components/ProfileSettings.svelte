@@ -141,6 +141,14 @@
 		() => (choosingPins = false)
 	);
 
+	// How the banner is laid out, which shapes the frame it is dragged in.
+	const layout = $derived(account?.banner_layout ?? 'classic');
+	const height = $derived(account?.banner_height ?? 'short');
+	/** A full banner shows the whole picture, so there is nothing to move. */
+	const whole = $derived(
+		layout !== 'vertical' && height === 'full' && !!(account?.banner || account?.banner_backdrop)
+	);
+
 	// The session first: it is what a rename on this same page updates.
 	const username = $derived(session.status?.username ?? account?.username ?? '');
 	const imageUrl = (kind: 'avatar' | 'banner') =>
@@ -246,21 +254,33 @@
 </script>
 
 <div class="profile card">
-	<div class="banner">
-		{#if account?.banner || account?.banner_backdrop}
-			<img
-				class="movable"
-				src={account?.banner ? imageUrl('banner') : img(account?.banner_backdrop, 'w1280')}
-				alt=""
-				draggable="false"
-				style:object-position="{bannerPos.x}% {bannerPos.y}%"
-				onpointerdown={bannerDown}
-				onpointermove={bannerMove}
-				onpointerup={bannerUp}
-				onpointercancel={bannerUp}
-			/>
-			<span class="hint" aria-hidden="true"><Icon name="move" size={14} /> Drag to move</span>
-		{/if}
+	<!-- Shaped as the profile will show it, so dragging picks what shows
+	     there: wide across the top, or a portrait column, which is also
+	     what a phone shows of a vertical banner. -->
+	<div
+		class="banner"
+		class:vertical={layout === 'vertical'}
+		class:tall={layout !== 'vertical' && height === 'tall'}
+		class:full={whole}
+	>
+		<span class="frame">
+			{#if account?.banner || account?.banner_backdrop}
+				<img
+					class:movable={!whole}
+					src={account?.banner ? imageUrl('banner') : img(account?.banner_backdrop, 'w1280')}
+					alt=""
+					draggable="false"
+					style:object-position="{bannerPos.x}% {bannerPos.y}%"
+					onpointerdown={whole ? undefined : bannerDown}
+					onpointermove={whole ? undefined : bannerMove}
+					onpointerup={whole ? undefined : bannerUp}
+					onpointercancel={whole ? undefined : bannerUp}
+				/>
+				{#if !whole}
+					<span class="hint" aria-hidden="true"><Icon name="move" size={14} /> Drag to move</span>
+				{/if}
+			{/if}
+		</span>
 		<div class="banner-actions">
 			<label class="btn small file">
 				<Icon name="image" size={15} /> Upload banner
@@ -488,6 +508,56 @@
 		position: relative;
 		height: 150px;
 		background: linear-gradient(135deg, var(--accent-soft), var(--bg-elev-2));
+	}
+
+	.banner .frame {
+		position: absolute;
+		inset: 0;
+		display: block;
+		overflow: hidden;
+	}
+
+	.banner.tall {
+		height: 230px;
+	}
+
+	/* The whole picture, as tall as it is. */
+	.banner.full {
+		height: auto;
+		min-height: 150px;
+	}
+
+	.banner.full .frame {
+		position: relative;
+	}
+
+	.banner.full img {
+		height: auto;
+		display: block;
+	}
+
+	/* A portrait column, its buttons beside it. */
+	.banner.vertical {
+		height: auto;
+		padding: 16px 18px 0;
+		background: none;
+	}
+
+	.banner.vertical .frame {
+		position: relative;
+		width: min(210px, 52%);
+		aspect-ratio: 3 / 4;
+		border-radius: 16px;
+		background: linear-gradient(160deg, var(--accent-soft), var(--bg-elev-2));
+	}
+
+	.banner.vertical .banner-actions {
+		left: auto;
+		top: 16px;
+		right: 18px;
+		width: calc(48% - 40px);
+		flex-direction: column;
+		align-items: flex-end;
 	}
 
 	.banner img {
