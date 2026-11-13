@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.6.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.5.1...v1.6.0) (2026-11-13)
+
+
+### Features
+
+* a browser extension that logs what you watch on any site ([32a434b](https://github.com/Frog-Movie-Tv/Frog/commit/32a434bd409e322970c64855ffc261f06efca763))
+* a browser extension that logs what you watch on any site ([98685cd](https://github.com/Frog-Movie-Tv/Frog/commit/98685cd210505e615da1104493575f4917bcba35))
+* a title's page lists its studios ([d917d84](https://github.com/Frog-Movie-Tv/Frog/commit/d917d844fd39a57e57eb36c1d7c068e413971844))
+* a title's page lists its studios ([d8ed349](https://github.com/Frog-Movie-Tv/Frog/commit/d8ed349392c1b67bcdccc219afdac4eb30e01ee5))
+* badges, profile colours and banners that stand up (1.6.0 Tomato Frog) ([8fb4847](https://github.com/Frog-Movie-Tv/Frog/commit/8fb48472c45f12fe5958349b7d626d4604803895))
+* **badges:** background removal without a pale edge, and simpler to use ([52689cf](https://github.com/Frog-Movie-Tv/Frog/commit/52689cf5572db29dc1db954ff76e13ab60a6629b))
+* **badges:** badges an administrator makes and gives out ([8550f83](https://github.com/Frog-Movie-Tv/Frog/commit/8550f831038c0b4073ead84e1b680d5e31e71495))
+* **badges:** magnify the finished badge to touch up its details ([f6f1a7d](https://github.com/Frog-Movie-Tv/Frog/commit/f6f1a7dab12859db7cd2323e3f995aba48ca47f3))
+* **badges:** steady brush strokes, a smooth outline and no leaks through gaps ([15f4161](https://github.com/Frog-Movie-Tv/Frog/commit/15f41616393ee899a158526688fd612f31baf513))
+* **badges:** the badge editor one step at a time ([e252a73](https://github.com/Frog-Movie-Tv/Frog/commit/e252a731ae10a31d5284eb725d6e411d62e6ea09))
+* **badges:** touch a badge up by hand with a brush ([ee4312d](https://github.com/Frog-Movie-Tv/Frog/commit/ee4312d1424fc21319c950745f55e90cc50b66aa))
+* Firefox installs the browser extension from Frog in one click ([3743e3f](https://github.com/Frog-Movie-Tv/Frog/commit/3743e3f3d864e71bffef91d25bdf0d5656b615b3))
+* get the browser extension from Settings, and Firefox keeps it up to date ([3abb396](https://github.com/Frog-Movie-Tv/Frog/commit/3abb396389cece0f78caabefd72ce72bc5da5cc2))
+* personal tokens and the browser extension's endpoints ([fcd9b35](https://github.com/Frog-Movie-Tv/Frog/commit/fcd9b351052638fa76044c5244c88ba7bcc2cce5))
+* **profiles:** a colour for each profile ([472a746](https://github.com/Frog-Movie-Tv/Frog/commit/472a746e3c1bc2fc5c7b806d171a30fe9465cd30))
+* **profiles:** pin any title, and unpin it in one tap ([9d762ea](https://github.com/Frog-Movie-Tv/Frog/commit/9d762ea9321fd89281406b1eb5845bb945720dd5))
+* **profiles:** profile settings laid out like a profile, and a full-height column ([b837558](https://github.com/Frog-Movie-Tv/Frog/commit/b837558cf58fb0f937ce8a7e876ec8d2bd71011f))
+* **profiles:** vertical banners, three heights, and the whole picture ([3214b19](https://github.com/Frog-Movie-Tv/Frog/commit/3214b1926dc134df096145c7d3c8e974ce32e0f5))
+* **release:** 1.6.0 Tomato Frog, profiles of your own ([f44ee1b](https://github.com/Frog-Movie-Tv/Frog/commit/f44ee1b79d33ac0a9be539340bc76b2d575a9f3f))
+* **settings:** no Type and shape; the Home hero lives with Home ([1e90c6d](https://github.com/Frog-Movie-Tv/Frog/commit/1e90c6d4769e282f240ee97529502b7735f40ee8))
+* **settings:** one theme, picked and used as it is ([a0a72d3](https://github.com/Frog-Movie-Tv/Frog/commit/a0a72d32b47bfcec719815369950240e81debcfa))
+
+
+### Fixes
+
+* calmer Settings, dropdowns that open whole, and cleaner trailers ([186b2d9](https://github.com/Frog-Movie-Tv/Frog/commit/186b2d960d6bf42ad84b4dbc2245a37486848cd4))
+* calmer Settings, dropdowns that open whole, and cleaner trailers ([68514a9](https://github.com/Frog-Movie-Tv/Frog/commit/68514a9c119f1ebe1520a48fd9839b61859e74a8))
+* **profiles:** a phone pass over the new profile screens ([c4c9106](https://github.com/Frog-Movie-Tv/Frog/commit/c4c91062313bc3d866dfa2b9943cf6ecda436553))
+* **profiles:** a still banner column, a ceiling on Full, and a live badge editor ([6babf6c](https://github.com/Frog-Movie-Tv/Frog/commit/6babf6ca60e7e8edaa2b882d34b10034bc45cd96))
+* **ratings:** ratings save in order and show at once; the title picture holds still ([2782c2b](https://github.com/Frog-Movie-Tv/Frog/commit/2782c2bc9c21d433f2a1cf9f9c6cfad72d0da50f))
+* **select:** a dropdown's menu opens whole, wherever it sits ([54eb444](https://github.com/Frog-Movie-Tv/Frog/commit/54eb444f5ff67ccdfb86e1ed8fa2fc01f123962c))
+
 ## [1.5.1](https://github.com/Frog-Movie-Tv/Frog/compare/v1.5.0...v1.5.1) (2026-11-12)
 
 

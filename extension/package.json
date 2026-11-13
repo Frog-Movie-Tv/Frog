@@ -1,7 +1,7 @@
 {
   "name": "frog-extension",
   "private": true,
-  "version": "1.5.1",
+  "version": "1.6.0",
   "type": "module",
   "description": "Logs what you watch on any site to your Frog.",
   "scripts": {
