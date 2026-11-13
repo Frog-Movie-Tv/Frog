@@ -148,6 +148,9 @@
 		height: clamp(180px, 28vw, 320px);
 		background: var(--bg-elev-2);
 		overflow: hidden;
+		/* The banner fades out itself, so its foot never shows as a line where
+		   the page's own light takes over. */
+		mask-image: linear-gradient(to top, transparent 0, #000 42%);
 	}
 
 	/* The banner is a button: a tap opens the whole picture. */
@@ -458,6 +461,8 @@
 			z-index: -1;
 			height: auto;
 			border-radius: inherit;
+			/* The column keeps its shape: its own shade fades the foot. */
+			mask-image: none;
 		}
 
 		.vertical .shade {

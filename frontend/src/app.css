@@ -834,7 +834,7 @@ textarea.input {
 }
 
 .setting-label {
-	flex: 1 1 12em;
+	flex: 1 1 8em;
 	display: flex;
 	flex-direction: column;
 	gap: 2px;

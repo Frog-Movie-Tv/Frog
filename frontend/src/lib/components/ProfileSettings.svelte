@@ -772,7 +772,9 @@
 		border: 4px solid var(--bg-elev);
 	}
 
-	.camera {
+	/* On the picture's corner; `.picture .camera` so the file input's own
+	   `position: relative` below cannot pull it back into the flow. */
+	.picture .camera {
 		position: absolute;
 		right: 0;
 		bottom: 2px;
