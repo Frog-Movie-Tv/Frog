@@ -63,6 +63,10 @@
 	/** Where the brush is over the frame, to draw its circle. */
 	let hover = $state<{ x: number; y: number } | null>(null);
 	let painting = false;
+	/** Where the ink is: it trails the pointer, which evens out a shaky hand. */
+	let ink: [number, number] | null = null;
+	/** How quickly the ink catches up with the pointer: lower is steadier. */
+	const FOLLOW = 0.3;
 	const brushing = $derived(tool === 'erase' || tool === 'restore');
 
 	/*
@@ -318,6 +322,7 @@
 			const at = onPicture(event);
 			if (!at) return;
 			painting = true;
+			ink = at;
 			settings.strokes = [
 				...settings.strokes,
 				{
@@ -365,9 +370,12 @@
 			return;
 		}
 		if (painting && settings && source && pointers.has(event.pointerId)) {
-			const at = onPicture(event);
+			const target = onPicture(event);
 			const stroke = settings.strokes.at(-1);
-			if (!at || !stroke) return;
+			if (!target || !stroke || !ink) return;
+			ink = [ink[0] + (target[0] - ink[0]) * FOLLOW, ink[1] + (target[1] - ink[1]) * FOLLOW];
+			const round = (n: number) => Math.round(n * 1000) / 1000;
+			const at: [number, number] = [round(ink[0]), round(ink[1])];
 			const last = stroke.points.at(-1);
 			// A point every quarter of the brush is smooth enough, and keeps
 			// what is saved small.
@@ -410,6 +418,18 @@
 		if (painting) {
 			painting = false;
 			pointers.delete(event.pointerId);
+			// The ink catches up where the pointer let go, so a stroke ends there.
+			const target = onPicture(event);
+			const stroke = settings?.strokes.at(-1);
+			if (target && stroke && ink) {
+				const tail: [number, number][] = [];
+				for (let k = 0; k < 4; k++) {
+					ink = [ink[0] + (target[0] - ink[0]) * 0.5, ink[1] + (target[1] - ink[1]) * 0.5];
+					tail.push([Math.round(ink[0] * 1000) / 1000, Math.round(ink[1] * 1000) / 1000]);
+				}
+				stroke.points = [...stroke.points, ...tail, target];
+			}
+			ink = null;
 			return;
 		}
 		if (!pointers.has(event.pointerId)) return;
@@ -494,7 +514,11 @@
 			source,
 			$state.snapshot(settings) as BadgeSettings
 		);
-		if (fresh) settings.removal.trim = 0;
+		if (fresh) {
+			settings.removal.trim = 0;
+			settings.removal.smooth = 1;
+			settings.removal.seal = true;
+		}
 	}
 
 	// --- fill and ring -----------------------------------------------------
@@ -726,6 +750,32 @@
 								{/each}
 							</div>
 						</div>
+						<div class="field-row">
+							<span class="small">Smooth outline</span>
+							<div class="segmented" role="radiogroup" aria-label="Smooth outline">
+								{#each [[0, 'Off'], [1, 'A little'], [2, 'More']] as [level, label] (level)}
+									<button
+										class:on={(settings.removal.smooth ?? 1) === level}
+										role="radio"
+										aria-checked={(settings.removal.smooth ?? 1) === level}
+										onclick={() => settings && (settings.removal.smooth = level as number)}
+										>{label}</button
+									>
+								{/each}
+							</div>
+						</div>
+						<label class="row">
+							<span class="small"
+								>Close small gaps
+								<em class="faint">so the background cannot leak in through an outline</em></span
+							>
+							<input
+								type="checkbox"
+								class="toggle-switch"
+								checked={settings.removal.seal !== false}
+								onchange={(e) => settings && (settings.removal.seal = e.currentTarget.checked)}
+							/>
+						</label>
 						<div class="tools segmented" role="group" aria-label="A tap on the picture">
 							<button
 								class:on={tool === 'move'}

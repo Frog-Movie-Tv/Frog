@@ -37,6 +37,10 @@ export interface BadgeSettings {
 		tolerance: number;
 		/** Pixels taken off the outside of what stays: 0 to 3. */
 		trim: number;
+		/** How much the outline is smoothed: 0 to 2. */
+		smooth: number;
+		/** Whether small gaps in an outline are closed, so the fill cannot leak in. */
+		seal: boolean;
 		/** The background, when picked by tapping; otherwise read from the border. */
 		seed: Rgb | null;
 		/** Spots tapped to clear, as fractions of the picture's width and height. */
@@ -64,7 +68,15 @@ export function startingSettings(width: number, height: number): BadgeSettings {
 	const size = Math.min(width, height);
 	return {
 		crop: { x: (width - size) / 2, y: (height - size) / 2, size },
-		removal: { on: false, tolerance: 10, trim: 0, seed: null, spots: [] },
+		removal: {
+			on: false,
+			tolerance: 10,
+			trim: 0,
+			smooth: 1,
+			seal: true,
+			seed: null,
+			spots: []
+		},
 		fill: 'none',
 		shade: 'medium',
 		ring: false,
@@ -320,6 +332,7 @@ export async function render(
 	pctx.drawImage(source.canvas, -s.crop.x * k, -s.crop.y * k, source.width * k, source.height * k);
 
 	let seed: Rgb | null = null;
+	const scale = Math.max(1, Math.round(size / PREVIEW));
 	if (s.removal.on) {
 		const image = pctx.getImageData(0, 0, size, size);
 		const spots = s.removal.spots
@@ -331,7 +344,11 @@ export async function render(
 			.filter((p) => p >= 0);
 		const done = await filler(image.data as Uint8ClampedArray<ArrayBuffer>, size, size, {
 			tolerance: s.removal.tolerance,
-			trim: s.removal.trim ?? 0,
+			// In pixels of the drawing: twice as many at 1024 as at 512, so the
+			// preview and the saved badge come out alike.
+			trim: (s.removal.trim ?? 0) * scale,
+			smooth: (s.removal.smooth ?? 1) * scale,
+			seal: s.removal.seal === false ? 0 : scale,
 			seed: s.removal.seed,
 			spots
 		});
@@ -392,15 +409,25 @@ function touchUp(
 		m.lineJoin = 'round';
 		m.lineWidth = Math.max(1, stroke.width * k);
 		m.strokeStyle = m.fillStyle = '#000';
-		const [first, ...rest] = stroke.points.map(at);
-		if (!rest.length) {
-			m.beginPath();
+		// A soft edge, a little wider than a pixel, so a stroke blends in.
+		m.filter = `blur(${Math.max(0.6, m.lineWidth * 0.06).toFixed(1)}px)`;
+		const points = stroke.points.map(at);
+		const [first] = points;
+		m.beginPath();
+		if (points.length === 1) {
 			m.arc(first[0], first[1], m.lineWidth / 2, 0, Math.PI * 2);
 			m.fill();
 		} else {
-			m.beginPath();
+			// A curve through the midpoints between points: no corners where a
+			// hand on a mouse changed direction.
 			m.moveTo(first[0], first[1]);
-			for (const [x, y] of rest) m.lineTo(x, y);
+			for (let j = 1; j < points.length - 1; j++) {
+				const [x, y] = points[j];
+				const [nx, ny] = points[j + 1];
+				m.quadraticCurveTo(x, y, (x + nx) / 2, (y + ny) / 2);
+			}
+			const last = points[points.length - 1];
+			m.lineTo(last[0], last[1]);
 			m.stroke();
 		}
 		if (stroke.mode === 'erase') {

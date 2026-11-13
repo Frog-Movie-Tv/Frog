@@ -140,3 +140,45 @@ test('the strength suggested follows the grain of the background', () => {
 		'more grain, a stronger start'
 	);
 });
+
+test('sealing keeps the fill from leaking through a gap in an outline', () => {
+	// A black ring with a one-pixel gap at the top, white inside it.
+	const rows = [
+		'wwwwwwwww',
+		'wkkkwkkkw',
+		'wkwwwwwkw',
+		'wkwwwwwkw',
+		'wkwwwwwkw',
+		'wkwwwwwkw',
+		'wkwwwwwkw',
+		'wkkkkkkkw',
+		'wwwwwwwww'
+	];
+	const leaky = picture(rows);
+	removeBackground(leaky.data, leaky.size, leaky.size, { tolerance: 8 });
+	assert.equal(alpha(leaky.data, leaky.size, 4, 4), 0, 'without it, the inside drains');
+	const sealed = picture(rows);
+	removeBackground(sealed.data, sealed.size, sealed.size, { tolerance: 8, seal: 1 });
+	assert.equal(alpha(sealed.data, sealed.size, 4, 5), 255, 'with it, the inside stays');
+	assert.equal(alpha(sealed.data, sealed.size, 0, 4), 0, 'and the outside still goes');
+});
+
+test('a smoothed outline turns a staircase into a curve, in its own colour', () => {
+	const size = 40;
+	const data = new Uint8ClampedArray(size * size * 4);
+	// A black triangle with a hard, stepped edge, on white.
+	for (let y = 0; y < size; y++)
+		for (let x = 0; x < size; x++) {
+			const inside = x < y;
+			data.set(inside ? [0, 0, 0, 255] : [255, 255, 255, 255], (y * size + x) * 4);
+		}
+	const hard = data.slice();
+	removeBackground(hard, size, size, { tolerance: 8 });
+	removeBackground(data, size, size, { tolerance: 8, smooth: 1 });
+	const partial = (d) => d.filter((v, i) => i % 4 === 3 && v > 0 && v < 255).length;
+	assert.ok(partial(data) > partial(hard), 'more of the edge is part covered');
+	for (let p = 0; p < size * size; p++) {
+		const a = data[p * 4 + 3];
+		if (a > 0) assert.ok(data[p * 4] < 60, `pixel ${p} stays dark, not grey from the white`);
+	}
+});

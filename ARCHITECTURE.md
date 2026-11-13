@@ -370,9 +370,14 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
   coverage is read from where its colour falls between the background and the
   picture's colour just inside, and the background is taken out of it, so a
   cut-out keeps no pale fringe; the walk inwards stops at plain picture, so
-  white inside a letter is never touched. Brush strokes (erase, or restore the
+  white inside a letter is never touched. Gaps narrower than the seal are
+  closed before the fill runs and opened again after, so it cannot leak
+  through a broken outline; the outline is then smoothed, a pixel that gains
+  coverage taking the picture's colour beside it. All three scale with the
+  drawing's size, so the 512 px preview and the 1024 px badge agree. Brush strokes (erase, or restore the
   picture as it was) are kept in the picture's own coordinates and drawn after
-  the fill, over a view that magnifies without moving the crop. The fill runs
+  the fill as curves with a feathered edge, over a view that magnifies without
+  moving the crop; the ink trails the pointer, which steadies a mouse. The fill runs
   in `badge-fill.worker.ts` so the sliders stay smooth. The badge is cut to a
   circle on the canvas, saved as a lossless 1024 px PNG and a 128 px one made
   by halving step by step, and sent with the original and the editor's

@@ -24,6 +24,10 @@ export interface FillOptions {
 	tolerance: number;
 	/** 0–3: pixels taken off the outside of what stays, before the edge is smoothed. */
 	trim?: number;
+	/** 0–2: how much the outline of what stays is smoothed, so it is no pixel staircase. */
+	smooth?: number;
+	/** Close gaps this many pixels wide in an outline, so the fill cannot leak through them. */
+	seal?: number;
 	/** The background, when the person picked it; else the border's own. */
 	seed?: Rgb | null;
 	/** Spots the border cannot reach, as pixel indexes, each cleared from its own colour. */
@@ -55,11 +59,20 @@ export function oklab(r: number, g: number, b: number): Rgb {
 	];
 }
 
-/** How far apart two colours look, from 0 (the same) to 100 (black and white). */
+/**
+ * How much more a difference in colour counts than one in lightness. A pale
+ * pink and white differ mostly in colour, and a background's shading mostly
+ * in lightness: weighed so, the one stays and the other goes.
+ */
+const CHROMA = 1.5;
+
+const apart = (l: number, a: number, b: number) => Math.hypot(l, a * CHROMA, b * CHROMA);
+
+/** How far apart two colours look, from 0 (the same) to about 100 (black and white). */
 export function difference(a: Rgb, b: Rgb): number {
 	const x = oklab(...a);
 	const y = oklab(...b);
-	return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
+	return apart(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
 }
 
 function border(width: number, height: number): number[] {
@@ -105,7 +118,7 @@ export function suggestTolerance(data: Uint8ClampedArray, width: number, height:
 		const i = p * 4;
 		if (data[i + 3] < 128) continue;
 		const c = oklab(data[i], data[i + 1], data[i + 2]);
-		const d = Math.hypot(c[0] - seed[0], c[1] - seed[1], c[2] - seed[2]);
+		const d = apart(c[0] - seed[0], c[1] - seed[1], c[2] - seed[2]);
 		// Only what is plainly background: the picture touching the border does not count.
 		if (d < 20) near.push(d);
 	}
@@ -162,7 +175,7 @@ export function removeBackground(
 		lab[p * 3 + 2] = b;
 	}
 	const far = (p: number, c: Rgb) =>
-		Math.hypot(lab[p * 3] - c[0], lab[p * 3 + 1] - c[1], lab[p * 3 + 2] - c[2]);
+		apart(lab[p * 3] - c[0], lab[p * 3 + 1] - c[1], lab[p * 3 + 2] - c[2]);
 
 	const neighbours = (p: number, visit: (q: number) => void) => {
 		const x = p % width;
@@ -193,7 +206,54 @@ export function removeBackground(
 		while (head < tail) neighbours(queue[head++], visit);
 	};
 
-	fill(border(width, height), seed);
+	const seal = Math.max(0, Math.min(4, Math.round(options.seal ?? 0)));
+	if (!seal) fill(border(width, height), seed);
+	else {
+		const mark = colours.push(seed) - 1;
+		const target = oklab(...seed);
+		const passable = (p: number) => data[p * 4 + 3] === 0 || far(p, target) <= options.tolerance;
+		// How far each pixel is from anything the fill may not cross.
+		const room = new Uint8Array(total).fill(255);
+		let head = 0;
+		let tail = 0;
+		for (let p = 0; p < total; p++)
+			if (!passable(p)) {
+				room[p] = 0;
+				queue[tail++] = p;
+			}
+		while (head < tail) {
+			const p = queue[head++];
+			if (room[p] > seal) continue;
+			neighbours(p, (q) => {
+				if (room[q] !== 255) return;
+				room[q] = room[p] + 1;
+				queue[tail++] = q;
+			});
+		}
+		// Through the wide parts only: a gap narrower than the seal is closed.
+		head = 0;
+		tail = 0;
+		const visitWide = (p: number) => {
+			if (cleared[p] !== -1 || room[p] <= seal) return;
+			cleared[p] = mark;
+			queue[tail++] = p;
+		};
+		for (const p of border(width, height)) visitWide(p);
+		while (head < tail) neighbours(queue[head++], visitWide);
+		// Then back out over what the closing took, up to the outline again.
+		const grown = new Uint8Array(total);
+		head = 0;
+		while (head < tail) {
+			const p = queue[head++];
+			if (grown[p] >= seal) continue;
+			neighbours(p, (q) => {
+				if (cleared[q] !== -1 || !passable(q)) return;
+				cleared[q] = mark;
+				grown[q] = grown[p] + 1;
+				queue[tail++] = q;
+			});
+		}
+	}
 	for (const spot of options.spots ?? []) {
 		if (spot < 0 || spot >= total || cleared[spot] !== -1) continue;
 		const i = spot * 4;
@@ -284,6 +344,106 @@ export function removeBackground(
 		out[i + 2] = decontaminate(observed[2], bg[2], a);
 		out[i + 3] = Math.round(data[i + 3] * a);
 	}
+
+	const smooth = Math.max(0, Math.min(4, Math.round(options.smooth ?? 0)));
+	if (smooth) smoothOutline(out, width, height, cleared, smooth);
 	data.set(out);
 	return seed;
+}
+
+/**
+ * The outline of what stays, smoothed: coverage is blurred along it and drawn
+ * back into a clean edge, so a staircase of whole pixels becomes a curve. Only
+ * near the cleared part, so nothing inside the picture changes; thin lines
+ * keep most of themselves; and a pixel that gains coverage takes the colour of
+ * the picture beside it, never the background's.
+ */
+function smoothOutline(
+	out: Uint8ClampedArray,
+	width: number,
+	height: number,
+	cleared: Int16Array,
+	radius: number
+) {
+	const total = width * height;
+	// Only pixels this close to the cleared part are touched.
+	const near = new Uint8Array(total).fill(255);
+	const queue = new Int32Array(total);
+	let head = 0;
+	let tail = 0;
+	for (let p = 0; p < total; p++)
+		if (cleared[p] !== -1) {
+			near[p] = 0;
+			queue[tail++] = p;
+		}
+	while (head < tail) {
+		const p = queue[head++];
+		if (near[p] > radius + 1) continue;
+		const x = p % width;
+		const step = (q: number) => {
+			if (near[q] !== 255) return;
+			near[q] = near[p] + 1;
+			queue[tail++] = q;
+		};
+		if (x > 0) step(p - 1);
+		if (x < width - 1) step(p + 1);
+		if (p >= width) step(p - width);
+		if (p < total - width) step(p + width);
+	}
+
+	// Coverage, blurred twice by a box: close to a gentle Gaussian.
+	let a = new Float32Array(total);
+	for (let p = 0; p < total; p++) a[p] = out[p * 4 + 3] / 255;
+	const original = a.slice();
+	const pass = (src: Float32Array, horizontal: boolean) => {
+		const dst = new Float32Array(total);
+		for (let y = 0; y < height; y++)
+			for (let x = 0; x < width; x++) {
+				let sum = 0;
+				let n = 0;
+				for (let d = -radius; d <= radius; d++) {
+					const xx = horizontal ? x + d : x;
+					const yy = horizontal ? y : y + d;
+					if (xx < 0 || yy < 0 || xx >= width || yy >= height) continue;
+					sum += src[yy * width + xx];
+					n++;
+				}
+				dst[y * width + x] = sum / n;
+			}
+		return dst;
+	};
+	a = pass(pass(pass(pass(a, true), false), true), false);
+
+	for (let p = 0; p < total; p++) {
+		if (near[p] > radius + 1) continue;
+		const was = original[p];
+		// Drawn back into an edge a pixel or two wide, then mixed with what was,
+		// so a hairline the blur would thin keeps most of itself.
+		const t = Math.min(1, Math.max(0, (a[p] - 0.25) / 0.5));
+		const edge = t * t * (3 - 2 * t);
+		const next = was * 0.35 + edge * 0.65;
+		if (Math.abs(next - was) < 0.01) continue;
+		const i = p * 4;
+		if (next > was && was < 0.05) {
+			// Coverage where there was none: the colour of the picture beside it.
+			let best = -1;
+			let bestA = 0;
+			for (let dy = -2; dy <= 2; dy++)
+				for (let dx = -2; dx <= 2; dx++) {
+					const x = (p % width) + dx;
+					const y = Math.floor(p / width) + dy;
+					if (x < 0 || y < 0 || x >= width || y >= height) continue;
+					const q = y * width + x;
+					if (original[q] > bestA) {
+						bestA = original[q];
+						best = q;
+					}
+				}
+			if (best < 0 || bestA < 0.5) continue;
+			out[i] = out[best * 4];
+			out[i + 1] = out[best * 4 + 1];
+			out[i + 2] = out[best * 4 + 2];
+		}
+		out[i + 3] = Math.round(next * 255);
+	}
 }
