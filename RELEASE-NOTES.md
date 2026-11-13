@@ -38,6 +38,7 @@ In progress.
   kept.
 - A title's picture stays still while you change its status or rating.
 - Five-star ratings read out as words to screen readers.
+- Every dropdown opens whole, wherever it sits on the page.
 
 ## [1.5.1] — Goliath — 2026-11-12
 

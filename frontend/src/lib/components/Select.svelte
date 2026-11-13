@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { backCloses } from '#lib/layers.svelte';
-	import { onScreen, SHEET_QUERY } from '#lib/onscreen';
+	import { anchorTo, onScreen } from '#lib/onscreen';
 	import Icon from './Icon.svelte';
 
 	interface Option {
@@ -30,6 +30,8 @@
 		() => (open = false)
 	);
 	let root: HTMLDivElement | undefined = $state();
+	let trigger: HTMLButtonElement | undefined = $state();
+	let menu: HTMLUListElement | undefined = $state();
 	let cursor = $state(0);
 
 	const current = $derived(options.find((o) => o.value === value) ?? options[0]);
@@ -50,14 +52,20 @@
 	}
 
 	/**
-	 * On a phone the menu is a sheet over everything, so it moves to the end
-	 * of the page while open: a title's hero is a layer of its own, and a sheet
-	 * left inside it opened under the tab bar with its last choice hidden.
-	 * Rating's menu does the same. On a computer it stays a dropdown in place.
+	 * The menu moves to the end of the page while open, so nothing it sits in
+	 * can cut it off: a settings pane rounds its corners by hiding what runs
+	 * past them, and a menu left inside one lost its last choices. On a
+	 * computer it is then placed under its button and follows it; on a phone
+	 * it is a sheet over everything. Inside a dialog it stays where it is.
 	 */
-	function sheet(node: HTMLElement, inPlace: boolean) {
-		if (inPlace || !window.matchMedia(SHEET_QUERY).matches) return;
+	function lift(node: HTMLElement, inPlace: boolean) {
+		if (inPlace) return;
 		document.body.appendChild(node);
+		return { destroy: () => node.remove() };
+	}
+
+	function place(node: HTMLElement, inPlace: boolean) {
+		return inPlace ? onScreen(node, false) : anchorTo(node, trigger);
 	}
 
 	function onKey(event: KeyboardEvent) {
@@ -87,7 +95,9 @@
 
 <svelte:window
 	onclick={(e) => {
-		if (open && root && !root.contains(e.target as Node)) open = false;
+		const target = e.target as Node;
+		// The menu lives at the end of the page while open, outside `root`.
+		if (open && root && !root.contains(target) && !menu?.contains(target)) open = false;
 	}}
 />
 
@@ -95,6 +105,7 @@
 	<button
 		type="button"
 		class="trigger"
+		bind:this={trigger}
 		aria-haspopup="listbox"
 		aria-expanded={open}
 		aria-label={label}
@@ -107,13 +118,16 @@
 	</button>
 
 	{#if open}
-		<div class="layer" use:sheet={nested}>
+		<div class="layer" use:lift={nested}>
 			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 			<div class="scrim" class:nested onclick={() => (open = false)}></div>
 			<ul
 				class="menu"
 				class:nested
-				use:onScreen={!nested}
+				class:lifted={!nested}
+				style:min-width={!nested && trigger ? `${trigger.offsetWidth}px` : undefined}
+				bind:this={menu}
+				use:place={nested}
 				role="listbox"
 				aria-label={label}
 				tabindex="-1"
@@ -206,6 +220,14 @@
 	.current {
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	/* Moved to the end of the page (see `lift`), placed by `anchorTo`. */
+	.menu.lifted {
+		position: fixed;
+		z-index: 200;
+		top: auto;
+		right: auto;
 	}
 
 	.menu {
