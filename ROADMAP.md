@@ -4,7 +4,7 @@ What is still to build, and what is known to be broken. Nothing else lives
 here: how things work is in [CLAUDE.md](CLAUDE.md), and what shipped is in
 [RELEASE-NOTES.md](RELEASE-NOTES.md). Take an item off when it ships.
 
-**Release:** 1.5.0 Goliath. **Next codename:** Tomato Frog. **Live at** a DuckDNS hostname on Oracle Cloud Always
+**Release:** 1.6.0 Tomato Frog. **Next codename:** not chosen yet. **Live at** a DuckDNS hostname on Oracle Cloud Always
 Free, updating itself from each release (`docs/DEPLOY-ORACLE.md`).
 
 ## To build
@@ -22,6 +22,11 @@ off, or turns it into a fix above.
   ends the hold does not open the title. A sideways swipe along Settings'
   tabs scrolls without a reload.
 - **Pip on iOS Safari**, and a picture uploaded from an iPhone or a Mac.
+- **The badge editor by finger:** pinching the crop, magnifying while
+  touching up, and two-finger moves on a real phone; and a badge given
+  reaching the phone as a notification.
+- **A vertical banner on a real phone**, and Full's ceiling on a very tall
+  picture.
 - **The colour picker's sheet and the Stats bars by finger** on the phone.
 - **AniList on the live list:** Settings → Connections, "Needs a check" and
   the "Matched" methods, manga included. And connecting AniList once from a

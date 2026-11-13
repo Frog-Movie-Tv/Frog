@@ -158,6 +158,16 @@
 		margin-bottom: 18px;
 	}
 
+	/* In the profile's own colour, the figures carry a touch of it. */
+	:global(.coloured) .tile {
+		background: color-mix(in srgb, var(--accent) 8%, var(--bg-elev));
+		border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
+	}
+
+	:global(.coloured) .tile .eyebrow {
+		color: var(--accent);
+	}
+
 	.tile {
 		padding: 16px 18px;
 		display: flex;

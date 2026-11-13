@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use crate::account::{self, ProfileField};
 use crate::auth::{self, Auth, Role};
 use crate::error::{AppError, AppResult};
+use crate::profiles;
 use crate::reset;
 use crate::state::AppState;
 use crate::store;
@@ -21,8 +22,17 @@ use crate::store;
 const SESSION_ID_LEN: usize = 16;
 
 pub async fn get(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
-    let (row, images, banner_position) = account::details(&state.pool, auth.user_id()).await?;
+    let (row, images, look) = account::details(&state.pool, auth.user_id()).await?;
     let has = |kind: &str| images.iter().any(|k| k == kind);
+    // Each pin as a card, so Settings can show and unpin any of them, wherever
+    // it sits in the library.
+    let pinned: Vec<Value> = profiles::pinned(&state.pool, auth.user_id(), &row.8)
+        .await?
+        .into_iter()
+        .map(|(kind, id, name, poster_path, _)| {
+            json!({ "id": id, "kind": kind, "name": name, "poster_path": poster_path })
+        })
+        .collect();
     Ok(Json(json!({
         "id": auth.user_id(),
         "username": row.0,
@@ -33,8 +43,13 @@ pub async fn get(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Va
         "display_name": row.5,
         "bio": row.6,
         "banner_backdrop": row.7,
-        "banner_position": banner_position,
+        "banner_position": look.banner_position,
+        "profile_color": look.profile_color,
+        "profile_shade": look.profile_shade,
+        "banner_layout": look.banner_layout,
+        "banner_height": look.banner_height,
         "pins": serde_json::from_str::<Value>(&row.8).unwrap_or(json!([])),
+        "pinned": pinned,
         "avatar": has("avatar"),
         "banner": has("banner"),
     })))
@@ -183,6 +198,13 @@ pub struct ProfileBody {
     /// "x% y%", which part of the banner shows. Empty resets it.
     pub banner_position: Option<String>,
     pub pins: Option<Vec<Pin>>,
+    /// A colour from the list, or empty for the theme's own.
+    pub profile_color: Option<String>,
+    pub profile_shade: Option<String>,
+    /// "classic" or "vertical"; empty goes back to classic.
+    pub banner_layout: Option<String>,
+    /// "short", "tall" or "full"; empty goes back to short.
+    pub banner_height: Option<String>,
 }
 
 #[derive(Deserialize, serde::Serialize)]
@@ -259,6 +281,26 @@ pub async fn set_profile(
         }
         account::set_banner_backdrop(pool, me, (!path.is_empty()).then_some(path)).await?;
     }
+    if body.profile_color.is_some() || body.profile_shade.is_some() {
+        let (color, shade) =
+            profiles::check_colour(body.profile_color.as_deref(), body.profile_shade.as_deref())?;
+        let field = match (&body.profile_color, &shade) {
+            (Some(_), _) => Some(ProfileField::Colour(color.as_deref(), shade.as_deref())),
+            (None, Some(shade)) => Some(ProfileField::Shade(shade)),
+            (None, None) => None,
+        };
+        if let Some(field) = field {
+            account::set_profile_field(pool, me, field).await?;
+        }
+    }
+    if let Some(layout) = &body.banner_layout {
+        let layout = profiles::check_choice(layout, &profiles::LAYOUTS, "banner layout")?;
+        account::set_profile_field(pool, me, ProfileField::BannerLayout(layout.as_deref())).await?;
+    }
+    if let Some(height) = &body.banner_height {
+        let height = profiles::check_choice(height, &profiles::HEIGHTS, "banner height")?;
+        account::set_profile_field(pool, me, ProfileField::BannerHeight(height.as_deref())).await?;
+    }
     if let Some(pins) = &body.pins {
         if pins.len() > PINS_MAX {
             return Err(AppError::BadRequest(format!(
@@ -282,22 +324,6 @@ pub async fn set_profile(
 const IMAGE_KINDS: [&str; 2] = ["avatar", "banner"];
 pub const IMAGE_MAX_BYTES: usize = 3 * 1024 * 1024;
 
-/// What the bytes are, from their first few, never from what the browser
-/// claims. Only plain raster formats: no SVG, which can carry script.
-pub fn sniff_image(bytes: &[u8]) -> Option<&'static str> {
-    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        Some("image/png")
-    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
-        Some("image/jpeg")
-    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
-        Some("image/gif")
-    } else if bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-        Some("image/webp")
-    } else {
-        None
-    }
-}
-
 pub async fn set_image(
     auth: Auth,
     State(state): State<AppState>,
@@ -312,7 +338,7 @@ pub async fn set_image(
             "That picture is too large; keep it under 3 MB.".into(),
         ));
     }
-    let Some(mime) = sniff_image(&body) else {
+    let Some(mime) = crate::images::sniff(&body) else {
         return Err(AppError::BadRequest(
             "Use a JPEG, PNG, WebP or GIF picture.".into(),
         ));

@@ -27,14 +27,10 @@
 	let { pose = 'idle', size = 160, label }: Props = $props();
 
 	const wear = $derived<MascotName>(settings.current.mascot ?? 'classic');
-	// With animations off Pip holds still, rather than flicker through a
-	// loop the page has shortened to nothing.
-	const still = $derived(settings.current.animations === 'off');
 </script>
 
 <svg
 	class="pip pose-{pose} wear-{wear}"
-	class:still
 	viewBox="0 0 200 200"
 	width={size}
 	height={size}
@@ -1011,11 +1007,6 @@
 			scale: 0.85 0.9;
 			opacity: 0.16;
 		}
-	}
-
-	/* Held still: animations off in Settings, or asked for by the system. */
-	.still :global(*) {
-		animation: none !important;
 	}
 
 	@media (prefers-reduced-motion: reduce) {

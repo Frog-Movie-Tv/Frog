@@ -287,7 +287,7 @@ test('the about page credits its sources', async ({ page }) => {
 	await page.goto('/about');
 
 	await expect(page.getByRole('heading', { name: 'Frog', level: 1 })).toBeVisible();
-	await expect(page.getByText('Goliath')).toBeVisible();
+	await expect(page.getByText('Tomato Frog')).toBeVisible();
 	await expect(page.getByRole('link', { name: /TMDB/ }).first()).toBeVisible();
 	await expect(page.getByRole('link', { name: /Phosphor/ })).toBeVisible();
 });
@@ -385,35 +385,35 @@ test('score format changes how a rating reads without touching the value', async
 	await expect(page.getByRole('button', { name: 'Rated 7.5' })).toBeVisible();
 });
 
-test('a saved colour scheme can be copied again and again', async ({ page }) => {
+test('settings saved with a custom theme still load, and drop it on the next save', async ({
+	page
+}) => {
 	await signIn(page);
-	await page.goto('/settings#appearance');
-	await page.getByText('Colour editor').click();
-	// The accent is picked in Frog's own colour picker; its hex field takes
-	// a colour typed in.
-	await page.getByRole('button', { name: 'Accent', exact: true }).click();
-	const picker = page.getByRole('dialog', { name: 'Accent' });
-	await picker.getByLabel('Hex colour').fill('#e06c9f');
-	await picker.getByLabel('Hex colour').press('Enter');
-	await picker.getByRole('button', { name: 'Done', exact: true }).click();
-	await page.getByRole('button', { name: 'Save', exact: true }).click();
-
-	// Two copies of one theme used to share a name, and the page fell over.
-	const duplicate = page.getByRole('button', { name: 'Duplicate' }).first();
-	await duplicate.click();
-	await duplicate.click();
-	await expect(page.getByText('My theme copy 2')).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'Theme', exact: true })).toBeVisible();
-
-	await page.reload();
-	await expect(page.getByRole('heading', { name: 'Theme', exact: true })).toBeVisible();
-
-	// Leave the account as it was for the tests after this one.
-	const res = await page.request.get('/api/settings');
-	const saved = await res.json();
+	const saved = await (await page.request.get('/api/settings')).json();
+	const custom = { name: 'Mine', base: 'pond', tokens: { accent: '#e06c9f', bg: '#101010' } };
 	await page.request.put('/api/settings', {
-		data: { ...saved, savedThemes: [], customTheme: null }
+		data: { ...saved, theme: 'pond', customTheme: custom, savedThemes: [custom] }
 	});
+	await page.goto('/settings#appearance');
+	// The theme it was built on, none of its colours.
+	await expect(page.getByRole('button', { name: 'Pond', exact: true })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	const inline = await page.evaluate(() =>
+		document.documentElement.style.getPropertyValue('--accent')
+	);
+	expect(inline).toBe('');
+	await expect(page.getByText('Colour editor')).toHaveCount(0);
+
+	await page.getByRole('button', { name: 'Glass', exact: true }).click();
+	await expect
+		.poll(async () => Object.keys(await (await page.request.get('/api/settings')).json()))
+		.not.toContain('customTheme');
+	const after = await (await page.request.get('/api/settings')).json();
+	expect(after.savedThemes).toBeUndefined();
+	expect(after.theme).toBe('glass');
+	await page.request.put('/api/settings', { data: saved });
 });
 
 test('search keeps filters in the address and tells kinds of result apart', async ({ page }) => {
@@ -686,6 +686,221 @@ function titleAnswer(id: number, kind: 'movie' | 'tv', name: string, extra: obje
 		...extra
 	};
 }
+
+/** A film in the library, its saves answered by the page itself: `delay` holds each answer back. */
+async function ratedFilm(
+	page: Page,
+	id: number,
+	delay: (body: { rating?: number | null; status?: string }) => number = () => 0,
+	extra: object = {}
+) {
+	const entry = {
+		status: 'completed',
+		rating: null as number | null,
+		favourite: false,
+		notes: null,
+		started_at: null,
+		finished_at: null,
+		rewatch_count: 0,
+		added_at: '2026-01-01T00:00:00Z',
+		updated_at: '2026-01-01T00:00:00Z',
+		notify: false
+	};
+	const answer: { item: Record<string, unknown> } = titleAnswer(id, 'movie', 'Rated Film', extra);
+	answer.item = { ...answer.item, entry };
+	const received: (number | null | undefined)[] = [];
+	await page.route(`**/api/t/${id}`, (route) => route.fulfill({ json: answer }));
+	await page.route(`**/api/t/${id}/scores`, (route) =>
+		route.fulfill({ json: { ratings: [], age_rating: null } })
+	);
+	await page.route(`**/api/t/${id}/library`, async (route) => {
+		const body = route.request().postDataJSON();
+		received.push(body.rating);
+		await new Promise((r) => setTimeout(r, delay(body)));
+		const item = { ...answer.item, entry: { ...entry, ...body } };
+		await route.fulfill({ json: { item } });
+	});
+	return received;
+}
+
+/** Rate with the smileys: three buttons, quick to tap. */
+async function smileys(page: Page) {
+	const saved = await (await page.request.get('/api/settings')).json();
+	await page.request.put('/api/settings', { data: { ...saved, scoreFormat: 'smiley3' } });
+	return () => page.request.put('/api/settings', { data: saved });
+}
+
+test('two quick ratings are saved in order, and the last one stays', async ({ page }) => {
+	await signIn(page);
+	const restore = await smileys(page);
+	// The first answer is slow: it used to land last and put back the first score.
+	const received = await ratedFilm(page, 9191, (body) => ((body.rating ?? 0) < 50 ? 900 : 0));
+	await page.goto('/t/9191');
+	const chip = page.locator('.hero .rating .chip');
+	await chip.click();
+	await page.getByRole('menuitemradio').nth(0).click();
+	await chip.click();
+	await page.getByRole('menuitemradio').nth(2).click();
+	await expect(chip).toHaveAccessibleName('Rated 🙂');
+	await page.waitForTimeout(1300);
+	await expect(chip).toHaveAccessibleName('Rated 🙂');
+	// And the server was asked in the order they were given.
+	expect(received.map((r) => (r == null ? r : Math.round(r)))).toEqual([33, 100]);
+	await restore();
+});
+
+test('a rating shows the moment it is chosen', async ({ page }) => {
+	await signIn(page);
+	const restore = await smileys(page);
+	await ratedFilm(page, 9192, () => 2500);
+	await page.goto('/t/9192');
+	const chip = page.locator('.hero .rating .chip');
+	await chip.click();
+	await page.getByRole('menuitemradio').nth(1).click();
+	await expect(chip).toHaveAccessibleName('Rated 😐', { timeout: 1000 });
+	await restore();
+});
+
+test('tapping your own score keeps it; clearing is its own button', async ({ page }) => {
+	await signIn(page);
+	const restore = await smileys(page);
+	const received = await ratedFilm(page, 9193);
+	await page.goto('/t/9193');
+	const chip = page.locator('.hero .rating .chip');
+	await chip.click();
+	await page.getByRole('menuitemradio').nth(1).click();
+	await expect(chip).toHaveAccessibleName('Rated 😐');
+	await chip.click();
+	await page.getByRole('menuitemradio').nth(1).click();
+	await expect(chip).toHaveAccessibleName('Rated 😐');
+	await chip.click();
+	await page.getByRole('button', { name: 'Clear' }).click();
+	await expect(chip).toHaveAccessibleName('Rate this');
+	expect(received.map((r) => (r == null ? r : Math.round(r)))).toEqual([67, 67, null]);
+	await restore();
+});
+
+test('five stars are drawn, and read out as words', async ({ page }) => {
+	await signIn(page);
+	const saved = await (await page.request.get('/api/settings')).json();
+	await page.request.put('/api/settings', { data: { ...saved, scoreFormat: 'star5' } });
+	await ratedFilm(page, 9194);
+	await page.goto('/t/9194');
+	const chip = page.locator('.hero .rating .chip');
+	await chip.click();
+	const stars = page.getByRole('slider', { name: 'Stars' });
+	await stars.press('End');
+	await stars.press('ArrowLeft');
+	await stars.press('Enter');
+	await expect(chip).toHaveAccessibleName(/^Rated 4(½)? stars$/);
+	await expect(chip.locator('svg').first()).toBeVisible();
+	expect(await page.locator('body').innerText()).not.toContain('★');
+	await page.request.put('/api/settings', { data: saved });
+});
+
+test('the rating menu opens whole, above everything, and listens only while open', async ({
+	page,
+	isMobile
+}) => {
+	// Count the window's listeners as the page adds and removes them.
+	await page.addInitScript(() => {
+		const live = new Map<string, number>();
+		(window as unknown as { listening: Map<string, number> }).listening = live;
+		const add = window.addEventListener.bind(window);
+		const remove = window.removeEventListener.bind(window);
+		window.addEventListener = ((type: string, ...rest: unknown[]) => {
+			live.set(type, (live.get(type) ?? 0) + 1);
+			return (add as (...a: unknown[]) => void)(type, ...rest);
+		}) as typeof window.addEventListener;
+		window.removeEventListener = ((type: string, ...rest: unknown[]) => {
+			live.set(type, (live.get(type) ?? 0) - 1);
+			return (remove as (...a: unknown[]) => void)(type, ...rest);
+		}) as typeof window.removeEventListener;
+	});
+	await signIn(page);
+	const restore = await smileys(page);
+	await ratedFilm(page, 9195);
+	const keydowns = () =>
+		page.evaluate(
+			() => (window as unknown as { listening: Map<string, number> }).listening.get('keydown') ?? 0
+		);
+	await page.goto('/t/9195');
+	const chip = page.locator('.hero .rating .chip');
+	await expect(chip).toBeVisible();
+	const closed = await keydowns();
+	await chip.click();
+	const menu = page.getByRole('menu', { name: 'Choose a rating' });
+	await expect(menu).toBeVisible();
+	expect(await keydowns()).toBeGreaterThan(closed);
+	// Measured once it has finished rising into place.
+	await page.waitForTimeout(400);
+
+	// Whole on the screen, and nothing drawn over it, the tab bar included.
+	const box = (await menu.boundingBox())!;
+	const view = page.viewportSize()!;
+	expect(box.y).toBeGreaterThanOrEqual(0);
+	expect(box.y + box.height).toBeLessThanOrEqual(view.height);
+	expect(box.x).toBeGreaterThanOrEqual(0);
+	expect(box.x + box.width).toBeLessThanOrEqual(view.width);
+	const onTop = await page.evaluate(
+		([x, y]) => !!document.elementFromPoint(x, y)?.closest('[role="menu"]'),
+		[box.x + box.width / 2, box.y + box.height - 4]
+	);
+	expect(onTop, isMobile ? 'the sheet is over the tab bar' : 'the menu is on top').toBe(true);
+
+	await page.keyboard.press('Escape');
+	await expect(menu).toBeHidden();
+	expect(await keydowns()).toBe(closed);
+	await restore();
+});
+
+test("a title's picture keeps its size when a status or rating is saved", async ({ page }) => {
+	await signIn(page);
+	// Short enough that the words over the picture are taller than its least height.
+	await page.setViewportSize({ width: page.viewportSize()!.width, height: 420 });
+	await page.route('**/img/w1280/frog-test-backdrop.jpg', (route) =>
+		route.fulfill({
+			contentType: 'image/svg+xml',
+			body: '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="1280" height="720" fill="#386"/></svg>'
+		})
+	);
+	const answer: { item: Record<string, unknown> } = titleAnswer(9196, 'movie', 'Pictured Film', {
+		tagline: 'A line long enough to take up some room over the picture, as taglines do.'
+	});
+	answer.item = { ...answer.item, backdrop_path: '/frog-test-backdrop.jpg' };
+	await page.route('**/api/t/9196', (route) => route.fulfill({ json: answer }));
+	await page.route('**/api/t/9196/scores', (route) =>
+		route.fulfill({ json: { ratings: [], age_rating: null } })
+	);
+	await page.route('**/api/t/9196/library', (route) => {
+		const entry = {
+			status: 'watching',
+			rating: null,
+			favourite: false,
+			notes: null,
+			started_at: null,
+			finished_at: null,
+			rewatch_count: 0,
+			added_at: '2026-01-01T00:00:00Z',
+			updated_at: '2026-01-01T00:00:00Z',
+			notify: false,
+			...route.request().postDataJSON()
+		};
+		return route.fulfill({ json: { item: { ...answer.item, entry } } });
+	});
+	await page.goto('/t/9196');
+	const picture = page.locator('.hero img.backdrop');
+	await expect(picture).toBeVisible();
+	// The laid-out height: the picture's entrance scales it for a moment.
+	const height = () => picture.evaluate((el) => (el as HTMLElement).offsetHeight);
+	const before = await height();
+	const hero = await page.locator('.hero').evaluate((el) => (el as HTMLElement).offsetHeight);
+	expect(hero, 'the words are taller than the picture here').toBeGreaterThan(before);
+	// Tracking it changes what sits over the picture; the picture stays.
+	await page.getByRole('button', { name: 'Start watching' }).click();
+	await expect(page.getByRole('button', { name: 'Status' })).toBeVisible();
+	expect(await height()).toBe(before);
+});
 
 test('a title whose provider repeats itself still opens', async ({ page }) => {
 	// This suite runs the production build, where a repeated key in a list
@@ -1239,6 +1454,12 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/admin/server',
 		'/api/admin/db/tables',
 		'/api/admin/db/tables/app_user',
+		'/api/admin/badges',
+		'/api/admin/badges/1',
+		'/api/admin/badges/1/original',
+		'/api/admin/badges/1/images/large',
+		'/api/account/badges',
+		'/api/profiles/someone/badges/1/small',
 		'/api/profiles',
 		'/api/profiles/someone',
 		'/api/profiles/someone/library',
@@ -1278,6 +1499,8 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/t/1/episodes/1/watch',
 		'/api/t/1/episodes/1/1/watch',
 		'/api/t/1/rewatch',
+		'/api/admin/badges',
+		'/api/admin/badges/restore',
 		'/api/account/tokens',
 		'/api/ext/resolve',
 		'/api/ext/log',
@@ -1290,7 +1513,10 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/t/1/seasons/1/rating',
 		'/api/t/1/library',
 		'/api/t/1/episodes/1/1/state',
-		'/api/anilist/entries/1'
+		'/api/anilist/entries/1',
+		'/api/admin/badges/1',
+		'/api/admin/badges/1/holders/1',
+		'/api/account/badges'
 	]) {
 		const res = await request.put(path, { data: { rating: 80 } });
 		expect(res.status(), `PUT ${path} should be 401`).toBe(401);
@@ -1306,6 +1532,8 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/account',
 		'/api/account/library',
 		'/api/t/1/library',
+		'/api/admin/badges/1',
+		'/api/admin/badges/1/holders/1',
 		'/api/account/tokens/1'
 	]) {
 		const res = await request.delete(path, { data: {} });
@@ -1474,8 +1702,9 @@ test('pictures are made small before they leave the browser', async ({ page }) =
 	});
 
 	const photo = await pictureFile(page, 4000, 3000, 'image/png');
+	await page.getByRole('button', { name: 'Edit banner' }).click();
 	await page
-		.locator('.file', { hasText: 'Upload banner' })
+		.locator('.file', { hasText: 'Upload a picture' })
 		.locator('input')
 		.setInputFiles({ name: 'huge.png', mimeType: 'image/png', buffer: photo });
 	await expect(page.getByText('Banner updated')).toBeVisible();

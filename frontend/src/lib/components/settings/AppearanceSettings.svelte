@@ -1,21 +1,16 @@
 <script lang="ts">
 	import Select from '#lib/components/Select.svelte';
 	import ThemePreview from '#lib/components/ThemePreview.svelte';
-	import ThemeEditor from '#lib/components/settings/ThemeEditor.svelte';
 	import {
-		FONTS,
 		MASCOTS,
 		THEMES,
 		settings,
-		type AnimationLevel,
 		type CardStyle,
-		type FontName,
-		type HeroStyle,
 		type MascotName,
 		type ThemeName
 	} from '#lib/settings.svelte';
 
-	/** Appearance: theme, mascot, type, cards and title pages. */
+	/** Appearance: theme, mascot, cards and title pages. */
 	const s = $derived(settings.current);
 
 	const cardToggles = [
@@ -36,7 +31,7 @@
 				class:on={s.theme === t.id}
 				aria-label={t.label}
 				aria-pressed={s.theme === t.id}
-				onclick={() => settings.patch({ theme: t.id as ThemeName, customTheme: null })}
+				onclick={() => settings.set('theme', t.id as ThemeName)}
 			>
 				<ThemePreview swatches={t.swatches} on={s.theme === t.id} />
 				<strong>{t.label}</strong>
@@ -44,8 +39,6 @@
 			</button>
 		{/each}
 	</div>
-
-	<ThemeEditor />
 </section>
 
 <section class="block">
@@ -66,52 +59,6 @@
 		{/each}
 	</div>
 	<p class="faint tiny">Reinstall the app to change its home-screen icon.</p>
-</section>
-
-<section class="block">
-	<div class="section-head"><h2>Type and shape</h2></div>
-
-	<div class="rows list-pane">
-		<div class="row">
-			<span class="label"><strong>Font</strong></span>
-			<Select
-				label="Font"
-				value={s.font}
-				options={FONTS.map((f) => ({ value: f.id, label: f.label }))}
-				onchange={(v) => settings.set('font', v as FontName)}
-			/>
-		</div>
-
-		<label class="row">
-			<span class="label">
-				<strong>Text size</strong><span class="faint">{Math.round(s.textScale * 100)}%</span>
-			</span>
-			<input
-				type="range"
-				min="0.85"
-				max="1.3"
-				step="0.05"
-				value={s.textScale}
-				oninput={(e) => settings.set('textScale', Number(e.currentTarget.value))}
-			/>
-		</label>
-
-		<div class="row">
-			<span class="label">
-				<strong>Animation</strong>
-			</span>
-			<Select
-				label="Animation"
-				value={s.animations}
-				options={[
-					{ value: 'full', label: 'Full' },
-					{ value: 'reduced', label: 'Reduced' },
-					{ value: 'off', label: 'Off' }
-				]}
-				onchange={(v) => settings.set('animations', v as AnimationLevel)}
-			/>
-		</div>
-	</div>
 </section>
 
 <section class="block">
@@ -167,22 +114,6 @@
 	<div class="section-head"><h2>Title pages</h2></div>
 
 	<div class="rows list-pane">
-		<div class="row">
-			<span class="label">
-				<strong>Hero</strong>
-			</span>
-			<Select
-				label="Hero"
-				value={s.heroStyle}
-				options={[
-					{ value: 'backdrop', label: 'Backdrop' },
-					{ value: 'poster', label: 'Poster' },
-					{ value: 'off', label: 'Off' }
-				]}
-				onchange={(v) => settings.set('heroStyle', v as HeroStyle)}
-			/>
-		</div>
-
 		<label class="row">
 			<span class="label">
 				<strong>Follow the poster</strong>

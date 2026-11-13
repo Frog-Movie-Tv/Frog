@@ -109,9 +109,7 @@
 		return it.tmdb_vote ? [{ source: 'tmdb', score: it.tmdb_vote * 10, votes: null }] : [];
 	}
 
-	const moving = () =>
-		settings.current.animations !== 'off' &&
-		!window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	const moving = () => !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 	let busy = false;
 

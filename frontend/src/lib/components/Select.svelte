@@ -31,6 +31,7 @@
 	);
 	let root: HTMLDivElement | undefined = $state();
 	let trigger: HTMLButtonElement | undefined = $state();
+	let menu: HTMLUListElement | undefined = $state();
 	let cursor = $state(0);
 
 	const current = $derived(options.find((o) => o.value === value) ?? options[0]);
@@ -51,15 +52,17 @@
 	}
 
 	/**
-	 * The menu moves to the end of the page while open. On a phone it is a
-	 * sheet over everything: a title's hero is a layer of its own, and a sheet
-	 * left inside it opened under the tab bar with its last choice hidden. On a
-	 * computer it is a dropdown pinned to its button (`anchorTo`): left inside
-	 * a pane with `overflow: hidden`, as every settings row is, it was cut off.
-	 * Inside a dialog it stays where it is, a dropdown over the dialog.
+	 * The menu moves to the end of the page while open, so nothing it sits in
+	 * can cut it off: a settings pane rounds its corners by hiding what runs
+	 * past them, and a menu left inside one lost its last choices. On a
+	 * computer it is then placed under its button and follows it; on a phone
+	 * it is a sheet over everything, placed by its own CSS. Inside a dialog it
+	 * stays where it is.
 	 */
 	function lift(node: HTMLElement, inPlace: boolean) {
-		if (!inPlace) document.body.appendChild(node);
+		if (inPlace) return;
+		document.body.appendChild(node);
+		return { destroy: () => node.remove() };
 	}
 
 	function place(node: HTMLElement, inPlace: boolean) {
@@ -96,15 +99,17 @@
 
 <svelte:window
 	onclick={(e) => {
-		if (open && root && !root.contains(e.target as Node)) open = false;
+		const target = e.target as Node;
+		// The menu lives at the end of the page while open, outside `root`.
+		if (open && root && !root.contains(target) && !menu?.contains(target)) open = false;
 	}}
 />
 
 <div class="select" class:compact class:full bind:this={root}>
 	<button
-		bind:this={trigger}
 		type="button"
 		class="trigger"
+		bind:this={trigger}
 		aria-haspopup="listbox"
 		aria-expanded={open}
 		aria-label={label}
@@ -124,6 +129,7 @@
 				class="menu"
 				class:nested
 				class:lifted={!nested && !isSheet()}
+				bind:this={menu}
 				use:place={nested}
 				role="listbox"
 				aria-label={label}
@@ -240,7 +246,7 @@
 		animation: pop 180ms var(--spring) backwards;
 	}
 
-	/* Out of the page's panes and pinned to its button. */
+	/* Moved to the end of the page (see `lift`), pinned to its button by `anchorTo`. */
 	.menu.lifted {
 		position: fixed;
 		z-index: 200;

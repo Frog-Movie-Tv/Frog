@@ -194,7 +194,9 @@ const ACTIONS = [
 		route: '/settings#this-instance',
 		press: (page) => page.getByRole('button', { name: 'Check for updates' })
 	},
-	{ route: '/title/tv/95396', press: (page) => page.locator('button.trailer') }
+	{ route: '/title/tv/95396', press: (page) => page.locator('button.trailer') },
+	// The badge editor starts its background-fill worker when it opens.
+	{ route: '/admin', press: (page) => page.getByRole('button', { name: 'New badge' }) }
 ];
 
 const browser = await chromium.launch();

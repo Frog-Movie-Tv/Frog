@@ -50,7 +50,7 @@ their own. It costs nothing at all.
 <tr>
 <td>
 <img src="docs/screenshots/settings-desktop-pond.png" alt="Settings, grouped, open on your profile">
-<p align="center"><b>Make it yours</b><br><sub>Your profile, themes, fonts, cards and rows — all live</sub></p>
+<p align="center"><b>Make it yours</b><br><sub>Your profile, themes, cards and rows — all live</sub></p>
 </td>
 <td>
 <img src="docs/screenshots/import-desktop-pond.png" alt="The import page offering Letterboxd, IMDb, Trakt, TV Time, MyAnimeList and Frog backups">
@@ -163,9 +163,12 @@ mouse.
 stars, or three smileys. Switch whenever you like: the number underneath never
 changes, so nothing is ever rounded away.
 
-**Make it look how you want.** Seven appearances plus a colour editor, six fonts,
-text size, how much animation, four card styles, poster size, what appears on a
-card, and which rows show on Home and in what order.
+**Make it look how you want.** Seven appearances, four card styles, poster size,
+what appears on a card, and which rows show on Home and in what order.
+
+**Make your profile yours.** A colour of its own, a banner across the top or
+standing beside everything, four pinned titles, and the badges your Frog's
+administrators hand out.
 
 **Keep spoilers out.** Blur the still for anything you have not watched yet.
 
@@ -250,7 +253,7 @@ on.
 <br>
 
 Only if you let them, and only people who already have an account on the same
-Frog. Turn on your profile and they can see your picture, your whole library
+Frog. Turn on your profile and they can see your picture, your badges, your whole library
 and ratings, your pinned titles and your totals, but not your notes. It starts switched off, and nothing is ever
 visible to anyone without an account.
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { InOrder } from '#lib/in-order';
 	import Icon from './Icon.svelte';
 	import { api, img, type ClearedWatch } from '#lib/api';
 	import { localDay } from '#lib/day';
@@ -71,13 +72,30 @@
 	const unitsOf = (season: number) => ratings.filter((u) => u.season === season);
 	const ratingOf = (u: RatingUnit) => (unitKey(u) in rated ? rated[unitKey(u)] : u.rating);
 
+	/** Each season's ratings go out in the order they were given (see `InOrder`). */
+	// Bookkeeping for saves; nothing draws from it.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const queues = new Map<string, InOrder>();
+	/** What the server last kept for each season, to go back to when a save fails. */
+	const kept: Record<string, number | null> = {};
+
 	async function rateUnit(u: RatingUnit, rating: number | null) {
-		const before = ratingOf(u);
-		rated = { ...rated, [unitKey(u)]: rating };
+		const key = unitKey(u);
+		if (!(key in kept)) kept[key] = ratingOf(u);
+		rated = { ...rated, [key]: rating };
+		let queue = queues.get(key);
+		if (!queue) queues.set(key, (queue = new InOrder()));
+		const forTitle = titleId;
+		const { ticket, done } = queue.run(() =>
+			api.rateSeason(forTitle, u.season, u.first_episode, rating)
+		);
 		try {
-			await api.rateSeason(titleId, u.season, u.first_episode, rating);
+			await done;
+			kept[key] = rating;
 		} catch (e) {
-			rated = { ...rated, [unitKey(u)]: before };
+			// Only the newest rating decides what shows; an older one failing
+			// changes nothing a newer one has not already replaced.
+			if (queue.newest(ticket) && forTitle === titleId) rated = { ...rated, [key]: kept[key] };
 			toasts.error(e);
 		}
 	}

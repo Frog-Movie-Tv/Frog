@@ -9,8 +9,6 @@ export type MascotName =
 	'classic' | 'sleepy' | 'popcorn' | 'cinema' | 'starry' | 'bow' | 'delighted' | 'sprout';
 export type CardStyle = 'poster' | 'landscape' | 'list' | 'compact';
 export type HeroStyle = 'backdrop' | 'poster' | 'off';
-export type FontName = 'system' | 'humanist' | 'grotesque' | 'serif' | 'mono';
-export type AnimationLevel = 'full' | 'reduced' | 'off';
 
 /**
  * Every appearance is the same glass in its own colours (`app.css`). `tone`
@@ -86,32 +84,9 @@ export const MASCOTS: { id: MascotName; label: string; hint: string }[] = [
 	{ id: 'sprout', label: 'Sprout', hint: 'Freshly picked' }
 ];
 
-/** Bundled with the app, so every device renders them identically. */
-export const FONTS: { id: FontName; label: string; stack: string; display?: string }[] = [
-	{
-		// Apple's system face where a device has it, Inter everywhere else.
-		id: 'system',
-		label: 'Frog',
-		stack: "-apple-system, BlinkMacSystemFont, 'Inter Variable', system-ui, sans-serif"
-	},
-	{ id: 'humanist', label: 'Inter', stack: "'Inter Variable', system-ui, sans-serif" },
-	{ id: 'grotesque', label: 'Outfit', stack: "'Outfit Variable', system-ui, sans-serif" },
-	{ id: 'serif', label: 'Newsreader', stack: "'Newsreader Variable', Georgia, serif" },
-	{ id: 'mono', label: 'JetBrains Mono', stack: "'JetBrains Mono Variable', monospace" }
-];
-
-/** A theme the user built, stored as plain token overrides. */
-export interface CustomTheme {
-	name: string;
-	base: ThemeName;
-	tokens: Partial<Record<'bg' | 'bg-elev' | 'bg-elev-2' | 'accent' | 'text', string>>;
-}
-
 export interface Settings {
 	theme: ThemeName;
 	mascot: MascotName;
-	customTheme: CustomTheme | null;
-	savedThemes: CustomTheme[];
 
 	scoreFormat: ScoreFormat;
 	halfStars: boolean;
@@ -125,10 +100,6 @@ export interface Settings {
 
 	heroStyle: HeroStyle;
 	followPoster: boolean;
-
-	font: FontName;
-	textScale: number;
-	animations: AnimationLevel;
 
 	spoilerProtection: boolean;
 	hideAnimation: boolean;
@@ -185,8 +156,6 @@ export const GO_KEYS: Record<string, string> = {
 export const DEFAULTS: Settings = {
 	theme: 'glass',
 	mascot: 'classic',
-	customTheme: null,
-	savedThemes: [],
 
 	scoreFormat: 'pt10dec',
 	halfStars: true,
@@ -200,10 +169,6 @@ export const DEFAULTS: Settings = {
 
 	heroStyle: 'backdrop',
 	followPoster: true,
-
-	font: 'system',
-	textScale: 1,
-	animations: 'full',
 
 	spoilerProtection: false,
 	hideAnimation: false,
@@ -291,10 +256,27 @@ function introduceRows(s: Settings): Settings {
 	return { ...s, homeRows: rows, homeRowsSeen: all };
 }
 
+/**
+ * Settings Frog no longer has. Saved ones still load, these are left out,
+ * and the next save leaves them behind for good: the theme editor's own
+ * colours went, so whoever used them sees the theme they were built on, and
+ * the type and motion choices went, so the page is drawn as designed (the
+ * system's reduced motion is still followed).
+ */
+const RETIRED = ['customTheme', 'savedThemes', 'font', 'textScale', 'animations'];
+
+/** Saved settings without the ones Frog no longer has. */
+export function current(saved: unknown): Partial<Settings> {
+	if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {};
+	const kept = { ...(saved as Record<string, unknown>) };
+	for (const key of RETIRED) delete kept[key];
+	return kept as Partial<Settings>;
+}
+
 function readLocal(): Partial<Settings> {
 	if (!browser) return {};
 	try {
-		return JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Settings>;
+		return current(JSON.parse(localStorage.getItem(KEY) ?? '{}'));
 	} catch {
 		return {};
 	}
@@ -324,7 +306,7 @@ class SettingsStore {
 	}
 
 	replace(values: Settings) {
-		this.current = { ...DEFAULTS, ...values };
+		this.current = { ...DEFAULTS, ...current(values) };
 		this.afterChange();
 	}
 
@@ -339,11 +321,9 @@ class SettingsStore {
 		try {
 			const res = await fetch('/api/settings', { credentials: 'same-origin' });
 			if (res.ok) {
-				const remote = (await res.json()) as Partial<Settings>;
 				// An account that has never saved anything starts from the
 				// defaults, not from whatever this device last showed.
-				const saved = remote && typeof remote === 'object' ? remote : {};
-				this.current = introduceRows({ ...DEFAULTS, ...saved });
+				this.current = introduceRows({ ...DEFAULTS, ...current(await res.json()) });
 			}
 		} catch {
 			// Offline: the local copy is already applied.
@@ -452,29 +432,17 @@ class SettingsStore {
 
 		root.dataset.theme = s.theme;
 		root.dataset.tone = THEMES.find((t) => t.id === s.theme)?.tone ?? 'dark';
-		root.dataset.animations = s.animations;
 		root.dataset.card = s.cardStyle;
 
 		const style = root.style;
 		// Not --poster-min itself: an inline value would beat the phone size.
 		style.setProperty('--poster-size', `${s.posterSize}px`);
-		const face = FONTS.find((f) => f.id === s.font) ?? FONTS[0];
-		style.setProperty('--font', face.stack);
-		style.setProperty('--font-display', face.display ?? face.stack);
-		style.fontSize = `${Math.round(16 * s.textScale)}px`;
 
 		// A status recoloured keeps its colour whatever the theme.
 		for (const status of ['watching', 'completed', 'planned', 'paused', 'dropped'] as const) {
 			const value = s.statusColors?.[status];
 			if (value && /^#[0-9a-f]{6}$/i.test(value)) style.setProperty(`--status-${status}`, value);
 			else style.removeProperty(`--status-${status}`);
-		}
-
-		// A custom theme is just token overrides on top of the chosen base.
-		for (const token of ['bg', 'bg-elev', 'bg-elev-2', 'accent', 'text'] as const) {
-			const value = s.customTheme?.tokens?.[token];
-			if (value) style.setProperty(`--${token}`, value);
-			else style.removeProperty(`--${token}`);
 		}
 
 		applyFavicon(s.mascot);
@@ -502,3 +470,7 @@ function applyFavicon(mascot: MascotName) {
 }
 
 export const settings = new SettingsStore();
+
+/** Whether the theme in use is drawn light or dark. */
+export const currentTone = (): 'light' | 'dark' =>
+	THEMES.find((t) => t.id === settings.current.theme)?.tone ?? 'dark';

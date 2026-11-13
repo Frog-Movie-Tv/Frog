@@ -107,9 +107,24 @@
 			event.stopPropagation();
 		}
 	}
-</script>
 
-<svelte:window onclick={onWindowClick} onkeydown={onKey} />
+	/*
+	 * Only an open rating listens to the window. A season's episode rows each
+	 * have one, and every one of them listening all the time ran two handlers
+	 * per row on every click and key press anywhere on the page.
+	 */
+	$effect(() => {
+		if (!open) return;
+		// The click that opened it is still on its way up; listen after it.
+		const timer = setTimeout(() => window.addEventListener('click', onWindowClick));
+		window.addEventListener('keydown', onKey);
+		return () => {
+			clearTimeout(timer);
+			window.removeEventListener('click', onWindowClick);
+			window.removeEventListener('keydown', onKey);
+		};
+	});
+</script>
 
 <div class="rating" class:compact bind:this={root}>
 	<button

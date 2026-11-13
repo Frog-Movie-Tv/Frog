@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { InOrder } from '#lib/in-order';
 	import Icon from './Icon.svelte';
 	import { api } from '#lib/api';
 	import { completeShow } from '#lib/complete';
@@ -24,6 +25,18 @@
 	const kind = $derived(item.kind as Kind);
 	const tracked = $derived(item.entry !== null);
 
+	/*
+	 * Saves go out one after another, in the order they were made, and the
+	 * page shows only the newest answer: two quick ratings used to race, and
+	 * the screen could settle on the one the server did not keep.
+	 */
+	const queue = new InOrder();
+	/** A rating chosen and not yet saved, shown at once rather than after the round trip. */
+	let pending = $state<{ rating: number | null } | null>(null);
+	/** The last answer the server gave, for when a newer save fails. */
+	let confirmed: LibraryItem | null = null;
+	const rating = $derived(pending ? pending.rating : (item.entry?.rating ?? null));
+
 	async function save(patch: {
 		status?: Status;
 		rating?: number | null;
@@ -32,15 +45,27 @@
 		progress?: number;
 	}): Promise<LibraryItem | null> {
 		saving = true;
+		if ('rating' in patch) pending = { rating: patch.rating ?? null };
+		const id = item.id;
+		const { ticket, done } = queue.run(() => api.track(id, patch));
 		try {
-			const { item: updated } = await api.track(item.id, patch);
-			onchange(updated);
+			const { item: updated } = await done;
+			confirmed = updated;
+			if (queue.newest(ticket)) {
+				pending = null;
+				onchange(updated);
+			}
 			return updated;
 		} catch (e) {
+			if (queue.newest(ticket)) {
+				pending = null;
+				// An earlier save in the row went through: show what it left.
+				if (confirmed && confirmed.id === id) onchange(confirmed);
+			}
 			toasts.error(e);
 			return null;
 		} finally {
-			saving = false;
+			if (queue.newest(ticket)) saving = false;
 		}
 	}
 
@@ -110,7 +135,7 @@
 			onchange={(v) => setStatus(v as Status)}
 		/>
 
-		<Rating value={item.entry?.rating ?? null} onchange={(v) => save({ rating: v })} />
+		<Rating value={rating} onchange={(v) => save({ rating: v })} />
 
 		<button
 			class="btn icon"

@@ -11,13 +11,13 @@ use sqlx::SqlitePool;
 
 use crate::error::{AppError, AppResult};
 
-/// (username, display name, me, has a picture)
-pub type ListRow = (String, Option<String>, bool, bool);
+/// (id, username, display name, me, has a picture)
+pub type ListRow = (i64, String, Option<String>, bool, bool);
 
 /// Accounts whose profile is on, plus the viewer's own.
 pub async fn listed(pool: &SqlitePool, viewer: i64) -> AppResult<Vec<ListRow>> {
     Ok(sqlx::query_as(
-        "SELECT u.username, u.display_name, u.id = ?,
+        "SELECT u.id, u.username, u.display_name, u.id = ?,
                 EXISTS (SELECT 1 FROM user_image i WHERE i.user_id = u.id AND i.kind = 'avatar')
            FROM app_user u
           WHERE u.disabled = 0 AND (u.profile_public = 1 OR u.id = ?)
@@ -58,6 +58,95 @@ pub async fn visible(pool: &SqlitePool, viewer: i64, username: &str) -> AppResul
     }
 }
 
+/// The colours a profile can wear, by name only: their values live in the
+/// app (`lib/profile-colours.ts`), one for light themes and one for dark.
+pub const COLOURS: [&str; 10] = [
+    "frog", "teal", "blue", "violet", "pink", "red", "orange", "amber", "brown", "grey",
+];
+pub const SHADES: [&str; 3] = ["light", "medium", "dark"];
+
+/// A colour and shade as sent: an empty colour clears both, a colour alone
+/// takes the medium shade, and anything off the list is refused.
+pub fn check_colour(
+    color: Option<&str>,
+    shade: Option<&str>,
+) -> AppResult<(Option<String>, Option<String>)> {
+    let refuse = || AppError::BadRequest("That colour is not one Frog offers.".into());
+    let shade = shade.map(str::trim).filter(|s| !s.is_empty());
+    if shade.is_some_and(|s| !SHADES.contains(&s)) {
+        return Err(refuse());
+    }
+    match color.map(str::trim) {
+        Some("") => Ok((None, None)),
+        Some(c) if COLOURS.contains(&c) => Ok((
+            Some(c.to_string()),
+            Some(shade.unwrap_or("medium").to_string()),
+        )),
+        Some(_) => Err(refuse()),
+        None => Ok((None, shade.map(str::to_string))),
+    }
+}
+
+/// Where a banner goes: across the top, or a portrait column on the left.
+pub const LAYOUTS: [&str; 2] = ["classic", "vertical"];
+/// How tall a banner across the top is; full shows the whole picture.
+pub const HEIGHTS: [&str; 3] = ["short", "tall", "full"];
+
+/// One word from `allowed`, or nothing for an empty one (the default).
+pub fn check_choice(value: &str, allowed: &[&str], what: &str) -> AppResult<Option<String>> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if allowed.contains(&value) {
+        Ok(Some(value.to_string()))
+    } else {
+        Err(AppError::BadRequest(format!(
+            "That {what} is not one Frog offers."
+        )))
+    }
+}
+
+/// How a profile looks, as its owner set it.
+#[derive(Debug, Default, Clone, serde::Serialize)]
+pub struct Look {
+    /// "x% y%": which part of the banner shows.
+    pub banner_position: Option<String>,
+    pub profile_color: Option<String>,
+    pub profile_shade: Option<String>,
+    /// "classic" or "vertical"; nothing is classic.
+    pub banner_layout: Option<String>,
+    /// "short", "tall" or "full"; nothing is short.
+    pub banner_height: Option<String>,
+}
+
+/// (banner position, colour, shade, layout, height)
+type LookRow = (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
+pub async fn look(pool: &SqlitePool, user_id: i64) -> AppResult<Look> {
+    let (banner_position, profile_color, profile_shade, banner_layout, banner_height): LookRow =
+        sqlx::query_as(
+            "SELECT banner_position, profile_color, profile_shade, banner_layout, banner_height
+               FROM app_user WHERE id = ?",
+        )
+        .bind(user_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(Look {
+        banner_position,
+        profile_color,
+        profile_shade,
+        banner_layout,
+        banner_height,
+    })
+}
+
 /// (kind, title id, name, poster_path, rating)
 pub type CardRow = (String, i64, String, Option<String>, Option<f64>);
 
@@ -69,7 +158,7 @@ pub type LibraryRow = (i64, i64, i64, Option<f64>);
 
 /// Everything a profile page shows of one account.
 pub struct Facts {
-    pub banner_position: Option<String>,
+    pub look: Look,
     pub watching: Vec<CardRow>,
     pub favourites: Vec<CardRow>,
     pub recent: Vec<CardRow>,
@@ -88,11 +177,7 @@ pub struct Facts {
 }
 
 pub async fn facts(pool: &SqlitePool, user_id: i64, pins_json: &str) -> AppResult<Facts> {
-    let (banner_position,): (Option<String>,) =
-        sqlx::query_as("SELECT banner_position FROM app_user WHERE id = ?")
-            .bind(user_id)
-            .fetch_one(pool)
-            .await?;
+    let look = look(pool, user_id).await?;
 
     let watching: Vec<CardRow> = sqlx::query_as(
         "SELECT t.kind, t.id, t.name, t.poster_path, l.rating
@@ -125,24 +210,7 @@ pub async fn facts(pool: &SqlitePool, user_id: i64, pins_json: &str) -> AppResul
     .fetch_all(pool)
     .await?;
 
-    let pins: Vec<i64> = serde_json::from_str::<Vec<Value>>(pins_json)
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|p| p["title_id"].as_i64())
-        .collect();
-    let mut pinned = Vec::new();
-    for title_id in crate::tmdb::models::unique_by(pins, |id| *id) {
-        let row: Option<CardRow> = sqlx::query_as(
-            "SELECT t.kind, t.id, t.name, t.poster_path, l.rating
-               FROM library_entry l JOIN title t ON t.id = l.title_id
-              WHERE l.user_id = ? AND t.id = ?",
-        )
-        .bind(user_id)
-        .bind(title_id)
-        .fetch_optional(pool)
-        .await?;
-        pinned.extend(row);
-    }
+    let pinned = pinned(pool, user_id, pins_json).await?;
 
     let totals: TotalsRow = sqlx::query_as(
         "SELECT COALESCE(SUM(w.episode_id IS NULL), 0),
@@ -201,7 +269,7 @@ pub async fn facts(pool: &SqlitePool, user_id: i64, pins_json: &str) -> AppResul
             .await?;
 
     Ok(Facts {
-        banner_position,
+        look,
         watching,
         favourites,
         recent,
@@ -213,6 +281,29 @@ pub async fn facts(pool: &SqlitePool, user_id: i64, pins_json: &str) -> AppResul
         days,
         images,
     })
+}
+
+/// Pinned titles, in the order chosen, skipping any no longer in the library.
+pub async fn pinned(pool: &SqlitePool, user_id: i64, pins_json: &str) -> AppResult<Vec<CardRow>> {
+    let pins: Vec<i64> = serde_json::from_str::<Vec<Value>>(pins_json)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|p| p["title_id"].as_i64())
+        .collect();
+    let mut pinned = Vec::new();
+    for title_id in crate::tmdb::models::unique_by(pins, |id| *id) {
+        let row: Option<CardRow> = sqlx::query_as(
+            "SELECT t.kind, t.id, t.name, t.poster_path, l.rating
+               FROM library_entry l JOIN title t ON t.id = l.title_id
+              WHERE l.user_id = ? AND t.id = ?",
+        )
+        .bind(user_id)
+        .bind(title_id)
+        .fetch_optional(pool)
+        .await?;
+        pinned.extend(row);
+    }
+    Ok(pinned)
 }
 
 /// How many chapters a manga has, as its title keeps it.
@@ -287,4 +378,45 @@ pub async fn picture(
     .bind(kind)
     .fetch_optional(pool)
     .await?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_colour;
+
+    #[test]
+    fn only_colours_on_the_list_are_kept() {
+        assert_eq!(
+            check_colour(Some("teal"), None).unwrap(),
+            (Some("teal".into()), Some("medium".into()))
+        );
+        assert_eq!(
+            check_colour(Some("frog"), Some("dark")).unwrap(),
+            (Some("frog".into()), Some("dark".into()))
+        );
+        assert_eq!(check_colour(Some(""), Some("dark")).unwrap(), (None, None));
+        assert_eq!(
+            check_colour(None, Some("light")).unwrap(),
+            (None, Some("light".into()))
+        );
+        assert!(check_colour(Some("#ff0000"), None).is_err());
+        assert!(check_colour(Some("Teal"), None).is_err());
+        assert!(check_colour(Some("teal"), Some("pale")).is_err());
+    }
+
+    #[test]
+    fn a_banner_takes_only_the_layouts_and_heights_offered() {
+        use super::{check_choice, HEIGHTS, LAYOUTS};
+        assert_eq!(
+            check_choice("vertical", &LAYOUTS, "layout").unwrap(),
+            Some("vertical".into())
+        );
+        assert_eq!(check_choice(" ", &LAYOUTS, "layout").unwrap(), None);
+        assert!(check_choice("sideways", &LAYOUTS, "layout").is_err());
+        assert_eq!(
+            check_choice("full", &HEIGHTS, "height").unwrap(),
+            Some("full".into())
+        );
+        assert!(check_choice("Full", &HEIGHTS, "height").is_err());
+    }
 }

@@ -3,6 +3,8 @@
 	import { api, img } from '#lib/api';
 	import Avatar from '#lib/components/Avatar.svelte';
 	import Icon from '#lib/components/Icon.svelte';
+	import BadgeSettings from '#lib/components/settings/BadgeSettings.svelte';
+	import ProfileLook from '#lib/components/settings/ProfileLook.svelte';
 	import { AVATAR_PIXELS, BANNER_PIXELS, decode, encode, shrink, staysAsItIs } from '#lib/picture';
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
@@ -133,21 +135,62 @@
 		closeFrame();
 		await send('avatar', () => encode(canvas, source));
 	}
+	/** The banner's menu: upload, choose from your titles, remove. */
+	let bannerMenu = $state(false);
+	backCloses(
+		() => bannerMenu,
+		() => (bannerMenu = false)
+	);
 	let choosingPins = $state(false);
 	backCloses(
 		() => choosingPins,
 		() => (choosingPins = false)
 	);
 
+	// How tall the banner is across the top, which shapes the frame it is dragged in.
+	const layout = $derived(account?.banner_layout ?? 'classic');
+	const height = $derived(account?.banner_height ?? 'short');
+
 	// The session first: it is what a rename on this same page updates.
 	const username = $derived(session.status?.username ?? account?.username ?? '');
 	const imageUrl = (kind: 'avatar' | 'banner') =>
 		`/api/profiles/${encodeURIComponent(username)}/images/${kind}?v=${version}`;
-	const pinned = $derived(
-		(account?.pins ?? [])
-			.map((p) => titles.find((t) => t.id === p.title_id))
-			.filter((t): t is LibraryItem => !!t)
+	const bannerSrc = $derived(
+		account?.banner
+			? imageUrl('banner')
+			: account?.banner_backdrop
+				? img(account.banner_backdrop, 'w1280')
+				: null
 	);
+	const pinned = $derived(account?.pinned ?? []);
+
+	// Finding a title to pin: the best rated to start, then the whole library
+	// by name as you type.
+	let pinTerm = $state('');
+	let pinFound = $state<LibraryItem[]>([]);
+	$effect(() => {
+		const q = pinTerm.trim();
+		if (!q) {
+			pinFound = [];
+			return;
+		}
+		let current = true;
+		const timer = setTimeout(() => {
+			void api
+				.library({ q, sort: 'name', order: 'asc', limit: 40 })
+				.then((r) => {
+					if (current) pinFound = r.items;
+				})
+				.catch(() => {
+					if (current) pinFound = [];
+				});
+		}, 200);
+		return () => {
+			current = false;
+			clearTimeout(timer);
+		};
+	});
+	const pinChoices = $derived(pinTerm.trim() ? pinFound : titles.slice(0, 24));
 	const backdrops = $derived(titles.filter((t) => t.backdrop_path).slice(0, 18));
 
 	async function load() {
@@ -230,6 +273,20 @@
 		choosingBanner = false;
 	}
 
+	/** Name and about are saved together, once you are done with them. */
+	const dirty = $derived(
+		!!account && (name !== (account.display_name ?? '') || bio !== (account.bio ?? ''))
+	);
+
+	async function saveDetails() {
+		await save({ display_name: name, bio }, 'Profile saved');
+	}
+
+	function resetDetails() {
+		name = account?.display_name ?? '';
+		bio = account?.bio ?? '';
+	}
+
 	function togglePin(titleId: number) {
 		const pins = account?.pins ?? [];
 		const on = pins.some((p) => p.title_id === titleId);
@@ -243,182 +300,258 @@
 	}
 </script>
 
-<div class="profile card">
-	<div class="banner">
-		{#if account?.banner || account?.banner_backdrop}
-			<img
-				class="movable"
-				src={account?.banner ? imageUrl('banner') : img(account?.banner_backdrop, 'w1280')}
-				alt=""
-				draggable="false"
-				style:object-position="{bannerPos.x}% {bannerPos.y}%"
-				onpointerdown={bannerDown}
-				onpointermove={bannerMove}
-				onpointerup={bannerUp}
-				onpointercancel={bannerUp}
-			/>
-			<span class="hint" aria-hidden="true"><Icon name="move" size={14} /> Drag to move</span>
-		{/if}
-		<div class="banner-actions">
-			<label class="btn small file">
-				<Icon name="image" size={15} /> Upload banner
+<!-- What others see first: the banner, the picture, the name and a few
+     lines, laid out as the profile lays them out. -->
+<section class="public card" aria-label="Your public profile">
+	<div class="cover">
+		<div
+			class="banner"
+			class:tall={layout !== 'vertical' && height === 'tall'}
+			class:full={layout !== 'vertical' && height === 'full'}
+		>
+			<span class="frame">
+				{#if bannerSrc}
+					<img
+						class="movable"
+						src={bannerSrc}
+						alt=""
+						draggable="false"
+						style:object-position="{bannerPos.x}% {bannerPos.y}%"
+						onpointerdown={bannerDown}
+						onpointermove={bannerMove}
+						onpointerup={bannerUp}
+						onpointercancel={bannerUp}
+					/>
+					<span class="hint" aria-hidden="true"><Icon name="move" size={14} /> Drag to move</span>
+				{/if}
+			</span>
+		</div>
+
+		<div class="cover-actions">
+			<button
+				class="btn small on-picture"
+				aria-haspopup="menu"
+				aria-expanded={bannerMenu}
+				onclick={() => (bannerMenu = !bannerMenu)}
+			>
+				<Icon name="image" size={15} /> Edit banner
+			</button>
+			{#if bannerMenu}
+				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+				<div class="menu-scrim" onclick={() => (bannerMenu = false)}></div>
+				<div class="menu card" role="menu" aria-label="Banner">
+					<label class="item file">
+						<Icon name="upload" size={16} /> Upload a picture
+						<input
+							type="file"
+							accept="image/jpeg,image/png,image/webp,image/gif"
+							disabled={busy}
+							onchange={(e) => {
+								bannerMenu = false;
+								void upload('banner', e.currentTarget.files?.[0]);
+								e.currentTarget.value = '';
+							}}
+						/>
+					</label>
+					<button
+						class="item"
+						role="menuitem"
+						onclick={() => {
+							bannerMenu = false;
+							choosingBanner = true;
+						}}
+					>
+						<Icon name="film" size={16} /> Choose from your titles
+					</button>
+					{#if bannerSrc}
+						<button
+							class="item danger"
+							role="menuitem"
+							onclick={() => {
+								bannerMenu = false;
+								void (account?.banner ? removeImage('banner') : removeBackdrop());
+							}}
+						>
+							<Icon name="trash" size={16} /> Remove banner
+						</button>
+					{/if}
+				</div>
+			{/if}
+		</div>
+	</div>
+
+	<div class="me">
+		<span class="picture">
+			<Avatar src={account?.avatar ? imageUrl('avatar') : null} name={username || '?'} size={88} />
+			<label class="camera file" title="Change picture">
+				<Icon name="camera" size={16} />
+				<span class="sr">Change picture</span>
 				<input
 					type="file"
 					accept="image/jpeg,image/png,image/webp,image/gif"
 					disabled={busy}
 					onchange={(e) => {
-						void upload('banner', e.currentTarget.files?.[0]);
+						void frame(e.currentTarget.files?.[0]);
 						e.currentTarget.value = '';
 					}}
 				/>
 			</label>
-			<button class="btn small" onclick={() => (choosingBanner = !choosingBanner)}>
-				Use a backdrop
-			</button>
-			{#if account?.banner || account?.banner_backdrop}
-				<button
-					class="btn small"
-					onclick={() => (account?.banner ? removeImage('banner') : removeBackdrop())}
-				>
-					Remove
-				</button>
+		</span>
+		<span class="who">
+			<strong>{name.trim() || username}</strong>
+			<span class="faint">@{username}</span>
+			{#if account?.avatar}
+				<button class="link" onclick={() => removeImage('avatar')}>Remove picture</button>
 			{/if}
-		</div>
+		</span>
 	</div>
 
-	{#if choosingBanner}
-		<!-- Its own layer, over the page: inline it slid under the picture,
-		     which is pulled up over the banner. -->
-		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-		<div class="picker-scrim" onclick={() => (choosingBanner = false)}></div>
-		<div class="picker card" role="dialog" aria-modal="true" aria-labelledby="picker-title">
-			<div class="picker-head">
-				<h3 id="picker-title">Choose a backdrop</h3>
-				<button class="btn ghost small" aria-label="Close" onclick={() => (choosingBanner = false)}>
-					<Icon name="x" size={16} />
-				</button>
-			</div>
-			{#if backdrops.length}
-				<p class="faint small">From the titles you rated highest.</p>
-				<div class="backdrops">
-					{#each backdrops as t (t.id)}
-						<button
-							class="backdrop"
-							aria-label="Use {t.name}"
-							onclick={() => chooseBackdrop(t.backdrop_path ?? '')}
-						>
-							<img src={img(t.backdrop_path, 'w300')} alt="" loading="lazy" />
-							<span>{t.name}</span>
-						</button>
-					{/each}
-				</div>
-			{:else}
-				<p class="faint small">Add a few titles to your library to choose from their artwork.</p>
-			{/if}
-		</div>
-	{/if}
-
-	<div class="identity">
-		<div class="picture">
-			<Avatar src={account?.avatar ? imageUrl('avatar') : null} name={username || '?'} size={76} />
-			<div class="picture-actions">
-				<label class="btn ghost small file">
-					<Icon name="camera" size={15} /> Picture
-					<input
-						type="file"
-						accept="image/jpeg,image/png,image/webp,image/gif"
-						disabled={busy}
-						onchange={(e) => {
-							void frame(e.currentTarget.files?.[0]);
-							e.currentTarget.value = '';
-						}}
-					/>
-				</label>
-				{#if account?.avatar}
-					<button class="btn ghost small" onclick={() => removeImage('avatar')}>Remove</button>
-				{/if}
-			</div>
-		</div>
-
-		<div class="fields">
-			<label class="field">
-				<span>Name</span>
-				<input
-					class="input"
-					bind:value={name}
-					maxlength="40"
-					placeholder={username}
-					onchange={() => save({ display_name: name }, 'Name saved')}
-				/>
-			</label>
-			<label class="field">
-				<span>About you <em class="faint">{bio.length}/{BIO_MAX}</em></span>
-				<textarea
-					class="input"
-					rows="4"
-					maxlength={BIO_MAX}
-					bind:value={bio}
-					placeholder="What you watch, what you love, what you are looking for."></textarea>
-			</label>
-			<div class="actions">
-				<button
-					class="btn"
-					disabled={busy || bio === (account?.bio ?? '')}
-					onclick={() => save({ bio }, 'About saved')}
-				>
-					Save about
-				</button>
-			</div>
-		</div>
+	<div class="fields">
+		<label class="field">
+			<span>Name</span>
+			<input class="input" bind:value={name} maxlength="40" placeholder={username} />
+			<small class="faint">Shown on your profile in place of @{username}.</small>
+		</label>
+		<label class="field">
+			<span>About you <em class="faint">{bio.length}/{BIO_MAX}</em></span>
+			<textarea
+				class="input"
+				rows="4"
+				maxlength={BIO_MAX}
+				bind:value={bio}
+				placeholder="What you watch, what you love, what you are looking for."></textarea>
+		</label>
 	</div>
 
-	<div class="pins">
-		<div class="pins-head">
-			<span class="label">
-				<strong>Pinned</strong>
-				<span class="faint">Up to four titles at the top of your profile.</span>
-			</span>
-			<button class="btn ghost small" onclick={() => (choosingPins = !choosingPins)}>
-				{choosingPins ? 'Done' : 'Choose'}
-			</button>
-		</div>
-		{#if pinned.length}
-			<div class="pinned">
-				{#each pinned as t (t.id)}
-					<span class="pin">
-						{#if img(t.poster_path, 'w92')}<img src={img(t.poster_path, 'w92')} alt="" />{/if}
-						<span>{t.name}</span>
-					</span>
-				{/each}
-			</div>
+	<div class="foot">
+		{#if username}
+			<a class="view" href="/people/{encodeURIComponent(username)}">
+				View your profile <Icon name="chevron-right" size={14} />
+			</a>
 		{/if}
-		{#if choosingPins}
-			<div class="choices">
-				{#each titles.slice(0, 40) as t (t.id)}
-					{@const on = (account?.pins ?? []).some((p) => p.title_id === t.id)}
-					<button class="choice" class:on aria-pressed={on} onclick={() => togglePin(t.id)}>
-						{t.name}
+		<span class="spacer"></span>
+		{#if dirty}
+			<button class="btn ghost" onclick={resetDetails}>Cancel</button>
+		{/if}
+		<button class="btn primary" disabled={busy || !dirty} onclick={saveDetails}>Save changes</button
+		>
+	</div>
+</section>
+
+{#if choosingBanner}
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+	<div class="picker-scrim" onclick={() => (choosingBanner = false)}></div>
+	<div class="picker card" role="dialog" aria-modal="true" aria-labelledby="picker-title">
+		<div class="picker-head">
+			<h3 id="picker-title">Choose a backdrop</h3>
+			<button class="btn ghost small" aria-label="Close" onclick={() => (choosingBanner = false)}>
+				<Icon name="x" size={16} />
+			</button>
+		</div>
+		{#if backdrops.length}
+			<p class="faint small">From the titles you rated highest.</p>
+			<div class="backdrops">
+				{#each backdrops as t (t.id)}
+					<button
+						class="backdrop"
+						aria-label="Use {t.name}"
+						onclick={() => chooseBackdrop(t.backdrop_path ?? '')}
+					>
+						<img src={img(t.backdrop_path, 'w300')} alt="" loading="lazy" />
+						<span>{t.name}</span>
 					</button>
 				{/each}
 			</div>
+		{:else}
+			<p class="faint small">Add a few titles to your library to choose from their artwork.</p>
+		{/if}
+	</div>
+{/if}
+
+<div class="settings list-pane">
+	<ProfileLook {account} {save} banner={bannerSrc} />
+
+	<div class="setting">
+		<div class="setting-top">
+			<span class="setting-tile" aria-hidden="true"><Icon name="bookmark" size={18} /></span>
+			<span class="setting-label">
+				<strong>Pinned titles</strong>
+				<span class="faint">Up to {PINS_MAX}, at the top of your profile.</span>
+			</span>
+			{#if pinned.length < PINS_MAX || choosingPins}
+				<button
+					class="btn"
+					onclick={() => {
+						choosingPins = !choosingPins;
+						pinTerm = '';
+					}}
+				>
+					{#if choosingPins}Done{:else}<Icon name="plus" size={15} /> Add{/if}
+				</button>
+			{/if}
+		</div>
+		{#if pinned.length}
+			<ul class="pinned setting-body">
+				{#each pinned as t (t.id)}
+					<li class="pin">
+						{#if img(t.poster_path, 'w92')}<img src={img(t.poster_path, 'w92')} alt="" />{/if}
+						<span class="pin-name">{t.name}</span>
+						<button class="unpin hit" aria-label="Unpin {t.name}" onclick={() => togglePin(t.id)}>
+							<Icon name="x" size={14} />
+						</button>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+		{#if choosingPins}
+			<div class="finder setting-body">
+				<input
+					class="input"
+					type="search"
+					bind:value={pinTerm}
+					placeholder="Find a title in your library"
+					aria-label="Find a title to pin"
+					autocomplete="off"
+					spellcheck="false"
+				/>
+				<div class="choices">
+					{#each pinChoices as t (t.id)}
+						{@const on = (account?.pins ?? []).some((p) => p.title_id === t.id)}
+						<button class="choice" class:on aria-pressed={on} onclick={() => togglePin(t.id)}>
+							{#if on}<Icon name="check" size={13} />{/if}
+							{t.name}
+						</button>
+					{:else}
+						<p class="faint small">
+							{pinTerm.trim()
+								? 'Nothing in your library by that name.'
+								: 'Add titles to your library to pin them.'}
+						</p>
+					{/each}
+				</div>
+			</div>
 		{/if}
 	</div>
 
-	<label class="row">
-		<span class="label">
-			<strong>Show my profile</strong>
-			<span class="faint">
-				Others on this Frog can see your profile, your whole library, your ratings and what you
-				watched lately on their Home, but not your notes. Off, only you can.
-				{#if username}<a href="/people/{encodeURIComponent(username)}">See your profile</a>{/if}
+	<BadgeSettings />
+
+	<label class="setting">
+		<span class="setting-top">
+			<span class="setting-tile" aria-hidden="true"><Icon name="users" size={18} /></span>
+			<span class="setting-label">
+				<strong>Show my profile</strong>
+				<span class="faint">
+					Others on this Frog see your profile, library, ratings and recent watching, never your
+					notes. Off, only you can.
+				</span>
 			</span>
+			<input
+				type="checkbox"
+				class="toggle-switch"
+				checked={account?.profile_public ?? false}
+				onchange={(e) => save({ public: e.currentTarget.checked })}
+			/>
 		</span>
-		<input
-			type="checkbox"
-			class="toggle-switch"
-			checked={account?.profile_public ?? false}
-			onchange={(e) => save({ public: e.currentTarget.checked })}
-		/>
 	</label>
 </div>
 
@@ -472,16 +605,48 @@
 {/if}
 
 <style>
-	.profile {
-		overflow: hidden;
-		display: flex;
-		flex-direction: column;
+	/* The public profile, drawn as the profile draws it. */
+	.public {
+		margin-bottom: 16px;
+	}
+
+	.cover {
+		position: relative;
 	}
 
 	.banner {
 		position: relative;
 		height: 150px;
+		border-radius: var(--radius) var(--radius) 0 0;
 		background: linear-gradient(135deg, var(--accent-soft), var(--bg-elev-2));
+		overflow: hidden;
+	}
+
+	.banner .frame {
+		position: absolute;
+		inset: 0;
+		display: block;
+		overflow: hidden;
+	}
+
+	.banner.tall {
+		height: 230px;
+	}
+
+	/* Full: the picture whole, up to a ceiling, as on the profile. */
+	.banner.full {
+		height: auto;
+		min-height: 150px;
+	}
+
+	.banner.full .frame {
+		position: relative;
+	}
+
+	.banner.full img {
+		height: auto;
+		max-height: 320px;
+		display: block;
 	}
 
 	.banner img {
@@ -500,8 +665,6 @@
 		cursor: grabbing;
 	}
 
-	/* Bottom right: the profile picture covers the bottom left, and the
-	   buttons sit along the top. */
 	.hint {
 		position: absolute;
 		right: 12px;
@@ -524,11 +687,194 @@
 		opacity: 1;
 	}
 
-	/* No hover on a touchscreen, so it stays in view there. */
 	@media (hover: none) {
 		.hint {
 			opacity: 1;
 		}
+	}
+
+	.cover-actions {
+		position: absolute;
+		top: 12px;
+		right: 12px;
+		z-index: 2;
+	}
+
+	.on-picture {
+		background: rgb(0 0 0 / 0.55);
+		color: #fff;
+		border-color: transparent;
+		backdrop-filter: blur(6px);
+	}
+
+	.menu-scrim {
+		position: fixed;
+		inset: 0;
+		z-index: 40;
+	}
+
+	.menu {
+		position: absolute;
+		top: calc(100% + 6px);
+		right: 0;
+		z-index: 41;
+		display: flex;
+		flex-direction: column;
+		min-width: 230px;
+		padding: 6px;
+		background: var(--bg-float);
+		box-shadow: var(--shadow-3);
+	}
+
+	.item {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 10px 12px;
+		border: 0;
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--text);
+		font: inherit;
+		font-size: 0.88rem;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.item:hover,
+	.item:focus-within {
+		background: var(--bg-hover);
+	}
+
+	.item.danger {
+		color: var(--bad);
+	}
+
+	/* The picture, pulled up over the banner, with its camera in the corner. */
+	.me {
+		display: flex;
+		align-items: flex-end;
+		gap: 14px;
+		padding: 0 20px;
+		margin-top: -40px;
+		position: relative;
+		z-index: 1;
+	}
+
+	.picture {
+		position: relative;
+		display: block;
+		flex: none;
+		line-height: 0;
+	}
+
+	.picture :global(.avatar) {
+		border: 4px solid var(--bg-elev);
+	}
+
+	/* On the picture's corner; `.picture .camera` so the file input's own
+	   `position: relative` below cannot pull it back into the flow. */
+	.picture .camera {
+		position: absolute;
+		right: 0;
+		bottom: 2px;
+		display: grid;
+		place-items: center;
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		background: var(--accent);
+		color: var(--accent-ink);
+		border: 3px solid var(--bg-elev);
+		cursor: pointer;
+	}
+
+	.who {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+		padding-bottom: 6px;
+	}
+
+	.who strong {
+		font-size: 1.15rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.who .faint {
+		font-size: 0.84rem;
+	}
+
+	.link {
+		align-self: flex-start;
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--text-dim);
+		font: inherit;
+		font-size: 0.8rem;
+		text-decoration: underline;
+		cursor: pointer;
+	}
+
+	.fields {
+		display: grid;
+		gap: 14px;
+		padding: 18px 20px 4px;
+	}
+
+	.field small {
+		font-size: 0.78rem;
+	}
+
+	.field em {
+		font-style: normal;
+		font-weight: 400;
+	}
+
+	.foot {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px;
+		padding: 14px 20px 18px;
+	}
+
+	.spacer {
+		flex: 1;
+	}
+
+	.view {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		color: var(--accent);
+		font-size: 0.86rem;
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.file {
+		position: relative;
+		overflow: hidden;
+	}
+
+	.file input {
+		position: absolute;
+		inset: 0;
+		opacity: 0;
+		cursor: pointer;
+	}
+
+	.sr {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
 	}
 
 	.scrim {
@@ -603,25 +949,6 @@
 		justify-content: flex-end;
 		gap: 8px;
 		width: 100%;
-	}
-
-	/* Top corner: the picture is pulled up over the bottom of the banner,
-	   and on a phone it reaches far enough across to cover the buttons. */
-	.banner-actions {
-		position: absolute;
-		top: 12px;
-		right: 12px;
-		left: 12px;
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		justify-content: flex-end;
-	}
-
-	.banner-actions .btn {
-		background: rgb(0 0 0 / 0.55);
-		color: #fff;
-		border-color: transparent;
 	}
 
 	.file {
@@ -747,82 +1074,26 @@
 		background: linear-gradient(transparent, rgb(0 0 0 / 0.7));
 	}
 
-	.identity {
-		display: flex;
-		gap: 20px;
-		padding: 18px;
-		flex-wrap: wrap;
-	}
-
-	/* Pulled up over the banner, so it has to sit above it: the banner is
-	   positioned (for its buttons), and positioned boxes paint on top. */
-	.picture {
-		position: relative;
-		z-index: 1;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 10px;
-		margin-top: -54px;
-	}
-
-	.picture :global(.avatar) {
-		border: 4px solid var(--bg-elev);
-	}
-
-	.picture-actions {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-
-	.fields {
-		flex: 1;
-		min-width: 220px;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
-	}
-
-	.field em {
-		font-style: normal;
-		font-weight: 400;
-	}
-
-	.actions {
-		display: flex;
-		gap: 8px;
-	}
-
-	.pins {
-		padding: 0 18px 16px;
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.pins-head,
-	.row {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 16px;
-	}
-
 	.pinned {
 		display: flex;
-		gap: 10px;
+		gap: 8px;
 		flex-wrap: wrap;
+		margin-block: 0;
+		padding: 0;
+		list-style: none;
 	}
 
 	.pin {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 4px 10px 4px 4px;
+		padding: 4px;
 		border-radius: var(--radius-sm);
 		background: var(--bg-elev-2);
+		border: 1px solid var(--line);
 		font-size: 0.85rem;
+		min-width: 0;
+		max-width: 100%;
 	}
 
 	.pin img {
@@ -832,6 +1103,37 @@
 		object-fit: cover;
 	}
 
+	.pin-name {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.unpin {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 28px;
+		height: 28px;
+		border: 0;
+		border-radius: 50%;
+		background: none;
+		color: var(--text-dim);
+		cursor: pointer;
+	}
+
+	.unpin:hover {
+		background: var(--bg-hover);
+		color: var(--text);
+	}
+
+	.finder {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
 	.choices {
 		display: flex;
 		flex-wrap: wrap;
@@ -839,11 +1141,18 @@
 	}
 
 	.choice {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		max-width: 100%;
 		padding: 6px 10px;
 		border-radius: 999px;
 		border: 1px solid var(--line);
 		background: var(--bg-elev);
 		font-size: 0.82rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 		cursor: pointer;
 	}
 
@@ -852,31 +1161,11 @@
 		color: var(--accent);
 	}
 
-	.row {
-		padding: 15px 18px;
-		border-top: 1px solid var(--line);
-		cursor: pointer;
-	}
-
-	.label {
-		display: flex;
-		flex-direction: column;
-		gap: 3px;
-	}
-
-	.label .faint,
 	.small {
 		font-size: 0.8rem;
 	}
 
-	.label a {
-		color: var(--accent);
-	}
-
-	input[type='checkbox']:not(.toggle-switch) {
-		width: 20px;
-		height: 20px;
-		accent-color: var(--accent);
-		flex: none;
+	label.setting {
+		cursor: pointer;
 	}
 </style>

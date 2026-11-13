@@ -350,18 +350,6 @@
 	--shadow-3: 0 40px 80px -30px rgba(20, 16, 40, 0.35);
 }
 
-/* Animation level, set from Settings. */
-:root[data-animations='off'] *,
-:root[data-animations='off'] *::before,
-:root[data-animations='off'] *::after {
-	animation-duration: 0.01ms !important;
-	transition-duration: 0.01ms !important;
-}
-
-:root[data-animations='reduced'] * {
-	transition-duration: 90ms !important;
-}
-
 *,
 *::before,
 *::after {
@@ -816,6 +804,56 @@ textarea.input {
 
 .list-pane > * + * {
 	border-top: 1px solid var(--line);
+}
+
+/* One setting in a list-pane: its icon on a tile, its name and a line about
+   it, what changes it on the right, and anything more it needs below. */
+.setting {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	padding: 15px 18px;
+}
+
+.setting-top {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 12px;
+}
+
+.setting-tile {
+	flex: none;
+	width: 36px;
+	height: 36px;
+	display: grid;
+	place-items: center;
+	border-radius: 10px;
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+
+.setting-label {
+	flex: 1 1 8em;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.setting-label .faint {
+	font-size: 0.82rem;
+}
+
+/* Under the label, lined up with it rather than the tile. */
+.setting-body {
+	margin-left: 48px;
+}
+
+@media (max-width: 600px) {
+	.setting-body {
+		margin-left: 0;
+	}
 }
 
 .pill {

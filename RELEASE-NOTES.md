@@ -9,12 +9,32 @@ people working on Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Goliath —
+## Upcoming — Tomato Frog —
 
 In progress.
 
+## [1.6.0] — Tomato Frog — 2026-11-13
+
+Profiles of your own, and Frog in your browser.
+
+![Your profile, with a banner standing beside it](docs/screenshots/profile-desktop-pond.png)
+
 ### Highlights
 
+- **Badges.** Administrators make badges and give them to people. Up to three
+  sit beside your name on your profile, and small ones on People. Tap one to
+  see it large, with what it is for and the day it was given. In Settings, show
+  or hide each one you hold and drag them into your order.
+- **A badge editor that does the fiddly part.** Crop to a circle, take the
+  background out with clean edges, touch up by hand with a steady brush, and
+  pick a fill and a ring. See it at every size, on a light page and a dark
+  one, before you save.
+- **Your colour.** Give your profile one of ten colours, in a light, medium or
+  dark shade. Everyone who opens your profile sees it in your colour, on every
+  theme.
+- **Banners your way.** Stand your banner as a column the height of the
+  screen beside your profile, or keep it across the top in short, tall or full
+  height. Tap any banner to see the whole picture.
 - **Frog in your browser.** An extension for Firefox and Chrome notices what
   you watch on any site and logs it when you are nearly done, with a moment
   to undo. When it is not sure, it asks, and it remembers your answer for
@@ -24,11 +44,25 @@ In progress.
 
 - A title's page lists the studios behind it, each with its logo. Open one to
   see everything else it made.
+- Pin any title in your library: find it by name, and take a pin off with
+  one tap.
+- Profile settings are laid out like your profile: banner, picture, name and
+  about at the top, saved together, and every other choice in a row of its own.
+- Theme is simpler: pick one and go.
+- Appearance keeps to what changes how Frog looks; the Home hero is under
+  Home and menus, beside where Frog opens.
 - Settings is calmer. Navigation is a switch and a tab-bar button a page,
   score formats show each scale once, and Your data keeps merged titles and
   emptying your library out of the way until you ask.
-- Dropdowns open whole, even near the bottom of the window.
 - Trailers behind a title start sooner and show nothing but the film.
+
+### Fixes
+
+- A rating shows the moment you pick it, and the last one you pick is the one
+  kept.
+- A title's picture stays still while you change its status or rating.
+- Five-star ratings read out as words to screen readers.
+- Every dropdown opens whole, wherever it sits on the page.
 
 ## [1.5.1] — Goliath — 2026-11-12
 
@@ -977,6 +1011,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.6.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.6.0
 [1.5.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.5.1
 [1.5.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.5.0
 [1.4.3]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.4.3

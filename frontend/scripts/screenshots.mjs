@@ -15,6 +15,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { badgeBody } from '../../scripts/demo-badge.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..', '..');
@@ -206,6 +207,32 @@ async function seed() {
 	for (const entry of SEED.slice(0, 6)) picks.push(idOf(await titleApi(entry.kind, entry.id)));
 	await must('POST', '/api/shelves', { name: 'Comfort watches', kind: 'manual', title_ids: picks });
 
+	// A profile of its own: a colour, a banner standing up, pins and badges.
+	const library = await (await must('GET', '/api/library?sort=rating&order=desc&limit=20')).json();
+	const backdrop = library.items.find((i) => i.backdrop_path)?.backdrop_path ?? '';
+	await must('PUT', '/api/account/profile', {
+		public: true,
+		display_name: 'Frog Demo',
+		bio: 'Sci-fi on Fridays, anime on Sundays, and always one more episode.',
+		profile_color: 'frog',
+		profile_shade: 'medium',
+		banner_layout: 'vertical',
+		banner_backdrop: backdrop,
+		pins: picks.slice(0, 4).map((title_id) => ({ title_id }))
+	});
+	const me = (await (await must('GET', '/api/admin/users')).json()).users.find(
+		(u) => u.username === USER
+	);
+	for (const [name, about, colour, ring] of [
+		['Early frog', 'Here from the start', [79, 187, 88], [226, 247, 228]],
+		['Night owl', 'Watches past midnight', [91, 120, 236], [222, 230, 252]]
+	]) {
+		const made = await (
+			await must('POST', '/api/admin/badges', badgeBody(name, about, colour, ring))
+		).json();
+		await must('PUT', `/api/admin/badges/${made.id}/holders/${me.id}`, {});
+	}
+
 	// Manga, read part-way and finished, for its page and the Manga half of
 	// Stats. Only AniList has them; without it these shots are left out.
 	for (const [anilist, status, read, rating] of [
@@ -289,6 +316,12 @@ try {
 	await shoot(browser, {
 		name: 'settings-desktop-pond',
 		path: '/settings',
+		viewport: DESKTOP,
+		theme: 'pond'
+	});
+	await shoot(browser, {
+		name: 'profile-desktop-pond',
+		path: `/people/${USER}`,
 		viewport: DESKTOP,
 		theme: 'pond'
 	});

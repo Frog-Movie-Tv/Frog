@@ -15,6 +15,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { badgeBody } from './demo-badge.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..');
@@ -138,7 +139,11 @@ async function main() {
 	console.log(`creating ${owner.username} (owner)`);
 	const setup = await api('/api/auth/setup', {
 		method: 'POST',
-		body: { username: owner.username, password: owner.password, remember: true }
+		body: {
+			username: owner.username,
+			password: owner.password,
+			remember: true
+		}
 	});
 	const cookies = [setup.cookie];
 
@@ -203,6 +208,49 @@ async function main() {
 			console.log(`  could not mark a season (${e.message.slice(0, 60)})`);
 		}
 	}
+
+	// One account wears its own colour, stands its banner up, and holds a
+	// badge, so what one profile shows and the other does not is plain to see.
+	console.log(`dressing ${second.username}'s profile`);
+	await api('/api/account/profile', {
+		method: 'PUT',
+		body: {
+			public: true,
+			profile_color: 'teal',
+			profile_shade: 'medium',
+			banner_layout: 'vertical'
+		},
+		cookie: cookies[1]
+	});
+	if (key) {
+		try {
+			const lib = await api('/api/library?limit=10', { cookie: cookies[1] });
+			const backdrop = lib.json.items.find((i) => i.backdrop_path)?.backdrop_path;
+			if (backdrop) {
+				await api('/api/account/profile', {
+					method: 'PUT',
+					body: { banner_backdrop: backdrop },
+					cookie: cookies[1]
+				});
+			}
+		} catch (e) {
+			console.log(`  no banner (${e.message.slice(0, 60)})`);
+		}
+	}
+	const badge = await api('/api/admin/badges', {
+		method: 'POST',
+		body: badgeBody('Early frog', 'Here from the start'),
+		cookie: cookies[0]
+	});
+	const zjef = (await api('/api/admin/users', { cookie: cookies[0] })).json.users.find(
+		(u) => u.username === second.username
+	);
+	await api(`/api/admin/badges/${badge.json.id}/holders/${zjef.id}`, {
+		method: 'PUT',
+		body: {},
+		cookie: cookies[0]
+	});
+	console.log(`  teal, a vertical banner, and the Early frog badge`);
 
 	console.log('\nSeeded ' + dbPath);
 	for (const a of ACCOUNTS) {

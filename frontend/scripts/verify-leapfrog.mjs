@@ -312,11 +312,9 @@ check(
 console.log('\n== Profile ==');
 await page.goto(`${BASE}/settings#account`);
 await page.getByLabel('Name').fill('Leap Frog');
-await page.getByLabel('Name').press('Tab');
-await toast('Name saved').waitFor();
 await page.getByLabel(/About you/).fill('Anime on weeknights, films on Sundays.');
-await page.getByRole('button', { name: 'Save about' }).click();
-await toast('About saved').waitFor();
+await page.getByRole('button', { name: 'Save changes' }).click();
+await toast('Profile saved').waitFor();
 // A real picture, drawn here and handed to the file input.
 const png = await page.evaluate(async () => {
 	const c = document.createElement('canvas');
@@ -337,7 +335,7 @@ await page
 // A new picture is framed first: drag and zoom inside the circle, then use it.
 await page.getByRole('button', { name: 'Use this picture' }).click();
 await toast('Profile picture updated').waitFor({ timeout: 15000 });
-await page.getByRole('button', { name: 'Choose', exact: true }).click();
+await page.getByRole('button', { name: 'Add', exact: true }).click();
 await page.locator('.choice').first().click();
 await page.waitForTimeout(800);
 await page.getByLabel('Show my profile').check();

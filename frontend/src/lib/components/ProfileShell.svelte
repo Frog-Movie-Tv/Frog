@@ -12,6 +12,8 @@
 	import ProfileHeader, { type ProfileTab } from './ProfileHeader.svelte';
 	import Spinner from './Spinner.svelte';
 	import { failure, type Failure } from '#lib/failure';
+	import { profileStyle } from '#lib/profile-colours';
+	import { currentTone } from '#lib/settings.svelte';
 	import { session } from '#lib/session.svelte';
 	import type { Profile } from '#lib/types';
 
@@ -67,6 +69,13 @@
 	}
 
 	const shownName = $derived(profile?.display_name || profile?.username || '');
+	/*
+	 * The profile's own colour, on this page only and for everyone who opens
+	 * it: the accent tokens are scoped here, never on the app's theme.
+	 */
+	const colour = $derived(
+		profile ? profileStyle(profile.profile_color, profile.profile_shade, currentTone()) : undefined
+	);
 	const label: Record<ProfileTab, string> = {
 		overview: '',
 		library: ' · Library',
@@ -85,7 +94,7 @@
 	</title>
 </svelte:head>
 
-<div class="page">
+<div class="page" class:coloured={!!colour} style={colour}>
 	{#if loading && !profile}
 		<Spinner label="Loading profile" />
 	{:else if failed && !failed.missing}
@@ -99,14 +108,39 @@
 			<a class="btn" href="/people">Everyone sharing</a>
 		</Empty>
 	{:else}
-		<ProfileHeader {profile} {tab} />
-		<div class="tab-body">
-			{@render children(profile)}
+		<div class="profile" class:vertical={profile.banner_layout === 'vertical'}>
+			<ProfileHeader {profile} {tab} />
+			<div class="tab-body">
+				{@render children(profile)}
+			</div>
 		</div>
 	{/if}
 </div>
 
 <style>
+	/* Vertical on a wide screen: the banner column on the left, the tabs and
+	   what they show beside it (ProfileHeader puts its parts in the areas). */
+	@media (min-width: 900px) {
+		.profile.vertical {
+			display: grid;
+			/* The column itself is pinned to the screen (ProfileHeader); the
+			   grid keeps its place free beside the tabs. */
+			--side-w: clamp(240px, 24vw, 330px);
+			grid-template-columns: var(--side-w) minmax(0, 1fr);
+			grid-template-rows: auto 1fr;
+			grid-template-areas:
+				'side tabs'
+				'side body';
+			column-gap: clamp(20px, 3vw, 40px);
+			align-items: start;
+		}
+
+		.profile.vertical .tab-body {
+			grid-area: body;
+			min-width: 0;
+		}
+	}
+
 	.tab-body {
 		animation: tab-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 	}

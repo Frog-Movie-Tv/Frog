@@ -76,7 +76,7 @@
 		</button>
 		<div>
 			<h1>Frog</h1>
-			<p class="muted">Version {session.status?.version ?? '—'} · Goliath</p>
+			<p class="muted">Version {session.status?.version ?? '—'} · Tomato Frog</p>
 		</div>
 	</header>
 

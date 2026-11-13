@@ -546,8 +546,15 @@ export interface Account {
 	banner_backdrop: string | null;
 	/** Which part of the banner shows, as "x% y%". */
 	banner_position: string | null;
+	/** The colour the profile wears, from `PROFILE_COLOURS`, or null for the theme's. */
+	profile_color: string | null;
+	profile_shade: string | null;
+	banner_layout: string | null;
+	banner_height: string | null;
 	/** Frog ids of titles in the library, in order. */
 	pins: { title_id: number }[];
+	/** The same titles, to show: any no longer in the library are left out. */
+	pinned: { id: number; kind: Kind; name: string; poster_path: string | null }[];
 	/** Whether a picture of each kind is uploaded. */
 	avatar: boolean;
 	banner: boolean;
@@ -561,6 +568,12 @@ export interface ProfileEdit {
 	banner_backdrop?: string;
 	banner_position?: string;
 	pins?: { title_id: number }[];
+	/** Empty for the theme's own colour. */
+	profile_color?: string;
+	profile_shade?: string;
+	/** Empty for the banner across the top, short. */
+	banner_layout?: string;
+	banner_height?: string;
 }
 
 export interface PersonSummary {
@@ -568,6 +581,43 @@ export interface PersonSummary {
 	display_name: string | null;
 	me: boolean;
 	avatar: boolean;
+	/** The badges they show, in their order. */
+	badges: HeldBadge[];
+}
+
+/** A badge as someone holds it, with its pictures' addresses. */
+export interface HeldBadge {
+	id: number;
+	name: string;
+	description: string | null;
+	awarded_at: string;
+	/** Whether it shows on the profile. Always true for anyone but its holder. */
+	shown: boolean;
+	/** 128 px, for everywhere but opened large. */
+	small: string;
+	/** 1024 px. */
+	large: string;
+}
+
+/** A badge as Administration lists it. */
+export interface AdminBadge {
+	id: number;
+	name: string;
+	description: string | null;
+	created_at: string;
+	updated_at: string;
+	/** Account ids of everyone holding it. */
+	holders: number[];
+}
+
+/** What the badge editor saves: the pictures as base64, finished. */
+export interface BadgeUpload {
+	name: string;
+	description: string;
+	settings?: Record<string, unknown>;
+	large?: string;
+	small?: string;
+	original?: string;
 }
 
 /** One device signed in to your account. */
@@ -752,6 +802,14 @@ export interface Profile {
 	banner: string | null;
 	banner_backdrop: string | null;
 	banner_position: string | null;
+	profile_color: string | null;
+	profile_shade: string | null;
+	/** "vertical", or null for the banner across the top. */
+	banner_layout: string | null;
+	/** "tall" or "full", or null for short. */
+	banner_height: string | null;
+	/** The badges they show, in their order. */
+	badges: HeldBadge[];
 	stats: {
 		films: number;
 		episodes: number;

@@ -11,7 +11,7 @@ export const SCORE_FORMATS: { id: ScoreFormat; label: string; example: string }[
 	{ id: 'pt100', label: '100 point', example: '87' },
 	{ id: 'pt10dec', label: '10 point decimal', example: '8.7' },
 	{ id: 'pt10', label: '10 point', example: '9' },
-	{ id: 'star5', label: '5 stars', example: '★★★★½' },
+	{ id: 'star5', label: '5 stars', example: '4½ stars' },
 	{ id: 'smiley3', label: '3 smileys', example: '🙂' }
 ];
 
@@ -64,10 +64,12 @@ export function formatScore(value: number | null, format: ScoreFormat): string {
 		case 'pt10':
 			return String(Math.round(shown));
 		case 'star5': {
+			// In words: stars are drawn as icons (`Stars`), never as a glyph.
+			// Zero stars is a rating, not the dash of none.
 			const full = Math.floor(shown);
 			const half = shown - full >= 0.5;
-			// Zero stars is a rating, not the dash of none.
-			return '★'.repeat(full) + (half ? '½' : '') || '0★';
+			const count = `${full || (half ? '' : '0')}${half ? '½' : ''}`;
+			return `${count} ${full === 1 && !half ? 'star' : 'stars'}`;
 		}
 		case 'smiley3':
 			return SMILEYS[Math.max(1, Math.min(3, Math.round(shown)))] ?? '–';
