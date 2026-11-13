@@ -42,42 +42,37 @@
 		toasts.push('Signed out');
 		await goto('/login', { replaceState: true });
 	}
+
+	const status = $derived(session.status);
 </script>
 
 <section class="block" id="this-instance">
 	<div class="section-head"><h2>This instance</h2></div>
 
-	<div class="instance card">
-		<Logo size={38} />
-		<dl class="facts">
-			<div>
-				<dt>Signed in as</dt>
-				<dd>{session.status?.username ?? '—'}</dd>
-			</div>
-			<div>
-				<dt>Version</dt>
-				<dd>{session.status?.version ?? '—'}</dd>
-			</div>
-			<div>
-				<dt>Provider region</dt>
-				<dd>{session.status?.region ?? '—'}</dd>
-			</div>
-			<div>
-				<dt>TMDB key</dt>
-				<dd class={session.status?.tmdb_configured ? 'ok' : 'bad'}>
-					{session.status?.tmdb_configured ? 'configured' : 'missing'}
-				</dd>
-			</div>
-		</dl>
+	<div class="instance list-pane">
+		<div class="row">
+			<Logo size={34} />
+			<span class="label">
+				<strong>Frog {status?.version ?? ''}</strong>
+				<span class="faint"
+					>Signed in as {status?.username ?? '—'}{status?.region
+						? ` · Region ${status.region}`
+						: ''}</span
+				>
+			</span>
+			<button class="btn ghost small" onclick={signOut}>Sign out</button>
+		</div>
+		{#if status && !status.tmdb_configured}
+			<p class="missing">TMDB key missing: Frog cannot find titles until one is set.</p>
+		{/if}
 	</div>
 
-	<div class="actions">
-		<a class="btn" href="/whats-new">What's new</a>
-		<a class="btn ghost" href="/about">About</a>
-		<button class="btn ghost" onclick={checkForUpdates} disabled={update.state === 'checking'}>
+	<div class="links">
+		<a href="/whats-new">What’s new</a>
+		<a href="/about">About</a>
+		<button onclick={checkForUpdates} disabled={update.state === 'checking'}>
 			{update.state === 'checking' ? 'Checking…' : 'Check for updates'}
 		</button>
-		<button class="btn ghost" onclick={signOut}>Sign out</button>
 	</div>
 
 	{#if update.state === 'available'}
@@ -95,54 +90,65 @@
 
 <style>
 	.block {
-		margin-bottom: 44px;
+		margin-bottom: 36px;
 	}
 
-	.actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 9px;
-		align-items: center;
-	}
-
-	.instance {
+	.row {
 		display: flex;
 		align-items: center;
-		gap: 20px;
-		padding: 18px;
-		margin-bottom: 14px;
+		gap: 14px;
+		padding: 14px 18px;
 	}
 
-	.facts {
+	.label {
 		flex: 1;
-		margin: 0;
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-		gap: 10px 20px;
-	}
-
-	.facts div {
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
-		font-size: 0.86rem;
+		min-width: 0;
 	}
 
-	dt {
-		color: var(--text-dim);
-		font-size: 0.76rem;
+	.label .faint {
+		font-size: 0.78rem;
 	}
 
-	dd {
+	.btn.small {
+		flex: none;
+		padding: 7px 13px;
+		font-size: 0.8rem;
+	}
+
+	.missing {
 		margin: 0;
-		font-weight: 600;
+		padding: 10px 18px 14px;
+		font-size: 0.82rem;
+		color: var(--bad);
 	}
 
-	dd.ok {
-		color: var(--good);
+	/* Quiet links under the card: these are rarely the reason to be here. */
+	.links {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 18px;
+		margin-top: 12px;
+		padding: 0 4px;
+		font-size: 0.84rem;
 	}
-	dd.bad {
-		color: var(--bad);
+
+	.links a,
+	.links button {
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--text-dim);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.links a:hover,
+	.links button:hover:not(:disabled) {
+		color: var(--text);
+		text-decoration: underline;
 	}
 
 	.update {
@@ -160,12 +166,5 @@
 	.update a {
 		color: var(--accent);
 		text-decoration: underline;
-	}
-
-	@media (max-width: 720px) {
-		.instance {
-			flex-direction: column;
-			align-items: flex-start;
-		}
 	}
 </style>

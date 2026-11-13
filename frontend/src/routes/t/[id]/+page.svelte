@@ -235,6 +235,7 @@
 	);
 
 	const cast = $derived(uniqueBy(detail?.cast ?? [], (p) => p.id));
+	const studios = $derived(uniqueBy(detail?.studios ?? [], (s) => s.id));
 	const trailers = $derived(uniqueBy(detail?.trailers ?? [], (t) => t.key));
 	const parts = $derived(uniqueBy(detail?.collection?.parts ?? [], titleKey));
 	const recommendations = $derived(uniqueBy(detail?.recommendations ?? [], titleKey));
@@ -255,11 +256,22 @@
 	/** Trailers open on studio logos and credits; this is where the film starts. */
 	const AMBIENT_FROM = 12;
 	/**
-	 * YouTube draws its own controls over a player that has just started, for
-	 * a moment: the trailer shows only once it has played this long.
+	 * YouTube draws its title over a player that has just started, for a
+	 * moment: the trailer shows only once it has played this long. The title
+	 * along the top is cut off by the player's size anyway, so a short wait is
+	 * enough.
 	 */
-	const AMBIENT_SETTLE = 3000;
+	const AMBIENT_SETTLE = 1200;
+	/** How long after the page has drawn the trailer starts loading. */
+	const AMBIENT_AFTER = 800;
+	/**
+	 * Back to AMBIENT_FROM this long before the end, so YouTube's end screen never
+	 * comes. The player reports its time about twice a second and its length in
+	 * whole seconds, so a narrower margin can fall between two reports.
+	 */
+	const AMBIENT_LOOP = 3;
 	let settling: ReturnType<typeof setTimeout> | undefined;
+	let looping = false;
 
 	/** Tell the trailer behind the page to do something, as YouTube's script would. */
 	function command(func: string, args: unknown[] = []) {
@@ -277,9 +289,10 @@
 			settling = setTimeout(() => (ambientPlaying = true), AMBIENT_SETTLE);
 			return;
 		}
-		// Anything else (buffering, paused, ended) and it goes, so nothing of
-		// the player itself is ever seen.
+		// Anything else (buffering, paused, ended) and the picture covers it at
+		// once, so nothing of the player itself is ever seen.
 		ambientPlaying = false;
+		looping = false;
 		if (state === 0) {
 			// At the end: round again from past the credits.
 			command('seekTo', [AMBIENT_FROM, true]);
@@ -289,12 +302,45 @@
 	$effect(() => {
 		ambient = null;
 		ambientPlaying = false;
+		ambientLength = 0;
 		clearTimeout(settling);
 		const key = trailers[0]?.key;
 		if (!key || !settings.current.trailerAutoplay || settings.current.dataSaver) return;
 		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-		const timer = setTimeout(() => (ambient = key), 1500);
+		const timer = setTimeout(() => (ambient = key), AMBIENT_AFTER);
 		return () => clearTimeout(timer);
+	});
+
+	/** The trailer's length: YouTube says it once, and the time on its own after. */
+	let ambientLength = 0;
+
+	/** Where the trailer behind the page is: loop it before YouTube's end screen. */
+	function ambientTime(info: { currentTime?: number; duration?: number }) {
+		if (typeof info.duration === 'number' && info.duration > 0) ambientLength = info.duration;
+		const at = info.currentTime;
+		const duration = ambientLength;
+		if (typeof at !== 'number' || !duration) return;
+		if (at < duration - AMBIENT_LOOP) {
+			// Back from the end, buffered or not: the next end loops again.
+			looping = false;
+			return;
+		}
+		if (looping || duration < AMBIENT_FROM + 10) return;
+		looping = true;
+		ambientPlaying = false;
+		command('seekTo', [AMBIENT_FROM, true]);
+	}
+
+	// A tab in the background pauses the video, and YouTube shows its button
+	// as it resumes: the picture is back before that can be seen.
+	$effect(() => {
+		const onHide = () => {
+			if (!document.hidden) return;
+			clearTimeout(settling);
+			ambientPlaying = false;
+		};
+		document.addEventListener('visibilitychange', onHide);
+		return () => document.removeEventListener('visibilitychange', onHide);
 	});
 
 	const providers = $derived(detail?.providers);
@@ -369,6 +415,9 @@
 			const state = typeof info === 'number' ? info : info?.playerState;
 			if (behind && data?.event === 'onStateChange' && typeof state === 'number') {
 				ambientState(state);
+			}
+			if (behind && data?.event === 'infoDelivery' && info && typeof info === 'object') {
+				ambientTime(info as { currentTime?: number; duration?: number });
 			}
 			if (data?.event !== 'onError') return;
 			// The trailer behind the page goes quietly; the one opened says so.
@@ -754,6 +803,30 @@
 							</div>
 						</section>
 					{/if}
+
+					{#if studios.length}
+						<section class="block studios">
+							<div class="section-head"><h2>Studios</h2></div>
+							<div class="studio-list">
+								{#each studios as s (s.id)}
+									{@const logo = img(s.logo_path, 'w185')}
+									<a href="/studio/{s.id}" class="studio-item">
+										<span class="studio-logo" class:blank={!logo} aria-hidden="true">
+											{#if logo}
+												<img src={logo} alt="" loading="lazy" />
+											{:else}
+												{s.name.slice(0, 1)}
+											{/if}
+										</span>
+										<span class="studio-name">
+											<strong>{s.name}</strong>
+											{#if s.country}<span class="faint">{s.country}</span>{/if}
+										</span>
+									</a>
+								{/each}
+							</div>
+						</section>
+					{/if}
 				</aside>
 			</div>
 
@@ -1013,13 +1086,12 @@
 	}
 
 	/* The picture lifts off once the trailer has played a moment, so the
-	   player's own buttons and its loading screen are never seen. */
-	.backdrop {
-		transition: opacity 1200ms ease;
-	}
-
+	   player's own buttons and its loading screen are never seen. It only
+	   fades on the way out: when the player stops, it is back at once, before
+	   YouTube can draw a button. */
 	.backdrop.under {
 		opacity: 0;
+		transition: opacity 700ms ease;
 	}
 
 	/* Larger than the hero on every side: YouTube's title along the top and
@@ -1467,6 +1539,70 @@
 	}
 
 	.crew-item span {
+		font-size: 0.75rem;
+	}
+
+	.studio-list {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+		gap: 0 16px;
+	}
+
+	.side .studio-list {
+		grid-template-columns: 1fr;
+	}
+
+	.studio-item {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		min-width: 0;
+		padding: 8px 0;
+		border-bottom: 1px solid var(--line);
+		font-size: 0.88rem;
+	}
+
+	.studio-item:hover strong {
+		color: var(--accent);
+	}
+
+	/* Logos are drawn for white paper, often dark on transparent, so they sit
+	   on a light tile in every theme, as in Search. */
+	.studio-logo {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 54px;
+		height: 36px;
+		padding: 5px;
+		overflow: hidden;
+		border-radius: var(--radius-sm);
+		background: #f6f4ec;
+		border: 1px solid var(--line);
+	}
+
+	/* Sized to the tile, so a tall logo shrinks instead of spilling out. */
+	.studio-logo img {
+		width: 100%;
+		height: 100%;
+		min-height: 0;
+		object-fit: contain;
+	}
+
+	.studio-logo.blank {
+		background: var(--bg-elev-2);
+		color: var(--text-dim);
+		font-family: var(--font-display);
+		font-size: 1rem;
+	}
+
+	.studio-name {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+	}
+
+	.studio-name span {
 		font-size: 0.75rem;
 	}
 

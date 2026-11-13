@@ -16,6 +16,10 @@ pub struct AppState {
     pub login_failures: Arc<Throttle>,
     /// Tries of a reset link, one key per caller address.
     pub reset_failures: Arc<Throttle>,
+    /// Wrong browser extension tokens, one key per caller address.
+    pub token_failures: Arc<Throttle>,
+    /// The browser extension's Firefox build, and the links Settings gives out to it.
+    pub addon: Arc<crate::addon::Addon>,
     /// Held while a name is checked and written. The column is only unique as
     /// typed, so "Mihai" and "mihai" arriving together would both pass the
     /// check; one process means this one lock is enough, with no migration that
@@ -39,6 +43,8 @@ impl AppState {
             config: Arc::new(config),
             login_failures: Arc::new(Throttle::for_sign_in()),
             reset_failures: Arc::new(Throttle::for_resets()),
+            token_failures: Arc::new(Throttle::for_tokens()),
+            addon: Arc::new(crate::addon::Addon::default()),
             names: Arc::new(tokio::sync::Mutex::new(())),
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(15))

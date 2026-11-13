@@ -27,6 +27,10 @@ pub struct Config {
     /// TVmaze's public API, for the moment an episode airs. It needs no key.
     /// Only tests point this elsewhere.
     pub tvmaze_url: String,
+    /// Where Frog's releases are published, for the signed Firefox build of
+    /// the browser extension that Settings installs from here. Only tests and
+    /// forks point this elsewhere.
+    pub extension_releases: String,
 }
 
 /// A free personal key from fanart.tv. Sent as a header, so it is in no
@@ -163,6 +167,10 @@ impl Config {
                 assets_url: env_or("FANART_ASSETS_URL", "https://assets.fanart.tv"),
             }),
             tvmaze_url: env_or("TVMAZE_API_URL", "https://api.tvmaze.com"),
+            extension_releases: env_or(
+                "FROG_EXTENSION_RELEASES",
+                "https://github.com/Frog-Movie-Tv/Frog/releases",
+            ),
         })
     }
 

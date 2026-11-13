@@ -367,6 +367,37 @@ pub struct CrewMember {
     pub profile_path: Option<String>,
 }
 
+/// A studio that made a title, as its page lists it. A negative id is
+/// AniList's studio, which the studio page reads from AniList.
+#[derive(Debug, Clone, Serialize)]
+pub struct Studio {
+    pub id: i64,
+    pub name: String,
+    pub logo_path: Option<String>,
+    pub country: Option<String>,
+}
+
+/// Every studio TMDB (or AniList, shaped alike) credits, in its order, once each.
+pub fn studios(v: &Value) -> Vec<Studio> {
+    let out = v
+        .get("production_companies")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|c| {
+                    Some(Studio {
+                        id: i64_at(c, "id").filter(|id| *id != 0)?,
+                        name: str_at(c, "name").filter(|n| !n.trim().is_empty())?,
+                        logo_path: str_at(c, "logo_path"),
+                        country: str_at(c, "origin_country").filter(|c| !c.is_empty()),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    unique_by(out, |s| s.id)
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Trailer {
     pub key: String,
@@ -940,6 +971,21 @@ mod tests {
         assert_eq!(c.season_count, Some(3));
         assert_eq!(c.imdb_id.as_deref(), Some("tt123"));
         assert_eq!(c.genres_json, "[\"Drama\"]");
+    }
+
+    #[test]
+    fn studios_keep_their_order_once_each() {
+        let v = json!({ "production_companies": [
+            { "id": 420, "name": "Marvel Studios", "logo_path": "/m.png", "origin_country": "US" },
+            { "id": 7, "name": "", "logo_path": null },
+            { "id": 420, "name": "Marvel Studios", "logo_path": "/m.png" },
+            { "id": -18, "name": "MAPPA", "logo_path": null, "origin_country": "" }
+        ]});
+        let s = studios(&v);
+        assert_eq!(s.iter().map(|s| s.id).collect::<Vec<_>>(), vec![420, -18]);
+        assert_eq!(s[0].country.as_deref(), Some("US"));
+        assert!(s[1].country.is_none());
+        assert!(studios(&json!({})).is_empty());
     }
 
     #[test]

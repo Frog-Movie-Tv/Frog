@@ -15,7 +15,7 @@ In progress.
 
 ## [1.6.0] — Tomato Frog — 2026-11-13
 
-Profiles of your own: badges, a colour and a banner that stands up.
+Profiles of your own, and Frog in your browser.
 
 ![Your profile, with a banner standing beside it](docs/screenshots/profile-desktop-pond.png)
 
@@ -35,9 +35,15 @@ Profiles of your own: badges, a colour and a banner that stands up.
 - **Banners your way.** Stand your banner as a column the height of the
   screen beside your profile, or keep it across the top in short, tall or full
   height. Tap any banner to see the whole picture.
+- **Frog in your browser.** An extension for Firefox and Chrome notices what
+  you watch on any site and logs it when you are nearly done, with a moment
+  to undo. When it is not sure, it asks, and it remembers your answer for
+  that site. Get it, and its token, in Settings → Connections.
 
 ### Improvements
 
+- A title's page lists the studios behind it, each with its logo. Open one to
+  see everything else it made.
 - Pin any title in your library: find it by name, and take a pin off with
   one tap.
 - Profile settings are laid out like your profile: banner, picture, name and
@@ -45,6 +51,10 @@ Profiles of your own: badges, a colour and a banner that stands up.
 - Theme is simpler: pick one and go.
 - Appearance keeps to what changes how Frog looks; the Home hero is under
   Home and menus, beside where Frog opens.
+- Settings is calmer. Navigation is a switch and a tab-bar button a page,
+  score formats show each scale once, and Your data keeps merged titles and
+  emptying your library out of the way until you ask.
+- Trailers behind a title start sooner and show nothing but the film.
 
 ### Fixes
 

@@ -87,6 +87,9 @@
 		settings.set('goKeys', keys);
 	}
 
+	/** Shortcuts are set rarely, so their fields wait behind one button. */
+	let editingKeys = $state(false);
+
 	function toggleTab(href: string, on: boolean) {
 		if (on && s.navTabs.length >= MAX_TABS) return;
 		settings.set('navTabs', on ? [...s.navTabs, href] : s.navTabs.filter((h) => h !== href));
@@ -141,27 +144,28 @@
 			{@const row = rowInfo(id)}
 			{#if row}
 				<li>
-					<span class="grip"><Icon name="grip" size={16} /></span>
 					<span class="label">
 						<strong>{row.label}</strong><span class="faint">{row.hint}</span>
 					</span>
-					<button
-						class="icon-btn"
-						disabled={i === 0}
-						aria-label="Move up"
-						onclick={() => moveRow(id, -1)}
-					>
-						<Icon name="chevron-up" size={15} />
-					</button>
-					<button
-						class="icon-btn"
-						disabled={i === s.homeRows.length - 1}
-						aria-label="Move down"
-						onclick={() => moveRow(id, 1)}
-					>
-						<Icon name="chevron-down" size={15} />
-					</button>
-					<button class="icon-btn" aria-label="Remove row" onclick={() => toggleRow(id)}>
+					<span class="order">
+						<button
+							class="icon-btn"
+							disabled={i === 0}
+							aria-label="Move {row.label} up"
+							onclick={() => moveRow(id, -1)}
+						>
+							<Icon name="chevron-up" size={15} />
+						</button>
+						<button
+							class="icon-btn"
+							disabled={i === s.homeRows.length - 1}
+							aria-label="Move {row.label} down"
+							onclick={() => moveRow(id, 1)}
+						>
+							<Icon name="chevron-down" size={15} />
+						</button>
+					</span>
+					<button class="icon-btn" aria-label="Remove {row.label}" onclick={() => toggleRow(id)}>
 						<Icon name="x" size={15} />
 					</button>
 				</li>
@@ -187,60 +191,86 @@
 <section class="block">
 	<div class="section-head">
 		<h2>Navigation</h2>
-		<span class="faint">{s.navTabs.length} of {MAX_TABS} in the phone tab bar</span>
+		<button class="btn ghost small keys-toggle" onclick={() => (editingKeys = !editingKeys)}>
+			{editingKeys ? 'Done' : 'Edit shortcuts'}
+		</button>
 	</div>
 
-	<ul class="builder list-pane">
+	<ul class="builder nav list-pane">
+		<li class="legend" aria-hidden="true">
+			<span class="label"></span>
+			<span class="col">Tab bar <span class="count">{s.navTabs.length}/{MAX_TABS}</span></span>
+			<span class="col">Menu</span>
+			<span class="order"></span>
+		</li>
 		{#each navPages as navPage, i (navPage.href)}
 			{@const inBar = !s.navHidden.includes(navPage.href)}
 			{@const inTabs = s.navTabs.includes(navPage.href)}
+			{@const key = goKeys[navPage.href]}
 			<li>
 				<span class="nav-icon"><Icon name={navPage.icon as IconName} size={17} /></span>
-				<span class="label"><strong>{navPage.label}</strong></span>
-				<label class="mini" title="Show in the menu bar">
+				<span class="label">
+					<strong>{navPage.label}</strong>
+					{#if editingKeys}
+						<label class="key">
+							G then
+							<input
+								class="input"
+								value={key ?? ''}
+								maxlength="1"
+								aria-label="Shortcut letter for {navPage.label}"
+								onchange={(e) => setGoKey(navPage.href, e.currentTarget.value)}
+							/>
+						</label>
+					{:else if key}
+						<span class="key faint" title="Press G, then {key.toUpperCase()}"
+							><kbd>G</kbd><kbd>{key.toUpperCase()}</kbd></span
+						>
+					{/if}
+				</span>
+				<span class="col">
+					<button
+						class="tab-toggle"
+						class:on={inTabs}
+						aria-pressed={inTabs}
+						aria-label="{navPage.label} in the phone tab bar"
+						title={!inTabs && s.navTabs.length >= MAX_TABS
+							? `The tab bar holds ${MAX_TABS}`
+							: 'In the phone tab bar'}
+						disabled={!inTabs && s.navTabs.length >= MAX_TABS}
+						onclick={() => toggleTab(navPage.href, !inTabs)}
+					>
+						<Icon name="phone" size={16} filled={inTabs} />
+					</button>
+				</span>
+				<span class="col">
 					<input
 						type="checkbox"
+						class="toggle-switch"
+						aria-label="{navPage.label} in the menu"
 						checked={inBar || navPage.fixed}
 						disabled={navPage.fixed}
 						onchange={(e) => toggleHidden(navPage.href, !e.currentTarget.checked)}
 					/>
-					Menu
-				</label>
-				<label class="mini key" title="Press G, then this letter, to go there">
-					G
-					<input
-						class="input"
-						value={goKeys[navPage.href] ?? ''}
-						maxlength="1"
-						aria-label="Shortcut letter for {navPage.label}"
-						onchange={(e) => setGoKey(navPage.href, e.currentTarget.value)}
-					/>
-				</label>
-				<label class="mini" title="Show in the phone tab bar">
-					<input
-						type="checkbox"
-						checked={inTabs}
-						disabled={!inTabs && s.navTabs.length >= MAX_TABS}
-						onchange={(e) => toggleTab(navPage.href, e.currentTarget.checked)}
-					/>
-					Tab
-				</label>
-				<button
-					class="icon-btn"
-					disabled={i === 0}
-					aria-label="Move {navPage.label} up"
-					onclick={() => moveNav(navPage.href, -1)}
-				>
-					<Icon name="chevron-up" size={15} />
-				</button>
-				<button
-					class="icon-btn"
-					disabled={i === navPages.length - 1}
-					aria-label="Move {navPage.label} down"
-					onclick={() => moveNav(navPage.href, 1)}
-				>
-					<Icon name="chevron-down" size={15} />
-				</button>
+				</span>
+				<span class="order">
+					<button
+						class="icon-btn"
+						disabled={i === 0}
+						aria-label="Move {navPage.label} up"
+						onclick={() => moveNav(navPage.href, -1)}
+					>
+						<Icon name="chevron-up" size={15} />
+					</button>
+					<button
+						class="icon-btn"
+						disabled={i === navPages.length - 1}
+						aria-label="Move {navPage.label} down"
+						onclick={() => moveNav(navPage.href, 1)}
+					>
+						<Icon name="chevron-down" size={15} />
+					</button>
+				</span>
 			</li>
 		{/each}
 	</ul>
@@ -278,13 +308,6 @@
 		font-size: 0.78rem;
 	}
 
-	input[type='checkbox']:not(.toggle-switch) {
-		width: 20px;
-		height: 20px;
-		accent-color: var(--accent);
-		flex: none;
-	}
-
 	.actions {
 		display: flex;
 		flex-wrap: wrap;
@@ -308,10 +331,47 @@
 		align-items: center;
 		gap: 12px;
 		padding: 11px 14px;
+		min-height: 54px;
 	}
 
 	.builder .label {
 		flex: 1;
+	}
+
+	/* One label over each column, rather than the same word on every row. */
+	.nav .legend {
+		min-height: 0;
+		padding-top: 9px;
+		padding-bottom: 7px;
+		font-size: 0.72rem;
+		font-weight: 650;
+		color: var(--text-faint);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.nav .legend .col {
+		white-space: nowrap;
+	}
+
+	.nav .legend .count {
+		margin-left: 4px;
+		font-weight: 500;
+		text-transform: none;
+	}
+
+	/* A page's name with its shortcut beside it, so every row is one height. */
+	.nav .label {
+		flex-direction: row;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.col {
+		flex: none;
+		width: 76px;
+		display: flex;
+		justify-content: center;
 	}
 
 	.nav-icon {
@@ -319,22 +379,63 @@
 		color: var(--text-faint);
 	}
 
-	.mini {
+	.key {
 		display: inline-flex;
 		align-items: center;
-		gap: 6px;
-		font-size: 0.76rem;
+		gap: 4px;
+		font-size: 0.74rem;
 		color: var(--text-dim);
-		cursor: pointer;
 	}
 
-	.mini input {
-		width: 16px;
-		height: 16px;
+	kbd {
+		min-width: 1.5em;
+		padding: 0 4px;
+		border: 1px solid var(--line);
+		border-radius: 5px;
+		font-family: var(--font-mono);
+		font-size: 0.7rem;
+		text-align: center;
 	}
 
-	.grip {
+	.key input {
+		width: 2.2em;
+		padding: 2px 4px;
+		text-align: center;
+		text-transform: lowercase;
+		font-family: var(--font-mono);
+	}
+
+	.tab-toggle {
+		display: grid;
+		place-items: center;
+		width: 34px;
+		height: 34px;
+		border-radius: 10px;
+		border: 1px solid var(--line);
+		background: transparent;
 		color: var(--text-faint);
+		cursor: pointer;
+		transition:
+			background var(--fast) var(--ease),
+			color var(--fast) var(--ease);
+	}
+
+	.tab-toggle.on {
+		background: var(--accent-soft);
+		border-color: transparent;
+		color: var(--accent);
+	}
+
+	.tab-toggle:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
+	}
+
+	.order {
+		flex: none;
+		display: flex;
+		gap: 4px;
+		width: 60px;
 	}
 
 	.icon-btn {
@@ -358,15 +459,44 @@
 		cursor: not-allowed;
 	}
 
+	/* With a mouse, moving a row is offered where the pointer is, so the
+	   list reads as names and switches until then. */
+	@media (hover: hover) {
+		.builder li .order {
+			opacity: 0;
+			transition: opacity var(--fast) var(--ease);
+		}
+
+		.builder li:hover .order,
+		.builder li:focus-within .order {
+			opacity: 1;
+		}
+	}
+
 	@media (max-width: 720px) {
 		.row {
 			align-items: flex-start;
 			flex-direction: column;
 			gap: 10px;
 		}
+
+		.col {
+			width: 52px;
+		}
+
+		.nav .legend {
+			font-size: 0.66rem;
+		}
 	}
+
 	@media (max-width: 760px) {
-		.icon-btn {
+		.order {
+			width: auto;
+		}
+
+		/* Big enough for a finger. */
+		.icon-btn,
+		.tab-toggle {
 			width: 44px;
 			height: 44px;
 		}
@@ -374,17 +504,9 @@
 
 	/* Shortcuts are for a keyboard: a phone has no room for them, and no use. */
 	@media (max-width: 760px), (hover: none) {
-		.key {
+		.key,
+		.keys-toggle {
 			display: none;
 		}
-	}
-
-	/* G, then a letter: the page's keyboard shortcut. */
-	.key input {
-		width: 2.2em;
-		padding: 2px 4px;
-		text-align: center;
-		text-transform: lowercase;
-		font-family: var(--font-mono);
 	}
 </style>

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { backCloses } from '#lib/layers.svelte';
-	import { anchorTo, onScreen } from '#lib/onscreen';
+	import { anchorTo, onScreen, SHEET_QUERY } from '#lib/onscreen';
 	import Icon from './Icon.svelte';
 
 	interface Option {
@@ -56,7 +56,8 @@
 	 * can cut it off: a settings pane rounds its corners by hiding what runs
 	 * past them, and a menu left inside one lost its last choices. On a
 	 * computer it is then placed under its button and follows it; on a phone
-	 * it is a sheet over everything. Inside a dialog it stays where it is.
+	 * it is a sheet over everything, placed by its own CSS. Inside a dialog it
+	 * stays where it is.
 	 */
 	function lift(node: HTMLElement, inPlace: boolean) {
 		if (inPlace) return;
@@ -67,6 +68,9 @@
 	function place(node: HTMLElement, inPlace: boolean) {
 		return inPlace ? onScreen(node, false) : anchorTo(node, trigger);
 	}
+
+	/** On a phone, the sheet: its own CSS places it. */
+	const isSheet = () => window.matchMedia(SHEET_QUERY).matches;
 
 	function onKey(event: KeyboardEvent) {
 		if (!open) {
@@ -124,8 +128,7 @@
 			<ul
 				class="menu"
 				class:nested
-				class:lifted={!nested}
-				style:min-width={!nested && trigger ? `${trigger.offsetWidth}px` : undefined}
+				class:lifted={!nested && !isSheet()}
 				bind:this={menu}
 				use:place={nested}
 				role="listbox"
@@ -222,14 +225,6 @@
 		text-overflow: ellipsis;
 	}
 
-	/* Moved to the end of the page (see `lift`), placed by `anchorTo`. */
-	.menu.lifted {
-		position: fixed;
-		z-index: 200;
-		top: auto;
-		right: auto;
-	}
-
 	.menu {
 		position: absolute;
 		z-index: 70;
@@ -249,6 +244,16 @@
 			var(--shadow-3);
 		/* Grows out of what opened it. */
 		animation: pop 180ms var(--spring) backwards;
+	}
+
+	/* Moved to the end of the page (see `lift`), pinned to its button by `anchorTo`. */
+	.menu.lifted {
+		position: fixed;
+		z-index: 200;
+		top: 0;
+		left: 0;
+		right: auto;
+		min-width: 0;
 	}
 
 	.option {

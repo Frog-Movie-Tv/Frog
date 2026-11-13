@@ -253,6 +253,8 @@ export interface TitleDetail {
 	homepage: string | null;
 	cast: CastMember[];
 	crew: CrewMember[];
+	/** Who made it, as TMDB (or AniList) credits them. A negative id is AniList's studio. */
+	studios?: StudioResult[];
 	trailers: Trailer[];
 	providers: ProviderGroup;
 	provider_region: string;
@@ -625,6 +627,14 @@ export interface DeviceSession {
 	expires_at: string;
 	device: string | null;
 	current: boolean;
+}
+
+/** A token for the browser extension. The token itself is shown once, when made. */
+export interface ApiToken {
+	id: number;
+	name: string;
+	created_at: string;
+	last_used_at: string | null;
 }
 
 export interface AdminUser {

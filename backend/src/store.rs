@@ -2524,26 +2524,77 @@ pub async fn add_episode_watch(
     when: &str,
     undated: bool,
 ) -> AppResult<()> {
-    let seen_before: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE user_id = ? AND episode_id = ?")
-            .bind(user_id)
-            .bind(episode_id)
-            .fetch_one(pool)
-            .await?;
-    sqlx::query(
+    add_watch(
+        pool,
+        user_id,
+        title_id,
+        Some(episode_id),
+        when,
+        undated,
+        "manual",
+    )
+    .await?;
+    Ok(())
+}
+
+/// One watch of an episode, or of a film when `episode_id` is None, from
+/// `source`; a rewatch when this account has seen it before. Gives the
+/// watch's id, so whoever added it can take exactly that one back.
+pub async fn add_watch(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    episode_id: Option<i64>,
+    when: &str,
+    undated: bool,
+    source: &str,
+) -> AppResult<i64> {
+    let (seen_before,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM watch_event
+          WHERE user_id = ? AND title_id = ? AND episode_id IS ?",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .bind(episode_id)
+    .fetch_one(pool)
+    .await?;
+    let (id,): (i64,) = sqlx::query_as(
         "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
                                   source, undated)
-         VALUES (?, ?, ?, ?, ?, 'manual', ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
     )
     .bind(user_id)
     .bind(title_id)
     .bind(episode_id)
     .bind(when)
-    .bind(i64::from(seen_before.0 > 0))
+    .bind(i64::from(seen_before > 0))
+    .bind(source)
     .bind(i64::from(undated))
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
-    Ok(())
+    Ok(id)
+}
+
+/// Take back one watch by its id. False when the account has no such watch,
+/// because it was unticked in the meantime.
+pub async fn remove_watch(pool: &SqlitePool, user_id: i64, watch_id: i64) -> AppResult<bool> {
+    let done = sqlx::query("DELETE FROM watch_event WHERE id = ? AND user_id = ?")
+        .bind(watch_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(done.rows_affected() > 0)
+}
+
+/// Whether the account has any watch of a title, episodes and film alike.
+pub async fn has_watches(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppResult<bool> {
+    let (n,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE user_id = ? AND title_id = ?")
+            .bind(user_id)
+            .bind(title_id)
+            .fetch_one(pool)
+            .await?;
+    Ok(n > 0)
 }
 
 /// Clear every watch of an episode, handing them back so undo can put back

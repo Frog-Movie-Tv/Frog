@@ -100,6 +100,68 @@ jobs:
             echo "nothing written for $VERSION; leaving the generated body"
           fi
 
+  # The browser extension goes on the release page beside the image: the
+  # Chromium zip for Load unpacked, and a Firefox build Mozilla has signed as
+  # unlisted, which Zen installs from the file. Here rather than on the tag,
+  # since a tag made with GITHUB_TOKEN starts no workflow.
+  extension:
+    name: Sign and attach the browser extension
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build both
+        run: npm run zip && npm run zip:firefox
+
+      # Unlisted: signed for installing from a file, never published on
+      # addons.mozilla.org. The source goes with it, because the build is bundled.
+      - name: Sign the Firefox build
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          if [ -z "$AMO_JWT_ISSUER" ] || [ -z "$AMO_JWT_SECRET" ]; then
+            echo "::warning::AMO_JWT_ISSUER and AMO_JWT_SECRET are not set; the Firefox build is not signed"
+            exit 0
+          fi
+          npx web-ext sign             --channel unlisted             --source-dir .output/firefox-mv3             --upload-source-code "$(ls .output/*-sources.zip)"             --artifacts-dir web-ext-artifacts             --api-key "$AMO_JWT_ISSUER"             --api-secret "$AMO_JWT_SECRET"
+
+      # The same names on every release, so `releases/latest/download/…`
+      # always means the newest: that is what Frog's Settings links to, and
+      # where Zen and Firefox look for updates (`update_url` in the manifest).
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+          REPO: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          mkdir -p release
+          cp "$(ls .output/*-chrome.zip)" release/frog-extension-chrome.zip
+          xpi="$(ls web-ext-artifacts/*.xpi 2>/dev/null | head -n 1 || true)"
+          if [ -n "$xpi" ]; then
+            cp "$xpi" release/frog-extension-firefox.xpi
+            node scripts/updates-json.mjs "$REPO/releases/download/$TAG/frog-extension-firefox.xpi" > release/updates.json
+          fi
+          gh release upload "$TAG" release/* --clobber
+
   # A tag created with GITHUB_TOKEN does not start a workflow run, so the tag
   # build in CI never happens and production has no image to pull. Publish it
   # here instead, from the release release-please just made.

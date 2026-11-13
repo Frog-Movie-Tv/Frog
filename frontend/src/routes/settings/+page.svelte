@@ -13,6 +13,7 @@
 	import DataSettings from '#lib/components/settings/DataSettings.svelte';
 	import ClearLibrary from '#lib/components/settings/ClearLibrary.svelte';
 	import InstanceInfo from '#lib/components/settings/InstanceInfo.svelte';
+	import BrowserExtension from '#lib/components/settings/BrowserExtension.svelte';
 	import { toasts } from '#lib/toast.svelte';
 
 	// The page is the frame: which group is open, and the way back from
@@ -115,6 +116,7 @@
 						Keep Frog in step with the other places you track what you watch.
 					</p>
 					<AniListConnect />
+					<BrowserExtension />
 				</section>
 			{:else if tab === 'data'}
 				<DataSettings />

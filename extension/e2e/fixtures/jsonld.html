@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Episode page</title>
+		<script type="application/ld+json">
+			{
+				"@context": "https://schema.org",
+				"@type": "TVEpisode",
+				"episodeNumber": 2,
+				"partOfSeason": { "@type": "TVSeason", "seasonNumber": 1 },
+				"partOfSeries": {
+					"@type": "TVSeries",
+					"name": "Severance",
+					"sameAs": "https://www.imdb.com/title/tt11280740/"
+				}
+			}
+		</script>
+		<script src="/player.js"></script>
+	</head>
+	<body>
+		<video width="640" height="360" playsinline muted src="/media/episode.webm"></video>
+	</body>
+</html>

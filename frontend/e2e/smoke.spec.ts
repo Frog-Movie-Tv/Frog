@@ -1446,6 +1446,9 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/activity',
 		'/api/account',
 		'/api/account/sessions',
+		'/api/account/tokens',
+		'/api/extension/link',
+		'/api/ext/me',
 		'/api/admin/users',
 		'/api/admin/instance',
 		'/api/admin/server',
@@ -1497,7 +1500,11 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/t/1/episodes/1/1/watch',
 		'/api/t/1/rewatch',
 		'/api/admin/badges',
-		'/api/admin/badges/restore'
+		'/api/admin/badges/restore',
+		'/api/account/tokens',
+		'/api/ext/resolve',
+		'/api/ext/log',
+		'/api/ext/undo'
 	]) {
 		const res = await request.post(path, { data: {} });
 		expect(res.status(), `POST ${path} should be 401`).toBe(401);
@@ -1526,10 +1533,16 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/account/library',
 		'/api/t/1/library',
 		'/api/admin/badges/1',
-		'/api/admin/badges/1/holders/1'
+		'/api/admin/badges/1/holders/1',
+		'/api/account/tokens/1'
 	]) {
 		const res = await request.delete(path, { data: {} });
 		expect(res.status(), `DELETE ${path} should be 401`).toBe(401);
+	}
+
+	// The Firefox build answers only a link Settings gave out.
+	for (const path of ['/extension/frog.xpi', '/extension/frog.xpi?key=guessed']) {
+		expect((await request.get(path)).status(), `${path} should be 404`).toBe(404);
 	}
 
 	// Joining is open by design, so it cannot be behind the wall. Without a
