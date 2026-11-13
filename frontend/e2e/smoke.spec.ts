@@ -1689,8 +1689,9 @@ test('pictures are made small before they leave the browser', async ({ page }) =
 	});
 
 	const photo = await pictureFile(page, 4000, 3000, 'image/png');
+	await page.getByRole('button', { name: 'Edit banner' }).click();
 	await page
-		.locator('.file', { hasText: 'Upload banner' })
+		.locator('.file', { hasText: 'Upload a picture' })
 		.locator('input')
 		.setInputFiles({ name: 'huge.png', mimeType: 'image/png', buffer: photo });
 	await expect(page.getByText('Banner updated')).toBeVisible();

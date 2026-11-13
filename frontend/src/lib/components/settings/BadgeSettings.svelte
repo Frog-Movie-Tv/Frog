@@ -33,16 +33,22 @@
 </script>
 
 {#if loaded && badges.length}
-	<div class="badges">
-		<div class="head">
-			<strong>Badges</strong>
-			<span class="faint">
-				Drag to order them. The first three sit beside your name{shownCount > 3
-					? ', the rest one tap away'
-					: ''}.
+	<div class="setting">
+		<div class="setting-top">
+			<span class="setting-tile" aria-hidden="true"><Icon name="sparkle" size={18} /></span>
+			<span class="setting-label">
+				<strong>Badges</strong>
+				<span class="faint">
+					Drag to order them. The first three sit beside your name{shownCount > 3
+						? ', the rest one tap away'
+						: ''}.
+				</span>
 			</span>
 		</div>
-		<ol use:sortable={{ onmove: (from, to) => (badges = moved(badges, from, to)), onend: save }}>
+		<ol
+			class="setting-body"
+			use:sortable={{ onmove: (from, to) => (badges = moved(badges, from, to)), onend: save }}
+		>
 			{#each badges as badge (badge.id)}
 				<li data-sort-item class:hidden={!badge.shown}>
 					<button class="handle" data-sort-handle aria-label="Move {badge.name}">
@@ -72,27 +78,9 @@
 {/if}
 
 <style>
-	.badges {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-		padding: 16px 20px;
-		border-top: 1px solid var(--line);
-	}
-
-	.head {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-
-	.head .faint {
-		font-size: 0.84rem;
-	}
-
 	ol {
 		list-style: none;
-		margin: 0;
+		margin-block: 0;
 		padding: 0;
 		display: flex;
 		flex-direction: column;

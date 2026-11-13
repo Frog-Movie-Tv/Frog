@@ -22,14 +22,16 @@ In progress.
 - **Your colour.** Give your profile one of ten colours, in a light, medium or
   dark shade. Everyone who opens your profile sees it in your colour, on every
   theme.
-- **Banners your way.** Stand your banner as a tall column beside your
-  profile, or keep it across the top in short, tall or full height. Tap any
-  banner to see the whole picture.
+- **Banners your way.** Stand your banner as a column the height of the
+  screen beside your profile, or keep it across the top in short, tall or full
+  height. Tap any banner to see the whole picture.
 
 ### Improvements
 
 - Pin any title in your library: find it by name, and take a pin off with
   one tap.
+- Profile settings are laid out like your profile: banner, picture, name and
+  about at the top, saved together, and every other choice in a row of its own.
 - Theme is simpler: pick one and go.
 - Appearance keeps to what changes how Frog looks; the Home hero is under
   Home and menus, beside where Frog opens.

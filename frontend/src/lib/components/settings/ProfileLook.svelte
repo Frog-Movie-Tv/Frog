@@ -7,10 +7,10 @@
 		SHADE_NAMES,
 		isColour,
 		isShade,
-		profileStyle,
 		type ProfileShade
 	} from '#lib/profile-colours';
 	import { currentTone } from '#lib/settings.svelte';
+	import Icon from '../Icon.svelte';
 	import type { Account, ProfileEdit } from '#lib/types';
 
 	interface Props {
@@ -69,144 +69,130 @@
 		return isShade(s) ? s : 'medium';
 	});
 	const tone = $derived(currentTone());
-	const preview = $derived(profileStyle(colour, shade, tone));
-	const name = $derived(account?.display_name || account?.username || '');
 	const layout = $derived(account?.banner_layout ?? 'classic');
 	const height = $derived(account?.banner_height ?? 'short');
 </script>
 
-<div class="look">
-	<div class="head">
-		<strong>Colour</strong>
-		<span class="faint">Your profile wears it for everyone who opens it.</span>
+<div class="setting">
+	<div class="setting-top">
+		<span class="setting-tile" aria-hidden="true"><Icon name="palette" size={18} /></span>
+		<span class="setting-label">
+			<strong>Colour</strong>
+			<span class="faint">Your profile wears it for everyone who opens it.</span>
+		</span>
 	</div>
-
-	<div class="swatches" role="radiogroup" aria-label="Profile colour">
-		<button
-			class="swatch none"
-			class:on={!colour}
-			role="radio"
-			aria-checked={!colour}
-			aria-label="The theme's own"
-			title="The theme's own"
-			onclick={() => save({ profile_color: '' })}
-		></button>
-		{#each PROFILE_COLOURS as c (c)}
+	<div class="setting-body colours">
+		<div class="swatches" role="radiogroup" aria-label="Profile colour">
 			<button
-				class="swatch"
-				class:on={colour === c}
+				class="swatch none"
+				class:on={!colour}
 				role="radio"
-				aria-checked={colour === c}
-				aria-label={COLOUR_NAMES[c]}
-				title={COLOUR_NAMES[c]}
-				style:background={PALETTE[c][shade][tone]}
-				onclick={() => save({ profile_color: c, profile_shade: shade })}
+				aria-checked={!colour}
+				aria-label="The theme's own"
+				title="The theme's own"
+				onclick={() => save({ profile_color: '' })}
 			></button>
-		{/each}
-	</div>
-
-	{#if colour}
-		<div class="segmented shades" role="radiogroup" aria-label="Shade">
-			{#each PROFILE_SHADES as s (s)}
+			{#each PROFILE_COLOURS as c (c)}
 				<button
-					class:on={shade === s}
+					class="swatch"
+					class:on={colour === c}
 					role="radio"
-					aria-checked={shade === s}
-					onclick={() => save({ profile_shade: s })}>{SHADE_NAMES[s]}</button
+					aria-checked={colour === c}
+					aria-label={COLOUR_NAMES[c]}
+					title={COLOUR_NAMES[c]}
+					style:background={PALETTE[c][shade][tone]}
+					onclick={() => save({ profile_color: c, profile_shade: shade })}
 				>
+					{#if colour === c}<Icon name="check" size={14} />{/if}
+				</button>
 			{/each}
 		</div>
-	{/if}
-
-	<!-- Your profile in miniature, in the colour picked. -->
-	<div class="preview" style={preview} aria-hidden="true">
-		<span class="banner"></span>
-		<span class="row">
-			<span class="face">{name.slice(0, 1).toUpperCase()}</span>
-			<span class="who">
-				<b>{name}</b>
-				<span class="taste"><strong>87%</strong> taste match</span>
-			</span>
-			<span class="button">Compare</span>
-		</span>
-		<span class="tiles">
-			<span class="tile"><span>Films</span><b>42</b></span>
-			<span class="tile"><span>Episodes</span><b>318</b></span>
-			<span class="tile"><span>Streak</span><b>6 days</b></span>
-		</span>
-	</div>
-
-	<div class="head">
-		<strong>Banner</strong>
-		<span class="faint">
-			{layout === 'vertical'
-				? 'A portrait column beside everything else, and tall across the top on a phone.'
-				: 'Across the top of your profile. Drag the picture above to choose what shows.'}
-			A tap on it opens it whole.
-		</span>
-	</div>
-	<div class="choices">
-		<div class="segmented" role="radiogroup" aria-label="Banner layout">
-			{#each [['classic', 'Classic'], ['vertical', 'Vertical']] as [id, label] (id)}
-				<button
-					class:on={layout === id}
-					role="radio"
-					aria-checked={layout === id}
-					onclick={() => save({ banner_layout: id === 'classic' ? '' : id })}>{label}</button
-				>
-			{/each}
-		</div>
-		{#if layout !== 'vertical'}
-			<div class="segmented" role="radiogroup" aria-label="Banner height">
-				{#each [['short', 'Short'], ['tall', 'Tall'], ['full', 'Full']] as [id, label] (id)}
+		{#if colour}
+			<div class="segmented" role="radiogroup" aria-label="Shade">
+				{#each PROFILE_SHADES as s (s)}
 					<button
-						class:on={height === id}
+						class:on={shade === s}
 						role="radio"
-						aria-checked={height === id}
-						onclick={() => save({ banner_height: id === 'short' ? '' : id })}>{label}</button
+						aria-checked={shade === s}
+						onclick={() => save({ profile_shade: s })}>{SHADE_NAMES[s]}</button
 					>
 				{/each}
 			</div>
 		{/if}
 	</div>
-	{#if layout === 'vertical' && banner}
-		<div class="column">
-			<span class="portrait">
-				<img
-					src={banner}
-					alt=""
-					draggable="false"
-					style:object-position="{pos.x}% {pos.y}%"
-					onpointerdown={down}
-					onpointermove={move}
-					onpointerup={up}
-					onpointercancel={up}
-				/>
-			</span>
-			<span class="faint small">
-				Drag to choose what the column shows. A phone shows the same part, across the top.
-			</span>
+</div>
+
+<div class="setting">
+	<div class="setting-top">
+		<span class="setting-tile" aria-hidden="true"><Icon name="layers" size={18} /></span>
+		<span class="setting-label">
+			<strong>Banner</strong>
+			<span class="faint">How your banner sits on your profile. A tap on it opens it whole.</span>
+		</span>
+	</div>
+	<div class="setting-body banner-choices">
+		<div class="layouts" role="radiogroup" aria-label="Banner layout">
+			{#each [['classic', 'Across the top'], ['vertical', 'A column beside it']] as [id, label] (id)}
+				<button
+					class="layout"
+					class:on={layout === id}
+					role="radio"
+					aria-checked={layout === id}
+					onclick={() => save({ banner_layout: id === 'classic' ? '' : id })}
+				>
+					<span class="sketch {id}" aria-hidden="true">
+						<i class="pic"></i><i class="line"></i><i class="line short"></i><i class="tiles"></i>
+					</span>
+					<span>{label}</span>
+				</button>
+			{/each}
 		</div>
-	{/if}
+
+		{#if layout === 'vertical'}
+			{#if banner}
+				<div class="column">
+					<span class="portrait">
+						<img
+							src={banner}
+							alt=""
+							draggable="false"
+							style:object-position="{pos.x}% {pos.y}%"
+							onpointerdown={down}
+							onpointermove={move}
+							onpointerup={up}
+							onpointercancel={up}
+						/>
+					</span>
+					<span class="faint small">
+						Drag to choose what the column shows. A phone shows the same part across the top.
+					</span>
+				</div>
+			{/if}
+		{:else}
+			<div class="height">
+				<span class="small">Height</span>
+				<div class="segmented" role="radiogroup" aria-label="Banner height">
+					{#each [['short', 'Short'], ['tall', 'Tall'], ['full', 'Full']] as [id, label] (id)}
+						<button
+							class:on={height === id}
+							role="radio"
+							aria-checked={height === id}
+							onclick={() => save({ banner_height: id === 'short' ? '' : id })}>{label}</button
+						>
+					{/each}
+				</div>
+			</div>
+		{/if}
+	</div>
 </div>
 
 <style>
-	.look {
+	.colours,
+	.banner-choices {
 		display: flex;
 		flex-direction: column;
+		align-items: flex-start;
 		gap: 12px;
-		padding: 16px 20px;
-		border-top: 1px solid var(--line);
-	}
-
-	.head {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-
-	.head .faint {
-		font-size: 0.84rem;
 	}
 
 	.swatches {
@@ -216,11 +202,19 @@
 	}
 
 	.swatch {
+		display: grid;
+		place-items: center;
 		width: 32px;
 		height: 32px;
 		border-radius: 50%;
 		border: 1px solid var(--line-strong);
+		color: #fff;
 		cursor: pointer;
+		transition: transform var(--fast) var(--ease);
+	}
+
+	.swatch:hover {
+		transform: scale(1.08);
 	}
 
 	.swatch.none {
@@ -240,8 +234,112 @@
 		outline-offset: 2px;
 	}
 
-	.shades {
-		align-self: flex-start;
+	/* Each layout as a little sketch of the page it makes. */
+	.layouts {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
+	}
+
+	.layout {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 8px;
+		padding: 10px 10px 8px;
+		border-radius: var(--radius-sm);
+		border: 1.5px solid var(--line);
+		background: var(--bg-elev-2);
+		color: var(--text-dim);
+		font: inherit;
+		font-size: 0.82rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.layout.on {
+		border-color: var(--accent);
+		color: var(--text);
+		box-shadow: 0 0 0 3px var(--accent-soft);
+	}
+
+	.sketch {
+		position: relative;
+		display: block;
+		width: 112px;
+		height: 72px;
+		border-radius: 6px;
+		background: var(--bg);
+		overflow: hidden;
+	}
+
+	.sketch i {
+		position: absolute;
+		display: block;
+		border-radius: 2px;
+		background: var(--line-strong);
+	}
+
+	.sketch .pic {
+		background: color-mix(in srgb, var(--accent) 55%, var(--bg-elev-2));
+	}
+
+	.sketch.classic .pic {
+		inset: 0 0 auto 0;
+		height: 26px;
+		border-radius: 0;
+	}
+
+	.sketch.classic .line {
+		left: 8px;
+		top: 32px;
+		width: 50px;
+		height: 5px;
+	}
+
+	.sketch.classic .line.short {
+		top: 41px;
+		width: 32px;
+	}
+
+	.sketch.classic .tiles {
+		left: 8px;
+		right: 8px;
+		bottom: 8px;
+		height: 12px;
+	}
+
+	.sketch.vertical .pic {
+		left: 6px;
+		top: 6px;
+		bottom: 6px;
+		width: 34px;
+	}
+
+	.sketch.vertical .line {
+		left: 48px;
+		top: 10px;
+		width: 44px;
+		height: 5px;
+	}
+
+	.sketch.vertical .line.short {
+		top: 19px;
+		width: 30px;
+	}
+
+	.sketch.vertical .tiles {
+		left: 48px;
+		right: 8px;
+		top: 32px;
+		bottom: 8px;
+	}
+
+	.height {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-wrap: wrap;
 	}
 
 	.column {
@@ -252,9 +350,9 @@
 
 	.portrait {
 		flex: none;
-		width: 108px;
+		width: 96px;
 		aspect-ratio: 3 / 4;
-		border-radius: 12px;
+		border-radius: 10px;
 		overflow: hidden;
 		background: var(--bg-elev-2);
 	}
@@ -272,108 +370,7 @@
 		cursor: grabbing;
 	}
 
-	.choices {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 8px;
-	}
-
-	.preview {
-		display: flex;
-		flex-direction: column;
-		max-width: 420px;
-		border-radius: var(--radius);
-		overflow: hidden;
-		border: 1px solid var(--line);
-		background: var(--bg);
-	}
-
-	.banner {
-		height: 64px;
-		background:
-			radial-gradient(circle at 20% 20%, var(--accent-soft), transparent 55%),
-			linear-gradient(135deg, var(--bg-elev-2), var(--bg) 80%);
-	}
-
-	.row {
-		display: flex;
-		align-items: flex-end;
-		gap: 10px;
-		margin-top: -22px;
-		padding: 0 12px;
-		min-width: 0;
-	}
-
-	.face {
-		flex: none;
-		display: grid;
-		place-items: center;
-		width: 44px;
-		height: 44px;
-		border-radius: 50%;
-		border: 3px solid var(--bg);
-		box-shadow: 0 0 0 2px var(--accent);
-		background: var(--accent-soft);
-		color: var(--accent);
-		font-weight: 700;
-	}
-
-	.who {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
+	.small {
 		font-size: 0.82rem;
-	}
-
-	.who b {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.taste {
-		color: var(--text-dim);
-		font-size: 0.74rem;
-	}
-
-	.taste strong {
-		color: var(--accent);
-	}
-
-	.button {
-		flex: none;
-		padding: 4px 10px;
-		border-radius: 999px;
-		background: var(--accent);
-		color: var(--accent-ink);
-		font-size: 0.74rem;
-		font-weight: 650;
-	}
-
-	.tiles {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 6px;
-		padding: 10px 12px 12px;
-	}
-
-	.tile {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		padding: 6px 8px;
-		border-radius: var(--radius-sm);
-		background: color-mix(in srgb, var(--accent) 8%, var(--bg-elev));
-		font-size: 0.7rem;
-		min-width: 0;
-	}
-
-	.tile span {
-		color: var(--accent);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		font-size: 0.62rem;
-		font-weight: 650;
 	}
 </style>

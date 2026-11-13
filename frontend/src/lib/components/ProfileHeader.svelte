@@ -431,21 +431,42 @@
 			display: contents;
 		}
 
+		/* The column is the screen's height, the picture filling it, and who
+		   it is sits over its foot on a fade to the page. */
 		.vertical .side {
 			grid-area: side;
-			/* Held where the page puts it, so it never moves at all. */
-			position: sticky;
+			/* Pinned to the screen where the page puts it, so it never moves,
+			   whatever the page under it does. Lined up with the page's column. */
+			position: fixed;
 			top: calc(var(--header-h) + 24px);
-			max-height: calc(100dvh - var(--header-h) - 40px);
-			overflow-y: auto;
-			scrollbar-width: none;
-			padding-bottom: 8px;
+			left: max(var(--page-pad), calc((100% - 1440px) / 2 + var(--page-pad)));
+			width: var(--side-w);
+			z-index: 2;
+			height: calc(100dvh - var(--header-h) - 48px);
+			min-height: 420px;
+			display: flex;
+			flex-direction: column;
+			justify-content: flex-end;
+			border-radius: 22px;
+			overflow: hidden;
+			isolation: isolate;
 		}
 
 		.vertical .banner {
+			position: absolute;
+			inset: 0;
+			z-index: -1;
 			height: auto;
-			aspect-ratio: 3 / 4;
-			border-radius: 22px;
+			border-radius: inherit;
+		}
+
+		.vertical .shade {
+			background: linear-gradient(
+				to top,
+				var(--bg) 0,
+				color-mix(in srgb, var(--bg) 82%, transparent) 26%,
+				transparent 62%
+			);
 		}
 
 		.vertical .identity {
@@ -453,8 +474,8 @@
 			align-items: flex-start;
 			gap: 10px;
 			max-width: none;
-			margin: -112px 0 0;
-			padding: 0 18px;
+			margin: 0;
+			padding: 0 20px;
 		}
 
 		.vertical .names {
@@ -470,11 +491,24 @@
 			margin: 0;
 		}
 
+		/* A long bio keeps to a few lines, so the picture stays the column. */
 		.vertical .bio,
 		.vertical .private {
 			max-width: none;
-			margin: 14px 0 0;
-			padding: 0 18px;
+			margin: 12px 0 0;
+			padding: 0 20px;
+		}
+
+		.vertical .bio {
+			display: -webkit-box;
+			-webkit-line-clamp: 5;
+			line-clamp: 5;
+			-webkit-box-orient: vertical;
+			overflow: hidden;
+		}
+
+		.vertical .side > :last-child {
+			margin-bottom: 20px;
 		}
 
 		.vertical .tabs {
