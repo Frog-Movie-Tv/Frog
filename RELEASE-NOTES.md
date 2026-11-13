@@ -31,6 +31,8 @@ In progress.
 - Pin any title in your library: find it by name, and take a pin off with
   one tap.
 - Theme is simpler: pick one and go.
+- Appearance keeps to what changes how Frog looks; the Home hero is under
+  Home and menus, beside where Frog opens.
 
 ### Fixes
 

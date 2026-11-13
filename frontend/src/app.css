@@ -350,18 +350,6 @@
 	--shadow-3: 0 40px 80px -30px rgba(20, 16, 40, 0.35);
 }
 
-/* Animation level, set from Settings. */
-:root[data-animations='off'] *,
-:root[data-animations='off'] *::before,
-:root[data-animations='off'] *::after {
-	animation-duration: 0.01ms !important;
-	transition-duration: 0.01ms !important;
-}
-
-:root[data-animations='reduced'] * {
-	transition-duration: 90ms !important;
-}
-
 *,
 *::before,
 *::after {

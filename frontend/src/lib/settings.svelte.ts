@@ -9,8 +9,6 @@ export type MascotName =
 	'classic' | 'sleepy' | 'popcorn' | 'cinema' | 'starry' | 'bow' | 'delighted' | 'sprout';
 export type CardStyle = 'poster' | 'landscape' | 'list' | 'compact';
 export type HeroStyle = 'backdrop' | 'poster' | 'off';
-export type FontName = 'system' | 'humanist' | 'grotesque' | 'serif' | 'mono';
-export type AnimationLevel = 'full' | 'reduced' | 'off';
 
 /**
  * Every appearance is the same glass in its own colours (`app.css`). `tone`
@@ -86,20 +84,6 @@ export const MASCOTS: { id: MascotName; label: string; hint: string }[] = [
 	{ id: 'sprout', label: 'Sprout', hint: 'Freshly picked' }
 ];
 
-/** Bundled with the app, so every device renders them identically. */
-export const FONTS: { id: FontName; label: string; stack: string; display?: string }[] = [
-	{
-		// Apple's system face where a device has it, Inter everywhere else.
-		id: 'system',
-		label: 'Frog',
-		stack: "-apple-system, BlinkMacSystemFont, 'Inter Variable', system-ui, sans-serif"
-	},
-	{ id: 'humanist', label: 'Inter', stack: "'Inter Variable', system-ui, sans-serif" },
-	{ id: 'grotesque', label: 'Outfit', stack: "'Outfit Variable', system-ui, sans-serif" },
-	{ id: 'serif', label: 'Newsreader', stack: "'Newsreader Variable', Georgia, serif" },
-	{ id: 'mono', label: 'JetBrains Mono', stack: "'JetBrains Mono Variable', monospace" }
-];
-
 export interface Settings {
 	theme: ThemeName;
 	mascot: MascotName;
@@ -116,10 +100,6 @@ export interface Settings {
 
 	heroStyle: HeroStyle;
 	followPoster: boolean;
-
-	font: FontName;
-	textScale: number;
-	animations: AnimationLevel;
 
 	spoilerProtection: boolean;
 	hideAnimation: boolean;
@@ -189,10 +169,6 @@ export const DEFAULTS: Settings = {
 
 	heroStyle: 'backdrop',
 	followPoster: true,
-
-	font: 'system',
-	textScale: 1,
-	animations: 'full',
 
 	spoilerProtection: false,
 	hideAnimation: false,
@@ -283,9 +259,11 @@ function introduceRows(s: Settings): Settings {
 /**
  * Settings Frog no longer has. Saved ones still load, these are left out,
  * and the next save leaves them behind for good: the theme editor's own
- * colours went, so whoever used them sees the theme they were built on.
+ * colours went, so whoever used them sees the theme they were built on, and
+ * the type and motion choices went, so the page is drawn as designed (the
+ * system's reduced motion is still followed).
  */
-const RETIRED = ['customTheme', 'savedThemes'];
+const RETIRED = ['customTheme', 'savedThemes', 'font', 'textScale', 'animations'];
 
 /** Saved settings without the ones Frog no longer has. */
 export function current(saved: unknown): Partial<Settings> {
@@ -454,16 +432,11 @@ class SettingsStore {
 
 		root.dataset.theme = s.theme;
 		root.dataset.tone = THEMES.find((t) => t.id === s.theme)?.tone ?? 'dark';
-		root.dataset.animations = s.animations;
 		root.dataset.card = s.cardStyle;
 
 		const style = root.style;
 		// Not --poster-min itself: an inline value would beat the phone size.
 		style.setProperty('--poster-size', `${s.posterSize}px`);
-		const face = FONTS.find((f) => f.id === s.font) ?? FONTS[0];
-		style.setProperty('--font', face.stack);
-		style.setProperty('--font-display', face.display ?? face.stack);
-		style.fontSize = `${Math.round(16 * s.textScale)}px`;
 
 		// A status recoloured keeps its colour whatever the theme.
 		for (const status of ['watching', 'completed', 'planned', 'paused', 'dropped'] as const) {

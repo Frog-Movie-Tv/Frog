@@ -7,7 +7,8 @@
 		HOME_ROWS,
 		MAX_TABS,
 		NAV_PAGES,
-		settings
+		settings,
+		type HeroStyle
 	} from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 
@@ -113,6 +114,23 @@
 					{ value: '/stats', label: 'Stats' }
 				]}
 				onchange={(v) => settings.set('landingPage', v)}
+			/>
+		</div>
+
+		<div class="row">
+			<span class="label">
+				<strong>Hero</strong>
+				<span class="faint">The title at the top of Home</span>
+			</span>
+			<Select
+				label="Hero"
+				value={s.heroStyle}
+				options={[
+					{ value: 'backdrop', label: 'Backdrop' },
+					{ value: 'poster', label: 'Poster' },
+					{ value: 'off', label: 'Off' }
+				]}
+				onchange={(v) => settings.set('heroStyle', v as HeroStyle)}
 			/>
 		</div>
 	</div>

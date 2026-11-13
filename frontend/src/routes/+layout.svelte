@@ -72,7 +72,6 @@
 
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;
-		if (settings.current.animations === 'off') return;
 		// A step on the same page (a filter, a menu opening) is not a new page.
 		if (navigation.from?.url.pathname === navigation.to?.url.pathname) return;
 
