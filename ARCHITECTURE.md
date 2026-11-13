@@ -17,7 +17,7 @@ Deeper guides: [the catalog](docs/CATALOG-IDENTITY.md),
 | Users      | Several, invitation only                                             | Every personal table carries a `user_id` with a foreign key, and `backend/tests/scoping.rs` fails the build if a query forgets it. Isolation is enforced per request, not hidden in the interface.                                                                                                                                   |
 | Profiles   | Opt in, instance only                                                | Off until an account turns it on, and visible only to other accounts on the same instance. On, others see the whole library and its ratings, their dated watching on Home and a taste match, never its notes (`store::SharedItem`, `activity::Summary`). Every route except `/healthz` and the auth endpoints sits behind a session. |
 | Imports    | Letterboxd, Trakt, IMDb, TV Time, MyAnimeList, Netflix, Frog backups | All of them reduce to one intermediate shape, so a new source is a parser rather than a redesign. AniList is read on its own and never written to.                                                                                                                                                                                   |
-| Scrobbling | Not built                                                            | It only sees what plays through a media server the owners do not use. Anime arrives through the AniList sync; the rest is ticked by hand, on purpose. Plex is out regardless: its webhooks need Plex Pass.                                                                                                                           |
+| Scrobbling | The browser extension only                                           | Media servers only see what plays through them, and the owners watch on streaming sites. The extension (`extension/`, [docs/EXTENSION.md](docs/EXTENSION.md)) reads any page, asks Frog what it is and logs it with a token that reaches `/api/ext` alone. Plex is out regardless: its webhooks need Plex Pass.                      |
 | Hosting    | Oracle Cloud Always Free, Docker, Caddy                              | A public site on a free instance, HTTPS issued automatically, updating itself from the newest release image. See [docs/DEPLOY-ORACLE.md](docs/DEPLOY-ORACLE.md). It still runs on a laptop for development.                                                                                                                          |
 
 ---
@@ -79,13 +79,13 @@ is one file.
 The layers, from the outside in. A layer may use the ones below it, never
 the ones above.
 
-| Layer       | Modules                                                                                                                                                                                                           | Does                                                                                                                                                                                                                      |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| HTTP        | `routes/*`                                                                                                                                                                                                        | Parse and check the request, name the account (`Auth`, `AdminAuth`), call the layer below, shape the answer.                                                                                                              |
-| Domain      | `catalog`, `transfer`, `anilist`, `release`, `airtime`, `airing`, `announce`, `reset`, `activity`, `taste`, `franchise`, `bulk`, `push`, `jobs`, `home`, `stats`, `shelves`, `timeline`, `profiles`, `two_factor` | Decisions and workflows: which title a provider id names, what an import means, who wins a sync, when an episode is out, what a show's status is, what to tell whom and when.                                             |
-| Persistence | `catalog`, `store`, `anilist::records`, `images`, `db`, `dbview`, `account`, `admin`, `invites`, `prefs`, `studios`                                                                                               | Reads and writes. `catalog` owns the shared titles, episodes and provider ids; `store` owns one account's library; each domain may own its own tables (`anilist::records` owns `anilist_*`, `images` owns `image_cache`). |
-| Providers   | `tmdb`, `tvmaze`, `anilist::client`, `anilist::media`                                                                                                                                                             | Talking to other services, cached; nothing else calls them directly. `catalog::ensure` is how a provider's answer becomes a title.                                                                                        |
-| Shared      | `auth`, `config`, `error`, `state`, `text`, `palette`, `throttle`, `totp`, `ops`                                                                                                                                  | Small and specific; no catch-all helpers module.                                                                                                                                                                          |
+| Layer       | Modules                                                                                                                                                                                                                        | Does                                                                                                                                                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HTTP        | `routes/*`                                                                                                                                                                                                                     | Parse and check the request, name the account (`Auth`, `AdminAuth`), call the layer below, shape the answer.                                                                                                              |
+| Domain      | `catalog`, `transfer`, `anilist`, `extension`, `release`, `airtime`, `airing`, `announce`, `reset`, `activity`, `taste`, `franchise`, `bulk`, `push`, `jobs`, `home`, `stats`, `shelves`, `timeline`, `profiles`, `two_factor` | Decisions and workflows: which title a provider id names, what an import means, who wins a sync, when an episode is out, what a show's status is, what to tell whom and when.                                             |
+| Persistence | `catalog`, `store`, `anilist::records`, `images`, `db`, `dbview`, `account`, `admin`, `invites`, `prefs`, `studios`                                                                                                            | Reads and writes. `catalog` owns the shared titles, episodes and provider ids; `store` owns one account's library; each domain may own its own tables (`anilist::records` owns `anilist_*`, `images` owns `image_cache`). |
+| Providers   | `tmdb`, `tvmaze`, `anilist::client`, `anilist::media`                                                                                                                                                                          | Talking to other services, cached; nothing else calls them directly. `catalog::ensure` is how a provider's answer becomes a title.                                                                                        |
+| Shared      | `auth`, `tokens`, `config`, `error`, `state`, `text`, `palette`, `throttle`, `totp`, `ops`                                                                                                                                     | Small and specific; no catch-all helpers module.                                                                                                                                                                          |
 
 No route holds SQL. Each area's statements live in the module below it
 (`account`, `admin`, `home`, `invites`, `prefs`, `profiles`, `shelves`,
@@ -133,6 +133,26 @@ when more than one area reads them. See CLAUDE.md for the rule.
 | `home`                                                                                                                                                                                                                                                                                                                                      | Home in one request (continuing, waiting, this week, recent, favourites, shelves), and "Because you watched".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `studios`                                                                                                                                                                                                                                                                                                                                   | Studios credited on titles Frog holds, and the TMDB logo of a studio AniList names (`studio_match`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `routes`                                                                                                                                                                                                                                                                                                                                    | One module per area.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+
+### Personal tokens
+
+The browser extension signs in with a token made in Settings → Connections
+(`tokens`): 256 random bits with a `frog_` prefix, shown once, stored as its
+SHA-256 in `api_token` with when it was last used. `TokenAuth` is the only
+extractor that reads `Authorization: Bearer`, and only the four `/api/ext`
+routes take it; `Auth` answers a bearer token with 403, so a token can never
+reach settings, the account, two-factor, invites or administration. Wrong
+tokens count against the caller's address (`AppState::token_failures`).
+
+`extension` resolves what a page shows into one of Frog's titles, with a
+confidence: exact from Frog's id (a learned site rule), TMDB's or IMDb's;
+likely or a guess from a name, scored on the name, the year and the kind. An
+episode counted from the start of the show is placed with
+`anilist::locate`, as the AniList sync places one. A log is the title page's
+own tick (`store::add_watch`, then `release::after_watch`), recorded in
+`extension_log` so the same episode from the same token within six hours is
+one watch and undo takes back exactly that watch, and the title's place in the
+library with it.
 
 ### Sessions and accounts
 
@@ -211,7 +231,8 @@ flash and no client-side work.
 
 ```
 app_user ── session, recovery_code, invite, password_reset, app_setting,
-            user_image, push_subscription, push_sent, push_sent_title
+            user_image, push_subscription, push_sent, push_sent_title,
+            api_token ── extension_log (what the extension logged, for undo)
 
 title (shared catalog; id is Frog's own) ──┬── episode ──┬── episode_state  (notes, per account)
   kind (film, show, manga), metadata,      │             └── watch_event    (the diary, per account)
@@ -425,8 +446,9 @@ left is in [ROADMAP.md](ROADMAP.md).
 
 - **No AI or LLM anywhere.** Recommendations are weighted sums over TMDB's
   own graph.
-- **No scrobbling at all.** It only sees what plays through a media server;
-  anime arrives through the AniList sync and the rest is ticked by hand.
+- **No media-server scrobbling.** A media server only sees what plays
+  through it. The browser extension logs what plays on any site instead;
+  anime also arrives through the AniList sync, and the rest is ticked by hand.
 - **No paid APIs, analytics, error reporting or font services.** TMDB's free
   key is the only credential; AniList's sign-in is free too.
 - **No paid host.** It runs on a free Oracle instance, and on your own

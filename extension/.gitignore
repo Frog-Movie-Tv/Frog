@@ -1,0 +1,6 @@
+.output/
+.wxt/
+node_modules/
+web-ext-artifacts/
+test-results/
+playwright-report/

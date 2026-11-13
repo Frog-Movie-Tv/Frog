@@ -13,6 +13,14 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Highlights
+
+- **Frog in your browser.** A browser extension for Brave, Zen and the
+  browsers like them notices what you watch on any site and logs it when
+  you are nearly done, with a moment to undo. When it is not sure, it asks,
+  and it remembers your answer for that site. Make its token in Settings →
+  Connections.
+
 ## [1.5.1] — Goliath — 2026-11-12
 
 A few improvements and fixes.

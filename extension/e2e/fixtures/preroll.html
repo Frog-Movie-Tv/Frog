@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Player</title>
+
+		<script src="/player.js"></script>
+	</head>
+	<body>
+		<video id="v" width="640" height="360" playsinline muted src="/media/ad.webm"></video>
+		<script>
+			// The ad plays first in the same element, then hands it to the episode.
+			const v = document.getElementById('v');
+			v.addEventListener('ended', () => {
+				if (v.src.endsWith('/media/ad.webm')) {
+					v.src = '/media/episode.webm';
+					v.play();
+				}
+			});
+		</script>
+	</body>
+</html>
