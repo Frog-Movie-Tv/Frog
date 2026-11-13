@@ -12,6 +12,7 @@
  * Never point this at a database you care about.
  */
 import { spawn } from 'node:child_process';
+import { deflateSync } from 'node:zlib';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -130,6 +131,61 @@ async function api(path, { method = 'GET', body, cookie } = {}) {
 	return { json, cookie: session };
 }
 
+// --- a demo badge, drawn here --------------------------------------------
+// A round, lossless PNG, as the badge editor makes one: a frog-green disc
+// with a light ring, its edge smoothed. Plain zlib, no image library.
+
+const CRC = new Uint32Array(256).map((_, n) => {
+	let c = n;
+	for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+	return c >>> 0;
+});
+
+function crc32(bytes) {
+	let c = 0xffffffff;
+	for (const b of bytes) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8);
+	return (c ^ 0xffffffff) >>> 0;
+}
+
+function chunk(type, data) {
+	const out = Buffer.alloc(12 + data.length);
+	out.writeUInt32BE(data.length, 0);
+	out.write(type, 4, 'ascii');
+	data.copy(out, 8);
+	out.writeUInt32BE(crc32(out.subarray(4, 8 + data.length)), 8 + data.length);
+	return out;
+}
+
+function badgePng(size) {
+	const rows = Buffer.alloc(size * (size * 4 + 1));
+	const r = size / 2;
+	for (let y = 0; y < size; y++) {
+		rows[y * (size * 4 + 1)] = 0;
+		for (let x = 0; x < size; x++) {
+			const d = Math.hypot(x + 0.5 - r, y + 0.5 - r);
+			const edge = Math.min(1, Math.max(0, r - d));
+			const ring = d > r * 0.8 && d < r * 0.88;
+			const [cr, cg, cb] = ring ? [226, 247, 228] : d < r * 0.3 ? [255, 255, 255] : [79, 187, 88];
+			const at = y * (size * 4 + 1) + 1 + x * 4;
+			rows[at] = cr;
+			rows[at + 1] = cg;
+			rows[at + 2] = cb;
+			rows[at + 3] = Math.round(edge * 255);
+		}
+	}
+	const head = Buffer.alloc(13);
+	head.writeUInt32BE(size, 0);
+	head.writeUInt32BE(size, 4);
+	head[8] = 8;
+	head[9] = 6;
+	return Buffer.concat([
+		Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+		chunk('IHDR', head),
+		chunk('IDAT', deflateSync(rows)),
+		chunk('IEND', Buffer.alloc(0))
+	]);
+}
+
 async function main() {
 	await waitForServer();
 
@@ -203,6 +259,57 @@ async function main() {
 			console.log(`  could not mark a season (${e.message.slice(0, 60)})`);
 		}
 	}
+
+	// One account wears its own colour, stands its banner up, and holds a
+	// badge, so what one profile shows and the other does not is plain to see.
+	console.log(`dressing ${second.username}'s profile`);
+	const large = badgePng(1024);
+	await api('/api/account/profile', {
+		method: 'PUT',
+		body: {
+			public: true,
+			profile_color: 'teal',
+			profile_shade: 'medium',
+			banner_layout: 'vertical'
+		},
+		cookie: cookies[1]
+	});
+	if (key) {
+		try {
+			const lib = await api('/api/library?limit=10', { cookie: cookies[1] });
+			const backdrop = lib.json.items.find((i) => i.backdrop_path)?.backdrop_path;
+			if (backdrop) {
+				await api('/api/account/profile', {
+					method: 'PUT',
+					body: { banner_backdrop: backdrop },
+					cookie: cookies[1]
+				});
+			}
+		} catch (e) {
+			console.log(`  no banner (${e.message.slice(0, 60)})`);
+		}
+	}
+	const badge = await api('/api/admin/badges', {
+		method: 'POST',
+		body: {
+			name: 'Early frog',
+			description: 'Here from the start',
+			settings: {},
+			large: large.toString('base64'),
+			small: badgePng(128).toString('base64'),
+			original: large.toString('base64')
+		},
+		cookie: cookies[0]
+	});
+	const zjef = (await api('/api/admin/users', { cookie: cookies[0] })).json.users.find(
+		(u) => u.username === second.username
+	);
+	await api(`/api/admin/badges/${badge.json.id}/holders/${zjef.id}`, {
+		method: 'PUT',
+		body: {},
+		cookie: cookies[0]
+	});
+	console.log(`  teal, a vertical banner, and the Early frog badge`);
 
 	console.log('\nSeeded ' + dbPath);
 	for (const a of ACCOUNTS) {

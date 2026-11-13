@@ -9,19 +9,7 @@ Free, updating itself from each release (`docs/DEPLOY-ORACLE.md`).
 
 ## To build
 
-Left from the badges and profiles batch (branch `feat/badges-and-profiles`):
-
-- **Ratings:** test every rating control by mouse, touch and keyboard in each
-  score format; clearing by tapping the current score, the popover's place on
-  a phone, quick taps saving out of order, a window listener per episode row,
-  and the `★` glyph. A Playwright test for each fix.
-- **The title page's picture grows and shrinks** when a status or rating is
-  saved. Reproduce in the running app and fix.
-- **Remove the colour editor:** `ThemeEditor.svelte`, `customTheme` and
-  `savedThemes`; old settings must load cleanly.
-- **Finish:** seed a demo account with a colour, a vertical banner and a
-  badge; run the full backend suite, `npm run build`, a release build,
-  `npx playwright test` and `npm run audit`; look at both layouts on a phone.
+Nothing at the moment.
 
 ## To check by hand
 
@@ -34,6 +22,11 @@ off, or turns it into a fix above.
   ends the hold does not open the title. A sideways swipe along Settings'
   tabs scrolls without a reload.
 - **Pip on iOS Safari**, and a picture uploaded from an iPhone or a Mac.
+- **The badge editor by finger:** pinching the crop, magnifying while
+  touching up, and two-finger moves on a real phone; and a badge given
+  reaching the phone as a notification.
+- **A vertical banner on a real phone**, and Full's ceiling on a very tall
+  picture.
 - **The colour picker's sheet and the Stats bars by finger** on the phone.
 - **AniList on the live list:** Settings → Connections, "Needs a check" and
   the "Matched" methods, manga included. And connecting AniList once from a
