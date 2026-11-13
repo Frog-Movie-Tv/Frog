@@ -27,7 +27,7 @@ off, or turns it into a fix above.
   the "Matched" methods, manga included. And connecting AniList once from a
   laptop with the Frog-Dev client in `.env`.
 - **The browser extension on real sites:** Load unpacked in Brave, the signed
-  `.xpi` in Zen, a token from Settings → Connections, then an episode on a
+  `.xpi` in Zen, and Zen picking up the next release by itself, a token from Settings → Connections, then an episode on a
   site with a cross-origin player and one with nothing but a title, through
   to the diary. And the first release's signing, once `AMO_JWT_ISSUER` and
   `AMO_JWT_SECRET` are set in the repository (`docs/EXTENSION.md`).

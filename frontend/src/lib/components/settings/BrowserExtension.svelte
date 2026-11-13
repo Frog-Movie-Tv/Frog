@@ -3,9 +3,17 @@
 	import { SvelteMap } from 'svelte/reactivity';
 	import { api } from '#lib/api';
 	import Icon from '#lib/components/Icon.svelte';
+	import Mascot from '#lib/components/Mascot.svelte';
 	import { relativeDate } from '#lib/format';
 	import { toasts } from '#lib/toast.svelte';
 	import type { ApiToken } from '#lib/types';
+
+	/**
+	 * The newest release's builds, under the same names every release, so
+	 * these never go stale. Firefox keeps itself up to date from there; an
+	 * unpacked install in Chrome takes a new download.
+	 */
+	const DOWNLOADS = 'https://github.com/Frog-Movie-Tv/Frog/releases/latest/download';
 
 	/** Long enough for the toast's Undo, which lasts 7 s. */
 	const REVOKE_AFTER = 7500;
@@ -14,6 +22,11 @@
 	let naming = $state(false);
 	let name = $state('');
 	let busy = $state(false);
+	let nameField = $state<HTMLInputElement | null>(null);
+	// The form opens to be typed in.
+	$effect(() => {
+		if (naming) nameField?.focus();
+	});
 	/** The token just made, shown until this card is left. */
 	let fresh = $state<{ id: number; secret: string } | null>(null);
 
@@ -102,17 +115,30 @@
 <div class="extension list-pane">
 	<div class="row column">
 		<div class="top">
-			<span class="tile" aria-hidden="true"><Icon name="key" size={18} /></span>
+			<span class="pip" aria-hidden="true"><Mascot size={44} /></span>
 			<span class="label">
 				<strong>Browser extension</strong>
-				<span class="faint"
-					>Logs what you watch on any site. A token lets it read your library and log watches,
-					nothing else.</span
-				>
+				<span class="faint">Logs what you watch, on any site.</span>
 			</span>
 			{#if !naming}
 				<button class="btn" onclick={() => (naming = true)}>New token</button>
 			{/if}
+		</div>
+
+		<div class="get">
+			<a
+				class="btn small"
+				href="{DOWNLOADS}/frog-extension-firefox.xpi"
+				target="_blank"
+				rel="noopener noreferrer"><Icon name="download" size={15} /> Firefox</a
+			>
+			<a
+				class="btn small"
+				href="{DOWNLOADS}/frog-extension-chrome.zip"
+				target="_blank"
+				title="Unzip it, then Load unpacked in chrome://extensions"
+				rel="noopener noreferrer"><Icon name="download" size={15} /> Chrome</a
+			>
 		</div>
 
 		{#if naming}
@@ -122,8 +148,9 @@
 					<input
 						class="input"
 						bind:value={name}
+						bind:this={nameField}
 						maxlength="40"
-						placeholder="Brave on the laptop"
+						placeholder="Chrome on the laptop"
 						required
 					/>
 				</label>
@@ -136,7 +163,7 @@
 
 		{#if fresh}
 			<div class="fresh" role="status">
-				<span class="faint">Copy it into the extension now. Frog shows it only once.</span>
+				<span class="faint">Paste it into the extension. It’s shown only once.</span>
 				<div class="secret">
 					<code data-testid="token-secret">{fresh.secret}</code>
 					<button class="btn small" onclick={copy}><Icon name="copy" size={15} /> Copy</button>
@@ -195,15 +222,12 @@
 		flex: 1 1 12em;
 	}
 
-	.tile {
+	.pip {
 		flex: none;
-		width: 36px;
-		height: 36px;
+		width: 44px;
+		height: 44px;
 		display: grid;
 		place-items: center;
-		border-radius: 10px;
-		background: var(--accent-soft);
-		color: var(--accent);
 	}
 
 	.label {
@@ -215,6 +239,22 @@
 
 	.label .faint {
 		font-size: 0.82rem;
+	}
+
+	/* Under the description, in line with it. */
+	.get {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		margin-left: 56px;
+	}
+
+	@media (max-width: 600px) {
+		.get,
+		.fresh {
+			margin-left: 0;
+		}
 	}
 
 	.new {
@@ -229,6 +269,7 @@
 	}
 
 	.fresh {
+		margin-left: 56px;
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
@@ -259,7 +300,7 @@
 
 	.tokens {
 		list-style: none;
-		margin: 0 0 0 48px;
+		margin: 0 0 0 56px;
 		padding: 0;
 		display: flex;
 		flex-direction: column;

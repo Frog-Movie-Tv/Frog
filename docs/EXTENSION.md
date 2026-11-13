@@ -4,33 +4,38 @@ Frog's extension logs what you watch on any site, on its own. It has no list
 of supported sites: it reads what every page says about itself, asks your
 Frog what that is, and logs it once you are 90% in.
 
-It builds for Chromium (Brave, Chrome, Edge) and Firefox (Zen, Firefox) from
-one source in `extension/`.
+It works in Firefox and in Chrome, and in the browsers built on them (Zen,
+Brave, Edge), from one source in `extension/`.
 
 ## Install it
 
-Every release carries both builds on its
-[release page](https://github.com/Frog-Movie-Tv/Frog/releases).
+In Frog, open **Settings → Connections**. Under **Browser extension** are
+two buttons, which always give the newest version.
 
-**Brave** (and any Chromium browser)
+**Firefox**
 
-1. Download `frog-extension-<version>-chrome.zip` and unzip it somewhere it
-   can stay.
-2. Open `brave://extensions`, switch on **Developer mode**, choose **Load
-   unpacked** and pick the unzipped folder.
+1. Choose **Firefox** and open the file it downloads.
+2. Allow the install, and allow Frog on every site when asked. It needs them
+   all to find players; see [what leaves the browser](#what-leaves-the-browser).
+
+It updates itself from then on. Mozilla signs it as unlisted: it installs
+from the file and is never published on addons.mozilla.org.
+
+**Chrome**
+
+1. Choose **Chrome** and unzip what it downloads somewhere it can stay.
+2. Open `chrome://extensions` (`brave://extensions` in Brave), switch on
+   **Developer mode**, choose **Load unpacked** and pick the unzipped folder.
 3. Pin Frog to the toolbar.
 
-A new release is the same steps over the same folder, then the reload arrow
-on Frog's card.
+Chrome only updates extensions from its Web Store by itself, which costs a
+fee. For a new version, download again, unzip over the same folder, and
+press the reload arrow on Frog's card. The token, settings and site rules
+stay.
 
-**Zen** (and Firefox)
-
-1. Download the signed `.xpi` from the release page.
-2. Open it with Zen (drag it onto a window, or open the file), and allow the
-   install. Mozilla has signed it as unlisted: it installs from the file and
-   is never published on addons.mozilla.org.
-3. When Zen asks, allow Frog on every site. It needs them all to find players;
-   see [what leaves the browser](#what-leaves-the-browser).
+The same files are on every
+[release page](https://github.com/Frog-Movie-Tv/Frog/releases), as
+`frog-extension-firefox.xpi` and `frog-extension-chrome.zip`.
 
 ## Connect it
 
@@ -162,10 +167,15 @@ log, undo, the popup's list) and `backend/src/routes/ext.rs`.
 ## Releases
 
 Each release builds both, signs the Firefox build as unlisted with
-`web-ext sign`, and attaches the signed `.xpi` and the Chromium zip to the
-GitHub release (`.github/workflows/release-please.yml`). Signing needs the
+`web-ext sign`, and attaches `frog-extension-firefox.xpi`,
+`frog-extension-chrome.zip` and `updates.json` to the GitHub release
+(`.github/workflows/release-please.yml`). The names never change, so
+`releases/latest/download/…` is always the newest: Settings links there, and
+the Firefox build's `update_url` reads `updates.json` from there
+(`scripts/updates-json.mjs` writes it from the signed build's manifest;
+`FROG_EXTENSION_UPDATES` points a fork elsewhere). Signing needs the
 repository secrets `AMO_JWT_ISSUER` and `AMO_JWT_SECRET`, an API key from
 [addons.mozilla.org's developer hub](https://addons.mozilla.org/developers/addon/api/key/);
 without them the release still gets the Chromium zip and says the Firefox
-build was not signed. The extension's version follows Frog's, which
+build was not signed (and Firefox installs see no update). The extension's version follows Frog's, which
 release-please writes into `extension/package.json`.

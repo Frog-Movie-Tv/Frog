@@ -144,16 +144,23 @@ jobs:
           fi
           npx web-ext sign             --channel unlisted             --source-dir .output/firefox-mv3             --upload-source-code "$(ls .output/*-sources.zip)"             --artifacts-dir web-ext-artifacts             --api-key "$AMO_JWT_ISSUER"             --api-secret "$AMO_JWT_SECRET"
 
+      # The same names on every release, so `releases/latest/download/…`
+      # always means the newest: that is what Frog's Settings links to, and
+      # where Zen and Firefox look for updates (`update_url` in the manifest).
       - name: Attach to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.release-please.outputs.tag }}
+          REPO: ${{ github.server_url }}/${{ github.repository }}
         run: |
-          files=$(ls .output/*-chrome.zip)
-          for xpi in web-ext-artifacts/*.xpi; do
-            [ -e "$xpi" ] && files="$files $xpi"
-          done
-          gh release upload "$TAG" $files --clobber
+          mkdir -p release
+          cp "$(ls .output/*-chrome.zip)" release/frog-extension-chrome.zip
+          xpi="$(ls web-ext-artifacts/*.xpi 2>/dev/null | head -n 1 || true)"
+          if [ -n "$xpi" ]; then
+            cp "$xpi" release/frog-extension-firefox.xpi
+            node scripts/updates-json.mjs "$REPO/releases/download/$TAG/frog-extension-firefox.xpi" > release/updates.json
+          fi
+          gh release upload "$TAG" release/* --clobber
 
   # A tag created with GITHUB_TOKEN does not start a workflow run, so the tag
   # build in CI never happens and production has no image to pull. Publish it

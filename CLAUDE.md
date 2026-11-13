@@ -563,7 +563,10 @@ part you are about to touch; change it when the code changes.
   The token reaches `/api/ext` and nothing else (`tokens::TokenAuth`, and
   `Auth` answers a bearer token with 403); a log is the title page's tick
   (`release::after_watch`), idempotent per token for six hours
-  (`extension_log`). Releases sign the Firefox build as unlisted in
+  (`extension_log`). Releases attach it under fixed names (`frog-extension-firefox.xpi`,
+  `frog-extension-chrome.zip`, `updates.json`), so `releases/latest/download`
+  is always the newest: Settings → Connections links there and Firefox's
+  `update_url` reads it. Releases sign the Firefox build as unlisted in
   `release-please.yml`, since a tag made with `GITHUB_TOKEN` starts no
   workflow. Playwright's own Chromium will not start on the owner's Windows
   machine ("side-by-side configuration"); `E2E_CHANNEL=msedge` runs the suite

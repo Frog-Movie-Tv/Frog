@@ -225,7 +225,7 @@ jobs:
 
       # What Mozilla's signing checks, so a release never fails there first.
       - name: Firefox lint
-        run: npx web-ext lint --source-dir .output/firefox-mv3
+        run: npx web-ext lint --self-hosted --source-dir .output/firefox-mv3
 
       # The built Chromium extension against local fixture pages and a
       # stand-in Frog: no streaming site, no network.
