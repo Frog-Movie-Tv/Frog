@@ -6,6 +6,7 @@ pub mod airtime;
 pub mod anilist;
 pub mod announce;
 pub mod auth;
+pub mod badges;
 pub mod bulk;
 pub mod catalog;
 pub mod config;

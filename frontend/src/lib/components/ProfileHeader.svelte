@@ -5,6 +5,7 @@
 <script lang="ts">
 	import { img } from '#lib/api';
 	import Avatar from './Avatar.svelte';
+	import Badges from './Badges.svelte';
 	import Icon from './Icon.svelte';
 	import { prettyDate } from '#lib/format';
 	import type { Profile } from '#lib/types';
@@ -43,7 +44,10 @@
 			<Avatar src={profile.avatar} name={profile.username} size={112} />
 		</span>
 		<div class="names">
-			<h1 title={shownName}>{shownName}</h1>
+			<div class="name-line">
+				<h1 title={shownName}>{shownName}</h1>
+				<Badges badges={profile.badges ?? []} size={28} />
+			</div>
 			<p class="faint handle">
 				<span class="at" title="@{profile.username}">@{profile.username}</span>
 				<span>· joined {prettyDate(profile.joined)}</span>
@@ -150,8 +154,16 @@
 		padding-bottom: 6px;
 	}
 
+	.name-line {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		min-width: 0;
+	}
+
 	/* A long name or username shortens rather than running off the page. */
 	h1 {
+		min-width: 0;
 		margin: 0;
 		font-size: clamp(1.6rem, 4.4vw, 2.6rem);
 		letter-spacing: -0.02em;
@@ -248,7 +260,8 @@
 			width: 100%;
 		}
 
-		.handle {
+		.handle,
+		.name-line {
 			justify-content: center;
 		}
 

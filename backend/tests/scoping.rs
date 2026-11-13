@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 /// Tables that gained a `user_id` in migration 0008, and personal tables
 /// added since.
-const PERSONAL: [&str; 18] = [
+const PERSONAL: [&str; 19] = [
     "password_reset",
     "season_rating",
     "title_merge",
@@ -35,6 +35,7 @@ const PERSONAL: [&str; 18] = [
     "push_sent_title",
     "recovery_code",
     "chapter_read",
+    "badge_award",
 ];
 
 /// Fragments that are pasted into a statement and carry the account
@@ -50,7 +51,7 @@ const SCOPED_FRAGMENTS: [&str; 7] = [
 ];
 
 /// Statements that are global on purpose, each with its reason.
-const ALLOWED: [(&str, &str); 11] = [
+const ALLOWED: [(&str, &str); 12] = [
     (
         "SELECT t.id, x.external_id, t.kind FROM title t JOIN title_external x",
         "decides which shared AniList copies are TMDB's titles at start; reads          title_merge only to leave alone a copy somebody took apart again",
@@ -93,6 +94,10 @@ const ALLOWED: [(&str, &str); 11] = [
     (
         "UPDATE title SET merged_into = ?",
         "marks a shared AniList-only title as folded into another once nobody          keeps it; reads library_entry only to see whether anybody still does",
+    ),
+    (
+        "SELECT a.badge_id, a.user_id FROM badge_award a ORDER BY",
+        "Administration lists who holds each badge; `badge` itself is shared          like a title, one row however many hold it, and has no owner",
     ),
     (
         "SELECT DISTINCT user_id FROM push_subscription",

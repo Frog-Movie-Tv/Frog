@@ -26,6 +26,22 @@ const SIZES: [&str; 9] = [
     "w92", "w154", "w185", "w300", "w342", "w500", "w780", "w1280", "original",
 ];
 
+/// What the bytes are, from their first few, never from what the browser
+/// claims. Only plain raster formats: no SVG, which can carry script.
+pub fn sniff(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
+}
+
 /// A picture nobody has looked at for this long goes, whatever the budget.
 pub const MAX_IDLE_DAYS: i64 = 180;
 

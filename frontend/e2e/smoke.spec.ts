@@ -1236,6 +1236,12 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/admin/server',
 		'/api/admin/db/tables',
 		'/api/admin/db/tables/app_user',
+		'/api/admin/badges',
+		'/api/admin/badges/1',
+		'/api/admin/badges/1/original',
+		'/api/admin/badges/1/images/large',
+		'/api/account/badges',
+		'/api/profiles/someone/badges/1/small',
 		'/api/profiles',
 		'/api/profiles/someone',
 		'/api/profiles/someone/library',
@@ -1274,7 +1280,9 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/t/1/episodes/watch',
 		'/api/t/1/episodes/1/watch',
 		'/api/t/1/episodes/1/1/watch',
-		'/api/t/1/rewatch'
+		'/api/t/1/rewatch',
+		'/api/admin/badges',
+		'/api/admin/badges/restore'
 	]) {
 		const res = await request.post(path, { data: {} });
 		expect(res.status(), `POST ${path} should be 401`).toBe(401);
@@ -1283,7 +1291,10 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/t/1/seasons/1/rating',
 		'/api/t/1/library',
 		'/api/t/1/episodes/1/1/state',
-		'/api/anilist/entries/1'
+		'/api/anilist/entries/1',
+		'/api/admin/badges/1',
+		'/api/admin/badges/1/holders/1',
+		'/api/account/badges'
 	]) {
 		const res = await request.put(path, { data: { rating: 80 } });
 		expect(res.status(), `PUT ${path} should be 401`).toBe(401);
@@ -1295,7 +1306,13 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 	});
 	expect(rename.status(), 'PUT a username should be 401').toBe(401);
 
-	for (const path of ['/api/account', '/api/account/library', '/api/t/1/library']) {
+	for (const path of [
+		'/api/account',
+		'/api/account/library',
+		'/api/t/1/library',
+		'/api/admin/badges/1',
+		'/api/admin/badges/1/holders/1'
+	]) {
 		const res = await request.delete(path, { data: {} });
 		expect(res.status(), `DELETE ${path} should be 401`).toBe(401);
 	}

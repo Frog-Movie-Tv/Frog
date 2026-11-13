@@ -3,6 +3,7 @@
 	import { api, img } from '#lib/api';
 	import Avatar from '#lib/components/Avatar.svelte';
 	import Icon from '#lib/components/Icon.svelte';
+	import BadgeSettings from '#lib/components/settings/BadgeSettings.svelte';
 	import { AVATAR_PIXELS, BANNER_PIXELS, decode, encode, shrink, staysAsItIs } from '#lib/picture';
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
@@ -403,6 +404,8 @@
 			</div>
 		{/if}
 	</div>
+
+	<BadgeSettings />
 
 	<label class="row">
 		<span class="label">

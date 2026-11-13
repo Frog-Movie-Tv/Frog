@@ -4,6 +4,9 @@ import type { TitleRef } from './titles';
 import type { WhenAnswer } from './when.svelte';
 import type {
 	TitleMerge,
+	AdminBadge,
+	BadgeUpload,
+	HeldBadge,
 	StatsNarrow,
 	ActivityItem,
 	AiringDay,
@@ -292,6 +295,26 @@ export const api = {
 			patch
 		),
 	deleteUser: (id: number) => send<{ ok: true }>('DELETE', `/api/admin/users/${id}`),
+	badges: () => get<{ badges: AdminBadge[] }>('/api/admin/badges'),
+	badge: (id: number) =>
+		get<{ badge: AdminBadge; settings: Record<string, unknown> }>(`/api/admin/badges/${id}`),
+	createBadge: (badge: BadgeUpload) => send<{ id: number }>('POST', '/api/admin/badges', badge),
+	updateBadge: (id: number, badge: BadgeUpload) =>
+		send<{ id: number }>('PUT', `/api/admin/badges/${id}`, badge),
+	/** Answers everything the badge was, which is what undo sends back. */
+	deleteBadge: (id: number) => send<{ removed: unknown }>('DELETE', `/api/admin/badges/${id}`),
+	restoreBadge: (removed: unknown) =>
+		send<{ id: number }>('POST', '/api/admin/badges/restore', { removed }),
+	badgeImage: (id: number, size: 'large' | 'small', version: string) =>
+		`/api/admin/badges/${id}/images/${size}?v=${encodeURIComponent(version)}`,
+	badgeOriginal: (id: number) => `/api/admin/badges/${id}/original`,
+	giveBadge: (id: number, userId: number) =>
+		send<{ ok: true }>('PUT', `/api/admin/badges/${id}/holders/${userId}`, {}),
+	takeBadge: (id: number, userId: number) =>
+		send<{ ok: true }>('DELETE', `/api/admin/badges/${id}/holders/${userId}`),
+	myBadges: () => get<{ badges: HeldBadge[] }>('/api/account/badges'),
+	arrangeBadges: (badges: { id: number; shown: boolean }[]) =>
+		send<{ badges: HeldBadge[] }>('PUT', '/api/account/badges', { badges }),
 	instance: () => get<InstanceInfo>('/api/admin/instance'),
 	server: () => get<ServerStatus>('/api/admin/server'),
 	dbTables: () => get<{ tables: DbTable[] }>('/api/admin/db/tables'),

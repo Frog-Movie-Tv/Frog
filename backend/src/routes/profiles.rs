@@ -11,8 +11,10 @@ use chrono::Utc;
 use serde_json::{json, Value};
 
 use crate::auth::Auth;
+use crate::badges::{self, Size};
 use crate::error::{AppError, AppResult};
 use crate::profiles::{self, CardRow};
+use crate::routes::badges::{png, shaped};
 use crate::routes::library::{to_map, ListQuery};
 use crate::state::AppState;
 use crate::stats::streaks;
@@ -26,11 +28,16 @@ const SHARED_MOST: i64 = 1000;
 /// Accounts whose profile is on, plus your own.
 pub async fn list(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
     let rows = profiles::listed(&state.pool, auth.user_id()).await?;
-    Ok(Json(json!({
-        "profiles": rows.into_iter().map(|(username, display_name, me, avatar)| json!({
+    let mut out = Vec::with_capacity(rows.len());
+    for (user_id, username, display_name, me, avatar) in rows {
+        // Only the badges they show, even on your own card.
+        let held = badges::held(&state.pool, user_id, false).await?;
+        out.push(json!({
             "username": username, "display_name": display_name, "me": me, "avatar": avatar,
-        })).collect::<Vec<_>>()
-    })))
+            "badges": shaped(&username, &held),
+        }));
+    }
+    Ok(Json(json!({ "profiles": out })))
 }
 
 fn cards(rows: Vec<CardRow>) -> Vec<Value> {
@@ -198,6 +205,7 @@ pub async fn get(
         "banner": image_url("banner"),
         "banner_backdrop": banner_backdrop,
         "banner_position": facts.banner_position,
+        "badges": shaped(&username, &badges::held(pool, user_id, false).await?),
         "stats": {
             "films": films,
             "episodes": episodes,
@@ -297,4 +305,23 @@ pub async fn image(
         HeaderValue::from_static("private, max-age=86400"),
     );
     Ok(response)
+}
+
+/// A badge's picture, through the profile of someone holding it: only to
+/// whoever may see that profile, and a hidden badge only to its holder.
+pub async fn badge_image(
+    auth: Auth,
+    State(state): State<AppState>,
+    Path((username, id, size)): Path<(String, i64, String)>,
+    headers: HeaderMap,
+) -> AppResult<Response> {
+    let user = visible(&state, &auth, &username).await?;
+    let size = Size::parse(&size).ok_or_else(|| AppError::NotFound("no picture".into()))?;
+    if !badges::seen(&state.pool, user.0, id, auth.user_id()).await? {
+        return Err(AppError::NotFound("no picture".into()));
+    }
+    let (bytes, version) = badges::picture(&state.pool, id, size)
+        .await?
+        .ok_or_else(|| AppError::NotFound("no picture".into()))?;
+    Ok(png(bytes, "image/png", &version, &headers))
 }

@@ -3,6 +3,7 @@ pub mod admin;
 pub mod airing;
 pub mod anilist;
 pub mod auth;
+pub mod badges;
 pub mod browse;
 pub mod episodes;
 pub mod home;
@@ -104,6 +105,7 @@ pub fn router(state: AppState) -> Router {
                 // Room for a picture; the handler refuses anything over 3 MB.
                 .layer(DefaultBodyLimit::max(account::IMAGE_MAX_BYTES + 64 * 1024)),
         )
+        .route("/account/badges", get(badges::mine).put(badges::arrange))
         .route("/account/library", delete(account::clear_library))
         .route("/account/merges", get(account::merges))
         .route("/account/merges/{id}/undo", post(account::undo_merge))
@@ -119,6 +121,29 @@ pub fn router(state: AppState) -> Router {
             put(admin::update_user).delete(admin::delete_user),
         )
         .route("/admin/users/{id}/reset", post(admin::reset_link))
+        .route(
+            "/admin/badges",
+            get(badges::list)
+                .post(badges::create)
+                .layer(DefaultBodyLimit::max(badges::BODY_MAX_BYTES)),
+        )
+        .route(
+            "/admin/badges/restore",
+            post(badges::restore).layer(DefaultBodyLimit::max(badges::BODY_MAX_BYTES)),
+        )
+        .route(
+            "/admin/badges/{id}",
+            get(badges::get)
+                .put(badges::update)
+                .delete(badges::remove)
+                .layer(DefaultBodyLimit::max(badges::BODY_MAX_BYTES)),
+        )
+        .route("/admin/badges/{id}/original", get(badges::original))
+        .route("/admin/badges/{id}/images/{size}", get(badges::picture))
+        .route(
+            "/admin/badges/{id}/holders/{user_id}",
+            put(badges::award).delete(badges::revoke),
+        )
         .route("/admin/instance", get(admin::instance))
         .route("/admin/server", get(admin::server))
         .route("/admin/db/tables", get(admin::db_tables))
@@ -135,6 +160,10 @@ pub fn router(state: AppState) -> Router {
         .route("/profiles/{username}/ratings", get(profiles::ratings))
         .route("/profiles/{username}/compare", get(profiles::compare))
         .route("/profiles/{username}/images/{kind}", get(profiles::image))
+        .route(
+            "/profiles/{username}/badges/{id}/{size}",
+            get(profiles::badge_image),
+        )
         .route("/invites", get(invites::list).post(invites::create))
         .route("/invites/{id}", delete(invites::revoke))
         .route("/export/library.json", get(transfer::export_json))

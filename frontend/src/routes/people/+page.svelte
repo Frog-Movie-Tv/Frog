@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api, img, MORE_PAUSE, isAbort } from '#lib/api';
 	import Avatar from '#lib/components/Avatar.svelte';
+	import Badges from '#lib/components/Badges.svelte';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import LoadFailed from '#lib/components/LoadFailed.svelte';
@@ -91,7 +92,10 @@
 				size={48}
 			/>
 			<span class="who">
-				<strong>{person.display_name ?? person.username}</strong>
+				<span class="name">
+					<strong>{person.display_name ?? person.username}</strong>
+					<Badges badges={person.badges ?? []} size={18} still />
+				</span>
 				<span class="faint">@{person.username}</span>
 			</span>
 		</a>
@@ -282,6 +286,17 @@
 
 	.who .faint {
 		font-size: 0.8rem;
+	}
+
+	.name {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		min-width: 0;
+	}
+
+	.name strong {
+		min-width: 0;
 	}
 
 	.characters {

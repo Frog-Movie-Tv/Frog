@@ -566,6 +566,43 @@ export interface PersonSummary {
 	display_name: string | null;
 	me: boolean;
 	avatar: boolean;
+	/** The badges they show, in their order. */
+	badges: HeldBadge[];
+}
+
+/** A badge as someone holds it, with its pictures' addresses. */
+export interface HeldBadge {
+	id: number;
+	name: string;
+	description: string | null;
+	awarded_at: string;
+	/** Whether it shows on the profile. Always true for anyone but its holder. */
+	shown: boolean;
+	/** 128 px, for everywhere but opened large. */
+	small: string;
+	/** 1024 px. */
+	large: string;
+}
+
+/** A badge as Administration lists it. */
+export interface AdminBadge {
+	id: number;
+	name: string;
+	description: string | null;
+	created_at: string;
+	updated_at: string;
+	/** Account ids of everyone holding it. */
+	holders: number[];
+}
+
+/** What the badge editor saves: the pictures as base64, finished. */
+export interface BadgeUpload {
+	name: string;
+	description: string;
+	settings?: Record<string, unknown>;
+	large?: string;
+	small?: string;
+	original?: string;
 }
 
 /** One device signed in to your account. */
@@ -742,6 +779,8 @@ export interface Profile {
 	banner: string | null;
 	banner_backdrop: string | null;
 	banner_position: string | null;
+	/** The badges they show, in their order. */
+	badges: HeldBadge[];
 	stats: {
 		films: number;
 		episodes: number;

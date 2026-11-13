@@ -172,6 +172,13 @@ pub async fn library_json(state: &AppState, user_id: i64) -> AppResult<Value> {
             .and_then(|(v,)| serde_json::from_str::<Value>(&v).ok())
             .unwrap_or_else(|| json!({})),
         "titles": titles,
+        // What an administrator gave this account, by name: the pictures stay
+        // with the instance.
+        "badges": crate::badges::for_export(&state.pool, user_id)
+            .await?
+            .into_iter()
+            .map(|(name, awarded_at)| json!({ "name": name, "awarded_at": awarded_at }))
+            .collect::<Vec<_>>(),
     }))
 }
 

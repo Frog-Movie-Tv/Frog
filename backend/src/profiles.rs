@@ -11,13 +11,13 @@ use sqlx::SqlitePool;
 
 use crate::error::{AppError, AppResult};
 
-/// (username, display name, me, has a picture)
-pub type ListRow = (String, Option<String>, bool, bool);
+/// (id, username, display name, me, has a picture)
+pub type ListRow = (i64, String, Option<String>, bool, bool);
 
 /// Accounts whose profile is on, plus the viewer's own.
 pub async fn listed(pool: &SqlitePool, viewer: i64) -> AppResult<Vec<ListRow>> {
     Ok(sqlx::query_as(
-        "SELECT u.username, u.display_name, u.id = ?,
+        "SELECT u.id, u.username, u.display_name, u.id = ?,
                 EXISTS (SELECT 1 FROM user_image i WHERE i.user_id = u.id AND i.kind = 'avatar')
            FROM app_user u
           WHERE u.disabled = 0 AND (u.profile_public = 1 OR u.id = ?)
