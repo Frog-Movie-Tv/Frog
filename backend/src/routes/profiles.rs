@@ -204,7 +204,9 @@ pub async fn get(
         "avatar": image_url("avatar"),
         "banner": image_url("banner"),
         "banner_backdrop": banner_backdrop,
-        "banner_position": facts.banner_position,
+        "banner_position": facts.look.banner_position,
+        "profile_color": facts.look.profile_color,
+        "profile_shade": facts.look.profile_shade,
         "badges": shaped(&username, &badges::held(pool, user_id, false).await?),
         "stats": {
             "films": films,

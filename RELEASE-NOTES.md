@@ -19,6 +19,9 @@ In progress.
   sit beside your name on your profile, and small ones on People. Tap one to
   see it large, with what it is for and the day it was given. In Settings, show
   or hide each one you hold and drag them into your order.
+- **Your colour.** Give your profile one of ten colours, in a light, medium or
+  dark shade. Everyone who opens your profile sees it in your colour, on every
+  theme.
 
 ## [1.5.1] — Goliath — 2026-11-12
 

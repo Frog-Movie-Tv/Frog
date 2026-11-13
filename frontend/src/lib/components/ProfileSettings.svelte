@@ -4,6 +4,7 @@
 	import Avatar from '#lib/components/Avatar.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import BadgeSettings from '#lib/components/settings/BadgeSettings.svelte';
+	import ProfileLook from '#lib/components/settings/ProfileLook.svelte';
 	import { AVATAR_PIXELS, BANNER_PIXELS, decode, encode, shrink, staysAsItIs } from '#lib/picture';
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
@@ -404,6 +405,8 @@
 			</div>
 		{/if}
 	</div>
+
+	<ProfileLook {account} {save} />
 
 	<BadgeSettings />
 

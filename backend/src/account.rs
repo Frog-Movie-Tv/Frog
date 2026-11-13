@@ -21,11 +21,11 @@ pub type AccountRow = (
     String,
 );
 
-/// The account, the pictures it has uploaded, and where its banner sits.
+/// The account, the pictures it has uploaded, and how its profile looks.
 pub async fn details(
     pool: &SqlitePool,
     user_id: i64,
-) -> AppResult<(AccountRow, Vec<String>, Option<String>)> {
+) -> AppResult<(AccountRow, Vec<String>, crate::profiles::Look)> {
     let row: AccountRow = sqlx::query_as(
         "SELECT username, role, created_at, profile_public, totp_secret IS NOT NULL,
                 display_name, bio, banner_backdrop, pins_json
@@ -38,16 +38,8 @@ pub async fn details(
         .bind(user_id)
         .fetch_all(pool)
         .await?;
-    let (banner_position,): (Option<String>,) =
-        sqlx::query_as("SELECT banner_position FROM app_user WHERE id = ?")
-            .bind(user_id)
-            .fetch_one(pool)
-            .await?;
-    Ok((
-        row,
-        images.into_iter().map(|(k,)| k).collect(),
-        banner_position,
-    ))
+    let look = crate::profiles::look(pool, user_id).await?;
+    Ok((row, images.into_iter().map(|(k,)| k).collect(), look))
 }
 
 pub async fn set_password_hash(pool: &SqlitePool, user_id: i64, hash: &str) -> AppResult<()> {
@@ -104,6 +96,9 @@ pub enum ProfileField<'a> {
     Bio(Option<&'a str>),
     BannerPosition(Option<&'a str>),
     Pins(&'a str),
+    /// A colour and its shade, both names from `profiles::COLOURS`.
+    Colour(Option<&'a str>, Option<&'a str>),
+    Shade(&'a str),
 }
 
 pub async fn set_profile_field(
@@ -124,6 +119,14 @@ pub async fn set_profile_field(
         }
         ProfileField::Pins(pins) => {
             sqlx::query("UPDATE app_user SET pins_json = ? WHERE id = ?").bind(pins)
+        }
+        ProfileField::Colour(color, shade) => {
+            sqlx::query("UPDATE app_user SET profile_color = ?, profile_shade = ? WHERE id = ?")
+                .bind(color)
+                .bind(shade)
+        }
+        ProfileField::Shade(shade) => {
+            sqlx::query("UPDATE app_user SET profile_shade = ? WHERE id = ?").bind(shade)
         }
     };
     query.bind(user_id).execute(pool).await?;

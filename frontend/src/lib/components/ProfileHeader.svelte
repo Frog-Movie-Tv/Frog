@@ -112,6 +112,21 @@
 			linear-gradient(135deg, var(--bg-elev-2), var(--bg) 80%);
 	}
 
+	/* With no picture, a profile in its own colour fills the banner with it. */
+	:global(.coloured) .banner.plain {
+		background:
+			radial-gradient(
+				circle at 18% 22%,
+				color-mix(in srgb, var(--accent) 48%, transparent),
+				transparent 62%
+			),
+			linear-gradient(
+				135deg,
+				color-mix(in srgb, var(--accent) 24%, var(--bg-elev-2)),
+				var(--bg) 88%
+			);
+	}
+
 	.banner img {
 		width: 100%;
 		height: 100%;
@@ -146,6 +161,13 @@
 	.picture :global(.avatar) {
 		border: 4px solid var(--bg);
 		box-shadow: var(--shadow-3);
+	}
+
+	/* A profile in its own colour wears it round the picture too. */
+	:global(.coloured) .picture :global(.avatar) {
+		box-shadow:
+			0 0 0 3px var(--accent),
+			var(--shadow-3);
 	}
 
 	.names {

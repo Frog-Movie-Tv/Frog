@@ -460,3 +460,71 @@ async fn editing_a_badge_keeps_its_pictures_unless_new_ones_come() {
     assert_eq!(code, StatusCode::OK);
     assert!(bytes.starts_with(b"\x89PNG"));
 }
+
+#[tokio::test]
+async fn a_profile_wears_only_colours_from_the_list() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&member),
+    )
+    .await;
+
+    let (code, body) = h
+        .put(
+            "/api/account/profile",
+            json!({ "profile_color": "teal", "profile_shade": "dark" }),
+            Some(&member),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body:?}");
+    assert_eq!(body["profile_color"], "teal");
+    assert_eq!(body["profile_shade"], "dark");
+
+    // Everyone who opens the profile sees it.
+    let (_, profile) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert_eq!(profile["profile_color"], "teal");
+    assert_eq!(profile["profile_shade"], "dark");
+
+    for bad in [
+        json!({ "profile_color": "#00ffaa" }),
+        json!({ "profile_color": "fuchsia" }),
+        json!({ "profile_color": "teal", "profile_shade": "neon" }),
+        json!({ "profile_shade": "rgb(0,0,0)" }),
+    ] {
+        let (code, body) = h
+            .put("/api/account/profile", bad.clone(), Some(&member))
+            .await;
+        assert_eq!(code, StatusCode::BAD_REQUEST, "{bad}");
+        assert!(
+            body["error"].as_str().unwrap().contains("colour"),
+            "{body:?}"
+        );
+    }
+    let (_, me) = h.get("/api/account", Some(&member)).await;
+    assert_eq!(me["profile_color"], "teal", "a refusal changes nothing");
+
+    // A shade alone keeps the colour; an empty colour goes back to the theme's.
+    let (_, me) = h
+        .put(
+            "/api/account/profile",
+            json!({ "profile_shade": "light" }),
+            Some(&member),
+        )
+        .await;
+    assert_eq!(
+        (me["profile_color"].as_str(), me["profile_shade"].as_str()),
+        (Some("teal"), Some("light"))
+    );
+    let (_, me) = h
+        .put(
+            "/api/account/profile",
+            json!({ "profile_color": "" }),
+            Some(&member),
+        )
+        .await;
+    assert_eq!(me["profile_color"], Value::Null);
+    assert_eq!(me["profile_shade"], Value::Null);
+}

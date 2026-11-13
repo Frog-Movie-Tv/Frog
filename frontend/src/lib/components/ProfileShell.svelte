@@ -12,6 +12,8 @@
 	import ProfileHeader, { type ProfileTab } from './ProfileHeader.svelte';
 	import Spinner from './Spinner.svelte';
 	import { failure, type Failure } from '#lib/failure';
+	import { profileStyle } from '#lib/profile-colours';
+	import { currentTone } from '#lib/settings.svelte';
 	import { session } from '#lib/session.svelte';
 	import type { Profile } from '#lib/types';
 
@@ -67,6 +69,13 @@
 	}
 
 	const shownName = $derived(profile?.display_name || profile?.username || '');
+	/*
+	 * The profile's own colour, on this page only and for everyone who opens
+	 * it: the accent tokens are scoped here, never on the app's theme.
+	 */
+	const colour = $derived(
+		profile ? profileStyle(profile.profile_color, profile.profile_shade, currentTone()) : undefined
+	);
 	const label: Record<ProfileTab, string> = {
 		overview: '',
 		library: ' · Library',
@@ -85,7 +94,7 @@
 	</title>
 </svelte:head>
 
-<div class="page">
+<div class="page" class:coloured={!!colour} style={colour}>
 	{#if loading && !profile}
 		<Spinner label="Loading profile" />
 	{:else if failed && !failed.missing}

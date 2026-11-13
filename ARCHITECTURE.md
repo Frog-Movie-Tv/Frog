@@ -348,6 +348,12 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
 - **Profiles are tabs.** `ProfileShell` loads a profile once and draws
   `ProfileHeader` over each tab: Overview, Library (`LibraryBrowser` with
   `embedded`), Ratings and Compare.
+  A profile's colour (`app_user.profile_color` and `profile_shade`, two
+  names the server checks against `profiles::COLOURS`) is applied by
+  `ProfileShell` as `--accent`, `--accent-ink` and `--accent-soft` on the
+  page's own root, never on the theme. The values live only in
+  `lib/profile-colours.ts`, one for the light themes and one for the dark,
+  and `tests/profile-colours.test.mjs` holds every pair to 4.5:1.
 - **Badges are finished in the browser.** `BadgeEditor` (Administration →
   Badges) reads an upload with `lib/badge.ts`: an SVG is drawn to 2048 px and
   only its pixels go further; an animated file gives its first frame. The

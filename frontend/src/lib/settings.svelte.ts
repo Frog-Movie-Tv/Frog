@@ -502,3 +502,7 @@ function applyFavicon(mascot: MascotName) {
 }
 
 export const settings = new SettingsStore();
+
+/** Whether the theme in use is drawn light or dark. */
+export const currentTone = (): 'light' | 'dark' =>
+	THEMES.find((t) => t.id === settings.current.theme)?.tone ?? 'dark';
