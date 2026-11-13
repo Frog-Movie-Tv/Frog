@@ -963,9 +963,11 @@
 	/* With a picture, the picture is the page: it fills the screen, and the
 	   words sit on it where the poster was. */
 	.hero.pictured {
+		/* The picture's height, from the screen alone. */
+		--picture-h: 90vh;
 		display: flex;
 		align-items: flex-end;
-		min-height: 90vh;
+		min-height: var(--picture-h);
 		padding: 140px var(--page-pad) 56px;
 		background: transparent;
 	}
@@ -979,11 +981,14 @@
 		display: none;
 	}
 
+	/* As tall as the screen says, never as tall as the words over it: a hero
+	   that grew or shrank by a line when a status or rating was saved zoomed
+	   the picture with it. Past it, the page; its bottom fades anyway. */
 	.backdrop {
 		position: absolute;
-		inset: 0;
+		inset: 0 0 auto;
 		width: 100%;
-		height: 100%;
+		height: var(--picture-h, 100%);
 		object-fit: cover;
 		object-position: center 18%;
 		z-index: -2;
@@ -997,7 +1002,8 @@
 	   same way at the bottom, out of reach of the pointer. */
 	.ambient {
 		position: absolute;
-		inset: 0;
+		inset: 0 0 auto;
+		height: var(--picture-h, 100%);
 		overflow: hidden;
 		pointer-events: none;
 		mask-image: linear-gradient(to top, transparent 0, #000 36%);
@@ -1705,7 +1711,8 @@
 		}
 
 		.hero.pictured {
-			min-height: 72vh;
+			--picture-h: 72vh;
+			min-height: var(--picture-h);
 			padding: calc(var(--header-h) + 150px) var(--page-pad) 32px;
 		}
 

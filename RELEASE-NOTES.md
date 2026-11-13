@@ -31,6 +31,13 @@ In progress.
 - Pin any title in your library: find it by name, and take a pin off with
   one tap.
 
+### Fixes
+
+- A rating shows the moment you pick it, and the last one you pick is the one
+  kept.
+- A title's picture stays still while you change its status or rating.
+- Five-star ratings read out as words to screen readers.
+
 ## [1.5.1] — Goliath — 2026-11-12
 
 A few improvements and fixes.
