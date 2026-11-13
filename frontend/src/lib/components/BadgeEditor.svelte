@@ -521,6 +521,27 @@
 		}
 	}
 
+	// --- steps -------------------------------------------------------------------
+	/** One thing at a time: the picture, its background, by hand, its look, its name. */
+	const STEPS = [
+		{ id: 'picture', label: 'Picture' },
+		{ id: 'background', label: 'Background' },
+		{ id: 'touchup', label: 'Touch up' },
+		{ id: 'style', label: 'Style' },
+		{ id: 'details', label: 'Details' }
+	] as const;
+	type Step = (typeof STEPS)[number]['id'];
+	let step = $state<Step>('picture');
+	const at = $derived(STEPS.findIndex((s) => s.id === step));
+
+	/** Touch up starts with the eraser in hand; every other step puts the brush away. */
+	function goTo(next: Step) {
+		step = next;
+		if (next === 'touchup') {
+			if (tool !== 'erase' && tool !== 'restore') tool = 'erase';
+		} else tool = 'move';
+	}
+
 	// --- fill and ring -----------------------------------------------------
 	const FILLS: { id: Fill; label: string }[] = [
 		{ id: 'none', label: 'No fill' },
@@ -663,20 +684,6 @@
 						/>
 					</label>
 				{/if}
-				{#if soft}
-					<p class="note">This picture is small, so it will look soft when opened.</p>
-				{/if}
-				<label class="btn ghost small file">
-					<Icon name="image" size={15} /> Another picture
-					<input
-						type="file"
-						accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
-						onchange={(e) => {
-							void choose(e.currentTarget.files?.[0]);
-							e.currentTarget.value = '';
-						}}
-					/>
-				</label>
 			{:else if reading}
 				<div class="empty-frame"><Spinner label="Reading the picture" /></div>
 			{:else}
@@ -697,22 +704,55 @@
 		</div>
 
 		<div class="right">
-			<label class="field">
-				<span>Name</span>
-				<input class="input" bind:value={name} maxlength={NAME_MAX} placeholder="Badge name" />
-			</label>
-			<label class="field">
-				<span>Description <em class="faint">optional</em></span>
-				<input
-					class="input"
-					bind:value={description}
-					maxlength={DESCRIPTION_MAX}
-					placeholder="One line about it"
-				/>
-			</label>
+			<nav class="steps" aria-label="Steps">
+				{#each STEPS as s, i (s.id)}
+					<button
+						class="step"
+						class:on={step === s.id}
+						class:done={i < at}
+						aria-current={step === s.id ? 'step' : undefined}
+						disabled={!settings && s.id !== 'picture' && s.id !== 'details'}
+						onclick={() => goTo(s.id)}
+					>
+						<span class="num">{i + 1}</span>
+						<span class="step-label">{s.label}</span>
+					</button>
+				{/each}
+			</nav>
 
-			{#if settings}
-				<section class="group">
+			<div class="panel">
+				{#if step === 'picture'}
+					<h3>Picture</h3>
+					{#if settings}
+						<p class="faint small lead">
+							Drag the picture into the circle and zoom until it fits. Arrow keys nudge it; plus and
+							minus zoom.
+						</p>
+						{#if soft}
+							<p class="note">This picture is small, so it will look soft when opened.</p>
+						{/if}
+						<label class="btn ghost small file">
+							<Icon name="image" size={15} /> Another picture
+							<input
+								type="file"
+								accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
+								onchange={(e) => {
+									void choose(e.currentTarget.files?.[0]);
+									e.currentTarget.value = '';
+								}}
+							/>
+						</label>
+					{:else}
+						<p class="faint small lead">
+							Start with a picture: a PNG, JPEG, WebP or SVG. A logo with a plain background works
+							best; the next step takes the background out.
+						</p>
+					{/if}
+				{:else if step === 'background' && settings}
+					<h3>Background</h3>
+					<p class="faint small lead">
+						Take out the background around the picture. It starts from the colour at the edge.
+					</p>
 					<label class="row">
 						<strong>Remove the background</strong>
 						<input
@@ -816,31 +856,28 @@
 							<button class="link" onclick={() => switchRemoval(true, true)}>Start over</button>
 						</p>
 					{/if}
-				</section>
-
-				<section class="group">
-					<strong>Touch up</strong>
-					<p class="faint small hint">
-						Paint over what the fill missed: Erase clears it, Restore brings the picture back.
+				{:else if step === 'touchup' && settings}
+					<h3>Touch up</h3>
+					<p class="faint small lead">
+						Paint over what the background step missed. Erase clears; Restore brings the picture
+						back. Magnify under the picture to reach the details.
 					</p>
 					<div class="tools segmented" role="group" aria-label="Brush">
 						<button
 							class:on={tool === 'erase'}
 							aria-pressed={tool === 'erase'}
-							onclick={() => (tool = tool === 'erase' ? 'move' : 'erase')}>Erase</button
+							onclick={() => (tool = 'erase')}>Erase</button
 						>
 						<button
 							class:on={tool === 'restore'}
 							aria-pressed={tool === 'restore'}
-							onclick={() => (tool = tool === 'restore' ? 'move' : 'restore')}>Restore</button
+							onclick={() => (tool = 'restore')}>Restore</button
 						>
 					</div>
-					{#if brushing}
-						<label class="slider">
-							<span>Brush size <em class="faint">{brush}</em></span>
-							<input type="range" min="1" max="20" step="1" bind:value={brush} />
-						</label>
-					{/if}
+					<label class="slider">
+						<span>Brush size <em class="faint">{brush}</em></span>
+						<input type="range" min="1" max="20" step="1" bind:value={brush} />
+					</label>
 					{#if settings.strokes.length}
 						<p class="faint small seed">
 							{settings.strokes.length}
@@ -855,10 +892,11 @@
 							>
 						</p>
 					{/if}
-				</section>
-
-				<section class="group">
-					<strong>Circle</strong>
+				{:else if step === 'style' && settings}
+					<h3>Style</h3>
+					<p class="faint small lead">
+						A fill behind the picture, and a thin ring, keep a badge clear on any page.
+					</p>
 					<div class="swatches" role="radiogroup" aria-label="Circle fill">
 						{#each FILLS as f (f.id)}
 							<button
@@ -890,39 +928,74 @@
 						<span>A thin ring</span>
 						<input type="checkbox" class="toggle-switch" bind:checked={settings.ring} />
 					</label>
-				</section>
-
-				<section class="group">
-					<strong>Preview</strong>
-					<div class="previews">
-						{#each ['light', 'dark'] as tone (tone)}
-							<div class="tone" data-tone={tone}>
-								{#if previewSmall && previewLarge}
-									<span class="as-name">
-										<b>{name.trim() || 'Badge'}</b>
-										<img src={previewSmall} alt="" width="26" height="26" />
-									</span>
-									<span class="as-card">
-										<span class="face" aria-hidden="true"></span>
-										<span class="lines">
-											<b>Someone</b>
-											<img src={previewSmall} alt="" width="18" height="18" />
+				{:else if step === 'details'}
+					<h3>Details</h3>
+					<label class="field">
+						<span>Name</span>
+						<input class="input" bind:value={name} maxlength={NAME_MAX} placeholder="Badge name" />
+					</label>
+					<label class="field">
+						<span>Description <em class="faint">optional</em></span>
+						<input
+							class="input"
+							bind:value={description}
+							maxlength={DESCRIPTION_MAX}
+							placeholder="One line about it"
+						/>
+					</label>
+					{#if settings}
+						<span class="small strong">How it looks</span>
+						<div class="previews">
+							{#each ['light', 'dark'] as tone (tone)}
+								<div class="tone" data-tone={tone}>
+									{#if previewSmall && previewLarge}
+										<span class="as-name">
+											<b>{name.trim() || 'Badge'}</b>
+											<img src={previewSmall} alt="" width="26" height="26" />
 										</span>
-									</span>
-									<img class="as-open" src={previewLarge} alt="" width="132" height="132" />
-								{:else}
-									<Spinner label="Drawing the preview" />
-								{/if}
-							</div>
-						{/each}
-					</div>
-				</section>
-			{/if}
+										<span class="as-card">
+											<span class="face" aria-hidden="true"></span>
+											<span class="lines">
+												<b>Someone</b>
+												<img src={previewSmall} alt="" width="18" height="18" />
+											</span>
+										</span>
+										<img class="as-open" src={previewLarge} alt="" width="132" height="132" />
+									{:else}
+										<Spinner label="Drawing the preview" />
+									{/if}
+								</div>
+							{/each}
+						</div>
+					{/if}
+				{/if}
+			</div>
 		</div>
 	</div>
 
 	<footer>
-		<button class="btn ghost" onclick={onclose}>Cancel</button>
+		<button class="btn ghost cancel" onclick={onclose}>Cancel</button>
+		<span class="spacer"></span>
+		{#if at > 0}
+			<button
+				class="btn ghost"
+				aria-label="Back to {STEPS[at - 1].label}"
+				onclick={() => goTo(STEPS[at - 1].id)}
+			>
+				<Icon name="chevron-left" size={15} /> <span class="word">Back</span>
+			</button>
+		{/if}
+		{#if at < STEPS.length - 1}
+			<button
+				class="btn"
+				aria-label="Next: {STEPS[at + 1].label}"
+				disabled={!settings}
+				onclick={() => goTo(STEPS[at + 1].id)}
+			>
+				<span class="word">{STEPS[at + 1].label}</span>
+				<Icon name="chevron-right" size={15} />
+			</button>
+		{/if}
 		<button class="btn primary" disabled={!ready} onclick={save}>
 			{saving ? 'Saving…' : badge ? 'Save badge' : 'Make badge'}
 		</button>
@@ -970,8 +1043,118 @@
 	}
 
 	footer {
-		justify-content: flex-end;
+		flex-wrap: wrap;
 		border-top: 1px solid var(--line);
+	}
+
+	.spacer {
+		flex: 1;
+	}
+
+	/* The steps, numbered, the one open filled in and those passed ticked off. */
+	.steps {
+		container: steps / inline-size;
+		display: flex;
+		gap: 4px;
+		padding: 4px;
+		border-radius: var(--radius);
+		background: var(--bg-elev-2);
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+
+	.step {
+		flex: 1 0 auto;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 7px;
+		padding: 7px 10px;
+		border: 0;
+		border-radius: calc(var(--radius) - 4px);
+		background: none;
+		color: var(--text-dim);
+		font: inherit;
+		font-size: 0.82rem;
+		font-weight: 600;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	/* Narrow, the other steps keep their numbers and the open one its name,
+	   so all five fit without scrolling. */
+	@container steps (max-width: 520px) {
+		.step:not(.on) .step-label {
+			display: none;
+		}
+
+		.step {
+			flex: 0 0 auto;
+		}
+
+		.step.on {
+			flex: 1 0 auto;
+		}
+	}
+
+	.step:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	.step.on {
+		background: var(--bg-float);
+		color: var(--text);
+		box-shadow: var(--shadow-1);
+	}
+
+	.num {
+		display: grid;
+		place-items: center;
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		background: var(--line);
+		font-size: 0.72rem;
+	}
+
+	.step.on .num {
+		background: var(--accent);
+		color: var(--accent-ink);
+	}
+
+	.step.done .num {
+		background: var(--accent-soft);
+		color: var(--accent);
+	}
+
+	.panel {
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+		padding: 4px 2px;
+		animation: panel-in 200ms ease backwards;
+	}
+
+	@keyframes panel-in {
+		from {
+			opacity: 0;
+			transform: translateY(4px);
+		}
+	}
+
+	.panel h3 {
+		margin: 0;
+		font-size: 1.05rem;
+	}
+
+	.lead {
+		margin: -8px 0 0;
+		line-height: 1.5;
+	}
+
+	.strong {
+		font-weight: 650;
 	}
 
 	.body {
@@ -1170,14 +1353,6 @@
 		font-size: 0.86rem;
 	}
 
-	.group {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-		padding-top: 14px;
-		border-top: 1px solid var(--line);
-	}
-
 	.row {
 		display: flex;
 		align-items: center;
@@ -1321,6 +1496,17 @@
 	}
 
 	@media (max-width: 720px) {
+		/* The close button in the corner does Cancel's job; Back and Next
+		   keep to their arrows, so the row fits a phone. */
+		footer .cancel,
+		footer .word {
+			display: none;
+		}
+
+		footer {
+			flex-wrap: nowrap;
+		}
+
 		.editor {
 			inset: 0;
 			transform: none;
