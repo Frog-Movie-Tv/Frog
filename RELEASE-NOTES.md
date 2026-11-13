@@ -20,6 +20,11 @@ In progress.
   to undo. When it is not sure, it asks, and it remembers your answer for
   that site. Get it, and its token, in Settings → Connections.
 
+### Improvements
+
+- A title's page lists the studios behind it, each with its logo. Open one to
+  see everything else it made.
+
 ## [1.5.1] — Goliath — 2026-11-12
 
 A few improvements and fixes.

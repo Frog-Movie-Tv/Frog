@@ -235,6 +235,7 @@
 	);
 
 	const cast = $derived(uniqueBy(detail?.cast ?? [], (p) => p.id));
+	const studios = $derived(uniqueBy(detail?.studios ?? [], (s) => s.id));
 	const trailers = $derived(uniqueBy(detail?.trailers ?? [], (t) => t.key));
 	const parts = $derived(uniqueBy(detail?.collection?.parts ?? [], titleKey));
 	const recommendations = $derived(uniqueBy(detail?.recommendations ?? [], titleKey));
@@ -749,6 +750,30 @@
 									<a href="/person/{c.id}" class="crew-item">
 										<strong>{c.name}</strong>
 										<span class="faint">{c.jobs.join(', ')}</span>
+									</a>
+								{/each}
+							</div>
+						</section>
+					{/if}
+
+					{#if studios.length}
+						<section class="block studios">
+							<div class="section-head"><h2>Studios</h2></div>
+							<div class="studio-list">
+								{#each studios as s (s.id)}
+									{@const logo = img(s.logo_path, 'w185')}
+									<a href="/studio/{s.id}" class="studio-item">
+										<span class="studio-logo" class:blank={!logo} aria-hidden="true">
+											{#if logo}
+												<img src={logo} alt="" loading="lazy" />
+											{:else}
+												{s.name.slice(0, 1)}
+											{/if}
+										</span>
+										<span class="studio-name">
+											<strong>{s.name}</strong>
+											{#if s.country}<span class="faint">{s.country}</span>{/if}
+										</span>
 									</a>
 								{/each}
 							</div>
@@ -1461,6 +1486,70 @@
 	}
 
 	.crew-item span {
+		font-size: 0.75rem;
+	}
+
+	.studio-list {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+		gap: 0 16px;
+	}
+
+	.side .studio-list {
+		grid-template-columns: 1fr;
+	}
+
+	.studio-item {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		min-width: 0;
+		padding: 8px 0;
+		border-bottom: 1px solid var(--line);
+		font-size: 0.88rem;
+	}
+
+	.studio-item:hover strong {
+		color: var(--accent);
+	}
+
+	/* Logos are drawn for white paper, often dark on transparent, so they sit
+	   on a light tile in every theme, as in Search. */
+	.studio-logo {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 54px;
+		height: 36px;
+		padding: 5px;
+		overflow: hidden;
+		border-radius: var(--radius-sm);
+		background: #f6f4ec;
+		border: 1px solid var(--line);
+	}
+
+	/* Sized to the tile, so a tall logo shrinks instead of spilling out. */
+	.studio-logo img {
+		width: 100%;
+		height: 100%;
+		min-height: 0;
+		object-fit: contain;
+	}
+
+	.studio-logo.blank {
+		background: var(--bg-elev-2);
+		color: var(--text-dim);
+		font-family: var(--font-display);
+		font-size: 1rem;
+	}
+
+	.studio-name {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+	}
+
+	.studio-name span {
 		font-size: 0.75rem;
 	}
 
