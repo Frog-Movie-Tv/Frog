@@ -1,7 +1,6 @@
 <script lang="ts">
 	import Select from '#lib/components/Select.svelte';
 	import ThemePreview from '#lib/components/ThemePreview.svelte';
-	import ThemeEditor from '#lib/components/settings/ThemeEditor.svelte';
 	import {
 		FONTS,
 		MASCOTS,
@@ -36,7 +35,7 @@
 				class:on={s.theme === t.id}
 				aria-label={t.label}
 				aria-pressed={s.theme === t.id}
-				onclick={() => settings.patch({ theme: t.id as ThemeName, customTheme: null })}
+				onclick={() => settings.set('theme', t.id as ThemeName)}
 			>
 				<ThemePreview swatches={t.swatches} on={s.theme === t.id} />
 				<strong>{t.label}</strong>
@@ -44,8 +43,6 @@
 			</button>
 		{/each}
 	</div>
-
-	<ThemeEditor />
 </section>
 
 <section class="block">

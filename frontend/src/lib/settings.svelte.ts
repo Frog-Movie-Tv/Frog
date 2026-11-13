@@ -100,18 +100,9 @@ export const FONTS: { id: FontName; label: string; stack: string; display?: stri
 	{ id: 'mono', label: 'JetBrains Mono', stack: "'JetBrains Mono Variable', monospace" }
 ];
 
-/** A theme the user built, stored as plain token overrides. */
-export interface CustomTheme {
-	name: string;
-	base: ThemeName;
-	tokens: Partial<Record<'bg' | 'bg-elev' | 'bg-elev-2' | 'accent' | 'text', string>>;
-}
-
 export interface Settings {
 	theme: ThemeName;
 	mascot: MascotName;
-	customTheme: CustomTheme | null;
-	savedThemes: CustomTheme[];
 
 	scoreFormat: ScoreFormat;
 	halfStars: boolean;
@@ -185,8 +176,6 @@ export const GO_KEYS: Record<string, string> = {
 export const DEFAULTS: Settings = {
 	theme: 'glass',
 	mascot: 'classic',
-	customTheme: null,
-	savedThemes: [],
 
 	scoreFormat: 'pt10dec',
 	halfStars: true,
@@ -291,10 +280,25 @@ function introduceRows(s: Settings): Settings {
 	return { ...s, homeRows: rows, homeRowsSeen: all };
 }
 
+/**
+ * Settings Frog no longer has. Saved ones still load, these are left out,
+ * and the next save leaves them behind for good: the theme editor's own
+ * colours went, so whoever used them sees the theme they were built on.
+ */
+const RETIRED = ['customTheme', 'savedThemes'];
+
+/** Saved settings without the ones Frog no longer has. */
+export function current(saved: unknown): Partial<Settings> {
+	if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {};
+	const kept = { ...(saved as Record<string, unknown>) };
+	for (const key of RETIRED) delete kept[key];
+	return kept as Partial<Settings>;
+}
+
 function readLocal(): Partial<Settings> {
 	if (!browser) return {};
 	try {
-		return JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Settings>;
+		return current(JSON.parse(localStorage.getItem(KEY) ?? '{}'));
 	} catch {
 		return {};
 	}
@@ -324,7 +328,7 @@ class SettingsStore {
 	}
 
 	replace(values: Settings) {
-		this.current = { ...DEFAULTS, ...values };
+		this.current = { ...DEFAULTS, ...current(values) };
 		this.afterChange();
 	}
 
@@ -339,11 +343,9 @@ class SettingsStore {
 		try {
 			const res = await fetch('/api/settings', { credentials: 'same-origin' });
 			if (res.ok) {
-				const remote = (await res.json()) as Partial<Settings>;
 				// An account that has never saved anything starts from the
 				// defaults, not from whatever this device last showed.
-				const saved = remote && typeof remote === 'object' ? remote : {};
-				this.current = introduceRows({ ...DEFAULTS, ...saved });
+				this.current = introduceRows({ ...DEFAULTS, ...current(await res.json()) });
 			}
 		} catch {
 			// Offline: the local copy is already applied.
@@ -468,13 +470,6 @@ class SettingsStore {
 			const value = s.statusColors?.[status];
 			if (value && /^#[0-9a-f]{6}$/i.test(value)) style.setProperty(`--status-${status}`, value);
 			else style.removeProperty(`--status-${status}`);
-		}
-
-		// A custom theme is just token overrides on top of the chosen base.
-		for (const token of ['bg', 'bg-elev', 'bg-elev-2', 'accent', 'text'] as const) {
-			const value = s.customTheme?.tokens?.[token];
-			if (value) style.setProperty(`--${token}`, value);
-			else style.removeProperty(`--${token}`);
 		}
 
 		applyFavicon(s.mascot);

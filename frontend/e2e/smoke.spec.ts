@@ -385,35 +385,35 @@ test('score format changes how a rating reads without touching the value', async
 	await expect(page.getByRole('button', { name: 'Rated 7.5' })).toBeVisible();
 });
 
-test('a saved colour scheme can be copied again and again', async ({ page }) => {
+test('settings saved with a custom theme still load, and drop it on the next save', async ({
+	page
+}) => {
 	await signIn(page);
-	await page.goto('/settings#appearance');
-	await page.getByText('Colour editor').click();
-	// The accent is picked in Frog's own colour picker; its hex field takes
-	// a colour typed in.
-	await page.getByRole('button', { name: 'Accent', exact: true }).click();
-	const picker = page.getByRole('dialog', { name: 'Accent' });
-	await picker.getByLabel('Hex colour').fill('#e06c9f');
-	await picker.getByLabel('Hex colour').press('Enter');
-	await picker.getByRole('button', { name: 'Done', exact: true }).click();
-	await page.getByRole('button', { name: 'Save', exact: true }).click();
-
-	// Two copies of one theme used to share a name, and the page fell over.
-	const duplicate = page.getByRole('button', { name: 'Duplicate' }).first();
-	await duplicate.click();
-	await duplicate.click();
-	await expect(page.getByText('My theme copy 2')).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'Theme', exact: true })).toBeVisible();
-
-	await page.reload();
-	await expect(page.getByRole('heading', { name: 'Theme', exact: true })).toBeVisible();
-
-	// Leave the account as it was for the tests after this one.
-	const res = await page.request.get('/api/settings');
-	const saved = await res.json();
+	const saved = await (await page.request.get('/api/settings')).json();
+	const custom = { name: 'Mine', base: 'pond', tokens: { accent: '#e06c9f', bg: '#101010' } };
 	await page.request.put('/api/settings', {
-		data: { ...saved, savedThemes: [], customTheme: null }
+		data: { ...saved, theme: 'pond', customTheme: custom, savedThemes: [custom] }
 	});
+	await page.goto('/settings#appearance');
+	// The theme it was built on, none of its colours.
+	await expect(page.getByRole('button', { name: 'Pond', exact: true })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	const inline = await page.evaluate(() =>
+		document.documentElement.style.getPropertyValue('--accent')
+	);
+	expect(inline).toBe('');
+	await expect(page.getByText('Colour editor')).toHaveCount(0);
+
+	await page.getByRole('button', { name: 'Glass', exact: true }).click();
+	await expect
+		.poll(async () => Object.keys(await (await page.request.get('/api/settings')).json()))
+		.not.toContain('customTheme');
+	const after = await (await page.request.get('/api/settings')).json();
+	expect(after.savedThemes).toBeUndefined();
+	expect(after.theme).toBe('glass');
+	await page.request.put('/api/settings', { data: saved });
 });
 
 test('search keeps filters in the address and tells kinds of result apart', async ({ page }) => {
