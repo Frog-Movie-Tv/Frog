@@ -1,20 +1,49 @@
 // The badge editor's background fill. Run with `npm test`.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { borderColour, coverage, decontaminate, removeBackground } from '../src/lib/badge-fill.ts';
+import {
+	borderColour,
+	decontaminate,
+	difference,
+	removeBackground,
+	suggestTolerance,
+	unmix
+} from '../src/lib/badge-fill.ts';
 
-/** A square picture from rows of single letters: w white, k black, r red. */
+/** A square picture from rows of single letters: w white, k black, r red, p pale pink. */
 function picture(rows) {
-	const colours = { w: [255, 255, 255], k: [0, 0, 0], r: [220, 30, 40], g: [128, 128, 128] };
+	const colours = {
+		w: [255, 255, 255],
+		k: [0, 0, 0],
+		r: [220, 30, 40],
+		g: [128, 128, 128],
+		p: [255, 214, 232]
+	};
 	const size = rows.length;
 	const data = new Uint8ClampedArray(size * size * 4);
 	rows.forEach((row, y) =>
-		[...row].forEach((c, x) => {
-			const i = (y * size + x) * 4;
-			data.set([...colours[c], 255], i);
-		})
+		[...row].forEach((c, x) => data.set([...colours[c], 255], (y * size + x) * 4))
 	);
 	return { data, size };
+}
+
+/** A disc of `colour` on white, its edge smoothed as a drawing program would. */
+function disc(size, colour, radius) {
+	const data = new Uint8ClampedArray(size * size * 4);
+	const c = size / 2;
+	for (let y = 0; y < size; y++)
+		for (let x = 0; x < size; x++) {
+			// Four by four samples a pixel: how much of it the disc covers.
+			let inside = 0;
+			for (let sy = 0; sy < 4; sy++)
+				for (let sx = 0; sx < 4; sx++)
+					if (Math.hypot(x + (sx + 0.5) / 4 - c, y + (sy + 0.5) / 4 - c) < radius) inside++;
+			const a = inside / 16;
+			const i = (y * size + x) * 4;
+			for (let k = 0; k < 3; k++) data[i + k] = Math.round(colour[k] * a + 255 * (1 - a));
+			data[i + 3] = 255;
+		}
+	return data;
 }
 
 const alpha = (data, size, x, y) => data[(y * size + x) * 4 + 3];
@@ -25,48 +54,89 @@ test('the border colour is the most common one round the edge', () => {
 });
 
 test('only what the border reaches is cleared, so white inside a letter stays', () => {
-	// A black ring with white inside it, on white.
-	const { data, size } = picture(['wwwww', 'wkkkw', 'wkwkw', 'wkkkw', 'wwwww']);
-	removeBackground(data, size, size, { tolerance: 10, softness: 0 });
+	const { data, size } = picture([
+		'wwwwwww',
+		'wkkkkkw',
+		'wkwwwkw',
+		'wkwwwkw',
+		'wkwwwkw',
+		'wkkkkkw',
+		'wwwwwww'
+	]);
+	removeBackground(data, size, size, { tolerance: 8 });
 	assert.equal(alpha(data, size, 0, 0), 0, 'the background goes');
-	assert.equal(alpha(data, size, 1, 1), 255, 'the ring stays');
-	assert.equal(alpha(data, size, 2, 2), 255, 'the white inside stays');
+	assert.equal(alpha(data, size, 3, 3), 255, 'the white inside stays');
+	assert.ok(alpha(data, size, 1, 1) > 200, 'the ring stays');
 });
 
 test('a tapped spot clears a region the border could not reach', () => {
-	const { data, size } = picture(['wwwww', 'wkkkw', 'wkwkw', 'wkkkw', 'wwwww']);
-	removeBackground(data, size, size, { tolerance: 10, softness: 0, spots: [2 * size + 2] });
-	assert.equal(alpha(data, size, 2, 2), 0);
-	assert.equal(alpha(data, size, 1, 1), 255);
+	const { data, size } = picture([
+		'wwwwwww',
+		'wkkkkkw',
+		'wkwwwkw',
+		'wkwwwkw',
+		'wkwwwkw',
+		'wkkkkkw',
+		'wwwwwww'
+	]);
+	removeBackground(data, size, size, { tolerance: 8, spots: [3 * size + 3] });
+	assert.equal(alpha(data, size, 3, 3), 0);
 });
 
-test('the edge band fades, and loses the background from its colour', () => {
-	// Grey sits halfway between white and black: inside a wide band, half solid.
-	const { data, size } = picture(['wwwww', 'wgggw', 'wgkgw', 'wgggw', 'wwwww']);
-	removeBackground(data, size, size, { tolerance: 5, softness: 90 });
-	const a = alpha(data, size, 1, 1);
-	assert.ok(a > 60 && a < 200, `half solid, got ${a}`);
-	// What is left of it is darker than the grey seen over white.
-	assert.ok(data[(1 * size + 1) * 4] < 128);
-	assert.equal(alpha(data, size, 2, 2), 255, 'black is past the band');
+test('a pale pastel is not taken for white', () => {
+	assert.ok(difference([255, 255, 255], [255, 214, 232]) > 8, 'pale pink reads apart from white');
+	const rows = ['wwwwwwwww', ...Array(7).fill('wpppppppw'), 'wwwwwwwww'];
+	const { data, size } = picture(rows);
+	removeBackground(data, size, size, { tolerance: suggestTolerance(data, size, size) });
+	assert.equal(alpha(data, size, 4, 4), 255, 'the pink stays');
+	assert.equal(alpha(data, size, 0, 4), 0);
 });
 
-test('coverage and decontamination on plain numbers', () => {
-	assert.equal(coverage(5, 10, 10), 0);
-	assert.equal(coverage(15, 10, 10), 0.5);
-	assert.equal(coverage(25, 10, 10), 1);
-	assert.equal(coverage(11, 10, 0), 1, 'no softness is a hard cut');
+test('a smoothed edge keeps its shape and loses every trace of the white', () => {
+	const size = 64;
+	const red = [200, 20, 60];
+	const data = disc(size, red, 24);
+	removeBackground(data, size, size, { tolerance: suggestTolerance(data, size, size) });
+	let edge = 0;
+	for (let p = 0; p < size * size; p++) {
+		const a = data[p * 4 + 3];
+		if (a === 0) continue;
+		const colour = [data[p * 4], data[p * 4 + 1], data[p * 4 + 2]];
+		// Whatever stays is the disc's red, at the edge too: no pale fringe.
+		assert.ok(difference(colour, red) < 6, `pixel ${p} is ${colour} at ${a}`);
+		if (a < 255) edge++;
+	}
+	assert.ok(edge > 40, `the edge stays smooth (${edge} part-clear pixels)`);
+	// And the disc is still its size: its middle and its edge where they were.
+	assert.equal(data[(32 * size + 32) * 4 + 3], 255);
+	assert.equal(data[(32 * size + 32 + 30) * 4 + 3], 0);
+});
+
+test('trim takes the outside off first', () => {
+	const size = 64;
+	const plain = disc(size, [200, 20, 60], 24);
+	const trimmed = plain.slice();
+	removeBackground(plain, size, size, { tolerance: 8 });
+	removeBackground(trimmed, size, size, { tolerance: 8, trim: 2 });
+	const solid = (d) => d.filter((_, i) => i % 4 === 3 && d[i] > 0).length;
+	assert.ok(solid(trimmed) < solid(plain));
+});
+
+test('unmixing and decontamination on plain numbers', () => {
+	assert.equal(unmix([128, 128, 128], [255, 255, 255], [0, 0, 0]).toFixed(2), '0.50');
+	assert.equal(unmix([250, 250, 250], [255, 255, 255], [252, 252, 252]), null, 'too alike');
 	// Half-covered black over white looks 128; taken out, it is black again.
 	assert.equal(decontaminate(128, 255, 0.5), 1);
 	assert.equal(decontaminate(200, 200, 1), 200);
 });
 
-test('a wide band softens the edge but never eats a pale region of the picture', () => {
-	// A pale grey block, far wider than an edge, beside the white background.
-	const rows = [];
-	for (let y = 0; y < 12; y++) rows.push(y === 0 || y === 11 ? 'wwwwwwwwwwww' : 'wggggggggggw');
-	const { data, size } = picture(rows);
-	removeBackground(data, size, size, { tolerance: 5, softness: 95 });
-	assert.ok(alpha(data, size, 1, 1) < 255, 'the outer ring of it softens');
-	assert.equal(alpha(data, size, 6, 6), 255, 'its middle stays solid');
+test('the strength suggested follows the grain of the background', () => {
+	const flat = picture(Array(9).fill('wwwwwwwww'));
+	const grainy = picture(Array(9).fill('wwwwwwwww'));
+	for (let i = 0; i < grainy.data.length; i += 4)
+		for (let k = 0; k < 3; k++) grainy.data[i + k] = 255 - ((i * 7 + k * 13) % 30);
+	assert.ok(
+		suggestTolerance(grainy.data, 9, 9) > suggestTolerance(flat.data, 9, 9),
+		'more grain, a stronger start'
+	);
 });

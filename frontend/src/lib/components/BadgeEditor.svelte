@@ -14,6 +14,7 @@
 		SHARP_PIXELS,
 		SMALL,
 		startingSettings,
+		startingStrength,
 		toPng,
 		workerFiller,
 		colourAt,
@@ -477,6 +478,25 @@
 		event.preventDefault();
 	}
 
+	/**
+	 * Turning the background off and on again, or starting over: on, it starts
+	 * at a strength measured from the picture, from the edge's own colour.
+	 */
+	function switchRemoval(on: boolean, fresh = false) {
+		if (!settings || !source) return;
+		settings.removal.on = on;
+		if (!on) return;
+		if (fresh || !settings.removal.seed) {
+			settings.removal.seed = null;
+			settings.removal.spots = [];
+		}
+		settings.removal.tolerance = startingStrength(
+			source,
+			$state.snapshot(settings) as BadgeSettings
+		);
+		if (fresh) settings.removal.trim = 0;
+	}
+
 	// --- fill and ring -----------------------------------------------------
 	const FILLS: { id: Fill; label: string }[] = [
 		{ id: 'none', label: 'No fill' },
@@ -671,29 +691,41 @@
 				<section class="group">
 					<label class="row">
 						<strong>Remove the background</strong>
-						<input type="checkbox" class="toggle-switch" bind:checked={settings.removal.on} />
+						<input
+							type="checkbox"
+							class="toggle-switch"
+							checked={settings.removal.on}
+							onchange={(e) => switchRemoval(e.currentTarget.checked)}
+						/>
 					</label>
 					{#if settings.removal.on}
 						<label class="slider">
-							<span>Tolerance <em class="faint">{settings.removal.tolerance}</em></span>
-							<input
-								type="range"
-								min="0"
-								max="60"
-								step="1"
-								bind:value={settings.removal.tolerance}
-							/>
-						</label>
-						<label class="slider">
-							<span>Edge softness <em class="faint">{settings.removal.softness}</em></span>
+							<span>Strength <em class="faint">{settings.removal.tolerance}</em></span>
 							<input
 								type="range"
 								min="0"
 								max="40"
 								step="1"
-								bind:value={settings.removal.softness}
+								bind:value={settings.removal.tolerance}
 							/>
 						</label>
+						<p class="faint small hint">
+							Raise it until the background is gone; lower it if parts of the picture go too.
+						</p>
+						<div class="field-row">
+							<span class="small">Trim edge</span>
+							<div class="segmented" role="radiogroup" aria-label="Trim edge">
+								{#each [[0, 'Off'], [1, 'A little'], [2, 'More'], [3, 'Most']] as [px, label] (px)}
+									<button
+										class:on={settings.removal.trim === px}
+										role="radio"
+										aria-checked={settings.removal.trim === px}
+										onclick={() => settings && (settings.removal.trim = px as number)}
+										>{label}</button
+									>
+								{/each}
+							</div>
+						</div>
 						<div class="tools segmented" role="group" aria-label="A tap on the picture">
 							<button
 								class:on={tool === 'move'}
@@ -717,6 +749,13 @@
 								Clear a spot
 							</button>
 						</div>
+						{#if tool === 'pick' || tool === 'spot'}
+							<p class="faint small hint">
+								{tool === 'pick'
+									? 'Tap the background in the picture to take that colour out.'
+									: 'Tap a patch the background left behind, like the inside of a letter.'}
+							</p>
+						{/if}
 						<p class="faint small seed">
 							<span class="dot" style:background={hex(settings.removal.seed ?? found)}></span>
 							{settings.removal.seed ? 'Background picked' : 'Background from the edge'}
@@ -724,16 +763,7 @@
 								· {settings.removal.spots.length}
 								{settings.removal.spots.length === 1 ? 'spot' : 'spots'} cleared
 							{/if}
-							{#if settings.removal.seed || settings.removal.spots.length}
-								<button
-									class="link"
-									onclick={() => {
-										if (!settings) return;
-										settings.removal.seed = null;
-										settings.removal.spots = [];
-									}}>Start over</button
-								>
-							{/if}
+							<button class="link" onclick={() => switchRemoval(true, true)}>Start over</button>
 						</p>
 					{/if}
 				</section>
@@ -976,6 +1006,14 @@
 
 	.hint {
 		margin: -4px 0 0;
+	}
+
+	.field-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		flex-wrap: wrap;
+		gap: 8px;
 	}
 
 	.frame:focus-visible {

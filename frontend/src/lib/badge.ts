@@ -7,7 +7,7 @@
  * its transparency. An SVG is drawn to pixels at full size and only those
  * pixels are kept; the SVG itself is never stored or served.
  */
-import type { FillOptions, Rgb } from './badge-fill';
+import { suggestTolerance, type FillOptions, type Rgb } from './badge-fill';
 import { isAnimated } from './picture';
 import { PALETTE, type ProfileColour, type ProfileShade } from './profile-colours';
 
@@ -33,8 +33,10 @@ export interface BadgeSettings {
 	crop: { x: number; y: number; size: number };
 	removal: {
 		on: boolean;
+		/** How strongly: how far a colour may be from the background and still go. */
 		tolerance: number;
-		softness: number;
+		/** Pixels taken off the outside of what stays: 0 to 3. */
+		trim: number;
 		/** The background, when picked by tapping; otherwise read from the border. */
 		seed: Rgb | null;
 		/** Spots tapped to clear, as fractions of the picture's width and height. */
@@ -62,7 +64,7 @@ export function startingSettings(width: number, height: number): BadgeSettings {
 	const size = Math.min(width, height);
 	return {
 		crop: { x: (width - size) / 2, y: (height - size) / 2, size },
-		removal: { on: false, tolerance: 10, softness: 40, seed: null, spots: [] },
+		removal: { on: false, tolerance: 10, trim: 0, seed: null, spots: [] },
 		fill: 'none',
 		shade: 'medium',
 		ring: false,
@@ -233,6 +235,20 @@ export async function readSource(file: Blob): Promise<Source> {
 	};
 }
 
+/**
+ * A strength to start from for this picture as cropped: the background's own
+ * grain, measured on the border (see `suggestTolerance`).
+ */
+export function startingStrength(source: Source, s: BadgeSettings): number {
+	const size = 256;
+	const k = size / s.crop.size;
+	const probe = canvasOf(size, size);
+	const ctx = probe.getContext('2d', { willReadFrequently: true });
+	if (!ctx) return 10;
+	ctx.drawImage(source.canvas, -s.crop.x * k, -s.crop.y * k, source.width * k, source.height * k);
+	return suggestTolerance(ctx.getImageData(0, 0, size, size).data, size, size);
+}
+
 /** The colour at one spot of the picture. */
 export function colourAt(source: Source, x: number, y: number): Rgb {
 	const probe = canvasOf(1, 1);
@@ -315,7 +331,7 @@ export async function render(
 			.filter((p) => p >= 0);
 		const done = await filler(image.data as Uint8ClampedArray<ArrayBuffer>, size, size, {
 			tolerance: s.removal.tolerance,
-			softness: s.removal.softness,
+			trim: s.removal.trim ?? 0,
 			seed: s.removal.seed,
 			spots
 		});

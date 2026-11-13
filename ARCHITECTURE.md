@@ -302,8 +302,9 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
   the browser draw again whatever scrolls under it. Each theme names its tone
   (`THEMES` in `settings.svelte.ts`), set as `data-tone` on the root for the
   few rules that differ between light and dark. A title page overrides
-  `--accent` locally from its poster, and the theme editor writes custom
-  properties at runtime with no component changes.
+  `--accent` locally from its poster, and a profile from its owner's colour.
+  Settings saved with the old theme editor's `customTheme` and `savedThemes`
+  still load; `RETIRED` in `settings.svelte.ts` leaves them out.
 - **Shared primitives in `app.css`.** `.btn`, `.chip`/`.chips` (toggles that
   wrap), `.segmented` (one of a few, the chosen child `.on`), `.toggle-switch`,
   `.card` (a pane), `.list-pane` (rows in one pane with hairlines between),
@@ -363,11 +364,16 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
   only its pixels go further; an animated file gives its first frame. The
   person crops under a round frame, and `lib/badge-fill.ts` takes the
   background out: a flood fill from the border and any spot tapped, never
-  machine learning, with a soft band whose pixels have the background taken
-  out of their colour so a cut-out keeps no halo. Brush strokes (erase, or restore
-  the picture as it was) are kept in the picture's own coordinates and drawn
-  after the fill. The fill runs in
-  `badge-fill.worker.ts` so the sliders stay smooth. The badge is cut to a
+  machine learning, comparing colours in Oklab so a pastel is not taken for
+  white. Its strength starts from the border's own grain
+  (`suggestTolerance`). The pixels along the cut are unmixed: each one's
+  coverage is read from where its colour falls between the background and the
+  picture's colour just inside, and the background is taken out of it, so a
+  cut-out keeps no pale fringe; the walk inwards stops at plain picture, so
+  white inside a letter is never touched. Brush strokes (erase, or restore the
+  picture as it was) are kept in the picture's own coordinates and drawn after
+  the fill, over a view that magnifies without moving the crop. The fill runs
+  in `badge-fill.worker.ts` so the sliders stay smooth. The badge is cut to a
   circle on the canvas, saved as a lossless 1024 px PNG and a 128 px one made
   by halving step by step, and sent with the original and the editor's
   settings, so editing picks up where it stopped. `Badges` draws a row of
