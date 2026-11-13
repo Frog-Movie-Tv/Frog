@@ -42,6 +42,14 @@ if has '^frontend/.*\.(ts|js|svelte|json|md|css|yml|yaml)$'; then
 	}
 fi
 
+if has '^extension/.*\.(ts|js|mjs|svelte|json|md|css|html)$'; then
+	echo "pre-commit: prettier (extension)"
+	( cd "$repo/extension" && npx prettier --check . ) || {
+		echo "  run: cd extension && npm run format"
+		fail=1
+	}
+fi
+
 # Only the staged scripts and components: linting the whole tree on every
 # commit would make committing slow, and CI lints all of it anyway.
 lintable="$(echo "$staged" | grep -E '^frontend/.*\.(ts|js|mjs|svelte)$' | sed 's#^frontend/##' || true)"

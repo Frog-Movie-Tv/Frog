@@ -192,6 +192,62 @@ jobs:
           path: frontend/playwright-report
           retention-days: 7
 
+  extension:
+    name: Browser extension
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Formatting
+        run: npm run format:check
+
+      - name: Type check
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test
+
+      # Both browsers from one source: Chromium (Brave) and Firefox (Zen).
+      - name: Build both
+        run: npm run zip && npm run zip:firefox
+
+      # What Mozilla's signing checks, so a release never fails there first.
+      - name: Firefox lint
+        run: npx web-ext lint --source-dir .output/firefox-mv3
+
+      # The built Chromium extension against local fixture pages and a
+      # stand-in Frog: no streaming site, no network.
+      - name: Install browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright
+        run: npx playwright test
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension
+          path: extension/.output/*.zip
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: extension-playwright-report
+          path: extension/playwright-report
+          retention-days: 7
+
   image:
     name: Docker image
     runs-on: ubuntu-latest
