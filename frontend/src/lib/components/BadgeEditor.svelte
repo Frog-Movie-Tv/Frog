@@ -63,6 +63,42 @@
 	let hover = $state<{ x: number; y: number } | null>(null);
 	let painting = false;
 	const brushing = $derived(tool === 'erase' || tool === 'restore');
+
+	/*
+	 * Touching up magnifies the finished badge rather than cropping it: the
+	 * crop and the fill stay as they were set, and the view moves over them
+	 * (a shift and a scale of the frame's contents, in frame pixels).
+	 */
+	let view = $state({ scale: 1, x: 0, y: 0 });
+	const MAGNIFY = 8;
+	$effect(() => {
+		if (!brushing) view = { scale: 1, x: 0, y: 0 };
+	});
+
+	/** Keep the magnified badge covering the frame. */
+	function placeView(scale: number, x: number, y: number) {
+		const s = Math.min(MAGNIFY, Math.max(1, scale));
+		const least = frameSize - frameSize * s;
+		view = {
+			scale: s,
+			x: Math.min(0, Math.max(least, x)),
+			y: Math.min(0, Math.max(least, y))
+		};
+	}
+
+	/** Magnify to `scale`, keeping the frame point (px, py) where it is. */
+	function magnify(scale: number, px = frameSize / 2, py = frameSize / 2) {
+		const s = Math.min(MAGNIFY, Math.max(1, scale));
+		placeView(s, px - ((px - view.x) * s) / view.scale, py - ((py - view.y) * s) / view.scale);
+	}
+
+	/** A view gesture under way: two fingers, Shift or the right button. */
+	let looking: {
+		x: number;
+		y: number;
+		spread: number;
+		from: { scale: number; x: number; y: number };
+	} | null = null;
 	let found = $state<Rgb | null>(null);
 	let previewLarge = $state<string | null>(null);
 	let previewSmall = $state<string | null>(null);
@@ -162,7 +198,7 @@
 				const s = settings && ($state.snapshot(settings) as BadgeSettings);
 				if (!src || !s) break;
 				const mine = ++ticket;
-				const { canvas, seed } = await render(src, s, PREVIEW, filler);
+				const { canvas, seed } = await render(src, s, brushing ? LARGE : PREVIEW, filler);
 				if (mine !== ticket || src !== source) continue;
 				found = seed;
 				const ctx = frameCanvas?.getContext('2d');
@@ -195,6 +231,8 @@
 		void (settings && $state.snapshot(settings));
 		void source;
 		void frameCanvas;
+		// Touching up draws at full size, which also clears the frame's drawing.
+		void brushing;
 		void draw();
 	});
 	const finished = $derived(!!settings && drawnCrop === JSON.stringify(settings.crop));
@@ -245,8 +283,10 @@
 	function onPicture(event: PointerEvent): [number, number] | null {
 		if (!settings || !source) return null;
 		const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
-		const x = settings.crop.x + ((event.clientX - box.left) / box.width) * settings.crop.size;
-		const y = settings.crop.y + ((event.clientY - box.top) / box.height) * settings.crop.size;
+		const fx = (event.clientX - box.left - view.x) / view.scale / box.width;
+		const fy = (event.clientY - box.top - view.y) / view.scale / box.height;
+		const x = settings.crop.x + fx * settings.crop.size;
+		const y = settings.crop.y + fy * settings.crop.size;
 		const round = (n: number) => Math.round(n * 1000) / 1000;
 		return [round(x / source.width), round(y / source.height)];
 	}
@@ -258,11 +298,25 @@
 		} catch {
 			// A pointer the browser no longer knows; the gesture works without it.
 		}
-		if (brushing && pointers.size === 0) {
+		if (brushing) {
+			event.preventDefault();
+			pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+			const viewing =
+				pointers.size >= 2 || event.shiftKey || event.button === 1 || event.button === 2;
+			if (viewing) {
+				// A second finger turns a stroke just begun into a pinch.
+				if (painting && settings) {
+					const stroke = settings.strokes.at(-1);
+					if (stroke && stroke.points.length < 4) settings.strokes = settings.strokes.slice(0, -1);
+					painting = false;
+				}
+				const c = centre();
+				looking = { x: c.x, y: c.y, spread: spread(), from: { ...view } };
+				return;
+			}
 			const at = onPicture(event);
 			if (!at) return;
 			painting = true;
-			pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 			settings.strokes = [
 				...settings.strokes,
 				{
@@ -289,6 +343,25 @@
 		if (brushing) {
 			const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
 			hover = { x: event.clientX - box.left, y: event.clientY - box.top };
+		}
+		if (looking && pointers.has(event.pointerId)) {
+			pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+			const c = centre();
+			const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+			const from = looking.from;
+			const scale =
+				pointers.size >= 2 && looking.spread > 0
+					? Math.min(MAGNIFY, Math.max(1, (from.scale * spread()) / looking.spread))
+					: from.scale;
+			// Zoom about where the fingers began, and move with them.
+			const px = looking.x - box.left;
+			const py = looking.y - box.top;
+			placeView(
+				scale,
+				px - ((px - from.x) * scale) / from.scale + (c.x - looking.x),
+				py - ((py - from.y) * scale) / from.scale + (c.y - looking.y)
+			);
+			return;
 		}
 		if (painting && settings && source && pointers.has(event.pointerId)) {
 			const at = onPicture(event);
@@ -324,6 +397,15 @@
 	}
 
 	function up(event: PointerEvent) {
+		if (looking) {
+			pointers.delete(event.pointerId);
+			if (pointers.size === 0) looking = null;
+			else {
+				const c = centre();
+				looking = { x: c.x, y: c.y, spread: spread(), from: { ...view } };
+			}
+			return;
+		}
 		if (painting) {
 			painting = false;
 			pointers.delete(event.pointerId);
@@ -360,6 +442,14 @@
 		if (!settings) return;
 		event.preventDefault();
 		const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		if (brushing) {
+			magnify(
+				view.scale * Math.exp(-event.deltaY * 0.0015),
+				event.clientX - box.left,
+				event.clientY - box.top
+			);
+			return;
+		}
 		zoomTo(
 			zoom * Math.exp(-event.deltaY * 0.0015),
 			(event.clientX - box.left) / box.width,
@@ -463,48 +553,72 @@
 					onpointerleave={() => (hover = null)}
 					onwheel={wheel}
 					onkeydown={key}
+					oncontextmenu={(e) => brushing && e.preventDefault()}
 				>
-					<img
-						src={source.url}
-						alt=""
-						draggable="false"
-						style:width="{source.width * k}px"
-						style:height="{source.height * k}px"
-						style:left="{-settings.crop.x * k}px"
-						style:top="{-settings.crop.y * k}px"
-					/>
-					<!-- The finished badge, over the picture, while the crop holds still. -->
-					<canvas
-						class="finished"
-						class:shown={finished}
-						bind:this={frameCanvas}
-						width={PREVIEW}
-						height={PREVIEW}
-						aria-hidden="true"
-					></canvas>
-					<span class="hole" aria-hidden="true"></span>
+					<div
+						class="stage"
+						style:transform="translate({view.x}px, {view.y}px) scale({view.scale})"
+					>
+						<img
+							src={source.url}
+							alt=""
+							draggable="false"
+							style:width="{source.width * k}px"
+							style:height="{source.height * k}px"
+							style:left="{-settings.crop.x * k}px"
+							style:top="{-settings.crop.y * k}px"
+						/>
+						<!-- The finished badge, over the picture, while the crop holds still. -->
+						<canvas
+							class="finished"
+							class:shown={finished}
+							bind:this={frameCanvas}
+							width={brushing ? LARGE : PREVIEW}
+							height={brushing ? LARGE : PREVIEW}
+							aria-hidden="true"
+						></canvas>
+						<span class="hole" aria-hidden="true"></span>
+					</div>
 					{#if brushing && hover}
 						<span
 							class="brush"
 							aria-hidden="true"
-							style:width="{(brush / 100) * frameSize}px"
-							style:height="{(brush / 100) * frameSize}px"
+							style:width="{(brush / 100) * frameSize * view.scale}px"
+							style:height="{(brush / 100) * frameSize * view.scale}px"
 							style:left="{hover.x}px"
 							style:top="{hover.y}px"
 						></span>
 					{/if}
 				</div>
-				<label class="zoom">
-					<span>Zoom</span>
-					<input
-						type="range"
-						min="0.6"
-						max="8"
-						step="0.01"
-						value={zoom}
-						oninput={(e) => zoomTo(Number(e.currentTarget.value))}
-					/>
-				</label>
+				{#if brushing}
+					<label class="zoom">
+						<span>Magnify <em class="faint">{Math.round(view.scale * 10) / 10}×</em></span>
+						<input
+							type="range"
+							min="1"
+							max={MAGNIFY}
+							step="0.1"
+							value={view.scale}
+							oninput={(e) => magnify(Number(e.currentTarget.value))}
+						/>
+					</label>
+					<p class="faint small hint-move">
+						Scroll or pinch to magnify. Move with two fingers, or drag with Shift or the right
+						button.
+					</p>
+				{:else}
+					<label class="zoom">
+						<span>Zoom</span>
+						<input
+							type="range"
+							min="0.6"
+							max="8"
+							step="0.01"
+							value={zoom}
+							oninput={(e) => zoomTo(Number(e.currentTarget.value))}
+						/>
+					</label>
+				{/if}
 				{#if soft}
 					<p class="note">This picture is small, so it will look soft when opened.</p>
 				{/if}
@@ -835,6 +949,19 @@
 
 	.frame.brushing {
 		cursor: none;
+	}
+
+	/* What the view moves and magnifies; the crop under it stays put. */
+	.stage {
+		position: absolute;
+		inset: 0;
+		transform-origin: 0 0;
+	}
+
+	.hint-move {
+		max-width: 260px;
+		margin: 0;
+		text-align: center;
 	}
 
 	/* The brush's reach, following the pointer. */
