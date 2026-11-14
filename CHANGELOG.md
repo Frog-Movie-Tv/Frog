@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.1](https://github.com/Frog-Movie-Tv/Frog/compare/v1.6.0...v1.6.1) (2026-11-14)
+
+
+### Fixes
+
+* 1.6.1, the extension knows the episode, and calmer settings ([856a787](https://github.com/Frog-Movie-Tv/Frog/commit/856a787ec98db01a5cea2762969b931c4d6d0796))
+* **extension:** read TMDB ids past 100,000 from an address ([d02c080](https://github.com/Frog-Movie-Tv/Frog/commit/d02c080ddd3059ea327c4c7432e73e33cb08e2c6))
+* **settings:** shortcuts set in place, pinned titles by poster, fewer settings ([fa2cd4e](https://github.com/Frog-Movie-Tv/Frog/commit/fa2cd4ea9c84636bcdcdb635b2127d5ae3c010fb))
+
 ## [1.6.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.5.1...v1.6.0) (2026-11-13)
 
 
