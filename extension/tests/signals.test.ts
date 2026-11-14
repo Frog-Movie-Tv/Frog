@@ -74,6 +74,21 @@ test('addresses give TMDB ids, IMDb ids and numbers', () => {
 	assert.equal(fromUrl('not a url', 'page-url'), null);
 });
 
+test('TMDB ids past 100,000 are read like any other', () => {
+	const show = fromUrl('https://a.test/tv/247718/1/1?play=true', 'page-url');
+	assert.deepEqual(
+		[show?.tmdb, show?.kind, show?.season, show?.episode],
+		[247718, 'tv', 1, 1],
+		'a show from 2025'
+	);
+	const film = fromUrl('https://a.test/movie/1061474-superman', 'page-url');
+	assert.deepEqual([film?.tmdb, film?.kind], [1061474, 'movie'], 'a film past a million');
+	assert.equal(fromUrl('https://a.test/watch?tmdb=1061474', 'page-url')?.tmdb, 1061474);
+	assert.equal(fromUrl('https://a.test/tmdb-1061474', 'page-url')?.tmdb, 1061474);
+	// Numbers that size are never a season or an episode.
+	assert.equal(fromUrl('https://a.test/watch?tmdb=95396&e=247718', 'page-url')?.episode, undefined);
+});
+
 test('JSON-LD names the episode, its show and their ids', () => {
 	const [clue] = fromJsonLd([
 		{

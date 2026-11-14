@@ -33,6 +33,8 @@ pub const ALTERNATIVES: usize = 5;
 
 /// Anything longer than this from a page is cut before it is looked at.
 const TEXT_MAX: usize = 300;
+/// The largest id believed, Frog's or TMDB's: TMDB's are 32-bit.
+const ID_MAX: i64 = i32::MAX as i64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -65,8 +67,11 @@ impl Signals {
     /// Drop what cannot be right, so nothing below has to doubt it.
     pub fn checked(mut self) -> Self {
         let number = |n: Option<i64>, least: i64| n.filter(|n| (least..=100_000).contains(n));
-        self.title_id = number(self.title_id, 1);
-        self.tmdb_id = number(self.tmdb_id, 1);
+        // Ids are not counts: TMDB's shows are past 250,000 and its films past
+        // a million, and Frog's own ids only grow.
+        let id = |n: Option<i64>| n.filter(|n| (1..=ID_MAX).contains(n));
+        self.title_id = id(self.title_id);
+        self.tmdb_id = id(self.tmdb_id);
         self.season = number(self.season, 0);
         self.episode = number(self.episode, 1);
         self.absolute = number(self.absolute, 1);
@@ -1183,6 +1188,27 @@ mod tests {
         .checked()
         .imdb_id
         .is_none());
+    }
+
+    #[test]
+    fn ids_are_not_held_to_episode_counts() {
+        let s = Signals {
+            tmdb_id: Some(247_718),
+            title_id: Some(1_061_474),
+            episode: Some(247_718),
+            ..Default::default()
+        }
+        .checked();
+        assert_eq!(s.tmdb_id, Some(247_718), "a show from 2025");
+        assert_eq!(s.title_id, Some(1_061_474));
+        assert!(s.episode.is_none(), "no episode is numbered that high");
+        let bad = Signals {
+            tmdb_id: Some(0),
+            title_id: Some(i64::MAX),
+            ..Default::default()
+        }
+        .checked();
+        assert!(bad.tmdb_id.is_none() && bad.title_id.is_none());
     }
 
     #[test]
