@@ -13,6 +13,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+## [1.6.1] — Tomato Frog — 2026-11-14
+
+A few improvements and fixes.
+
 ### Improvements
 
 - Change a page's keyboard shortcut in Home and menus: press its keys, then
@@ -1024,6 +1028,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.6.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.6.1
 [1.6.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.6.0
 [1.5.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.5.1
 [1.5.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.5.0
