@@ -356,18 +356,11 @@ export const api = {
 		send<NewInvite>('POST', '/api/invites', { role, days }),
 	revokeInvite: (id: string) => send<{ ok: true }>('DELETE', `/api/invites/${id}`),
 
-	search: (
-		q: string,
-		page = 1,
-		hideAnimation = false,
-		filters: SearchFilters = {},
-		signal?: AbortSignal
-	) =>
+	search: (q: string, page = 1, filters: SearchFilters = {}, signal?: AbortSignal) =>
 		get<SearchAnswer>(
 			`/api/search${qs({
 				q,
 				page,
-				hide_animation: hideAnimation || undefined,
 				kind: filters.kind,
 				genres: filters.genres?.join(','),
 				from_year: filters.from_year,

@@ -102,12 +102,10 @@ export interface Settings {
 	followPoster: boolean;
 
 	spoilerProtection: boolean;
-	hideAnimation: boolean;
 	/** Episodes as cards with their stills, or as a compact list. */
 	episodeView?: 'grid' | 'list';
 
 	defaultStatus: Status;
-	autoComplete: boolean;
 
 	landingPage: string;
 	homeRows: string[];
@@ -116,7 +114,6 @@ export interface Settings {
 	/** Shown the welcome once. Absent on every account from before it. */
 	onboarded?: boolean;
 
-	dateStyle: 'friendly' | 'iso' | 'long';
 	clock24: boolean;
 	/** The IANA zone days and times are shown in; empty follows the device. */
 	timeZone?: string;
@@ -171,15 +168,12 @@ export const DEFAULTS: Settings = {
 	followPoster: true,
 
 	spoilerProtection: false,
-	hideAnimation: false,
 
 	defaultStatus: 'planned',
-	autoComplete: true,
 
 	landingPage: '/',
 	homeRows: ['continue', 'thisweek', 'activity', 'because'],
 
-	dateStyle: 'friendly',
 	clock24: true,
 
 	dataSaver: false,

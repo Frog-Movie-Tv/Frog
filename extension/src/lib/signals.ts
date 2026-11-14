@@ -80,10 +80,17 @@ export interface Signals {
 }
 
 const MAX = 100_000;
+/** A season, an episode or an episode count: small. */
 const num = (s: string | null | undefined): number | undefined => {
 	if (s == null || !/^\d{1,6}$/.test(s.trim())) return undefined;
 	const n = Number(s.trim());
 	return n <= MAX ? n : undefined;
+};
+/** A TMDB id: shows are past 250,000 and films past a million. */
+const id = (s: string | null | undefined): number | undefined => {
+	if (s == null || !/^\d{1,9}$/.test(s.trim())) return undefined;
+	const n = Number(s.trim());
+	return n > 0 ? n : undefined;
 };
 const IMDB = /\btt\d{7,9}\b/i;
 
@@ -192,7 +199,7 @@ export function fromUrl(raw: string, source: Source): Clue | null {
 	};
 
 	// Named plainly in the query: as sure as an address gets.
-	const tmdb = num(q(['tmdb', 'tmdb_id', 'tmdbid', 'tmdb-id']));
+	const tmdb = id(q(['tmdb', 'tmdb_id', 'tmdbid', 'tmdb-id']));
 	if (tmdb) clue.tmdb = tmdb;
 	const imdb = (q(['imdb', 'imdb_id', 'imdbid']) ?? '').match(IMDB)?.[0];
 	if (imdb) clue.imdb = imdb.toLowerCase();
@@ -214,9 +221,9 @@ export function fromUrl(raw: string, source: Source): Clue | null {
 	// `/tmdb/123`, `/tmdb-123`: the address names TMDB itself.
 	segments.forEach((s, i) => {
 		if (clue.tmdb) return;
-		const inline = s.match(/^tmdb[-_:]?(\d{1,7})$/);
+		const inline = s.match(/^tmdb[-_:]?(\d{1,9})$/);
 		if (inline) clue.tmdb = Number(inline[1]);
-		else if (s === 'tmdb') clue.tmdb = num(segments[i + 1]?.split('-')[0]);
+		else if (s === 'tmdb') clue.tmdb = id(segments[i + 1]?.split('-')[0]);
 	});
 
 	// `/tv/123/2/7`, `/movie/123`, `/embed/tv/123-name/season/2/episode/7`.
@@ -229,11 +236,11 @@ export function fromUrl(raw: string, source: Source): Clue | null {
 					? 'tv'
 					: undefined;
 		if (!kind) continue;
-		const id = num(segments[i + 1]?.split('-')[0]);
-		if (!id) continue;
+		const found = id(segments[i + 1]?.split('-')[0]);
+		if (!found) continue;
 		clue.kind ??= kind;
 		if (!clue.tmdb) {
-			clue.tmdb = id;
+			clue.tmdb = found;
 			clue.weak = true;
 		}
 		if (kind === 'tv') {

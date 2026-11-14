@@ -514,21 +514,37 @@
 					autocomplete="off"
 					spellcheck="false"
 				/>
-				<div class="choices">
-					{#each pinChoices as t (t.id)}
-						{@const on = (account?.pins ?? []).some((p) => p.title_id === t.id)}
-						<button class="choice" class:on aria-pressed={on} onclick={() => togglePin(t.id)}>
-							{#if on}<Icon name="check" size={13} />{/if}
-							{t.name}
-						</button>
-					{:else}
-						<p class="faint small">
-							{pinTerm.trim()
-								? 'Nothing in your library by that name.'
-								: 'Add titles to your library to pin them.'}
-						</p>
-					{/each}
-				</div>
+				{#if pinChoices.length}
+					<div class="choices">
+						{#each pinChoices as t (t.id)}
+							{@const on = (account?.pins ?? []).some((p) => p.title_id === t.id)}
+							{@const poster = img(t.poster_path, 'w185')}
+							<button
+								class="choice"
+								class:on
+								aria-pressed={on}
+								aria-label="{on ? 'Unpin' : 'Pin'} {t.name}"
+								onclick={() => togglePin(t.id)}
+							>
+								<span class="choice-art">
+									{#if poster}
+										<img src={poster} alt="" loading="lazy" />
+									{:else}
+										<span class="choice-blank">{t.name}</span>
+									{/if}
+									<span class="choice-tick"><Icon name="check" size={14} /></span>
+								</span>
+								<span class="choice-name">{t.name}</span>
+							</button>
+						{/each}
+					</div>
+				{:else}
+					<p class="faint small">
+						{pinTerm.trim()
+							? 'Nothing in your library by that name.'
+							: 'Add titles to your library to pin them.'}
+					</p>
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -1134,31 +1150,107 @@
 		gap: 10px;
 	}
 
+	/* As many posters as fit, sharing the width. auto-fill keeps the empty
+	   columns, so a short list never stretches one poster across. */
 	.choices {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+		gap: 14px 12px;
+		max-height: 520px;
+		overflow-y: auto;
+		padding: 3px;
+		margin: -3px;
+	}
+
+	/* A list that scrolls inside a page that scrolls is hard to hold on a phone. */
+	@media (max-width: 760px) {
+		.choices {
+			max-height: none;
+			overflow: visible;
+		}
 	}
 
 	.choice {
-		display: inline-flex;
-		align-items: center;
-		gap: 5px;
-		max-width: 100%;
-		padding: 6px 10px;
-		border-radius: 999px;
-		border: 1px solid var(--line);
-		background: var(--bg-elev);
-		font-size: 0.82rem;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 0;
+		border: 0;
+		background: none;
+		color: inherit;
+		font: inherit;
+		text-align: left;
 		cursor: pointer;
 	}
 
-	.choice.on {
-		border-color: var(--accent);
-		color: var(--accent);
+	.choice-art {
+		position: relative;
+		display: block;
+		aspect-ratio: 2 / 3;
+		border-radius: var(--radius-sm);
+		overflow: hidden;
+		background: var(--bg-elev-2);
+		box-shadow: 0 0 0 1px var(--line);
+		transition:
+			box-shadow var(--fast) var(--ease),
+			transform var(--fast) var(--ease);
+	}
+
+	.choice-art img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+
+	.choice-blank {
+		display: grid;
+		place-items: center;
+		height: 100%;
+		padding: 8px;
+		font-size: 0.72rem;
+		text-align: center;
+		color: var(--text-dim);
+	}
+
+	.choice:hover .choice-art {
+		transform: translateY(-2px);
+	}
+
+	.choice.on .choice-art {
+		box-shadow: 0 0 0 2px var(--accent);
+	}
+
+	.choice-tick {
+		position: absolute;
+		top: 6px;
+		right: 6px;
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		background: var(--accent);
+		color: var(--accent-ink);
+		opacity: 0;
+		transform: scale(0.6);
+		transition:
+			opacity var(--fast) var(--ease),
+			transform var(--fast) var(--ease);
+	}
+
+	.choice.on .choice-tick {
+		opacity: 1;
+		transform: none;
+	}
+
+	.choice-name {
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+		font-size: 0.78rem;
+		line-height: 1.3;
 	}
 
 	.small {

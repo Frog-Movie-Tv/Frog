@@ -126,46 +126,6 @@
 			/>
 		</label>
 
-		<label class="row">
-			<span class="label">
-				<strong>Hide animation</strong>
-				<span class="faint">Leave animated titles out of search</span>
-			</span>
-			<input
-				type="checkbox"
-				class="toggle-switch"
-				checked={s.hideAnimation}
-				onchange={(e) => settings.set('hideAnimation', e.currentTarget.checked)}
-			/>
-		</label>
-
-		<label class="row">
-			<span class="label">
-				<strong>Complete automatically</strong>
-				<span class="faint">When the last episode is ticked</span>
-			</span>
-			<input
-				type="checkbox"
-				class="toggle-switch"
-				checked={s.autoComplete}
-				onchange={(e) => settings.set('autoComplete', e.currentTarget.checked)}
-			/>
-		</label>
-
-		<div class="row">
-			<span class="label"><strong>Dates</strong></span>
-			<Select
-				label="Dates"
-				value={s.dateStyle}
-				options={[
-					{ value: 'friendly', label: 'Friendly (3 days ago)' },
-					{ value: 'long', label: 'Long (24 October 2026)' },
-					{ value: 'iso', label: 'ISO (2026-10-24)' }
-				]}
-				onchange={(v) => settings.set('dateStyle', v as 'friendly')}
-			/>
-		</div>
-
 		<div class="row">
 			<span class="label">
 				<strong>Time zone</strong>
