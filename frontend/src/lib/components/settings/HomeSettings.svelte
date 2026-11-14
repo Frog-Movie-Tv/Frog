@@ -87,8 +87,30 @@
 		settings.set('goKeys', keys);
 	}
 
-	/** Shortcuts are set rarely, so their fields wait behind one button. */
-	let editingKeys = $state(false);
+	/** The page whose shortcut is being set: its keys wait for the next key. */
+	let capturing = $state<string | null>(null);
+
+	/**
+	 * The next key is the page's letter. Backspace takes the shortcut off and
+	 * Esc leaves it as it was. The key stops here, so it never also opens a page.
+	 */
+	function capture(href: string, event: KeyboardEvent) {
+		if (event.key === 'Tab' || event.ctrlKey || event.metaKey || event.altKey) return;
+		event.preventDefault();
+		event.stopPropagation();
+		if (event.key === 'Escape') capturing = null;
+		else if (event.key === 'Backspace' || event.key === 'Delete') {
+			setGoKey(href, '');
+			capturing = null;
+		} else if (/^[a-z0-9]$/i.test(event.key) && event.key.toLowerCase() !== 'g') {
+			setGoKey(href, event.key);
+			capturing = null;
+		}
+	}
+
+	function focusNow(node: HTMLElement) {
+		node.focus();
+	}
 
 	function toggleTab(href: string, on: boolean) {
 		if (on && s.navTabs.length >= MAX_TABS) return;
@@ -189,12 +211,7 @@
 </section>
 
 <section class="block">
-	<div class="section-head">
-		<h2>Navigation</h2>
-		<button class="btn ghost small keys-toggle" onclick={() => (editingKeys = !editingKeys)}>
-			{editingKeys ? 'Done' : 'Edit shortcuts'}
-		</button>
-	</div>
+	<div class="section-head"><h2>Navigation</h2></div>
 
 	<ul class="builder nav list-pane">
 		<li class="legend" aria-hidden="true">
@@ -211,21 +228,33 @@
 				<span class="nav-icon"><Icon name={navPage.icon as IconName} size={17} /></span>
 				<span class="label">
 					<strong>{navPage.label}</strong>
-					{#if editingKeys}
-						<label class="key">
-							G then
-							<input
-								class="input"
-								value={key ?? ''}
-								maxlength="1"
-								aria-label="Shortcut letter for {navPage.label}"
-								onchange={(e) => setGoKey(navPage.href, e.currentTarget.value)}
-							/>
-						</label>
-					{:else if key}
-						<span class="key faint" title="Press G, then {key.toUpperCase()}"
-							><kbd>G</kbd><kbd>{key.toUpperCase()}</kbd></span
+					{#if capturing === navPage.href}
+						<button
+							class="key capturing"
+							use:focusNow
+							aria-label="Press a letter for {navPage.label}. Backspace removes it, Esc keeps it."
+							onkeydown={(e) => capture(navPage.href, e)}
+							onblur={() => (capturing = null)}
+							onclick={() => (capturing = null)}
 						>
+							<kbd>G</kbd><span class="press">Press a key</span>
+						</button>
+					{:else}
+						<button
+							class="key"
+							class:empty={!key}
+							title={key ? 'Change shortcut' : 'Add a shortcut'}
+							aria-label={key
+								? `Shortcut for ${navPage.label}: G then ${key.toUpperCase()}. Change it`
+								: `Add a shortcut for ${navPage.label}`}
+							onclick={() => (capturing = navPage.href)}
+						>
+							{#if key}
+								<kbd>G</kbd><kbd>{key.toUpperCase()}</kbd>
+							{:else}
+								<Icon name="plus" size={11} /><span>Shortcut</span>
+							{/if}
+						</button>
 					{/if}
 				</span>
 				<span class="col">
@@ -379,12 +408,37 @@
 		color: var(--text-faint);
 	}
 
+	/* The keys are the button: press them to set new ones. */
 	.key {
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
+		padding: 3px 5px;
+		margin: -3px -5px;
+		border: 1px solid transparent;
+		border-radius: 7px;
+		background: transparent;
+		font: inherit;
 		font-size: 0.74rem;
 		color: var(--text-dim);
+		cursor: pointer;
+		transition:
+			border-color var(--fast) var(--ease),
+			opacity var(--fast) var(--ease);
+	}
+
+	.key:hover,
+	.key:focus-visible {
+		border-color: var(--line);
+	}
+
+	.key.capturing {
+		border-color: var(--accent);
+		color: var(--text);
+	}
+
+	.press {
+		font-size: 0.72rem;
 	}
 
 	kbd {
@@ -395,14 +449,6 @@
 		font-family: var(--font-mono);
 		font-size: 0.7rem;
 		text-align: center;
-	}
-
-	.key input {
-		width: 2.2em;
-		padding: 2px 4px;
-		text-align: center;
-		text-transform: lowercase;
-		font-family: var(--font-mono);
 	}
 
 	.tab-toggle {
@@ -462,13 +508,16 @@
 	/* With a mouse, moving a row is offered where the pointer is, so the
 	   list reads as names and switches until then. */
 	@media (hover: hover) {
-		.builder li .order {
+		.builder li .order,
+		.builder li .key.empty {
 			opacity: 0;
 			transition: opacity var(--fast) var(--ease);
 		}
 
 		.builder li:hover .order,
-		.builder li:focus-within .order {
+		.builder li:focus-within .order,
+		.builder li:hover .key.empty,
+		.builder li .key.empty:focus-visible {
 			opacity: 1;
 		}
 	}
@@ -504,8 +553,7 @@
 
 	/* Shortcuts are for a keyboard: a phone has no room for them, and no use. */
 	@media (max-width: 760px), (hover: none) {
-		.key,
-		.keys-toggle {
+		.key {
 			display: none;
 		}
 	}

@@ -13,6 +13,19 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Improvements
+
+- Change a page's keyboard shortcut in Home and menus: press its keys, then
+  the new letter.
+- Pick your pinned titles by their posters.
+- Watching has fewer settings. A show completes when you tick its last
+  episode, search always includes animation, and dates read like "3 days ago".
+
+### Fixes
+
+- The browser extension knows the show and episode on more sites, newer
+  shows and films included.
+
 ## [1.6.0] — Tomato Frog — 2026-11-13
 
 Profiles of your own, and Frog in your browser.

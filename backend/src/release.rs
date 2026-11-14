@@ -211,13 +211,9 @@ async fn tmdb_ongoing(
 /// - All of it watched and the same run continues: Watching, which Home
 ///   shows as caught up.
 /// - All of it watched and nothing else of this run is coming: Completed,
-///   when the person lets Frog complete shows, whatever sequel is announced.
+///   whatever sequel is announced.
 /// - Paused and dropped are the person's word and are never moved.
-pub fn desired_status(
-    current: Option<&str>,
-    state: &ShowState,
-    auto_complete: bool,
-) -> Option<&'static str> {
+pub fn desired_status(current: Option<&str>, state: &ShowState) -> Option<&'static str> {
     if matches!(current, Some("paused" | "dropped")) {
         return None;
     }
@@ -229,10 +225,8 @@ pub fn desired_status(
     } else if state.watched < state.released || state.ongoing {
         // Episodes left, or caught up on a run that carries on.
         "watching"
-    } else if auto_complete {
-        "completed"
     } else {
-        return None;
+        "completed"
     };
     (current != Some(want)).then_some(want)
 }
@@ -406,8 +400,7 @@ pub async fn reconcile(pool: &SqlitePool, user_id: i64, title_id: i64) -> AppRes
         }
     }
     let state = show_state(pool, user_id, title_id).await?;
-    let auto = crate::prefs::auto_complete(pool, user_id).await;
-    if let Some(status) = desired_status(Some(&entry.status), &state, auto) {
+    if let Some(status) = desired_status(Some(&entry.status), &state) {
         let patch = store::LibraryPatch {
             status: Some(status.to_string()),
             ..Default::default()
@@ -591,7 +584,7 @@ mod tests {
     #[test]
     fn a_finished_season_with_an_announced_sequel_is_completed() {
         assert_eq!(
-            desired_status(Some("watching"), &state(12, 12, false), true),
+            desired_status(Some("watching"), &state(12, 12, false)),
             Some("completed")
         );
     }
@@ -599,11 +592,11 @@ mod tests {
     #[test]
     fn caught_up_on_an_airing_run_stays_watching() {
         assert_eq!(
-            desired_status(Some("completed"), &state(801, 801, true), true),
+            desired_status(Some("completed"), &state(801, 801, true)),
             Some("watching")
         );
         assert_eq!(
-            desired_status(Some("watching"), &state(801, 801, true), true),
+            desired_status(Some("watching"), &state(801, 801, true)),
             None
         );
     }
@@ -611,11 +604,11 @@ mod tests {
     #[test]
     fn released_episodes_left_means_watching() {
         assert_eq!(
-            desired_status(Some("completed"), &state(13, 12, false), true),
+            desired_status(Some("completed"), &state(13, 12, false)),
             Some("watching")
         );
         assert_eq!(
-            desired_status(Some("planned"), &state(13, 1, false), true),
+            desired_status(Some("planned"), &state(13, 1, false)),
             Some("watching")
         );
     }
@@ -623,33 +616,17 @@ mod tests {
     #[test]
     fn nothing_out_is_never_watching() {
         assert_eq!(
-            desired_status(Some("watching"), &state(0, 0, false), true),
+            desired_status(Some("watching"), &state(0, 0, false)),
             Some("planned")
         );
-        assert_eq!(
-            desired_status(Some("planned"), &state(0, 0, false), true),
-            None
-        );
+        assert_eq!(desired_status(Some("planned"), &state(0, 0, false)), None);
     }
 
     #[test]
     fn paused_dropped_and_untouched_shows_are_left_alone() {
-        assert_eq!(
-            desired_status(Some("paused"), &state(12, 12, false), true),
-            None
-        );
-        assert_eq!(
-            desired_status(Some("dropped"), &state(12, 3, false), true),
-            None
-        );
-        assert_eq!(
-            desired_status(Some("planned"), &state(12, 0, false), true),
-            None
-        );
-        assert_eq!(
-            desired_status(Some("watching"), &state(12, 12, false), false),
-            None
-        );
+        assert_eq!(desired_status(Some("paused"), &state(12, 12, false)), None);
+        assert_eq!(desired_status(Some("dropped"), &state(12, 3, false)), None);
+        assert_eq!(desired_status(Some("planned"), &state(12, 0, false)), None);
     }
 
     #[test]

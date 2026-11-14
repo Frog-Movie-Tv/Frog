@@ -82,7 +82,7 @@
 		const timer = setTimeout(async () => {
 			searching = true;
 			try {
-				const res = await api.search(q, 1, false, {}, ask.signal);
+				const res = await api.search(q, 1, {}, ask.signal);
 				// A later key asked again: its answer is the one to show.
 				if (mine === asked) remote = res.results.slice(0, 6);
 			} catch (e) {

@@ -1,6 +1,6 @@
 //! Each account's preferences: one JSON object the app owns the shape of
-//! (`app_setting` key `preferences`). The server reads only the odd option
-//! it acts on itself, such as "Complete automatically".
+//! (`app_setting` key `preferences`). The server stores it and never reads
+//! inside it.
 
 use chrono::Utc;
 use serde_json::{json, Value};
@@ -38,14 +38,4 @@ pub async fn put(pool: &SqlitePool, user_id: i64, encoded: &str) -> AppResult<()
     .execute(pool)
     .await?;
     Ok(())
-}
-
-/// "Complete automatically" in Watching: whether ticking a show's last
-/// episode marks it completed. On unless it was turned off.
-pub async fn auto_complete(pool: &SqlitePool, user_id: i64) -> bool {
-    get(pool, user_id)
-        .await
-        .ok()
-        .and_then(|v| v["autoComplete"].as_bool())
-        .unwrap_or(true)
 }

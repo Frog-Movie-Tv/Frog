@@ -13,9 +13,6 @@ use crate::state::AppState;
 use crate::text::{self, Closeness};
 use crate::tmdb::models::{self, SearchItem};
 
-/// TMDB's genre id for Animation, shared by films and shows.
-const ANIMATION_GENRE: i64 = 16;
-
 /// TMDB's genres: the name Frog stores, and its id for films and for shows.
 /// TMDB keeps two lists and gives a few genres different ids in each.
 pub const GENRES: [(&str, Option<i64>, Option<i64>); 25] = [
@@ -70,9 +67,6 @@ pub struct SearchQuery {
     pub q: String,
     #[serde(default = "first_page")]
     pub page: u32,
-    /// Leave animation out of the results.
-    #[serde(default)]
-    pub hide_animation: bool,
     /// movie | tv
     pub kind: Option<String>,
     /// Any of these, comma separated.
@@ -230,7 +224,7 @@ impl Filters {
     }
 
     /// TMDB's own parameters for these filters.
-    fn discover_params(&self, kind: &str, hide_animation: bool) -> Vec<(&'static str, String)> {
+    fn discover_params(&self, kind: &str) -> Vec<(&'static str, String)> {
         let dated = if kind == "movie" {
             "primary_release_date"
         } else {
@@ -261,9 +255,6 @@ impl Filters {
         if !ids.is_empty() {
             // A pipe is any of them, as on a shelf.
             params.push(("with_genres", ids.join("|")));
-        }
-        if hide_animation {
-            params.push(("without_genres", ANIMATION_GENRE.to_string()));
         }
         let sort = match self.sort.as_deref() {
             Some("rating") => "vote_average.desc".to_string(),
@@ -305,12 +296,12 @@ pub async fn search(
 
     let page = q.page.clamp(1, 500);
     let (mut items, next_page) = if term.is_empty() {
-        discovered(&state, &filters, q.hide_animation, page).await?
+        discovered(&state, &filters, page).await?
     } else {
-        named(&state, term, &filters, q.hide_animation, page).await?
+        named(&state, term, &filters, page).await?
     };
     if page == 1 && !term.is_empty() {
-        let known = known_titles(&state, auth.user_id(), term, q.hide_animation).await?;
+        let known = known_titles(&state, auth.user_id(), term).await?;
         let known = known.into_iter().filter(|i| filters.matches(i)).collect();
         items = merge_known(items, known, term);
     }
@@ -370,7 +361,6 @@ async fn named(
     state: &AppState,
     term: &str,
     filters: &Filters,
-    hide_animation: bool,
     page: u32,
 ) -> AppResult<(Vec<SearchItem>, Option<u32>)> {
     let pages = if filters.is_empty() {
@@ -391,7 +381,7 @@ async fn named(
         }
     }
     items.retain(|i| filters.matches(i));
-    rank(&mut items, term, hide_animation);
+    rank(&mut items, term);
     Ok((items, (last < total).then_some(last + 1)))
 }
 
@@ -400,7 +390,6 @@ async fn named(
 async fn discovered(
     state: &AppState,
     filters: &Filters,
-    hide_animation: bool,
     page: u32,
 ) -> AppResult<(Vec<SearchItem>, Option<u32>)> {
     let kinds: &[&str] = match filters.kind.as_deref() {
@@ -411,7 +400,7 @@ async fn discovered(
     let mut items = Vec::new();
     let mut more = false;
     for kind in kinds.iter().filter(|k| filters.fits_kind(k)) {
-        let params = filters.discover_params(kind, hide_animation);
+        let params = filters.discover_params(kind);
         let raw = state.tmdb.discover(kind, &params, page).await?;
         more |= raw["total_pages"].as_i64().unwrap_or(1) > i64::from(page);
         items.extend(collect(&raw, Some(kind)));
@@ -560,12 +549,7 @@ pub async fn trending(
 /// finds Interstellar there; typing a few letters of something you track
 /// should. Your own library first. Names are compared folded, so "pokemon"
 /// finds Pokémon, and "&" finds "and".
-async fn known_titles(
-    state: &AppState,
-    user_id: i64,
-    term: &str,
-    hide_animation: bool,
-) -> AppResult<Vec<SearchItem>> {
+async fn known_titles(state: &AppState, user_id: i64, term: &str) -> AppResult<Vec<SearchItem>> {
     if term.chars().count() < 2 {
         return Ok(Vec::new());
     }
@@ -575,7 +559,6 @@ async fn known_titles(
     let rows = crate::store::known_by_name(&state.pool, user_id, &pattern, &alternative).await?;
     Ok(rows
         .into_iter()
-        .filter(|r| !(hide_animation && r.9.contains("Animation")))
         .map(
             |(id, kind, provider, key, name, poster_path, backdrop_path, date, vote, stored)| {
                 let source = provider
@@ -640,10 +623,7 @@ fn merge_known(tmdb: Vec<SearchItem>, known: Vec<SearchItem>, term: &str) -> Vec
 /// its popularity swings with the week. How closely the name answers comes
 /// first (`text::closeness`); within that, popularity, damped by how few
 /// people have rated it so obscure entries sink.
-fn rank(items: &mut Vec<SearchItem>, term: &str, hide_animation: bool) {
-    if hide_animation {
-        items.retain(|i| !i.genre_ids.contains(&ANIMATION_GENRE));
-    }
+fn rank(items: &mut [SearchItem], term: &str) {
     let typed = text::words(term);
     items.sort_by(|a, b| score(b, &typed).total_cmp(&score(a, &typed)));
 }
@@ -750,7 +730,7 @@ mod tests {
             item("tv", "Tom & Jerry", 1, 9.2),
             item("tv", "Tom and Jerry Tales", 155, 18.4),
         ];
-        rank(&mut found, "Tom & Jerry", false);
+        rank(&mut found, "Tom & Jerry");
         let names: Vec<(&str, &str)> = found
             .iter()
             .map(|i| (i.kind.as_str(), i.name.as_str()))
@@ -802,16 +782,13 @@ mod tests {
         };
         let genres = |kind: &str| {
             filters
-                .discover_params(kind, false)
+                .discover_params(kind)
                 .into_iter()
                 .find(|p| p.0 == "with_genres")
                 .map(|p| p.1)
         };
         assert_eq!(genres("movie").as_deref(), Some("878"));
         assert_eq!(genres("tv").as_deref(), Some("10765"));
-        assert!(filters
-            .discover_params("tv", true)
-            .contains(&("without_genres", "16".to_string())));
     }
 
     #[test]

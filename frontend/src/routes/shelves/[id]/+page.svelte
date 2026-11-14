@@ -146,7 +146,7 @@
 		const calling = new AbortController();
 		const wait = setTimeout(() => {
 			api
-				.search(q, 1, false, {}, calling.signal)
+				.search(q, 1, {}, calling.signal)
 				.then((r) => {
 					if (ask === asked) found = r.results.slice(0, 24);
 				})

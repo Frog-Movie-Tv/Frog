@@ -291,13 +291,7 @@
 		askingTitles = ask;
 		loading = true;
 		try {
-			const res = await api.search(
-				q,
-				1,
-				settings.current.hideAnimation,
-				currentFilters(),
-				ask.signal
-			);
+			const res = await api.search(q, 1, currentFilters(), ask.signal);
 			if (mine !== token) return;
 			results = res.results;
 			nextPage = res.next_page;
@@ -317,12 +311,7 @@
 		const mine = token;
 		loadingMore = true;
 		try {
-			const res = await api.search(
-				term.trim(),
-				nextPage,
-				settings.current.hideAnimation,
-				currentFilters()
-			);
+			const res = await api.search(term.trim(), nextPage, currentFilters());
 			if (mine !== token) return;
 			const seen = new Set(results.map(titleKey));
 			results = [...results, ...res.results.filter((r) => !seen.has(titleKey(r)))];

@@ -5112,10 +5112,10 @@ async fn marking_a_show_ticks_only_the_specials_chosen() {
     assert_eq!(ticked, vec![(0, 2)], "only the special that was chosen");
 }
 
-/// "Complete automatically" decides whether ticking the last aired episode
-/// completes the show; with it off the show stays where it was.
+/// Ticking the last aired episode completes the show, even for an account
+/// that once saved the setting that used to keep it Watching.
 #[tokio::test]
-async fn completing_on_the_last_episode_follows_the_setting() {
+async fn ticking_the_last_episode_completes_the_show() {
     let h = Harness::new().await;
     let cookie = show_with_seasons(&h).await;
     // Only aired episodes, so ticking them all finishes the show.
@@ -5123,8 +5123,6 @@ async fn completing_on_the_last_episode_follows_the_setting() {
         .execute(&h.state.pool)
         .await
         .unwrap();
-    let mark_all = json!({ "watched": true, "when": "unknown" });
-
     let (status, _) = h
         .send(
             "PUT",
@@ -5137,25 +5135,7 @@ async fn completing_on_the_last_episode_follows_the_setting() {
     let (_, body, _) = h
         .post(
             &format!("/api/t/{}/episodes/watch", h.tid("tv", 48866).await),
-            mark_all.clone(),
-            Some(&cookie),
-        )
-        .await;
-    assert_eq!(body["item"]["entry"]["status"], json!("watching"), "{body}");
-
-    let (status, _) = h
-        .send(
-            "PUT",
-            "/api/settings",
-            json!({ "autoComplete": true }),
-            &cookie,
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    let (_, body, _) = h
-        .post(
-            &format!("/api/t/{}/episodes/watch", h.tid("tv", 48866).await),
-            mark_all,
+            json!({ "watched": true, "when": "unknown" }),
             Some(&cookie),
         )
         .await;
