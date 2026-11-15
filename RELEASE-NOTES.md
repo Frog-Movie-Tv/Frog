@@ -13,6 +13,8 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+## [1.7.0] — Tomato Frog — 2026-11-15
+
 Add titles where they belong, tell each other what to watch, and find everything Frog has to tell you in one place.
 
 ### Highlights
@@ -1063,6 +1065,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.7.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.7.0
 [1.6.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.6.1
 [1.6.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.6.0
 [1.5.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.5.1
