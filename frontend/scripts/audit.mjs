@@ -170,6 +170,7 @@ const ROUTES = [
 	'/people/audit/library',
 	'/people/audit/ratings',
 	'/activity',
+	'/notifications',
 	'/rate',
 	'/settings',
 	'/import',
@@ -195,6 +196,11 @@ const ACTIONS = [
 		press: (page) => page.getByRole('button', { name: 'Check for updates' })
 	},
 	{ route: '/title/tv/95396', press: (page) => page.locator('button.trailer') },
+	// The + opens its status picker; nothing is added until one is chosen.
+	{
+		route: '/title/movie/603',
+		press: (page) => page.getByRole('button', { name: 'Add to library' })
+	},
 	// The badge editor starts its background-fill worker when it opens.
 	{ route: '/admin', press: (page) => page.getByRole('button', { name: 'New badge' }) }
 ];

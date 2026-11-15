@@ -76,6 +76,7 @@ pub async fn set_watched(
         }
     } else if body.watched {
         let when = body.watched_at.unwrap_or_else(|| Utc::now().to_rfc3339());
+        let since = crate::together::newest_watch(&state.pool, auth.user_id()).await?;
         store::add_episode_watch(
             &state.pool,
             auth.user_id(),
@@ -85,6 +86,8 @@ pub async fn set_watched(
             body.undated,
         )
         .await?;
+        // A show watched with someone names them on every episode ticked.
+        crate::together::after(&state, auth.user_id(), since, &[title_id], None).await?;
     } else {
         // Every watch, so undo can put back the rewatches as well as the last.
         cleared = store::clear_episode_watches(&state.pool, auth.user_id(), ep_id).await?;
@@ -109,6 +112,9 @@ pub struct BulkWatchBody {
     /// whole show: a finished show means its seasons, and specials are chosen.
     #[serde(default)]
     pub specials: Vec<i64>,
+    /// Who else was there; the show's own "watching with" when not said.
+    #[serde(default)]
+    pub with: Option<Vec<i64>>,
 }
 
 /// Tick every aired episode of one season, or of the whole show when `season`
@@ -127,7 +133,12 @@ async fn bulk(
     let marking = Marking {
         when: body.when,
         date: body.date.clone(),
+        with: None,
     };
+    if let Some(with) = body.with.as_deref() {
+        crate::together::allowed(&state.pool, user_id, with).await?;
+    }
+    let since = crate::together::newest_watch(&state.pool, user_id).await?;
     tick_aired(
         &state.pool,
         user_id,
@@ -136,7 +147,8 @@ async fn bulk(
         &marking,
         &body.specials,
     )
-    .await
+    .await?;
+    crate::together::after(state, user_id, since, &[title_id], body.with.as_deref()).await
 }
 
 /// Tick or clear a whole season in one go.

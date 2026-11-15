@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ADD_ORDER } from '#lib/add';
 	import ColourPicker from '#lib/components/ColourPicker.svelte';
 	import Rating from '#lib/components/Rating.svelte';
 	import Score from '#lib/components/Score.svelte';
@@ -103,13 +104,17 @@
 	<div class="rows list-pane">
 		<div class="row">
 			<span class="label">
-				<strong>Default status</strong>
+				<strong>Adding a title</strong>
+				<span class="faint">What the + does</span>
 			</span>
 			<Select
-				label="Default status"
-				value={s.defaultStatus}
-				options={STATUSES.map((st) => ({ value: st, label: statusLabel(st) }))}
-				onchange={(v) => settings.set('defaultStatus', v as Status)}
+				label="Adding a title"
+				value={s.addStatus}
+				options={[
+					{ value: 'ask', label: 'Ask each time' },
+					...ADD_ORDER.map((st) => ({ value: st, label: statusLabel(st) }))
+				]}
+				onchange={(v) => settings.set('addStatus', v as Status | 'ask')}
 			/>
 		</div>
 

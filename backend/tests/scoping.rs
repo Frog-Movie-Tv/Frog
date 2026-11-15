@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 /// Tables that gained a `user_id` in migration 0008, and personal tables
 /// added since.
-const PERSONAL: [&str; 21] = [
+const PERSONAL: [&str; 25] = [
     "password_reset",
     "season_rating",
     "title_merge",
@@ -38,6 +38,10 @@ const PERSONAL: [&str; 21] = [
     "badge_award",
     "api_token",
     "extension_log",
+    "recommendation",
+    "notification",
+    "watch_with",
+    "watching_with",
 ];
 
 /// Fragments that are pasted into a statement and carry the account
@@ -102,8 +106,8 @@ const ALLOWED: [(&str, &str); 12] = [
         "Administration lists who holds each badge; `badge` itself is shared          like a title, one row however many hold it, and has no owner",
     ),
     (
-        "SELECT DISTINCT user_id FROM push_subscription",
-        "the worker asks which accounts to notify before scoping to each",
+        "DELETE FROM notification WHERE created_at < ?",
+        "housekeeping: notifications past inbox::KEEP_DAYS go, whoever they were for",
     ),
 ];
 

@@ -905,6 +905,9 @@ pub async fn log(
         "extension",
     )
     .await?;
+    // A show watched with someone names them on what the browser logs too.
+    let people = crate::together::default_for(&state.pool, user_id, title_id).await?;
+    crate::together::tag(state, user_id, &[watch_id], &people).await?;
     if title.kind == "movie" {
         // Watching a film is finishing it, as Completed on its page means.
         if before.as_deref() != Some("completed") {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { InOrder } from '#lib/in-order';
+	import { addAs, chooseStatus } from '#lib/add';
 	import Icon from './Icon.svelte';
 	import { api } from '#lib/api';
 	import { completeShow } from '#lib/complete';
@@ -19,7 +20,8 @@
 
 	let { item, onchange, onepisodes }: Props = $props();
 
-	const defaultStatus = $derived(settings.current.defaultStatus);
+	/** The + adds straight to this status, or asks when null. */
+	const tap = $derived(settings.current.addStatus === 'ask' ? null : settings.current.addStatus);
 
 	let saving = $state(false);
 	const kind = $derived(item.kind as Kind);
@@ -93,6 +95,26 @@
 		}
 	}
 
+	/** Into the library: asks for the status unless Settings names one. */
+	async function add(e: MouseEvent) {
+		const from = e.currentTarget as HTMLElement;
+		const status = tap ?? (await chooseStatus({ name: item.name, kind }, from, { event: e }));
+		if (!status) return;
+		saving = true;
+		try {
+			const reload = async () => onchange((await api.title(item.id)).item);
+			const done = await addAs({ id: item.id, name: item.name, kind }, status, reload);
+			if (!done) return;
+			const now = (await api.title(done.id)).item;
+			// A show added as Completed had its episodes ticked as well.
+			(status === 'completed' && kind === 'tv' ? (onepisodes ?? onchange) : onchange)(now);
+		} catch (err) {
+			toasts.error(err);
+		} finally {
+			saving = false;
+		}
+	}
+
 	async function remove() {
 		// The server says what it took away, so taking it back is exact: every
 		// field comes home, the day it was added and a counted progress too.
@@ -120,9 +142,15 @@
 
 <div class="track">
 	{#if !tracked}
-		<button class="btn primary" disabled={saving} onclick={() => setStatus(defaultStatus)}>
+		<button
+			class="btn primary"
+			disabled={saving}
+			aria-haspopup={tap ? undefined : 'menu'}
+			onclick={add}
+		>
 			<Icon name="plus" size={16} />
 			Add to library
+			{#if !tap}<Icon name="chevron-down" size={14} />{/if}
 		</button>
 		<button class="btn" disabled={saving} onclick={() => save({ status: 'watching' })}>
 			{kind === 'manga' ? 'Start reading' : 'Start watching'}

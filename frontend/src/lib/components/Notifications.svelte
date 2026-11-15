@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { api } from '#lib/api';
+	import { reachable } from '#lib/people.svelte';
 	import { toasts } from '#lib/toast.svelte';
+	import type { NoticeWants } from '#lib/types';
 
 	type Step = 'loading' | 'unsupported' | 'insecure' | 'blocked' | 'off' | 'on';
 
@@ -125,20 +127,56 @@
 			unsupported: 'This browser cannot show notifications from Frog.',
 			insecure: 'Available when Frog is opened over HTTPS.',
 			blocked: 'Blocked in this browser. Allow notifications for Frog in its site settings.',
-			off: 'Episodes the minute they air, films on their release day',
+			off: 'On this device, the moment something happens',
 			on:
 				devices > 1
 					? `On for this device and ${devices - 1} more`
-					: 'Episodes the minute they air, films on their release day'
+					: 'On this device, the moment something happens'
 		}[step]
 	);
 	const available = $derived(step === 'on' || step === 'off');
+
+	/** What this account wants to hear about, on this page and pushed alike. */
+	let wants = $state<NoticeWants | null>(null);
+	void api
+		.noticeWants()
+		.then((w) => (wants = w))
+		.catch(() => {});
+
+	const KINDS: { key: keyof NoticeWants; label: string; hint: string }[] = [
+		{ key: 'releases', label: 'New episodes and films', hint: 'From what you follow' },
+		{
+			key: 'recommendations',
+			label: 'Recommendations',
+			hint: 'Off, nobody can send you one'
+		},
+		{
+			key: 'together',
+			label: 'Watched together',
+			hint: 'Off, nobody can say you watched with them'
+		},
+		{ key: 'badges', label: 'Badges', hint: 'When someone gives you one' },
+		{ key: 'updates', label: 'Frog updates', hint: 'When Frog gets a new version' }
+	];
+
+	async function setWant(key: keyof NoticeWants, on: boolean) {
+		if (!wants) return;
+		const before = wants;
+		wants = { ...wants, [key]: on };
+		try {
+			wants = await api.setNoticeWants(wants);
+			reachable.forget();
+		} catch (e) {
+			wants = before;
+			toasts.error(e);
+		}
+	}
 </script>
 
 <div class="rows list-pane" data-step={step}>
 	<label class="row" class:unavailable={!available}>
 		<span class="label">
-			<strong>When something you follow comes out</strong>
+			<strong>Push notifications</strong>
 			{#if hint}<span class="faint">{hint}</span>{/if}
 		</span>
 		<input
@@ -150,6 +188,22 @@
 			onchange={(e) => toggle(e.currentTarget.checked)}
 		/>
 	</label>
+	{#if wants}
+		{#each KINDS as kind (kind.key)}
+			<label class="row">
+				<span class="label">
+					<strong>{kind.label}</strong>
+					<span class="faint">{kind.hint}</span>
+				</span>
+				<input
+					type="checkbox"
+					class="toggle-switch"
+					checked={wants[kind.key]}
+					onchange={(e) => setWant(kind.key, e.currentTarget.checked)}
+				/>
+			</label>
+		{/each}
+	{/if}
 </div>
 
 <style>
