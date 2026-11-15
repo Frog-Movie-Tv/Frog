@@ -6,5 +6,8 @@ Requires=docker.service
 [Service]
 Type=oneshot
 ExecStart=/opt/frog/deploy/update.sh %i
-# A pull plus a start plus the health wait; well inside this.
-TimeoutStartSec=900
+# A pull, two copies of the database (the backup, then the plain snapshot),
+# a start and the health wait. The copies grow with the picture cache: at
+# 945 MB on the Always Free machine they took 15 minutes, and a stop at 900 s
+# killed an update between its pull and its start.
+TimeoutStartSec=3600

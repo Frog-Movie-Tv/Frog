@@ -34,9 +34,9 @@ check() {
 	fi
 }
 
-# scenario <name> <new image healthy> <generation it leaves> <previous image healthy>
+# scenario <name> <new image healthy> <generation it leaves> <previous image healthy> [tag already pulled]
 scenario() {
-	local name="$1" new_healthy="$2" new_gen="$3" prev_healthy="$4"
+	local name="$1" new_healthy="$2" new_gen="$3" prev_healthy="$4" pulled="${5:-no}"
 	echo "== $name"
 	local root
 	root="$(native "$(mktemp -d)")"
@@ -50,7 +50,9 @@ c.execute("CREATE TABLE t (v TEXT)")
 c.execute("INSERT INTO t VALUES ('before')")
 c.commit()
 EOF
-	echo "sha256:old" > "$root/state/digest"
+	# What the tag points at, and what the container runs.
+	if [ "$pulled" = yes ]; then echo "sha256:new"; else echo "sha256:old"; fi > "$root/state/digest"
+	echo "sha256:old" > "$root/state/running_digest"
 	cat > "$root/bin/sqlite3" << EOF
 #!/usr/bin/env bash
 exec $PY "$(native "$HERE")/sqlite_shell.py" "\$@"
@@ -60,17 +62,25 @@ EOF
 S="$root/state"; DB="$root/volume/frog.db"
 case "\$1 \$2" in
 	"volume inspect") echo "$root/volume"; exit 0 ;;
-	"inspect --format") echo "ghcr.io/frog@\$(cat \$S/digest)"; exit 0 ;;
+	"inspect --format")
+		case "\$*" in
+			*" c1") echo "img" ;;
+			*) echo "ghcr.io/frog@\$(cat \$S/digest)" ;;
+		esac
+		exit 0 ;;
+	"image inspect") echo "ghcr.io/frog@\$(cat \$S/running_digest)"; exit 0 ;;
 	"image prune") exit 0 ;;
 esac
 shift
 case "\$*" in
 	"config --images") echo "ghcr.io/frog:latest" ;;
+	"ps -q frog") echo c1 ;;
 	"pull --quiet") echo "sha256:new" > \$S/digest ;;
 	"up -d --remove-orphans")
 		echo new > \$S/running
+		cp \$S/digest \$S/running_digest
 		$PY -c "import sqlite3; c = sqlite3.connect('\$DB'); c.execute(\"INSERT INTO t VALUES ('migrated')\"); c.execute('PRAGMA user_version = $new_gen'); c.commit()" ;;
-	-f*) echo previous > \$S/running ;;
+	-f*) echo previous > \$S/running; echo sha256:old > \$S/running_digest ;;
 	exec*)
 		case "\$(cat \$S/running 2> /dev/null)" in
 			new) [ "$new_healthy" = yes ] && { echo '{"ok":true,"version":"9.9.9"}'; exit 0; } ;;
@@ -99,6 +109,9 @@ EOF
 # Fields: exit code | rows in the live database | image running | snapshot | failed copies kept
 scenario "a healthy update" yes 1 yes
 check "keeps the migrated database and drops the snapshot" "$RESULT" "0|before,migrated|new|removed|0"
+
+scenario "an update stopped between its pull and its start" yes 1 yes yes
+check "still starts the new image" "$RESULT" "0|before,migrated|new|removed|0"
 
 scenario "an additive update that fails" no 0 yes
 check "goes back to the previous image and keeps the data" "$RESULT" "1|before,migrated|previous|removed|0"
