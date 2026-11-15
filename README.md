@@ -119,9 +119,9 @@ only reads: it never changes anything on your AniList.
 **Find anything.** One search for films, shows, people, characters, studios
 and the other members of your Frog, each with a tab of its own. Results lead
 with the thing you actually meant, a few letters of something you track are
-enough, and every studio has a page of what it made. Or leave the name empty
-and browse: genre, year, score and what is already in your library sit in a
-row of menus under the search bar.
+enough, and every studio has a page of what it made, ready to add in one go.
+Or leave the name empty and browse: genre, year, score and what is already in
+your library sit in a row of menus under the search bar.
 
 **Scores you can compare.** Every title page shows AniList, IMDb, Rotten
 Tomatoes and Metacritic side by side, each with its mark and all as
@@ -143,10 +143,15 @@ shelves and the week's new episodes. The calendar shows the month ahead,
 Airing shows everything on air this week, yours or not, and the diary reads
 back everything you have watched, day by day.
 
-**Hear about it the minute it lands.** Turn on notifications and Frog tells
-you the moment a show you follow has a new episode out, in your own time
-zone. Mute any show with the bell on
-its page.
+**Hear about it the minute it lands.** Notifications keeps everything Frog
+has to tell you in one place: episodes and films out, recommendations, badges
+and updates. Turn on push and your phone hears the moment a show you follow
+has a new episode out, in your own time zone. Mute any show with the bell on
+its page, or any kind of notification in Settings.
+
+**Watch together.** Recommend a title to someone on your Frog, with a note if
+you like. Say who you watched something with, and they can add it to their
+own diary with one tap.
 
 **See your year.** Time watched, streaks, genres, decades, how you rate, and
 the actors, directors and studios you watch most — for all time or for any
