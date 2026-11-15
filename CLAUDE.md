@@ -297,6 +297,16 @@ part you are about to touch; change it when the code changes.
   `airing_episode`, with `air_source` 'anilist' or 'tvmaze'; while it is set,
   TMDB refreshes and the Airing list leave both alone, and when a provider
   loses the episode TMDB's day comes back at the next refresh.
+  TVmaze lists next week's episodes only shortly before, and stops listing
+  some long runners (Running Man, Chibi Maruko-chan) while keeping their
+  slot, which left most of Airing at time TBA. An episode it has not listed
+  yet takes `usual_slot`: the time the show's last two or three episodes on
+  that weekday share, in its network's zone (`tvmaze::listing`, one call with
+  the episodes), on TMDB's day, as `air_source` 'slot'. A slot does not own
+  the day, so TMDB moving the episode clears it. Nothing when TVmaze already
+  lists that day or later (it is saying none airs), or the episodes disagree.
+  A show TMDB's ids do not find on TVmaze is searched by name and first year,
+  and taken only when exactly one show answers.
   `cargo run --example airtime_check -- <tmdb id> <season> all` prints a
   season's pairing.
   `refresh_due` works every listed or tracked show out every six hours;

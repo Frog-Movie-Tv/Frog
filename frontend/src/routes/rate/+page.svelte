@@ -87,6 +87,8 @@
 		dir: -1 | 1 | 0;
 		stamp: string | null;
 		stars: number | null;
+		/** Where it was let go, for a card thrown by hand. */
+		from?: string;
 		flying: boolean;
 	}
 
@@ -162,21 +164,35 @@
 	const HOLD = 260;
 	const FLY = 320;
 
-	/** The card in hand leaves the queue, and is drawn on its way out. */
-	function send(it: LibraryItem, dir: -1 | 1 | 0, stamp: string | null, stars: number | null) {
+	/**
+	 * The card in hand leaves the queue, and is drawn on its way out. A skip
+	 * flies from where the hand left it (`from`), so a swiped card carries on
+	 * instead of vanishing where it was let go.
+	 */
+	function send(
+		it: LibraryItem,
+		dir: -1 | 1 | 0,
+		stamp: string | null,
+		stars: number | null,
+		from?: string
+	) {
 		returning = null;
 		queue = queue.filter((i) => i.id !== it.id);
 		drag = 0;
+		// Back to the middle as the next card takes the top, or it would be
+		// drawn where the last one was swiped to.
+		if (swiper) centre(swiper);
 		const key = ++nextKey;
-		const motion = moving();
-		if (!motion) return;
-		flying = [...flying, { key, item: it, dir, stamp, stars, flying: !stamp }];
+		if (!moving()) return;
+		flying = [...flying, { key, item: it, dir, stamp, stars, from, flying: false }];
 		const fly = () => {
 			flying = flying.map((f) => (f.key === key ? { ...f, flying: true } : f));
 			setTimeout(() => (flying = flying.filter((f) => f.key !== key)), FLY);
 		};
 		if (stamp) setTimeout(fly, HOLD);
-		else setTimeout(() => (flying = flying.filter((f) => f.key !== key)), FLY);
+		// Drawn where it was first, then sent: a card that starts out gone
+		// never moves.
+		else requestAnimationFrame(() => requestAnimationFrame(fly));
 	}
 
 	function record(kind: Step<LibraryItem>['kind'], it: LibraryItem, left: boolean, undo: Undo) {
@@ -204,11 +220,11 @@
 			});
 	}
 
-	function skip(dir: -1 | 1 = -1) {
+	function skip(dir: -1 | 1 = -1, from?: string) {
 		const it = card;
 		if (!it) return;
 		record('skip', it, true, {});
-		send(it, dir, null, null);
+		send(it, dir, null, null, from);
 	}
 
 	/** One step back, in the queue and on the screen; not on the server. */
@@ -376,15 +392,22 @@
 	// frame, to where the pointer last was, and it is moved directly: going
 	// through the page's state would redraw the card sixty times a second,
 	// which a phone cannot keep up with. The state catches up on letting go.
+	//
+	// Each frame writes two things only, the card's transform and the Skip
+	// stamp's opacity, so nothing inside the card is restyled or repainted:
+	// an inherited custom property for the stamp used to restyle every element
+	// in the card, every frame, and that is what a phone dropped frames on.
 	const THROW = 110;
 	let startX = 0;
 	let lastX = 0;
 	let frame = 0;
 	let held: HTMLElement | null = null;
+	let skipMark: HTMLElement | null = null;
 
 	function down(e: PointerEvent) {
 		if (e.button !== 0 || (e.target as HTMLElement).closest('a, button')) return;
 		held = e.currentTarget as HTMLElement;
+		skipMark = held.querySelector('.stamp.skip');
 		dragging = true;
 		startX = lastX = e.clientX;
 		held.setPointerCapture(e.pointerId);
@@ -398,7 +421,10 @@
 			if (!dragging || !held) return;
 			const dx = lastX - startX;
 			held.style.transform = `translateX(${dx}px) rotate(${dx / 22}deg)`;
-			held.style.setProperty('--pull', String(Math.min(1, Math.abs(dx) / THROW)));
+			if (skipMark) {
+				const pull = Math.min(1, Math.abs(dx) / THROW);
+				skipMark.style.opacity = String(Math.max(0, (pull - 0.2) * 1.25));
+			}
 		});
 	}
 
@@ -410,15 +436,93 @@
 		const moved = lastX - startX;
 		const card = held;
 		held = null;
-		card?.style.removeProperty('--pull');
+		skipMark?.style.removeProperty('opacity');
+		skipMark = null;
 		if (Math.abs(moved) > THROW) {
-			skip(moved < 0 ? -1 : 1);
+			skip(moved < 0 ? -1 : 1, `translateX(${moved}px) rotate(${moved / 22}deg)`);
 		} else {
 			drag = 0;
 			// Back to where the page has it: the transform it drew is the same
 			// as before the drag, so it would not write it again.
 			if (card) card.style.transform = placed(0);
 		}
+	}
+
+	/*
+	 * On a touch screen the browser moves the card, not this page. A sideways
+	 * scroller lies over the pile and snaps to the middle or to either side,
+	 * and the top card's slide and tilt are animations on that scroller's
+	 * position (`animation-timeline`), which the compositor runs as the finger
+	 * moves. Moving the card from a script cost a phone a style, paint and
+	 * commit pass every frame, more than a 90 or 120 Hz screen has to give.
+	 * Ending on a side is a skip. A mouse still drags the card (`down` and on),
+	 * as does any browser without scroll-driven animations.
+	 */
+	const swipeable =
+		typeof CSS !== 'undefined' &&
+		CSS.supports('timeline-scope', '--a') &&
+		CSS.supports('animation-timeline', '--a') &&
+		matchMedia('(pointer: coarse)').matches;
+	let swiper: HTMLElement | null = null;
+
+	function centre(el: HTMLElement) {
+		el.scrollTo({ left: (el.scrollWidth - el.clientWidth) / 2, behavior: 'instant' });
+	}
+
+	function swipe(el: HTMLElement) {
+		swiper = el;
+		centre(el);
+		const settled = () => {
+			const end = el.scrollWidth - el.clientWidth;
+			const side = el.scrollLeft <= 2 ? 1 : el.scrollLeft >= end - 2 ? -1 : 0;
+			if (!side) return;
+			// Where `@keyframes swipe` left it, so its flight carries on from there.
+			if (card) skip(side, `translateX(${side * 60}%) rotate(${side * 10}deg)`);
+			else centre(el);
+		};
+		// `scrollend` is not sent every time (not for a card partly above the
+		// screen, for one), so a pause in the scrolling with no finger down
+		// settles it too. Settling twice does nothing: the first skip brings the
+		// scroller back to the middle (`send`).
+		let touching = false;
+		let pause = 0;
+		const later = () => {
+			clearTimeout(pause);
+			pause = window.setTimeout(() => !touching && settled(), 140);
+		};
+		const down = () => (touching = true);
+		const lifted = () => {
+			touching = false;
+			later();
+		};
+		const resized = new ResizeObserver(() => centre(el));
+		resized.observe(el);
+		el.addEventListener('scrollend', settled);
+		el.addEventListener('scroll', later, { passive: true });
+		el.addEventListener('touchstart', down, { passive: true });
+		el.addEventListener('touchend', lifted);
+		el.addEventListener('touchcancel', lifted);
+		return {
+			destroy() {
+				clearTimeout(pause);
+				resized.disconnect();
+				el.removeEventListener('scrollend', settled);
+				el.removeEventListener('scroll', later);
+				el.removeEventListener('touchstart', down);
+				el.removeEventListener('touchend', lifted);
+				el.removeEventListener('touchcancel', lifted);
+				if (swiper === el) swiper = null;
+			}
+		};
+	}
+
+	/** The scroller lies over the card, so a tap goes on to what is under it. */
+	function tapThrough(e: MouseEvent) {
+		const el = e.currentTarget as HTMLElement;
+		el.style.pointerEvents = 'none';
+		const under = document.elementFromPoint(e.clientX, e.clientY);
+		el.style.pointerEvents = '';
+		(under?.closest('a, button') as HTMLElement | null)?.click();
 	}
 
 	/** Where a card in the pile sits: the top one follows the hand. */
@@ -429,7 +533,7 @@
 
 	/** Where a card on its way out is: holding for its stamp, then gone. */
 	function away(f: Flyer) {
-		if (!f.flying) return 'scale(1.02)';
+		if (!f.flying) return f.from ?? (f.stamp ? 'scale(1.02)' : 'none');
 		if (f.dir === 0) return 'translateY(-115%) scale(0.92)';
 		return `translateX(${f.dir * 125}%) translateY(-4%) rotate(${f.dir * 12}deg)`;
 	}
@@ -537,7 +641,7 @@
 			<i style:width="{dealt ? ((dealt - left) / dealt) * 100 : 0}%"></i>
 		</div>
 
-		<div class="table">
+		<div class="table" class:swiping={swipeable}>
 			{#each [...pile].reverse() as it (it.id)}
 				{@const depth = pile.indexOf(it)}
 				<article
@@ -587,6 +691,13 @@
 					{/if}
 				</article>
 			{/each}
+			{#if swipeable}
+				<!-- Only for the finger: the card's link and the buttons below are
+				     reached by keyboard and screen readers as they are. -->
+				<div class="swipe" aria-hidden="true" use:swipe onclick={tapThrough}>
+					<div class="lane"><i></i><i></i><i></i></div>
+				</div>
+			{/if}
 		</div>
 
 		{#if card}
@@ -707,11 +818,11 @@
 		pointer-events: none;
 	}
 
+	/* The shadow stays as it is: changing it repaints the whole card at the
+	   moment the finger lands, which is the first frame of the drag stuttering. */
 	.card.dragging {
 		cursor: grabbing;
 		transition: none;
-		/* A lighter shadow while it moves: less to draw each frame. */
-		box-shadow: var(--shadow-2);
 	}
 
 	.card.gone {
@@ -886,9 +997,11 @@
 	}
 
 	/* While a card is dragged, the side it would go says so, as far as the
-	   drag has gone (`--pull`, set as it moves). */
+	   drag has gone (its opacity, set as it moves). On its own layer, so the
+	   fade is the compositor's and never repaints the card. */
 	.stamp.skip {
-		opacity: calc((var(--pull, 0) - 0.2) * 1.25);
+		opacity: 0;
+		will-change: opacity;
 		transition: none;
 		top: 22px;
 		left: 22px;
@@ -899,6 +1012,112 @@
 		transform: rotate(-8deg);
 		box-shadow: none;
 		animation: none;
+	}
+
+	/* The scroller over the pile (`swipe`). Its lane is a side, the card's
+	   width, and a side: 0.6 of the card each, so letting go past 0.3 of the
+	   card, about the width of the old throw line, ends on a side. */
+	.table.swiping {
+		timeline-scope: --swipe;
+	}
+
+	.swipe {
+		position: absolute;
+		inset: 0;
+		z-index: 30;
+		overflow-x: scroll;
+		overflow-y: hidden;
+		scroll-snap-type: x mandatory;
+		scroll-timeline: --swipe x;
+		overscroll-behavior-x: contain;
+		scrollbar-width: none;
+		/* The card's "…" corner is left out, and a clipped part takes no
+		   touches, so the button under it is pressed as it is, with its sheet. */
+		clip-path: polygon(
+			0 0,
+			calc(100% - 60px) 0,
+			calc(100% - 60px) 60px,
+			100% 60px,
+			100% 100%,
+			0 100%
+		);
+	}
+
+	.swipe::-webkit-scrollbar {
+		display: none;
+	}
+
+	.lane {
+		display: flex;
+		width: 220%;
+		height: 100%;
+	}
+
+	.lane i {
+		flex: none;
+		width: calc(100% * 0.6 / 2.2);
+		scroll-snap-align: start;
+	}
+
+	.lane i:nth-child(2) {
+		width: calc(100% / 2.2);
+	}
+
+	.lane i:last-child {
+		scroll-snap-align: end;
+	}
+
+	/* The top card follows the scroller one to one: `translate` and `rotate`,
+	   which add to the `transform` the pile and the stamps use. */
+	.swiping .card.top {
+		animation:
+			join 260ms ease-out backwards,
+			swipe linear both;
+		animation-timeline: auto, --swipe;
+	}
+
+	.swiping .card.top.back {
+		animation:
+			return 360ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards,
+			swipe linear both;
+		animation-timeline: auto, --swipe;
+	}
+
+	.swiping .card.top .stamp.skip {
+		animation: skip-mark linear both;
+		animation-timeline: --swipe;
+	}
+
+	/* The finger to the right is the scroller at its start. */
+	@keyframes swipe {
+		from {
+			translate: 60% 0;
+			rotate: 10deg;
+		}
+		50% {
+			translate: 0 0;
+			rotate: 0deg;
+		}
+		to {
+			translate: -60% 0;
+			rotate: -10deg;
+		}
+	}
+
+	/* Fading in as the old throw line nears, from either side. */
+	@keyframes skip-mark {
+		0%,
+		26% {
+			opacity: 1;
+		}
+		45%,
+		55% {
+			opacity: 0;
+		}
+		74%,
+		100% {
+			opacity: 1;
+		}
 	}
 
 	.typed {
@@ -1028,6 +1247,13 @@
 		.card.back,
 		.stamp {
 			animation: none;
+		}
+
+		/* Still under the finger: following it is not an effect. */
+		.swiping .card.top,
+		.swiping .card.top.back {
+			animation: swipe linear both;
+			animation-timeline: --swipe;
 		}
 	}
 </style>

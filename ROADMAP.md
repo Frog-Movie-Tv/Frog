@@ -4,7 +4,7 @@ What is still to build, and what is known to be broken. Nothing else lives
 here: how things work is in [CLAUDE.md](CLAUDE.md), and what shipped is in
 [RELEASE-NOTES.md](RELEASE-NOTES.md). Take an item off when it ships.
 
-**Release:** 1.6.1 Tomato Frog. **Next codename:** Chorus Frog, for 1.7.0. **Live at** a DuckDNS hostname on Oracle Cloud Always
+**Release:** 1.7.0 Chorus Frog. **Next codename:** not chosen yet. **Live at** a DuckDNS hostname on Oracle Cloud Always
 Free, updating itself from each release (`docs/DEPLOY-ORACLE.md`).
 
 ## To build
@@ -39,7 +39,14 @@ off, or turns it into a fix above.
   sheet.
 - **A recommendation and a "watched with you" reaching a phone** as push
   notifications, and tapping one opening Notifications.
-
+- **Why Black Clover's S2 E7 (2026-11-14, 14:00 UTC) reached no phone.** Frog
+  places it at that moment from AniList, and `verify-push` passes, so look at
+  the live data in Administration → Database: the account's
+  `push_subscription` rows (none means the phone dropped it: switch
+  notifications off and on there), Black Clover's `library_entry` (status
+  not Completed, a Watchlist show counts only once something is watched,
+  `notify` 1) and a `push_sent` row for the episode (there means it was
+  sent and the phone did not show it).
 - **A notification at air time on the Android phone:** the picture, Frog's
   icon and badge, and tapping it opening the title.
 - **Holding a card on the phone** opens the menu as a sheet, and the tap that
@@ -50,7 +57,15 @@ off, or turns it into a fix above.
   touching up, and two-finger moves on a real phone; and a badge given
   reaching the phone as a notification.
 - **A vertical banner on a real phone**, and Full's ceiling on a very tall
-  picture.
+  picture. Opening one shows it whole, and the close button closes it.
+- **Swiping rating cards on the Android phone:** the card follows the finger
+  with no stutter, a throw skips, a short swipe springs back, and a tap on
+  "Open the title" still opens it.
+- **zschaeken as an owner:** once this release is live, set their role to
+  Owner in Administration → People.
+- **Air times on the live Airing page** a day after the release: far fewer
+  time TBA rows. What is left should be streaming drops, shows TVmaze lists
+  without a time, and shows TVmaze does not have.
 - **The colour picker's sheet and the Stats bars by finger** on the phone.
 - **AniList on the live list:** Settings → Connections, "Needs a check" and
   the "Matched" methods, manga included. And connecting AniList once from a

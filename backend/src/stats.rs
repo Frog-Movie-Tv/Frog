@@ -106,8 +106,8 @@ type TopRow = (String, i64, String, Option<String>, i64, f64, Option<f64>);
 /// (tmdb_id, name, profile or logo, titles)
 type PersonRow = (i64, String, Option<String>, i64);
 
-/// (title id, kind, name, poster, genres, release year, rating, unit,
-///  minutes, films, episodes, rewatches)
+/// (title id, kind, name, poster, genres, release year, rating, library
+///  status, unit, minutes, films, episodes, rewatches)
 type FactRow = (
     i64,
     String,
@@ -116,6 +116,7 @@ type FactRow = (
     String,
     Option<String>,
     Option<f64>,
+    Option<String>,
     String,
     f64,
     i64,
@@ -130,8 +131,21 @@ type FactRow = (
 fn facts_json(rows: Vec<FactRow>) -> Vec<Value> {
     let mut out: Vec<Value> = Vec::new();
     let mut last: Option<i64> = None;
-    for (id, kind, name, poster, genres, year, rating, unit, minutes, films, episodes, again) in
-        rows
+    for (
+        id,
+        kind,
+        name,
+        poster,
+        genres,
+        year,
+        rating,
+        status,
+        unit,
+        minutes,
+        films,
+        episodes,
+        again,
+    ) in rows
     {
         if last != Some(id) {
             last = Some(id);
@@ -143,6 +157,7 @@ fn facts_json(rows: Vec<FactRow>) -> Vec<Value> {
                 "genres": crate::catalog::parse_genres(&genres),
                 "year": year.and_then(|y| y.parse::<i64>().ok()),
                 "rating": rating,
+                "status": status,
                 "units": [],
             }));
         }
@@ -346,7 +361,7 @@ pub async fn stats(state: &AppState, user_id: i64, q: &StatsQuery) -> AppResult<
             pool,
             &format!(
                 "SELECT t.id, t.kind, t.name, t.poster_path, t.genres_json,
-                        substr(t.release_date, 1, 4), l.rating,
+                        substr(t.release_date, 1, 4), l.rating, l.status,
                         CASE WHEN s.undated = 0 THEN substr(s.watched_at, 1, {unit_len}) ELSE '' END
                           AS unit,
                         CAST(COALESCE(SUM({MINUTES}), 0) AS REAL),
@@ -360,11 +375,11 @@ pub async fn stats(state: &AppState, user_id: i64, q: &StatsQuery) -> AppResult<
                   GROUP BY t.id, unit
                  UNION ALL
                  SELECT t.id, t.kind, t.name, t.poster_path, t.genres_json,
-                        substr(t.release_date, 1, 4), l.rating, '', 0.0, 0, 0, 0
+                        substr(t.release_date, 1, 4), l.rating, l.status, '', 0.0, 0, 0, 0
                    FROM library_entry l
                    JOIN title t ON t.id = l.title_id
                   WHERE {rated} AND l.title_id NOT IN (SELECT title_id FROM scoped)
-                  ORDER BY 1, 8"
+                  ORDER BY 1, 9"
             ),
         )
         .await?;

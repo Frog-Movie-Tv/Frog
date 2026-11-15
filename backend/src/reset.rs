@@ -45,10 +45,12 @@ pub async fn issue(
 /// A link for the owner, for the one case no administrator can help with. Only
 /// reachable from a shell on the server, which is what proves it is the owner.
 pub async fn issue_for_owner(pool: &SqlitePool) -> AppResult<Option<(String, DateTime<Utc>)>> {
-    let owner: Option<(i64,)> = sqlx::query_as("SELECT id FROM app_user WHERE role = ?")
-        .bind(Role::Owner.as_db())
-        .fetch_optional(pool)
-        .await?;
+    // The first owner, when there are several: the one who set the instance up.
+    let owner: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM app_user WHERE role = ? ORDER BY id LIMIT 1")
+            .bind(Role::Owner.as_db())
+            .fetch_optional(pool)
+            .await?;
     match owner {
         Some((id,)) => Ok(Some(issue(pool, id, id).await?)),
         None => Ok(None),

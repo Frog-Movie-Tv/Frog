@@ -83,13 +83,22 @@
 		if (reset?.username === user.username) reset = null;
 	}
 
-	async function setRole(user: AdminUser, role: 'admin' | 'user') {
+	/** An owner sets anyone's role but their own, another owner's included. */
+	function roleSettable(user: AdminUser): boolean {
+		return owner && user.username !== session.status?.username;
+	}
+
+	async function setRole(user: AdminUser, role: 'owner' | 'admin' | 'user') {
 		try {
 			const r = await api.updateUser(user.id, { role });
 			user.role = r.role;
 			dropReset(user);
 			toasts.push(
-				role === 'admin' ? `${user.username} is an administrator` : `${user.username} is a member`
+				role === 'owner'
+					? `${user.username} is an owner`
+					: role === 'admin'
+						? `${user.username} is an administrator`
+						: `${user.username} is a member`
 			);
 		} catch (e) {
 			toasts.error(e);
@@ -323,19 +332,20 @@
 								>
 									Badges
 								</button>
+								{#if roleSettable(user)}
+									<Select
+										label="Role for {user.username}"
+										compact
+										value={user.role}
+										options={[
+											{ value: 'user', label: 'Member' },
+											{ value: 'admin', label: 'Administrator' },
+											{ value: 'owner', label: 'Owner' }
+										]}
+										onchange={(v) => setRole(user, v as 'owner' | 'admin' | 'user')}
+									/>
+								{/if}
 								{#if manageable(user)}
-									{#if owner}
-										<Select
-											label="Role for {user.username}"
-											compact
-											value={user.role}
-											options={[
-												{ value: 'user', label: 'Member' },
-												{ value: 'admin', label: 'Administrator' }
-											]}
-											onchange={(v) => setRole(user, v as 'admin' | 'user')}
-										/>
-									{/if}
 									{#if !user.disabled}
 										<button
 											class="btn ghost"

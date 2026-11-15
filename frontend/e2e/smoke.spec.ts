@@ -532,7 +532,8 @@ const statusChip = (page: Page, name: RegExp) =>
 const titles = (page: Page) => page.locator('.grid a.poster');
 
 test('the rating deck takes a slid score, skips, and takes both back', async ({
-	page
+	page,
+	isMobile
 }, testInfo) => {
 	await signIn(page);
 	seedLibrary(testInfo.project.name);
@@ -578,6 +579,28 @@ test('the rating deck takes a slid score, skips, and takes both back', async ({
 	await page.getByRole('button', { name: /^Undo/ }).click();
 	await expect(card).toHaveText(first);
 	await expect.poll(() => ratingOf(first)).toBeNull();
+
+	if (isMobile) {
+		// On a phone the finger throws the card: the browser scrolls it, and
+		// letting go on a side skips it. One move a frame, as a finger reports,
+		// once the card Undo brought back has landed.
+		await page.waitForTimeout(400);
+		const box = (await page.locator('.card.top').boundingBox())!;
+		const cdp = await page.context().newCDPSession(page);
+		const y = box.y + box.height / 2;
+		const x = box.x + box.width / 2;
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+		for (let i = 1; i <= 12; i++) {
+			await cdp.send('Input.dispatchTouchEvent', {
+				type: 'touchMove',
+				touchPoints: [{ x: x + i * 22, y }]
+			});
+			await page.waitForTimeout(16);
+		}
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+		await expect(page.getByText(`${start - 1} to go`)).toBeVisible();
+		await expect(card).not.toHaveText(first);
+	}
 	clearLibrary(testInfo.project.name);
 });
 

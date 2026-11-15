@@ -518,8 +518,11 @@ async fn store(
         let day = e.air_date.to_string();
         match before.get(&(e.season, e.episode)) {
             // TMDB's day unchanged, or the day is TVmaze's or AniList's,
-            // which TMDB does not overrule (crate::airtime).
-            Some((was, source)) if *was == day || source.is_some() => {
+            // which TMDB does not overrule (crate::airtime). A usual slot
+            // stands on TMDB's day, so it moves with it.
+            Some((was, source))
+                if *was == day || source.as_deref().is_some_and(|s| s != "slot") =>
+            {
                 sqlx::query(
                     "UPDATE airing_episode SET name = ?
                       WHERE tmdb_id = ? AND season = ? AND episode = ?",

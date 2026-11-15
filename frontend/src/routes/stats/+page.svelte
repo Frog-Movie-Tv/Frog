@@ -195,8 +195,6 @@
 	/** The year the review button makes: the one in view, else the latest. */
 	const reviewTarget = $derived(stats?.year ?? stats?.years[0] ?? null);
 
-	const statusTotal = $derived(STATUSES.reduce((sum, s) => sum + (library?.[s as Status] ?? 0), 0));
-
 	const MONTHS = Array.from({ length: 12 }, (_, i) =>
 		new Date(2000, i, 1).toLocaleDateString(undefined, { month: 'short' })
 	);
@@ -231,6 +229,15 @@
 	const isOn = (key: Dimension, value: unknown) => filter[key] === value;
 	const isOff = (key: Dimension, value: unknown) =>
 		filter[key] !== undefined && filter[key] !== value;
+
+	/* The library bar: the whole library while nothing else is picked, else
+	   the titles the other picks keep (the facts know only those). */
+	const libraryShown = $derived<Partial<Record<string, number>>>(
+		narrowed && Object.keys(filter).some((k) => k !== 'status')
+			? narrowed.by_status
+			: (library ?? {})
+	);
+	const statusTotal = $derived(STATUSES.reduce((sum, s) => sum + (libraryShown[s] ?? 0), 0));
 
 	const totals = $derived(
 		narrowed?.totals ?? {
@@ -331,6 +338,7 @@
 				label: `Rated ${formatScore((filter.rating + 1) * 10, settings.current.scoreFormat)}`
 			});
 		}
+		if (filter.status) out.push({ key: 'status', label: statusLabel(filter.status as Status) });
 		return out;
 	});
 
@@ -529,7 +537,10 @@
 				</section>
 			{/if}
 
-			<div class="grid">
+			<!-- Genres, then ratings over status, then authors: three columns
+			     that fill, where authors on a row of their own left most of it
+			     empty. -->
+			<div class="manga-grid">
 				{#if mGenres.length}
 					<section class="block card panel">
 						<h2>Genres</h2>
@@ -558,81 +569,83 @@
 					</section>
 				{/if}
 
-				{#if mRatings.some((n) => n > 0)}
-					<section class="block card panel">
-						<h2>Ratings</h2>
-						<div class="columns" role="group" aria-label="How you rate manga">
-							{#each mRatings as n, i (i)}
-								<button
-									type="button"
-									class="column pick"
-									class:on={mOn('rating', i)}
-									class:off={mOff('rating', i)}
-									aria-pressed={mOn('rating', i)}
-									disabled={!manga.facts || (!n && !mOn('rating', i))}
-									onclick={() => pickManga('rating', i)}
-									title="{formatScore((i + 1) * 10, settings.current.scoreFormat)}: {n}"
-								>
-									<span class="value faint">{n || ''}</span>
-									<span class="bar-v" style:height="{(n / mangaRatingMax) * 100}%"></span>
-									<span class="label faint"><Score value={(i + 1) * 10} /></span>
-								</button>
-							{/each}
-						</div>
-					</section>
-				{/if}
-
-				{#if mangaStatusTotal > 0}
-					<section class="block card panel">
-						<h2>Status</h2>
-						<div class="bar" role="group" aria-label="Manga by status">
-							{#each STATUSES as s (s)}
-								{@const n = mStatus[s] ?? 0}
-								{#if n > 0}
+				<div class="stack">
+					{#if mRatings.some((n) => n > 0)}
+						<section class="block card panel">
+							<h2>Ratings</h2>
+							<div class="columns" role="group" aria-label="How you rate manga">
+								{#each mRatings as n, i (i)}
 									<button
 										type="button"
-										class="seg pick"
-										class:on={mOn('status', s)}
-										class:off={mOff('status', s)}
-										aria-pressed={mOn('status', s)}
-										aria-label="{statusLabel(s, 'manga')}: {n}"
-										disabled={!manga.facts}
-										data-status={s}
-										style:flex-grow={n}
-										title="{statusLabel(s, 'manga')}: {n}"
-										onclick={() => pickManga('status', s)}
-									></button>
-								{/if}
-							{/each}
-						</div>
-						<ul class="legend">
-							{#each STATUSES as s (s)}
-								{@const n = mStatus[s] ?? 0}
-								{#if n > 0}
-									<li>
+										class="column pick"
+										class:on={mOn('rating', i)}
+										class:off={mOff('rating', i)}
+										aria-pressed={mOn('rating', i)}
+										disabled={!manga.facts || (!n && !mOn('rating', i))}
+										onclick={() => pickManga('rating', i)}
+										title="{formatScore((i + 1) * 10, settings.current.scoreFormat)}: {n}"
+									>
+										<span class="value faint">{n || ''}</span>
+										<span class="bar-v" style:height="{(n / mangaRatingMax) * 100}%"></span>
+										<span class="label faint"><Score value={(i + 1) * 10} /></span>
+									</button>
+								{/each}
+							</div>
+						</section>
+					{/if}
+
+					{#if mangaStatusTotal > 0}
+						<section class="block card panel">
+							<h2>Status</h2>
+							<div class="bar" role="group" aria-label="Manga by status">
+								{#each STATUSES as s (s)}
+									{@const n = mStatus[s] ?? 0}
+									{#if n > 0}
 										<button
 											type="button"
-											class="legend-pick pick"
+											class="seg pick"
 											class:on={mOn('status', s)}
 											class:off={mOff('status', s)}
 											aria-pressed={mOn('status', s)}
+											aria-label="{statusLabel(s, 'manga')}: {n}"
 											disabled={!manga.facts}
+											data-status={s}
+											style:flex-grow={n}
+											title="{statusLabel(s, 'manga')}: {n}"
 											onclick={() => pickManga('status', s)}
-										>
-											<span class="swatch" data-status={s}></span>
-											{statusLabel(s, 'manga')}
-											<span class="faint">{n}</span>
-										</button>
-									</li>
-								{/if}
-							{/each}
-						</ul>
-					</section>
-				{/if}
-			</div>
+										></button>
+									{/if}
+								{/each}
+							</div>
+							<ul class="legend">
+								{#each STATUSES as s (s)}
+									{@const n = mStatus[s] ?? 0}
+									{#if n > 0}
+										<li>
+											<button
+												type="button"
+												class="legend-pick pick"
+												class:on={mOn('status', s)}
+												class:off={mOff('status', s)}
+												aria-pressed={mOn('status', s)}
+												disabled={!manga.facts}
+												onclick={() => pickManga('status', s)}
+											>
+												<span class="swatch" data-status={s}></span>
+												{statusLabel(s, 'manga')}
+												<span class="faint">{n}</span>
+											</button>
+										</li>
+									{/if}
+								{/each}
+							</ul>
+						</section>
+					{/if}
+				</div>
 
-			<div class="grid people-row" class:settling={mangaPicked && !mangaExtra}>
-				{@render people('Authors', authorsShown ?? manga.authors, '/person')}
+				<div class="authors" class:settling={mangaPicked && !mangaExtra}>
+					{@render people('Authors', authorsShown ?? manga.authors, '/person')}
+				</div>
 			</div>
 		</div>
 	{/if}
@@ -916,26 +929,47 @@
 				</p>
 			{/if}
 
-			{#if !stats.year && library && statusTotal > 0}
+			{#if !stats.year && library && (statusTotal > 0 || filter.status)}
 				<section class="block card panel">
 					<h2>Library</h2>
-					<div class="bar" role="img" aria-label="Library by status">
+					<div class="bar" role="group" aria-label="Library by status">
 						{#each STATUSES as s (s)}
-							{@const n = library[s] ?? 0}
+							{@const n = libraryShown[s] ?? 0}
 							{#if n > 0}
-								<span class="seg" data-status={s} style:flex-grow={n} title="{statusLabel(s)}: {n}"
-								></span>
+								<button
+									type="button"
+									class="seg pick"
+									class:on={isOn('status', s)}
+									class:off={isOff('status', s)}
+									aria-pressed={isOn('status', s)}
+									aria-label="{statusLabel(s)}: {n}"
+									disabled={!stats.facts}
+									data-status={s}
+									style:flex-grow={n}
+									title="{statusLabel(s)}: {n}"
+									onclick={() => pick('status', s)}
+								></button>
 							{/if}
 						{/each}
 					</div>
 					<ul class="legend">
 						{#each STATUSES as s (s)}
-							{@const n = library[s] ?? 0}
+							{@const n = libraryShown[s] ?? 0}
 							{#if n > 0}
 								<li>
-									<span class="swatch" data-status={s}></span>
-									{statusLabel(s)}
-									<span class="faint">{n}</span>
+									<button
+										type="button"
+										class="legend-pick pick"
+										class:on={isOn('status', s)}
+										class:off={isOff('status', s)}
+										aria-pressed={isOn('status', s)}
+										disabled={!stats.facts}
+										onclick={() => pick('status', s)}
+									>
+										<span class="swatch" data-status={s}></span>
+										{statusLabel(s)}
+										<span class="faint">{n}</span>
+									</button>
 								</li>
 							{/if}
 						{/each}
@@ -1081,6 +1115,35 @@
 
 	@media (max-width: 900px) {
 		.people-row {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+
+	.manga-grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0 18px;
+		align-items: start;
+	}
+
+	.manga-grid > .stack,
+	.manga-grid > .authors {
+		min-width: 0;
+	}
+
+	/* Two across: authors take the row under, the whole width. */
+	@media (max-width: 1000px) {
+		.manga-grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+
+		.manga-grid > .authors {
+			grid-column: 1 / -1;
+		}
+	}
+
+	@media (max-width: 640px) {
+		.manga-grid {
 			grid-template-columns: minmax(0, 1fr);
 		}
 	}

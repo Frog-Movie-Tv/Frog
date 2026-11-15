@@ -11,6 +11,7 @@ const fact = (id, fields) => ({
 	genres: [],
 	year: 2010,
 	rating: null,
+	status: 'completed',
 	units: [],
 	...fields
 });
@@ -22,6 +23,7 @@ const facts = [
 		genres: ['Drama', 'Comedy'],
 		year: 2015,
 		rating: 70,
+		status: 'watching',
 		units: [
 			['2026-01', 60, 0, 2, 0],
 			['2026-02', 90, 0, 3, 1]
@@ -75,6 +77,17 @@ test('a ratings bar and a decade combine', () => {
 	const v = view(facts, { rating: bucketOf(70), decade: 2010 }, units);
 	assert.equal(v.totals.titles, 1);
 	assert.equal(v.top_shows[0].id, 2);
+});
+
+test('a library status narrows the charts, and keeps its own bars', () => {
+	const v = view(facts, { status: 'watching' }, units);
+	assert.equal(v.totals.titles, 1);
+	assert.equal(v.totals.episodes, 5);
+	assert.deepEqual(v.ids, [2]);
+	assert.deepEqual(v.by_status, { completed: 3, watching: 1 }, 'drawn without its own pick');
+
+	const comedy = view(facts, { genre: 'Comedy' }, units);
+	assert.deepEqual(comedy.by_status, { completed: 1, watching: 1 }, 'under another pick');
 });
 
 test('picking a bar twice puts it back', () => {
