@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.2](https://github.com/Frog-Movie-Tv/Frog/compare/v1.7.1...v1.7.2) (2026-11-15)
+
+
+### Fixes
+
+* airing this week leaves out what has already aired ([05ca3b2](https://github.com/Frog-Movie-Tv/Frog/commit/05ca3b2fcc082ddd3815058991940ab29a8f3a5c))
+* **home:** airing this week leaves out what has already aired ([d3871a6](https://github.com/Frog-Movie-Tv/Frog/commit/d3871a68bbf976aef93e52f57b5054d88a171b26))
+
 ## [1.7.1](https://github.com/Frog-Movie-Tv/Frog/compare/v1.7.0...v1.7.1) (2026-11-15)
 
 
