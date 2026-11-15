@@ -13,6 +13,11 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Fixes
+
+- Airing this week on Home leaves out an episode once it has aired, and no
+  longer shows a show's bonus clip as a second episode.
+
 ## [1.7.1] — Chorus Frog — 2026-11-15
 
 A few improvements and fixes.

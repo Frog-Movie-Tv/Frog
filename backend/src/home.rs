@@ -2,6 +2,7 @@
 //! week, and what to try because of what it rated well. `routes::home` is
 //! HTTP only.
 
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -173,6 +174,8 @@ async fn airing_this_week(
     user_id: i64,
     facts: &store::ItemFacts,
 ) -> AppResult<Vec<Airing>> {
+    // A day either side of the window: a timed episode's moment can fall on
+    // the day before the day it is filed under (an anime's day in Japan).
     let found: Vec<AiringRow> = sqlx::query_as(&format!(
         "SELECT e.title_id, e.season_number, e.episode_number, e.name, e.air_date, e.air_at
            FROM episode e
@@ -180,14 +183,24 @@ async fn airing_this_week(
           WHERE {FOLLOWED}
             AND l.status != 'completed'
             AND e.air_date IS NOT NULL
-            AND e.air_date >= date('now')
-            AND e.air_date <= date('now', '+7 day')
-          ORDER BY e.air_date, e.season_number, e.episode_number
-          LIMIT 60"
+            AND e.air_date >= date('now', '-1 day')
+            AND e.air_date <= date('now', '+8 day')
+          ORDER BY COALESCE(e.air_at, e.air_date), e.season_number, e.episode_number
+          LIMIT 80"
     ))
     .bind(user_id)
     .fetch_all(pool)
     .await?;
+    let keys: Vec<(i64, &str, i64, Option<&str>)> = found
+        .iter()
+        .map(|r| (r.0, r.4.as_deref().unwrap_or(""), r.1, r.5.as_deref()))
+        .collect();
+    let keep = still_due(&keys, chrono::Utc::now());
+    let found: Vec<AiringRow> = found
+        .into_iter()
+        .zip(keep)
+        .filter_map(|(row, keep)| keep.then_some(row))
+        .collect();
 
     let mut grouped: Vec<(i64, Vec<AiringEpisode>)> = Vec::new();
     for (title_id, season_number, episode_number, name, air_date, air_at) in found {
@@ -216,6 +229,32 @@ async fn airing_this_week(
     }
 
     Ok(out)
+}
+
+/// Which of these episodes, each (title, day, season, moment), are still to
+/// come in the next week. One with a moment is due until that moment, so an
+/// episode that aired an hour ago is not "tomorrow" because its day is
+/// Japan's; one with a day alone, until that day is over. A special on the
+/// same day as a regular episode of its show is that episode's companion
+/// (`release::calendar_keeps`) and goes with it, aired or not.
+pub fn still_due(rows: &[(i64, &str, i64, Option<&str>)], now: DateTime<Utc>) -> Vec<bool> {
+    let days: Vec<(i64, &str, i64)> = rows.iter().map(|&(t, d, s, _)| (t, d, s)).collect();
+    let today = now.date_naive();
+    let last = today + Duration::days(7);
+    crate::release::calendar_keeps(&days)
+        .into_iter()
+        .zip(rows)
+        .map(|(kept, &(_, day, _, at))| {
+            let moment = at
+                .and_then(|a| DateTime::parse_from_rfc3339(a).ok())
+                .map(|a| a.with_timezone(&Utc));
+            kept && match moment {
+                Some(at) => at > now && at.date_naive() <= last,
+                None => NaiveDate::parse_from_str(day, "%Y-%m-%d")
+                    .is_ok_and(|d| d >= today && d <= last),
+            }
+        })
+        .collect()
 }
 
 /// How many "Because you watched" rows Home shows, and how many titles each.
@@ -397,7 +436,29 @@ pub async fn more_like(
 
 #[cfg(test)]
 mod tests {
-    use super::pick_seeds;
+    use super::{pick_seeds, still_due};
+
+    #[test]
+    fn an_episode_that_has_aired_is_not_still_to_come() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-15T18:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        // An anime filed under Monday in Japan that aired on Sunday afternoon,
+        // and the special TMDB lists beside it, with a day alone.
+        let rows = [
+            (1, "2026-11-16", 0, None),
+            (1, "2026-11-16", 1, Some("2026-11-15T16:20:00Z")),
+            (2, "2026-11-16", 1, Some("2026-11-15T20:00:00Z")),
+            (3, "2026-11-15", 1, None),
+            (4, "2026-11-14", 1, None),
+            (5, "2026-11-23", 1, Some("2026-11-22T16:20:00Z")),
+            (6, "2026-11-23", 1, Some("2026-11-23T16:20:00Z")),
+        ];
+        assert_eq!(
+            still_due(&rows, now),
+            [false, false, true, true, false, true, false]
+        );
+    }
 
     #[test]
     fn every_seed_takes_its_turn_at_the_front() {
