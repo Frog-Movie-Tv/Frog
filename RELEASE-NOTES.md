@@ -13,6 +13,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+## [1.7.2] — Chorus Frog — 2026-11-15
+
+A few improvements and fixes.
+
 ### Fixes
 
 - Airing this week on Home leaves out an episode once it has aired, and no
@@ -1100,6 +1104,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.7.2]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.7.2
 [1.7.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.7.1
 [1.7.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.7.0
 [1.6.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.6.1
