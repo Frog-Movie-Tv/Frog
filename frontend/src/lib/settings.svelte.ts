@@ -105,7 +105,8 @@ export interface Settings {
 	/** Episodes as cards with their stills, or as a compact list. */
 	episodeView?: 'grid' | 'list';
 
-	defaultStatus: Status;
+	/** What the + does: ask for a status, or add straight to this one. */
+	addStatus: Status | 'ask';
 
 	landingPage: string;
 	homeRows: string[];
@@ -169,7 +170,7 @@ export const DEFAULTS: Settings = {
 
 	spoilerProtection: false,
 
-	defaultStatus: 'planned',
+	addStatus: 'ask',
 
 	landingPage: '/',
 	homeRows: ['continue', 'thisweek', 'activity', 'because'],
@@ -264,6 +265,14 @@ export function current(saved: unknown): Partial<Settings> {
 	if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {};
 	const kept = { ...(saved as Record<string, unknown>) };
 	for (const key of RETIRED) delete kept[key];
+	// Adding used to go straight to "Default status". Anyone who chose a
+	// status other than the Watchlist meant it and keeps one tap; the
+	// Watchlist was everyone's default, so those accounts are asked instead.
+	if ('defaultStatus' in kept) {
+		const was = kept.defaultStatus;
+		if (!('addStatus' in kept)) kept.addStatus = was && was !== 'planned' ? was : 'ask';
+		delete kept.defaultStatus;
+	}
 	return kept as Partial<Settings>;
 }
 

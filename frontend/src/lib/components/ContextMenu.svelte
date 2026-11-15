@@ -96,9 +96,12 @@
 	});
 
 	// The keyboard works from the first moment, without taking the focus ring
-	// to an item nobody chose.
+	// to an item nobody chose. A menu that names its likely choice (a status
+	// picker's default) puts the focus there, so Enter takes it.
 	$effect(() => {
-		if (menu.open && panel) panel.focus({ preventScroll: true });
+		if (!menu.open || !panel) return;
+		const likely = panel.querySelector<HTMLElement>(':scope > [data-focus]:enabled');
+		(likely ?? panel).focus({ preventScroll: true });
 	});
 
 	afterNavigate(() => menu.close());
@@ -327,6 +330,7 @@
 		aria-expanded={opens ? flyout?.label === entry.label : undefined}
 		disabled={entry.disabled || busy}
 		data-label={entry.label}
+		data-focus={top && entry.focus ? '' : undefined}
 		onpointerenter={top ? (e) => hover(e, entry) : undefined}
 		onclick={(e) => pick(entry, top ? e.currentTarget : undefined)}
 	>
@@ -337,6 +341,7 @@
 				/>{/if}
 		</span>
 		<span class="label">{entry.label}</span>
+		{#if entry.key && !sheet}<kbd class="key">{entry.key}</kbd>{/if}
 		{#if entry.children}<span class="more"><Icon name="chevron-right" size={15} /></span>{/if}
 	</button>
 {/snippet}
@@ -453,6 +458,16 @@
 
 	.more {
 		flex: none;
+		color: var(--text-faint);
+	}
+
+	.key {
+		flex: none;
+		padding: 1px 6px;
+		border: 1px solid var(--line);
+		border-radius: 5px;
+		font: inherit;
+		font-size: 0.72rem;
 		color: var(--text-faint);
 	}
 

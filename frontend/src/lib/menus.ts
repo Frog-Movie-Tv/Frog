@@ -1,9 +1,11 @@
 import { goto } from '$app/navigation';
+import { addAs, oneTap, statusEntries } from './add';
 import { api, frogId } from './api';
-import { completeShow } from './complete';
+import { reachable } from './people.svelte';
+import { recommendTitle } from './recommend';
+import { watchShowWith } from './together';
 import { episodeCode } from './format';
 import type { MenuEntry, MenuSource } from './menu.svelte';
-import { settings } from './settings.svelte';
 import { titleHref, type TitleRef } from './titles';
 import { toasts } from './toast.svelte';
 import {
@@ -61,11 +63,18 @@ function titleEntries(t: MenuTitle, ctx: TitleMenuContext): MenuEntry[] {
 	if (next) entries.push(next);
 
 	if (!held) {
-		entries.push({
-			label: 'Add to library',
-			icon: 'plus',
-			run: () => add(t, settings.current.defaultStatus, changed)
-		});
+		// One tap when Settings names a status; otherwise the statuses, as Move to has them.
+		const tap = oneTap();
+		entries.push(
+			tap
+				? { label: 'Add to library', icon: 'plus', run: () => add(t, tap, changed) }
+				: {
+						label: 'Add to library',
+						icon: 'plus',
+						children: () =>
+							statusEntries(t.kind, (s) => void add(t, s, changed), { focus: 'planned' })
+					}
+		);
 		entries.push({
 			label: reading ? 'Start reading' : 'Start watching',
 			icon: 'play',
@@ -90,6 +99,22 @@ function titleEntries(t: MenuTitle, ctx: TitleMenuContext): MenuEntry[] {
 	}
 
 	entries.push({ label: 'Add to shelf', icon: 'layers', children: () => shelfChoices(t, changed) });
+	// Nobody to recommend to, nothing offered.
+	if (reachable.recommend !== false) {
+		entries.push({ label: 'Recommend…', icon: 'share', run: () => recommendTitle(t) });
+	}
+	// A show being watched with someone names them on every episode ticked.
+	if (held && t.kind === 'tv' && t.id && reachable.together) {
+		const id = t.id;
+		entries.push({
+			label: 'Watching with…',
+			icon: 'users',
+			run: async () => {
+				const { with: now } = await api.togetherOf(id);
+				if (await watchShowWith({ id, name: t.name }, now)) await changed();
+			}
+		});
+	}
 
 	if ((ctx.shelf && ctx.shelf.kind !== 'smart') || held) entries.push('rule');
 	if (ctx.shelf && ctx.shelf.kind !== 'smart') {
@@ -165,20 +190,9 @@ function nextEntry(
 	};
 }
 
-/** Into your library, as Search's quick buttons do: Completed means seen. */
+/** Into your library, as Search's + does: Completed asks when. */
 async function add(t: MenuTitle, status: Status, changed: () => unknown) {
-	try {
-		const id = await frogId(t);
-		const { item } = await api.track(id, { status });
-		toasts.push(`Added ${t.name} to ${statusLabel(status, t.kind)}`);
-		await changed();
-		if (status === 'completed' && item.kind === 'tv' && item.total_episodes > 0) {
-			await completeShow(id, item.name);
-			await changed();
-		}
-	} catch (e) {
-		toasts.error(e);
-	}
+	await addAs(t, status, changed);
 }
 
 /** The same request Library's edit bar sends for one title, undo included. */

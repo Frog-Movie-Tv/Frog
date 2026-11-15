@@ -858,7 +858,8 @@ async fn both_exports_keep_their_shape() {
                       "watched_at": null }
                 ],
                 "watches": [],
-                "reads": []
+                "reads": [],
+                "watched_with": []
             },
             {
                 "id": heat,
@@ -869,7 +870,8 @@ async fn both_exports_keep_their_shape() {
                 "progress": null,
                 "episodes": [],
                 "watches": [{ "watched_at": "2023-03-03T20:00:00Z", "rewatch": false, "source": "import" }],
-                "reads": []
+                "reads": [],
+                "watched_with": []
             }
         ])
     );

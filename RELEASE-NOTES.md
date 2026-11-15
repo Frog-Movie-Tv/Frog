@@ -9,9 +9,44 @@ people working on Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Tomato Frog —
+## Upcoming — Chorus Frog —
 
 In progress.
+
+Add titles where they belong, tell each other what to watch, and find everything Frog has to tell you in one place.
+
+### Highlights
+
+- **Choose where a title goes as you add it.** The + asks for Watchlist,
+  Watching, Completed, On hold or Dropped, with the Watchlist ready for Enter.
+  Settings → Watching can make it one tap again.
+- **Recommend a title to someone.** Pick one or more people on your Frog, add
+  a note if you like, and it lands in their Notifications under For you, ready
+  to add or dismiss.
+- **Notifications, in one place.** The bell shows what is new: episodes and
+  films out, recommendations, badges and Frog updates. It works whether or not
+  push notifications are on, and each kind can be switched off in Settings.
+- **Say who you watched it with.** When you mark something watched, name the
+  people on your Frog who were there, or watch a show with someone and every
+  episode you tick names them. They see it in Notifications and can add it to
+  their own diary with one tap.
+- **Add a studio's titles in one go.** Select on a studio's page, tick what you
+  want, or Select all, and add them all with one status. Undo takes them all
+  back out.
+
+### Improvements
+
+- Adding a title says where it went, with Undo.
+- Each card in Rate your library can be fixed on the spot: not watched yet,
+  another status, or out of the library. Undo takes those back too.
+
+### Fixes
+
+- Rate your library keeps up with every tap and key, however fast, and each
+  score lands on the card it was given to.
+- A score that could not be saved puts its card back, so the count is always
+  right.
+- Switching between Finished and Everything starts the count again.
 
 ## [1.6.1] — Tomato Frog — 2026-11-14
 

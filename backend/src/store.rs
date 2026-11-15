@@ -244,6 +244,10 @@ pub struct WatchRecord {
     pub is_rewatch: bool,
     pub source: String,
     pub undated: bool,
+    /// Who it was watched with, by account (`watch_with`), so undo keeps them.
+    #[sqlx(skip)]
+    #[serde(default)]
+    pub with: Vec<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -994,7 +998,7 @@ pub async fn held_watches(
     user_id: i64,
     title_id: i64,
 ) -> AppResult<(Vec<WatchRecord>, Vec<EpisodeNoteRecord>)> {
-    let watches = sqlx::query_as::<_, WatchRecord>(
+    let mut watches = sqlx::query_as::<_, WatchRecord>(
         "SELECT e.season_number AS season, e.episode_number AS episode, w.watched_at,
                 w.is_rewatch, w.source, w.undated
            FROM watch_event w
@@ -1005,6 +1009,28 @@ pub async fn held_watches(
     .bind(title_id)
     .fetch_all(pool)
     .await?;
+    // Who each was with, matched the way a watch is put back: by episode and moment.
+    let with: Vec<(Option<i64>, Option<i64>, String, i64)> = sqlx::query_as(
+        "SELECT e.season_number, e.episode_number, w.watched_at, x.with_user_id
+           FROM watch_with x
+           JOIN watch_event w ON w.id = x.watch_event_id
+           LEFT JOIN episode e ON e.id = w.episode_id
+          WHERE x.user_id = ?1 AND w.user_id = ?1 AND w.title_id = ?2",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .fetch_all(pool)
+    .await?;
+    for (season, episode, at, person) in with {
+        if let Some(w) = watches
+            .iter_mut()
+            .find(|w| w.season == season && w.episode == episode && w.watched_at == at)
+        {
+            if !w.with.contains(&person) {
+                w.with.push(person);
+            }
+        }
+    }
     let notes = sqlx::query_as::<_, EpisodeNoteRecord>(
         "SELECT e.season_number AS season, e.episode_number AS episode, s.rating, s.notes,
                 s.updated_at
@@ -1235,6 +1261,27 @@ pub async fn restore_entries(
             .bind(w.undated)
             .execute(&mut *tx)
             .await?;
+            for person in &w.with {
+                sqlx::query(
+                    "INSERT OR IGNORE INTO watch_with (watch_event_id, user_id, with_user_id,
+                                                       created_at)
+                     SELECT x.id, ?1, u.id, ?6
+                       FROM watch_event x JOIN app_user u ON u.id = ?5 AND u.disabled = 0
+                      WHERE x.user_id = ?1 AND x.title_id = ?2 AND x.watched_at = ?4
+                        AND x.episode_id IS (SELECT e.id FROM episode e
+                              WHERE e.title_id = ?2 AND e.season_number = ?3
+                                AND e.episode_number = ?7)",
+                )
+                .bind(user_id)
+                .bind(e.title_id)
+                .bind(w.season)
+                .bind(&w.watched_at)
+                .bind(person)
+                .bind(Utc::now().to_rfc3339())
+                .bind(w.episode)
+                .execute(&mut *tx)
+                .await?;
+            }
         }
         for r in e.reads.iter().filter(|r| r.chapter > 0) {
             let source = if READ_SOURCES.contains(&r.source.as_str()) {

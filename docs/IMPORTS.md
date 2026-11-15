@@ -181,3 +181,8 @@ a new source is a new reader and nothing else.
 - **Imported shows get no title-level diary entry.** `apply` only writes one
   for films; a show's watches are its episodes, and a title-level watch
   would count the show as a film in Stats.
+- **Who a watch was with travels in the JSON backup only, one way for now.**
+  Each title carries `watched_with`: the season, episode and moment of a
+  watch and the username it was with, since account ids mean nothing on
+  another Frog. Reading it back in is not built yet (ROADMAP): an import
+  leaves it out, so a restored library has its watches without the names.

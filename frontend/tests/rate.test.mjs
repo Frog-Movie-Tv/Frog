@@ -52,3 +52,40 @@ test('number keys pick the choices, 0 the tenth', () => {
 	assert.equal(choiceForKey('4', 3), null, 'no fourth smiley');
 	assert.equal(choiceForKey('a', 10), null);
 });
+
+test('a step taken back puts its card on top, once, and only that step goes', async () => {
+	const { takeBack, ratedIn } = await import('../src/lib/rate.ts');
+	const a = { id: 1 };
+	const b = { id: 2 };
+	const c = { id: 3 };
+	const steps = [
+		{ key: 1, kind: 'rate', item: a, left: true },
+		{ key: 2, kind: 'skip', item: b, left: true },
+		{ key: 3, kind: 'move', item: c, left: false }
+	];
+	assert.equal(ratedIn(steps), 1);
+
+	// A refused save of the first card, after two more steps.
+	const refused = takeBack([c], steps, 1);
+	assert.deepEqual(
+		refused.queue.map((i) => i.id),
+		[1, 3]
+	);
+	assert.deepEqual(
+		refused.steps.map((s) => s.key),
+		[2, 3]
+	);
+	assert.equal(ratedIn(refused.steps), 0);
+
+	// A status changed in hand: the card was never out of the pile.
+	const moved = takeBack([c], steps, 3);
+	assert.deepEqual(
+		moved.queue.map((i) => i.id),
+		[3]
+	);
+
+	// Nothing to take back: nothing changes.
+	const none = takeBack([c], steps, 9);
+	assert.equal(none.step, null);
+	assert.equal(none.steps, steps);
+});

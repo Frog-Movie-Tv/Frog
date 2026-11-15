@@ -18,6 +18,10 @@ export interface MenuItem {
 	/** Ticked, for a choice that is on now. */
 	checked?: boolean;
 	disabled?: boolean;
+	/** Holds the focus as the menu opens, so Enter takes it: the likely choice. */
+	focus?: boolean;
+	/** A key shown beside the label, for a choice the page also takes from the keyboard. */
+	key?: string;
 	/** Opens a second level in the same menu, read when it is opened. */
 	children?: () => MenuEntry[] | Promise<MenuEntry[]>;
 	run?: () => void | Promise<void>;
@@ -31,6 +35,8 @@ export interface MenuSource {
 	title?: string;
 	/** Built when the menu opens, so it reads the card as it is now. */
 	items: () => MenuEntry[];
+	/** The menu went away, chosen from or not: a picker that waits on it settles. */
+	onclose?: () => void;
 }
 
 export interface OpenMenu {
@@ -46,15 +52,29 @@ class Menu {
 	open = $state<OpenMenu | null>(null);
 
 	show(source: MenuSource, at: { x: number; y: number }, touch = false) {
+		const before = this.open?.source;
 		this.open = { source, x: at.x, y: at.y, touch };
+		if (before !== source) before?.onclose?.();
 	}
 
 	close() {
+		const was = this.open?.source;
 		this.open = null;
+		was?.onclose?.();
 	}
 }
 
 export const menu = new Menu();
+
+/**
+ * Opens a menu under a button rather than at a pointer: the + that asks for a
+ * status, a card's "…". Touch opens it as a sheet, as a hold does.
+ */
+export function showFrom(button: HTMLElement, source: MenuSource, e?: MouseEvent | PointerEvent) {
+	const r = button.getBoundingClientRect();
+	const touch = !!e && 'pointerType' in e && e.pointerType === 'touch';
+	menu.show(source, { x: r.left, y: r.bottom + 6 }, touch);
+}
 
 /** How long a finger holds before the menu opens, where the browser does not say. */
 const HOLD_MS = 450;

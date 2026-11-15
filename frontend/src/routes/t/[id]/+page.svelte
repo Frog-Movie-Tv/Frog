@@ -23,10 +23,15 @@
 	import { titleKey } from '#lib/titles';
 	import { uniqueBy } from '#lib/unique';
 	import { whenWatched } from '#lib/when.svelte';
-	import type { LibraryItem, TitleDetail, TitleScore, TitleScores } from '#lib/types';
+	import { reachable } from '#lib/people.svelte';
+	import { recommendTitle } from '#lib/recommend';
+	import { watchShowWith, withLine } from '#lib/together';
+	import type { Companion, LibraryItem, TitleDetail, TitleScore, TitleScores } from '#lib/types';
 	import { statusLabel } from '#lib/types';
 
 	let detail = $state<TitleDetail | null>(null);
+	/** Who this show is being watched with now: a quiet line once anyone is. */
+	let companions = $state<Companion[]>([]);
 	let loading = $state(true);
 	let error = $state<Failure | null>(null);
 	let trailerOpen = $state<string | null>(null);
@@ -35,6 +40,19 @@
 
 	/** Frog's id for the title: the page's own address. */
 	const titleId = $derived(idParam(page.params.id));
+
+	$effect(() => {
+		const it = detail?.item;
+		companions = [];
+		if (!it || it.kind !== 'tv' || !it.entry || !reachable.together) return;
+		const id = it.id;
+		void api
+			.togetherOf(id)
+			.then((r) => {
+				if (detail?.item.id === id) companions = r.with;
+			})
+			.catch(() => {});
+	});
 
 	$effect(() => {
 		void load(titleId);
@@ -632,6 +650,16 @@
 							</button>
 						{/if}
 						<AddToShelf titleId={item.id} name={item.name} />
+						{#if reachable.recommend}
+							<button
+								class="btn icon"
+								title="Recommend"
+								aria-label="Recommend"
+								onclick={() => recommendTitle(item)}
+							>
+								<Icon name="share" size={17} />
+							</button>
+						{/if}
 						{#if item.entry?.status === 'completed' && item.kind !== 'manga'}
 							<button
 								class="btn icon"
@@ -643,6 +671,20 @@
 							</button>
 						{/if}
 					</div>
+
+					{#if companions.length}
+						<button
+							class="with-line hit"
+							title="Who you are watching it with"
+							onclick={async () => {
+								const now = await watchShowWith(item, companions);
+								if (now) companions = now;
+							}}
+						>
+							<Icon name="users" size={14} />
+							{withLine(companions)}
+						</button>
+					{/if}
 
 					{#if item.kind === 'manga' && item.entry}
 						<div class="reading"><ChapterCount {item} onchange={updateItem} /></div>
@@ -1868,5 +1910,24 @@
 
 	.bell.on {
 		color: var(--accent);
+	}
+
+	/* Who a show is being watched with: a line, not a control, until tapped. */
+	.with-line {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		margin-top: 10px;
+		padding: 0;
+		border: none;
+		background: none;
+		color: var(--text-dim);
+		font: inherit;
+		font-size: 0.86rem;
+		cursor: pointer;
+	}
+
+	.with-line:hover {
+		color: var(--text);
 	}
 </style>

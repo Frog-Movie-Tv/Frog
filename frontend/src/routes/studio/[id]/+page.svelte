@@ -10,6 +10,10 @@
 	import Poster from '#lib/components/Poster.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { failure, type Failure } from '#lib/failure';
+	import { addMany, chooseStatus } from '#lib/add';
+	import Icon from '#lib/components/Icon.svelte';
+	import PickBar from '#lib/components/PickBar.svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import type { Kind, SearchItem, StudioDetail } from '#lib/types';
 
 	let studio = $state<StudioDetail | null>(null);
@@ -27,9 +31,11 @@
 
 	let token = 0;
 
-	/** A right-click's offer on a title; the page reads itself again after. */
+	/** A right-click's offer on a title; the page reads itself again after. None while choosing. */
 	const menuOf = (item: SearchItem) =>
-		titleMenu({ ...item, status: item.in_library }, { onchanged: () => load(id) });
+		selecting
+			? undefined
+			: titleMenu({ ...item, status: item.in_library }, { onchanged: () => load(id) });
 
 	async function load(studioId: number) {
 		const mine = ++token;
@@ -72,6 +78,72 @@
 	const shows = $derived(titles.filter((t) => t.kind === 'tv').length);
 	const shown = $derived(titles.filter((t) => !only || t.kind === only));
 	const logo = $derived(img(studio?.logo_path, 'w300'));
+
+	// Choosing many: a tap ticks a title instead of opening it. What is
+	// already in your library shows where it is and cannot be ticked.
+	let selecting = $state(false);
+	let adding = $state(false);
+	const picked = new SvelteSet<string>();
+	const free = $derived(shown.filter((t) => !t.in_library));
+	const chosen = $derived(free.filter((t) => picked.has(titleKey(t))));
+
+	function toggle(item: SearchItem) {
+		const key = titleKey(item);
+		if (picked.has(key)) picked.delete(key);
+		else picked.add(key);
+	}
+
+	function selectAll() {
+		const every = chosen.length === free.length;
+		picked.clear();
+		if (!every) for (const t of free) picked.add(titleKey(t));
+	}
+
+	function stopSelecting() {
+		selecting = false;
+		picked.clear();
+	}
+
+	/** What makes a poster a tick box while choosing. */
+	function pickable(item: SearchItem) {
+		if (!selecting) return {};
+		const held = !!item.in_library;
+		return {
+			role: 'checkbox',
+			'aria-checked': held ? undefined : picked.has(titleKey(item)),
+			'aria-disabled': held ? true : undefined,
+			onclick: (e: MouseEvent) => {
+				e.preventDefault();
+				e.stopPropagation();
+				if (!held) toggle(item);
+			},
+			onkeydown: (e: KeyboardEvent) => {
+				if (e.key !== ' ') return;
+				e.preventDefault();
+				if (!held) toggle(item);
+			}
+		};
+	}
+
+	/** Every ticked title into the library, with the status chosen for all of them. */
+	async function addChosen(e: MouseEvent) {
+		const list = chosen;
+		if (!list.length) return;
+		const naming = list.length === 1 ? list[0].name : `${list.length} titles`;
+		const status = await chooseStatus(
+			{ name: naming, kind: list.every((t) => t.kind === 'movie') ? 'movie' : 'tv' },
+			e.currentTarget as HTMLElement,
+			{ event: e, title: `Add ${naming}` }
+		);
+		if (!status) return;
+		adding = true;
+		try {
+			const done = await addMany(list, status, () => load(id));
+			if (done) picked.clear();
+		} finally {
+			adding = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -114,17 +186,24 @@
 			</div>
 		</header>
 
-		{#if films && shows}
-			<div class="segmented" role="group" aria-label="Show">
-				<button class="chip" class:on={!only} onclick={() => (only = null)}>All</button>
-				<button class="chip" class:on={only === 'movie'} onclick={() => (only = 'movie')}>
-					Films <span class="faint">{films}</span>
+		<div class="tools">
+			{#if films && shows}
+				<div class="segmented" role="group" aria-label="Show">
+					<button class="chip" class:on={!only} onclick={() => (only = null)}>All</button>
+					<button class="chip" class:on={only === 'movie'} onclick={() => (only = 'movie')}>
+						Films <span class="faint">{films}</span>
+					</button>
+					<button class="chip" class:on={only === 'tv'} onclick={() => (only = 'tv')}>
+						Shows <span class="faint">{shows}</span>
+					</button>
+				</div>
+			{/if}
+			{#if titles.length && !selecting}
+				<button class="btn ghost small select" onclick={() => (selecting = true)}>
+					<Icon name="check" size={14} /> Select
 				</button>
-				<button class="chip" class:on={only === 'tv'} onclick={() => (only = 'tv')}>
-					Shows <span class="faint">{shows}</span>
-				</button>
-			</div>
-		{/if}
+			{/if}
+		</div>
 
 		{#if !shown.length}
 			<Empty art="search" title="Nothing listed yet" hint="TMDB has no titles for this studio." />
@@ -132,6 +211,9 @@
 			<Grid>
 				{#each shown as item (titleKey(item))}
 					<Poster
+						{...pickable(item)}
+						morph={!selecting}
+						selected={selecting && !item.in_library ? picked.has(titleKey(item)) : undefined}
 						menu={menuOf(item)}
 						kindBadge={films > 0 && shows > 0}
 						kind={item.kind}
@@ -148,6 +230,17 @@
 		{/if}
 	{/if}
 </div>
+
+{#if selecting}
+	<PickBar
+		count={chosen.length}
+		selectable={free.length}
+		busy={adding}
+		onselectall={selectAll}
+		onadd={addChosen}
+		ondone={stopSelecting}
+	/>
+{/if}
 
 <style>
 	.head {
@@ -220,8 +313,21 @@
 		font-size: 0.8rem;
 	}
 
-	.segmented {
+	.tools {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 12px;
 		margin-bottom: 20px;
+	}
+
+	.select {
+		margin-left: auto;
+	}
+
+	/* Room under the grid for the bar while choosing. */
+	.page:has(~ :global(.bar)) {
+		padding-bottom: 90px;
 	}
 
 	@media (max-width: 720px) {

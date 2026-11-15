@@ -1062,3 +1062,77 @@ export interface DbPage {
 	page: number;
 	per_page: number;
 }
+
+/** Someone a people picker can offer: for a recommendation, or a watch together. */
+export interface Choosable {
+	id: number;
+	username: string;
+	display_name: string | null;
+	/** Has a picture, read from their profile. */
+	avatar: boolean;
+	/** Already recommended this title to them. */
+	sent: boolean;
+}
+
+/** Who did something, on a notification. */
+export interface Actor {
+	username: string;
+	display_name: string | null;
+	avatar: boolean;
+}
+
+export type NoticeKind =
+	'recommendation' | 'added' | 'episode' | 'film' | 'badge' | 'update' | 'ops' | 'together';
+
+/** One line on the Notifications page. */
+export interface Notice {
+	id: number;
+	kind: NoticeKind;
+	created_at: string;
+	read: boolean;
+	payload: Record<string, unknown> | null;
+	title: {
+		id: number;
+		name: string;
+		kind: Kind;
+		poster_path: string | null;
+		/** Where it stands in your library, when it is there. */
+		status: Status | null;
+	} | null;
+	actor: Actor | null;
+}
+
+/** Someone named on a watch, as a list shows them. */
+export interface Companion {
+	id: number;
+	username: string;
+	display_name: string | null;
+	avatar: boolean;
+}
+
+/** A title recommended to you. */
+export interface Recommendation {
+	id: number;
+	created_at: string;
+	note: string | null;
+	answered: 'added' | 'dismissed' | null;
+	title: {
+		id: number;
+		name: string;
+		kind: Kind;
+		poster_path: string | null;
+		year: string | null;
+		/** Where it stands in your library, when it is there. */
+		status: Status | null;
+	};
+	from: Actor;
+}
+
+/** What each account wants to hear about, push and page alike. */
+export interface NoticeWants {
+	recommendations: boolean;
+	releases: boolean;
+	badges: boolean;
+	updates: boolean;
+	together: boolean;
+}

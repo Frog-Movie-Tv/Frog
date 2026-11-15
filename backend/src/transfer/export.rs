@@ -112,6 +112,21 @@ pub async fn library_json(state: &AppState, user_id: i64) -> AppResult<Value> {
         .fetch_one(&state.pool)
         .await?;
 
+        // Who each watch was with, by username: ids mean nothing on another Frog.
+        let together: Vec<(Option<i64>, Option<i64>, String, String)> = sqlx::query_as(
+            "SELECT e.season_number, e.episode_number, w.watched_at, u.username
+               FROM watch_with x
+               JOIN watch_event w ON w.id = x.watch_event_id
+               JOIN app_user u ON u.id = x.with_user_id
+               LEFT JOIN episode e ON e.id = w.episode_id
+              WHERE x.user_id = ?1 AND w.user_id = ?1 AND w.title_id = ?2
+              ORDER BY w.watched_at",
+        )
+        .bind(user_id)
+        .bind(title_id)
+        .fetch_all(&state.pool)
+        .await?;
+
         let reads = if kind == "manga" {
             store::held_reads(&state.pool, user_id, title_id).await?
         } else {
@@ -154,6 +169,13 @@ pub async fn library_json(state: &AppState, user_id: i64) -> AppResult<Value> {
                 .collect::<Vec<_>>(),
             // A manga's chapters, each on the day it was read.
             "reads": reads,
+            // Who watches were with, where anyone was named.
+            "watched_with": together
+                .into_iter()
+                .map(|(season, episode, at, username)| json!({
+                    "season": season, "episode": episode, "watched_at": at, "with": username,
+                }))
+                .collect::<Vec<_>>(),
         }));
     }
 

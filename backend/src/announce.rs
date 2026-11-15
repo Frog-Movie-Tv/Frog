@@ -235,22 +235,42 @@ impl Announcement {
     }
 }
 
-/// Tell every account with a subscribed browser what is due for it now.
+/// Tell every account what is due for it now: on its Notifications page,
+/// and pushed to every browser it subscribed.
+///
+/// `push_sent` and `push_sent_title` say an announcement was made, which is
+/// what keeps it from being made twice. Without a subscribed browser the page
+/// is the whole announcement; with one, a push that reached nobody because
+/// the network is down is tried again next time, and the page row, which has
+/// its own key, is not written twice.
 pub async fn run(state: &AppState, now: DateTime<Utc>) -> AppResult<()> {
-    // Only accounts with a subscribed browser can be told anything, and each
-    // is told about its own titles from its own library.
-    let listeners: Vec<(i64,)> = sqlx::query_as("SELECT DISTINCT user_id FROM push_subscription")
+    let accounts: Vec<(i64,)> = sqlx::query_as("SELECT id FROM app_user WHERE disabled = 0")
         .fetch_all(&state.pool)
         .await?;
 
-    for (user_id,) in listeners {
-        let zone = time_zone(&state.pool, user_id).await;
-        for a in due(&state.pool, user_id, now, zone).await? {
-            let result = crate::push::broadcast(state, user_id, &a.payload()).await?;
-            // Nobody reached, because the network is down or the only device
-            // is still settling: try again next time.
-            if result.sent == 0 && (result.failed > 0 || result.settling > 0) {
-                continue;
+    for (user_id,) in accounts {
+        let due_now = {
+            let zone = time_zone(&state.pool, user_id).await;
+            due(&state.pool, user_id, now, zone).await?
+        };
+        if due_now.is_empty() {
+            continue;
+        }
+        let wanted = crate::inbox::wants(&state.pool, user_id)
+            .await?
+            .allows(crate::inbox::EPISODE);
+        let devices = crate::push::devices(&state.pool, user_id).await?;
+        for a in due_now {
+            if wanted {
+                crate::inbox::record(&state.pool, user_id, &a.event()).await?;
+                if devices > 0 {
+                    let result = crate::push::broadcast(state, user_id, &a.payload()).await?;
+                    // Nobody reached, because the network is down or the only
+                    // device is still settling: push again next time.
+                    if result.sent == 0 && (result.failed > 0 || result.settling > 0) {
+                        continue;
+                    }
+                }
             }
             let sent_at = Utc::now().to_rfc3339();
             if a.film {
@@ -284,6 +304,28 @@ pub async fn run(state: &AppState, now: DateTime<Utc>) -> AppResult<()> {
         }
     }
     Ok(())
+}
+
+impl Announcement {
+    /// The same announcement as a line on the Notifications page: what came
+    /// out, keyed by its first episode (or the film) so it lands once.
+    pub fn event(&self) -> crate::inbox::Event<'static> {
+        let payload = self.payload();
+        crate::inbox::Event {
+            kind: if self.film {
+                crate::inbox::FILM
+            } else {
+                crate::inbox::EPISODE
+            },
+            title_id: Some(self.title_id),
+            actor_id: None,
+            payload: json!({ "body": payload["body"], "count": self.episode_ids.len() }),
+            ref_key: Some(match self.episode_ids.first() {
+                Some(first) if !self.film => format!("ep:{first}"),
+                _ => format!("film:{}", self.title_id),
+            }),
+        }
+    }
 }
 
 #[cfg(test)]

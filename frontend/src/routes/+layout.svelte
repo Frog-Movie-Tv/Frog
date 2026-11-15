@@ -13,7 +13,10 @@
 	import Toasts from '#lib/components/Toasts.svelte';
 	import UpdateBanner from '#lib/components/UpdateBanner.svelte';
 	import WhenWatched from '#lib/components/WhenWatched.svelte';
+	import PeoplePicker from '#lib/components/PeoplePicker.svelte';
 	import { showCutOffText } from '#lib/cutoff';
+	import { inbox } from '#lib/inbox.svelte';
+	import { reachable } from '#lib/people.svelte';
 	import { offline } from '#lib/offline.svelte';
 	import { paletteKey } from '#lib/platform';
 	import { session } from '#lib/session.svelte';
@@ -40,6 +43,18 @@
 
 	$effect(() => {
 		if (session.authenticated) void offline.register();
+	});
+
+	// The bell's number, kept fresh while signed in.
+	$effect(() => {
+		if (session.authenticated) return inbox.watch();
+	});
+
+	// Whether there is anyone to recommend to, so a button with nobody behind it is not drawn.
+	$effect(() => {
+		if (!session.authenticated) return;
+		reachable.check('recommend');
+		reachable.check('together');
 	});
 
 	$effect(() => {
@@ -200,6 +215,18 @@
 					<Icon name="search" size={19} />
 					<kbd>{shortcut}</kbd>
 				</button>
+				<a
+					class="find bell"
+					class:active={isActive('/notifications')}
+					href="/notifications"
+					aria-label={inbox.unread ? `Notifications, ${inbox.unread} new` : 'Notifications'}
+					title="Notifications"
+				>
+					<Icon name="bell" size={19} />
+					{#if inbox.unread}
+						<span class="count" aria-hidden="true">{inbox.unread > 9 ? '9+' : inbox.unread}</span>
+					{/if}
+				</a>
 				<AccountMenu />
 			</div>
 		</header>
@@ -266,6 +293,7 @@
 	<CommandPalette bind:this={palette} />
 	<UpdateBanner />
 	<WhenWatched />
+	<PeoplePicker />
 	<ContextMenu />
 {/if}
 
@@ -403,6 +431,33 @@
 		background: var(--bg-hover);
 	}
 
+	/* The bell is the same round button, always round, with its number on its shoulder. */
+	.bell {
+		position: relative;
+		color: var(--text);
+	}
+
+	.bell.active {
+		color: var(--accent);
+	}
+
+	.count {
+		position: absolute;
+		top: -3px;
+		right: -3px;
+		min-width: 18px;
+		height: 18px;
+		padding: 0 5px;
+		border-radius: var(--radius-pill);
+		background: var(--accent);
+		color: var(--accent-ink);
+		font-size: 0.66rem;
+		font-weight: 700;
+		line-height: 18px;
+		text-align: center;
+		box-shadow: 0 0 0 2px var(--bg-bar);
+	}
+
 	kbd {
 		display: none;
 		padding: 2px 7px;
@@ -426,6 +481,13 @@
 
 		kbd {
 			display: inline-block;
+		}
+
+		.bell {
+			display: grid;
+			width: 42px;
+			padding: 0;
+			border-radius: 50%;
 		}
 	}
 
