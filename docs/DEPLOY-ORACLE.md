@@ -499,7 +499,11 @@ Nothing is open to the internet except 80 and 443, and SSH by key. The machine
 - Each update copies the database twice (the backup, then the plain
   snapshot), and the copies grow with the picture cache: 945 MB took about 15
   minutes on the Always Free machine, with the site slow throughout. The
-  units allow an hour. Changes to them and to the scripts reach the server
+  units allow an hour. Production has run with `FROG_IMAGE_CACHE_MB=128` in
+  its `.env` since that day (the old file is kept beside it): the posters
+  went from 615 MB to 115 MB and, compacted with Frog stopped, the database
+  from 1,098 MB to 535 MB. TMDB's cached answers (347 MB) are most of what
+  is left. Changes to them and to the scripts reach the server
   only by re-running `install.sh` from a checkout.
 - Otherwise: back up, start the new image, wait for `/healthz`, and on failure
   roll back to the previous digest and say so.
