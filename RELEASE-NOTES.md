@@ -30,6 +30,9 @@ In progress.
 - Airing this week shows the time an episode airs when a special shares its
   day.
 - The Stars choice in Settings no longer touches its edges.
+- A notification shows even when its picture is slow to load.
+- A device that stopped getting notifications gets them again as soon as
+  Frog is opened on it.
 
 ## [1.7.0] — Chorus Frog — 2026-11-15
 

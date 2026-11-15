@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { api } from '#lib/api';
 	import { reachable } from '#lib/people.svelte';
+	import { claimPush } from '#lib/push';
+	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import type { NoticeWants } from '#lib/types';
 
@@ -52,6 +54,7 @@
 			if (sub && Notification.permission === 'granted') {
 				// Re-send it: the server may have dropped it, or the keys rotated.
 				await api.pushSubscribe(sub.toJSON());
+				claimPush(session.status?.username ?? null);
 				devices = (await api.pushStatus()).devices;
 				step = 'on';
 			} else {
@@ -87,6 +90,7 @@
 				applicationServerKey: keyBytes(public_key)
 			});
 			await api.pushSubscribe(sub.toJSON());
+			claimPush(session.status?.username ?? null);
 			devices = (await api.pushStatus()).devices;
 			step = 'on';
 			toasts.push('Notifications are on');
@@ -106,6 +110,7 @@
 				await api.pushUnsubscribe(sub.endpoint);
 				await sub.unsubscribe();
 			}
+			claimPush(null);
 			devices = (await api.pushStatus()).devices;
 			step = 'off';
 			toasts.push('Notifications are off');

@@ -18,6 +18,7 @@
 	import { inbox } from '#lib/inbox.svelte';
 	import { reachable } from '#lib/people.svelte';
 	import { offline } from '#lib/offline.svelte';
+	import { keepSubscribed } from '#lib/push';
 	import { paletteKey } from '#lib/platform';
 	import { session } from '#lib/session.svelte';
 	import { MAX_TABS, NAV_PAGES, settings } from '#lib/settings.svelte';
@@ -43,6 +44,12 @@
 
 	$effect(() => {
 		if (session.authenticated) void offline.register();
+	});
+
+	// This browser's notifications, sent back once a session is known, in case
+	// the server let them go.
+	$effect(() => {
+		if (session.authenticated) void keepSubscribed(session.status?.username ?? null);
 	});
 
 	// The bell's number, kept fresh while signed in.

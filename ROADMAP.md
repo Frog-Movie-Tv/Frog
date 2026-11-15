@@ -39,14 +39,12 @@ off, or turns it into a fix above.
   sheet.
 - **A recommendation and a "watched with you" reaching a phone** as push
   notifications, and tapping one opening Notifications.
-- **Why Black Clover's S2 E7 (2026-11-14, 14:00 UTC) reached no phone.** Frog
-  places it at that moment from AniList, and `verify-push` passes, so look at
-  the live data in Administration → Database: the account's
-  `push_subscription` rows (none means the phone dropped it: switch
-  notifications off and on there), Black Clover's `library_entry` (status
-  not Completed, a Watchlist show counts only once something is watched,
-  `notify` 1) and a `push_sent` row for the episode (there means it was
-  sent and the phone did not show it).
+- **Black Clover S2 E8 on the Android phone (Firefox), 2026-11-21 at 15:00
+  Brussels.** E7 was announced at 14:00:40 UTC on 2026-11-14, to a device
+  that has since gone; the phone subscribed again on 2026-11-15, and Mozilla's
+  push service took a recommendation for it that day. If E8 does not show,
+  the phone is holding it back: Android's notification setting for Firefox,
+  or its battery restriction.
 - **A notification at air time on the Android phone:** the picture, Frog's
   icon and badge, and tapping it opening the title.
 - **Holding a card on the phone** opens the menu as a sheet, and the tap that

@@ -316,7 +316,14 @@ part you are about to touch; change it when the code changes.
   episode or film with a day alone at midnight in the account's zone
   (`app_setting` `time_zone`: Settings → Watching's zone when chosen, else
   the browser's, sent with every subscribe). The service worker fetches the
-  notification's picture itself, signed in, and hands it over as a data URL.
+  notification's picture itself, signed in, and hands it over as a data URL,
+  waiting at most `PICTURE_WAIT_MS` (4 s): a phone woken on a poor signal
+  is stopped by its browser if the push handler runs on, and then shows
+  nothing at all. The server forgets a device its push service calls gone,
+  or one that failed 20 times running; the browser sends its subscription
+  back each time Frog opens (`lib/push.ts`), but only for the account that
+  switched it on there (`frog.push.account`), so whoever signs in next on
+  that browser is never subscribed by it.
   `verify-push` points `TVMAZE_API_URL` nowhere, so its hand-set times stay.
   `cargo run --example airtime_check -- <tmdb id> <season> <episode>` shows
   what one episode resolves to.

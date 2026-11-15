@@ -104,13 +104,23 @@ interface PushMessage {
 }
 
 /**
+ * How long the picture may take. A phone woken by a push on a poor signal can
+ * take far longer, and the browser ends a push handler that runs too long,
+ * with nothing shown: the notification matters more than its picture.
+ */
+const PICTURE_WAIT_MS = 4000;
+
+/**
  * A picture for a notification, as a data URL. Fetched here, signed in, so
  * it shows whatever a phone's notification loader does with cookies; the
  * address itself is the fallback.
  */
 async function inlined(url: string): Promise<string> {
 	try {
-		const res = await fetch(url, { credentials: 'same-origin' });
+		const res = await fetch(url, {
+			credentials: 'same-origin',
+			signal: AbortSignal.timeout(PICTURE_WAIT_MS)
+		});
 		if (!res.ok) return url;
 		const bytes = new Uint8Array(await res.arrayBuffer());
 		let binary = '';
@@ -151,8 +161,15 @@ sw.addEventListener('push', (event) => {
 			timestamp: Date.now(),
 			data: { url: message.url ?? '/' }
 		};
+		const title = message.title ?? 'Frog';
 		if (message.image) options.image = await inlined(message.image);
-		await sw.registration.showNotification(message.title ?? 'Frog', options);
+		try {
+			await sw.registration.showNotification(title, options);
+		} catch {
+			// A picture the browser will not take still leaves the words.
+			delete options.image;
+			await sw.registration.showNotification(title, options);
+		}
 	};
 	event.waitUntil(show());
 });
