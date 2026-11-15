@@ -26,7 +26,15 @@ off, or turns it into a fix above.
   touching up, and two-finger moves on a real phone; and a badge given
   reaching the phone as a notification.
 - **A vertical banner on a real phone**, and Full's ceiling on a very tall
-  picture.
+  picture. Opening one shows it whole, and the close button closes it.
+- **Swiping rating cards on the Android phone:** the card follows the finger
+  with no stutter, a throw skips, a short swipe springs back, and a tap on
+  "Open the title" still opens it.
+- **zschaeken as an owner:** once this release is live, set their role to
+  Owner in Administration → People.
+- **Air times on the live Airing page** a day after the release: far fewer
+  time TBA rows. What is left should be streaming drops, shows TVmaze lists
+  without a time, and shows TVmaze does not have.
 - **The colour picker's sheet and the Stats bars by finger** on the phone.
 - **AniList on the live list:** Settings → Connections, "Needs a check" and
   the "Matched" methods, manga included. And connecting AniList once from a

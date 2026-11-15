@@ -112,7 +112,8 @@
 </header>
 
 {#if opened && whole}
-	<!-- The whole picture, uncropped. A tap anywhere, Escape or Back closes it. -->
+	<!-- The whole picture, uncropped and inside the screen however tall it is.
+	     The close button, a tap anywhere, Escape or Back closes it. -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div
 		use:portal
@@ -123,6 +124,14 @@
 		tabindex="-1"
 		onclick={() => (opened = false)}
 	>
+		<button
+			class="close"
+			aria-label="Close"
+			onclick={(e) => {
+				e.stopPropagation();
+				opened = false;
+			}}><Icon name="x" size={20} /></button
+		>
 		<img src={whole} alt="" />
 	</div>
 {/if}
@@ -407,11 +416,38 @@
 		animation: whole-in 180ms ease backwards;
 	}
 
+	/* Sized against the screen, not the grid cell: a percentage of an auto
+	   row is no limit, which let a tall picture run off the top and bottom. */
 	.whole img {
-		max-width: 100%;
-		max-height: 100%;
+		display: block;
+		width: auto;
+		height: auto;
+		max-width: min(100%, 1400px);
+		max-height: calc(100dvh - 120px);
 		object-fit: contain;
-		border-radius: 6px;
+		border-radius: 10px;
+		box-shadow: 0 20px 60px rgb(0 0 0 / 0.5);
+	}
+
+	.whole .close {
+		position: fixed;
+		top: max(16px, env(safe-area-inset-top));
+		right: 16px;
+		display: grid;
+		place-items: center;
+		width: 44px;
+		height: 44px;
+		border: 0;
+		border-radius: 50%;
+		background: rgb(255 255 255 / 0.14);
+		color: #fff;
+		cursor: pointer;
+		backdrop-filter: blur(8px);
+		transition: background 0.15s ease;
+	}
+
+	.whole .close:hover {
+		background: rgb(255 255 255 / 0.26);
 	}
 
 	@keyframes whole-in {

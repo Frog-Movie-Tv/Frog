@@ -39,7 +39,7 @@ pub async fn users(
 
 #[derive(Deserialize)]
 pub struct UserPatch {
-    /// admin | user. Making an owner is not something an API call does.
+    /// owner | admin | user. Only an owner makes another owner.
     pub role: Option<String>,
     pub disabled: Option<bool>,
 }
@@ -47,8 +47,10 @@ pub struct UserPatch {
 /// Change someone's role or switch their account off.
 ///
 /// Nobody changes themselves here (that is how an instance ends up with no
-/// administrator), the owner cannot be touched, only the owner makes or
-/// unmakes administrators, and an administrator manages ordinary accounts.
+/// administrator or owner). Only an owner makes or unmakes administrators and
+/// owners, and an owner's account takes no other change: no administrator
+/// touches it, and no owner switches another off. An administrator manages
+/// ordinary accounts.
 pub async fn update_user(
     AdminAuth(me): AdminAuth,
     State(state): State<AppState>,
@@ -63,26 +65,31 @@ pub async fn update_user(
     let Some((target_role, _)) = admin::standing(&state.pool, id).await? else {
         return Err(AppError::NotFound("no such account".into()));
     };
-    if target_role == Role::Owner {
+    if target_role == Role::Owner && (me.role() < Role::Owner || patch.disabled.is_some()) {
         return Err(AppError::Forbidden(
-            "The owner's account cannot be changed.".into(),
+            "An owner's account cannot be changed.".into(),
         ));
     }
     if target_role == Role::Admin && me.role() < Role::Owner {
         return Err(AppError::Forbidden(
-            "Only the owner can change an administrator.".into(),
+            "Only an owner can change an administrator.".into(),
         ));
     }
 
     if let Some(role) = &patch.role {
         let role = match role.as_str() {
+            "owner" => Role::Owner,
             "admin" => Role::Admin,
             "user" => Role::User,
-            _ => return Err(AppError::BadRequest("role must be admin or user".into())),
+            _ => {
+                return Err(AppError::BadRequest(
+                    "role must be owner, admin or user".into(),
+                ))
+            }
         };
         if role != target_role && me.role() < Role::Owner {
             return Err(AppError::Forbidden(
-                "Only the owner can make or remove administrators.".into(),
+                "Only an owner can make or remove administrators.".into(),
             ));
         }
         admin::set_role(&state.pool, id, role).await?;

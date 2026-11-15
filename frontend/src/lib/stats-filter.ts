@@ -21,6 +21,8 @@ export interface StatsFact {
 	year: number | null;
 	/** 0-100 */
 	rating: number | null;
+	/** Where it stands in the library. */
+	status: string | null;
 	units: FactUnit[];
 }
 
@@ -32,6 +34,8 @@ export interface StatsFilter {
 	rating?: number;
 	/** A month (YYYY-MM) or a year (YYYY). */
 	unit?: string;
+	/** A library status: watching, completed and so on. */
+	status?: string;
 }
 
 export type Dimension = keyof StatsFilter;
@@ -58,6 +62,7 @@ function keeps(f: StatsFact, filter: StatsFilter, skip?: Dimension): boolean {
 	if (skip !== 'rating' && filter.rating !== undefined) {
 		if (f.rating === null || bucketOf(f.rating) !== filter.rating) return false;
 	}
+	if (skip !== 'status' && filter.status !== undefined && f.status !== filter.status) return false;
 	if (skip !== 'unit' && filter.unit !== undefined && !counted(f, filter).length) return false;
 	return true;
 }
@@ -81,6 +86,8 @@ export interface StatsView {
 	ratings: number[];
 	top_shows: StatsTitle[];
 	top_films: StatsTitle[];
+	/** Titles by library status, under every pick but the status. */
+	by_status: Record<string, number>;
 	/** The titles watched under the selection, for what the server narrows. */
 	ids: number[];
 }
@@ -150,6 +157,11 @@ export function view(facts: StatsFact[], filter: StatsFilter, units: string[]): 
 		if (f.rating !== null) ratings[bucketOf(f.rating)]++;
 	}
 
+	const by_status: Record<string, number> = {};
+	for (const f of facts.filter((f) => keeps(f, filter, 'status'))) {
+		if (f.status !== null) by_status[f.status] = (by_status[f.status] ?? 0) + 1;
+	}
+
 	const asTop = (f: StatsFact, watches: number, mins: number): StatsTitle => ({
 		id: f.id,
 		kind: f.kind,
@@ -189,6 +201,7 @@ export function view(facts: StatsFact[], filter: StatsFilter, units: string[]): 
 		ratings,
 		top_shows,
 		top_films,
+		by_status,
 		ids: watched.map((f) => f.id)
 	};
 }

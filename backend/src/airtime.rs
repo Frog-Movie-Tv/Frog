@@ -14,10 +14,17 @@
 //! the Airing page, with `air_source` naming the provider. While it does,
 //! TMDB's refreshes leave the day alone. `refresh_due` works every show out
 //! again every few hours.
+//!
+//! TVmaze lists a show's next episodes only shortly before they air, and
+//! stops listing some long runners altogether while still knowing their slot.
+//! An episode it has not listed yet takes the show's usual slot
+//! (`usual_slot`): the time its last few episodes on that weekday all aired
+//! at, on TMDB's day. That is `air_source` 'slot', which, unlike a provider's
+//! own episode, does not own the day: TMDB moving the episode clears it.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::{DateTime, Duration, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
 use chrono_tz::Asia::Tokyo;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -45,6 +52,14 @@ const NUMBER_REACH_DAYS: i64 = 7;
 /// Shows worked out in one pass of the worker.
 pub const BATCH: i64 = 40;
 
+/// How many of a show's latest episodes on one weekday must share a time for
+/// it to be the show's slot that day, and the fewest that will do.
+const SLOT_SAMPLE: usize = 3;
+const SLOT_FEWEST: usize = 2;
+
+/// Episodes further back than this say nothing of the slot now.
+const SLOT_REACH_DAYS: i64 = 365;
+
 /// Frog's own episodes that get a time: what the calendar can show.
 const TRACKED_BEFORE_DAYS: i64 = 45;
 const TRACKED_AFTER_DAYS: i64 = 120;
@@ -54,6 +69,8 @@ const TRACKED_AFTER_DAYS: i64 = 120;
 pub enum Source {
     AniList,
     TvMaze,
+    /// TVmaze's usual slot for the show, on TMDB's day (`usual_slot`).
+    Slot,
 }
 
 impl Source {
@@ -61,6 +78,7 @@ impl Source {
         match self {
             Source::AniList => "anilist",
             Source::TvMaze => "tvmaze",
+            Source::Slot => "slot",
         }
     }
 }
@@ -462,6 +480,46 @@ pub fn match_tvmaze(eps: &[tvmaze::Episode], wanted: &[Wanted]) -> Vec<Option<Hi
     out
 }
 
+/// The moment an episode TVmaze has not listed yet most likely airs: the time
+/// the show's latest episodes on that weekday all aired at, in its channel's
+/// zone, on `day`. Nothing when TVmaze already lists anything on that day or
+/// after it, since then it is saying no episode airs then; nothing when those
+/// episodes disagree, lack a time, or are too few or too old to say.
+pub fn usual_slot(listing: &tvmaze::Listing, day: NaiveDate) -> Option<DateTime<Utc>> {
+    let zone = listing.zone?;
+    let eps = &listing.episodes;
+    if eps.iter().any(|e| e.airdate.is_some_and(|d| d >= day)) {
+        return None;
+    }
+    let mut same: Vec<(NaiveDate, Option<DateTime<Utc>>)> = eps
+        .iter()
+        .filter(|e| e.season > 0 && e.number.is_some())
+        .filter_map(|e| Some((e.airdate?, e.at)))
+        .filter(|(d, _)| d.weekday() == day.weekday() && (day - *d).num_days() <= SLOT_REACH_DAYS)
+        .collect();
+    same.sort_by_key(|(d, _)| std::cmp::Reverse(*d));
+    same.truncate(SLOT_SAMPLE);
+    if same.len() < SLOT_FEWEST {
+        return None;
+    }
+    // Each as the channel's clock read it, with the days past its own day a
+    // late slot runs into.
+    let local: Vec<(i64, chrono::NaiveTime)> = same
+        .iter()
+        .map(|(d, at)| {
+            let here = at.as_ref()?.with_timezone(&zone);
+            Some(((here.date_naive() - *d).num_days(), here.time()))
+        })
+        .collect::<Option<_>>()?;
+    if local.iter().any(|l| *l != local[0]) {
+        return None;
+    }
+    let (past, time) = local[0];
+    zone.from_local_datetime(&(day + Duration::days(past)).and_time(time))
+        .earliest()
+        .map(|at| at.with_timezone(&Utc))
+}
+
 fn gap_of(w: &Wanted, e: &tvmaze::Episode) -> i64 {
     match (w.date, e.airdate) {
         (Some(ours), Some(theirs)) => (ours - theirs).num_days().abs(),
@@ -506,14 +564,25 @@ pub async fn resolve(
     let Some(id) = tvmaze_show(state, show).await? else {
         return Ok(found);
     };
-    let eps = tvmaze::episodes(state, id).await?;
+    let listing = tvmaze::listing(state, id).await?;
     let asked: Vec<Wanted> = left.iter().map(|&i| wanted[i].clone()).collect();
-    for (&i, hit) in left.iter().zip(match_tvmaze(&eps, &asked)) {
-        found[i] = hit.map(|h| Found {
-            day: h.day,
-            at: h.at,
-            source: Source::TvMaze,
-        });
+    for (&i, hit) in left.iter().zip(match_tvmaze(&listing.episodes, &asked)) {
+        found[i] = match hit {
+            Some(h) => Some(Found {
+                day: h.day,
+                at: h.at,
+                source: Source::TvMaze,
+            }),
+            // Not listed yet: the usual slot, on the day TMDB gives.
+            None => wanted[i]
+                .date
+                .and_then(|day| usual_slot(&listing, day))
+                .map(|at| Found {
+                    day: None,
+                    at: Some(at),
+                    source: Source::Slot,
+                }),
+        };
     }
     Ok(found)
 }
@@ -789,7 +858,18 @@ async fn tvmaze_show(state: &AppState, show: &Show) -> AppResult<Option<i64>> {
     if !older_than(checked.as_deref(), Duration::days(LOOKUP_RETRY_DAYS)) {
         return Ok(None);
     }
-    let found = tvmaze::find(state, show.tvdb_id, show.imdb_id.as_deref()).await?;
+    let mut found = tvmaze::find(state, show.tvdb_id, show.imdb_id.as_deref()).await?;
+    if found.is_none() {
+        // TVmaze has many shows under no id TMDB knows: by name and year.
+        let names = show_names(show);
+        for name in &names {
+            let results = tvmaze::search(state, name).await?;
+            found = tvmaze_search_hit(&results, &names, show.first_year);
+            if found.is_some() {
+                break;
+            }
+        }
+    }
     sqlx::query(
         "INSERT INTO airtime_show (tmdb_id, tvmaze_id, tvmaze_checked_at) VALUES (?, ?, ?)
          ON CONFLICT (tmdb_id) DO UPDATE SET
@@ -802,6 +882,46 @@ async fn tvmaze_show(state: &AppState, show: &Show) -> AppResult<Option<i64>> {
     .execute(&state.pool)
     .await?;
     Ok(found)
+}
+
+/// The names TMDB gives a show, each once.
+fn show_names(show: &Show) -> Vec<String> {
+    let mut names = vec![show.name.clone()];
+    if squash(&show.original_name) != squash(&show.name) {
+        names.push(show.original_name.clone());
+    }
+    names.retain(|n| !squash(n).is_empty());
+    names
+}
+
+/// The one show in a TVmaze search answer that has one of this show's names
+/// and first aired the year TMDB says. Two such shows, or a show with no year
+/// to check, is no answer: a wrong show would give every episode a wrong time.
+fn tvmaze_search_hit(results: &Value, names: &[String], first_year: Option<i32>) -> Option<i64> {
+    let first = first_year?;
+    let names: Vec<String> = names.iter().map(|n| squash(n)).collect();
+    let hits: Vec<i64> = results
+        .as_array()?
+        .iter()
+        .map(|r| &r["show"])
+        .filter(|s| {
+            s["premiered"]
+                .as_str()
+                .and_then(|p| p.get(..4))
+                .and_then(|y| y.parse::<i32>().ok())
+                == Some(first)
+        })
+        .filter(|s| {
+            s["name"]
+                .as_str()
+                .is_some_and(|n| names.contains(&squash(n)))
+        })
+        .filter_map(|s| s["id"].as_i64())
+        .collect();
+    match hits.as_slice() {
+        [one] => Some(*one),
+        _ => None,
+    }
 }
 
 /// Whether an RFC 3339 moment is missing or further back than `age`.
@@ -1248,6 +1368,102 @@ mod tests {
             name: Some(name.to_string()),
             ..tm(season, number, airdate, Some(stamp))
         }
+    }
+
+    fn listing(zone: Option<chrono_tz::Tz>, episodes: Vec<tvmaze::Episode>) -> tvmaze::Listing {
+        tvmaze::Listing { zone, episodes }
+    }
+
+    /// Running Man as TVmaze last listed it: Sundays at 18:10 in Seoul.
+    fn sundays_in_seoul() -> Vec<tvmaze::Episode> {
+        vec![
+            tm(2025, 79, "2026-07-19", Some("2026-07-19T09:10:00Z")),
+            tm(2025, 80, "2026-07-26", Some("2026-07-26T09:10:00Z")),
+            tm(2025, 81, "2026-08-02", Some("2026-08-02T09:10:00Z")),
+        ]
+    }
+
+    #[test]
+    fn an_episode_not_listed_yet_takes_the_usual_slot() {
+        let seoul = listing(Some(chrono_tz::Asia::Seoul), sundays_in_seoul());
+        assert_eq!(
+            usual_slot(&seoul, d("2026-11-15")),
+            Some(at("2026-11-15T09:10:00Z"))
+        );
+        // Another weekday has no slot of its own.
+        assert_eq!(usual_slot(&seoul, d("2026-11-16")), None);
+        // Nor does a show with no zone to read the clock in.
+        assert_eq!(
+            usual_slot(&listing(None, sundays_in_seoul()), d("2026-11-15")),
+            None
+        );
+    }
+
+    #[test]
+    fn the_slot_follows_the_clock_across_a_change_of_season() {
+        // 21:00 in New York, in summer and then in winter: an hour later in UTC.
+        let ny = listing(
+            Some(chrono_tz::America::New_York),
+            vec![
+                tm(23, 1, "2026-08-02", Some("2026-08-03T01:00:00Z")),
+                tm(23, 2, "2026-08-09", Some("2026-08-10T01:00:00Z")),
+                tm(23, 3, "2026-08-16", Some("2026-08-17T01:00:00Z")),
+            ],
+        );
+        assert_eq!(
+            usual_slot(&ny, d("2026-11-15")),
+            Some(at("2026-11-16T02:00:00Z"))
+        );
+    }
+
+    #[test]
+    fn no_slot_when_the_last_episodes_disagree_or_have_no_time() {
+        let mut eps = sundays_in_seoul();
+        eps[2] = tm(2025, 81, "2026-08-02", Some("2026-08-02T10:00:00Z"));
+        let seoul = listing(Some(chrono_tz::Asia::Seoul), eps);
+        assert_eq!(usual_slot(&seoul, d("2026-11-15")), None);
+
+        let mut eps = sundays_in_seoul();
+        eps[2] = tm(2025, 81, "2026-08-02", None);
+        let seoul = listing(Some(chrono_tz::Asia::Seoul), eps);
+        assert_eq!(usual_slot(&seoul, d("2026-11-15")), None);
+    }
+
+    #[test]
+    fn no_slot_when_tvmaze_already_lists_that_day_or_later() {
+        // TVmaze has the week, and nothing that Sunday: it says none airs.
+        let mut eps = sundays_in_seoul();
+        eps.push(tm(2026, 1, "2026-11-16", Some("2026-11-16T09:00:00Z")));
+        let seoul = listing(Some(chrono_tz::Asia::Seoul), eps);
+        assert_eq!(usual_slot(&seoul, d("2026-11-15")), None);
+    }
+
+    #[test]
+    fn a_search_by_name_takes_only_the_one_show_of_that_name_and_year() {
+        let results = json!([
+            { "show": { "id": 77098, "name": "When I Meet the Moon", "premiered": "2025-11-01" } },
+            { "show": { "id": 1, "name": "When I Meet the Moon", "premiered": "2004-01-01" } },
+            { "show": { "id": 2, "name": "The Moon", "premiered": "2025-03-01" } }
+        ]);
+        let names = vec!["When I Meet the Moon".to_string()];
+        assert_eq!(tvmaze_search_hit(&results, &names, Some(2025)), Some(77098));
+        // No year to check it against, or a year nobody matches: no answer.
+        assert_eq!(tvmaze_search_hit(&results, &names, None), None);
+        assert_eq!(tvmaze_search_hit(&results, &names, Some(2019)), None);
+
+        // Two of the same name and year are a guess.
+        let twins = json!([
+            { "show": { "id": 3, "name": "Big Brother", "premiered": "2001-07-05" } },
+            { "show": { "id": 4, "name": "Big Brother", "premiered": "2001-03-25" } }
+        ]);
+        let names = vec!["Big Brother".to_string()];
+        assert_eq!(tvmaze_search_hit(&twins, &names, Some(2001)), None);
+    }
+
+    #[test]
+    fn a_slot_a_year_old_says_nothing() {
+        let seoul = listing(Some(chrono_tz::Asia::Seoul), sundays_in_seoul());
+        assert_eq!(usual_slot(&seoul, d("2027-11-14")), None);
     }
 
     /// TVmaze's day and moment.

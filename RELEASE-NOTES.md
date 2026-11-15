@@ -13,6 +13,24 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Improvements
+
+- Many more episodes on Airing, the calendar and Home show the time they
+  air, where they used to say time TBA.
+- Pick a status on Stats' Library bar to see the rest of your stats through
+  it.
+- Manga stats sit side by side, authors included.
+- Owners can make someone else an owner from Administration.
+- Swiping rating cards on a phone follows your finger smoothly.
+
+### Fixes
+
+- A tall banner opens whole, inside the screen, with a button to close it.
+- Your name and handle in Settings stay readable on a light banner.
+- Airing this week shows the time an episode airs when a special shares its
+  day.
+- The Stars choice in Settings no longer touches its edges.
+
 ## [1.6.1] — Tomato Frog — 2026-11-14
 
 A few improvements and fixes.

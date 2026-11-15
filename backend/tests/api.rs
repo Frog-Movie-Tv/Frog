@@ -4428,6 +4428,58 @@ async fn leaving_deletes_your_data_and_only_yours() {
 }
 
 #[tokio::test]
+async fn an_owner_makes_a_co_owner() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    let (_, body) = h.get("/api/admin/users", Some(&owner)).await;
+    let owner_id = body["users"][0]["id"].as_i64().unwrap();
+    let guest_id = body["users"][1]["id"].as_i64().unwrap();
+
+    let (code, body, _) = h
+        .put(
+            &format!("/api/admin/users/{guest_id}"),
+            json!({ "role": "owner" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["role"], json!("owner"));
+    let (_, account) = h.get("/api/account", Some(&guest)).await;
+    assert_eq!(account["role"], json!("owner"), "{account}");
+
+    // Neither owner switches the other off or makes them a link.
+    let (code, _, _) = h
+        .put(
+            &format!("/api/admin/users/{owner_id}"),
+            json!({ "disabled": true }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    assert_eq!(
+        h.post(
+            &format!("/api/admin/users/{owner_id}/reset"),
+            json!({}),
+            Some(&guest)
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+
+    // An owner may step another back down.
+    let (code, body, _) = h
+        .put(
+            &format!("/api/admin/users/{guest_id}"),
+            json!({ "role": "admin" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["role"], json!("admin"));
+}
+
+#[tokio::test]
 async fn administrators_manage_accounts_within_their_rank() {
     let h = Harness::new().await;
     let (owner, guest) = two_accounts(&h).await;
@@ -4507,6 +4559,14 @@ async fn administrators_manage_accounts_within_their_rank() {
         )
         .await;
     assert_eq!(code, StatusCode::FORBIDDEN, "only the owner makes admins");
+    let (code, _, _) = h
+        .put(
+            &format!("/api/admin/users/{third_id}"),
+            json!({ "role": "owner" }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::FORBIDDEN, "nor owners");
     let (code, _, _) = h
         .put(
             &format!("/api/admin/users/{third_id}"),

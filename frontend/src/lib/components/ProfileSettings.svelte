@@ -805,12 +805,15 @@
 		cursor: pointer;
 	}
 
+	/* Below the banner's edge, not on it: the picture rises 40px behind the
+	   avatar, and a light banner left the name and handle unreadable there. */
 	.who {
+		align-self: flex-start;
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
 		min-width: 0;
-		padding-bottom: 6px;
+		padding-top: 48px;
 	}
 
 	.who strong {

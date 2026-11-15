@@ -270,6 +270,11 @@
 		color: var(--accent);
 	}
 
+	/* Five stars at the numbers' size are wider than the tile. */
+	.sample :global(.score-stars) {
+		font-size: 1.05rem;
+	}
+
 	.row {
 		display: flex;
 		align-items: center;

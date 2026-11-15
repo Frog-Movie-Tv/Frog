@@ -296,7 +296,7 @@ export const api = {
 	deleteAccount: (password: string) => send<{ ok: true }>('DELETE', '/api/account', { password }),
 
 	adminUsers: () => get<{ users: AdminUser[] }>('/api/admin/users'),
-	updateUser: (id: number, patch: { role?: 'admin' | 'user'; disabled?: boolean }) =>
+	updateUser: (id: number, patch: { role?: 'owner' | 'admin' | 'user'; disabled?: boolean }) =>
 		send<{ id: number; role: AdminUser['role']; disabled: boolean }>(
 			'PUT',
 			`/api/admin/users/${id}`,

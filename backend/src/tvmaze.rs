@@ -11,7 +11,9 @@
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, NaiveDate, Utc};
+use chrono_tz::Tz;
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
@@ -48,6 +50,14 @@ struct RawEpisode {
     airstamp: Option<String>,
 }
 
+/// A show's episodes, and the zone its channel keeps time in: what a slot
+/// is worked out in (`crate::airtime::usual_slot`).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Listing {
+    pub zone: Option<Tz>,
+    pub episodes: Vec<Episode>,
+}
+
 #[derive(Deserialize)]
 struct RawShow {
     id: i64,
@@ -62,8 +72,31 @@ fn fail(why: impl Into<String>) -> AppError {
 pub fn parse_episodes(body: &[u8]) -> AppResult<Vec<Episode>> {
     let raw: Vec<RawEpisode> =
         serde_json::from_slice(body).map_err(|e| fail(format!("TVmaze episodes: {e}")))?;
-    Ok(raw
-        .into_iter()
+    Ok(episodes_from(raw))
+}
+
+/// A show from `/shows/{id}?embed=episodeswithspecials`: its episodes and its
+/// network's zone, or its streaming channel's when it has no network.
+pub fn parse_listing(body: &[u8]) -> AppResult<Listing> {
+    let show: Value =
+        serde_json::from_slice(body).map_err(|e| fail(format!("TVmaze show: {e}")))?;
+    let zone = ["network", "webChannel"]
+        .iter()
+        .find_map(|k| show[k]["country"]["timezone"].as_str())
+        .and_then(|z| z.parse::<Tz>().ok());
+    let raw: Vec<RawEpisode> = match &show["_embedded"]["episodeswithspecials"] {
+        Value::Null => Vec::new(),
+        list => serde_json::from_value(list.clone())
+            .map_err(|e| fail(format!("TVmaze episodes: {e}")))?,
+    };
+    Ok(Listing {
+        zone,
+        episodes: episodes_from(raw),
+    })
+}
+
+fn episodes_from(raw: Vec<RawEpisode>) -> Vec<Episode> {
+    raw.into_iter()
         .filter_map(|e| {
             let timed = e.airtime.as_deref().is_some_and(|t| !t.trim().is_empty());
             Some(Episode {
@@ -82,7 +115,7 @@ pub fn parse_episodes(body: &[u8]) -> AppResult<Vec<Episode>> {
                     .map(|at| at.with_timezone(&Utc)),
             })
         })
-        .collect())
+        .collect()
 }
 
 /// Wait for this process's turn.
@@ -170,11 +203,27 @@ pub async fn find(
     Ok(None)
 }
 
-/// Every episode of a show, specials included.
-pub async fn episodes(state: &AppState, show: i64) -> AppResult<Vec<Episode>> {
-    match get(state, &format!("/shows/{show}/episodes?specials=1")).await? {
-        Some(body) => parse_episodes(&body),
-        None => Ok(Vec::new()),
+/// TVmaze's answer to a search by name, for a show TMDB's ids do not find
+/// (`crate::airtime` decides which, if any, is the show).
+pub async fn search(state: &AppState, name: &str) -> AppResult<Value> {
+    match get(
+        state,
+        &format!("/search/shows?q={}", urlencoding::encode(name)),
+    )
+    .await?
+    {
+        Some(body) => {
+            serde_json::from_slice(&body).map_err(|e| fail(format!("TVmaze search: {e}")))
+        }
+        None => Ok(Value::Array(Vec::new())),
+    }
+}
+
+/// Every episode of a show, specials included, and its zone, in one call.
+pub async fn listing(state: &AppState, show: i64) -> AppResult<Listing> {
+    match get(state, &format!("/shows/{show}?embed=episodeswithspecials")).await? {
+        Some(body) => parse_listing(&body),
+        None => Ok(Listing::default()),
     }
 }
 
@@ -201,5 +250,27 @@ mod tests {
         assert_eq!(eps[1].at, None, "12:00 UTC stand-in is not a time");
         assert_eq!(eps[1].airdate, NaiveDate::from_ymd_opt(2026, 11, 20));
         assert_eq!(eps[2].number, None);
+    }
+
+    #[test]
+    fn a_listing_carries_its_networks_zone() {
+        let body = br#"{
+            "id": 3479,
+            "network": { "name": "SBS", "country": { "timezone": "Asia/Seoul" } },
+            "webChannel": null,
+            "_embedded": { "episodeswithspecials": [
+                { "season": 2025, "number": 81, "airdate": "2026-08-02", "airtime": "18:10",
+                  "airstamp": "2026-08-02T09:10:00+00:00" }
+            ] }
+        }"#;
+        let listing = parse_listing(body).unwrap();
+        assert_eq!(listing.zone, Some(chrono_tz::Asia::Seoul));
+        assert_eq!(listing.episodes.len(), 1);
+
+        let streamed = br#"{ "network": null,
+            "webChannel": { "name": "Prime Video", "country": null } }"#;
+        let listing = parse_listing(streamed).unwrap();
+        assert_eq!(listing.zone, None);
+        assert!(listing.episodes.is_empty());
     }
 }
