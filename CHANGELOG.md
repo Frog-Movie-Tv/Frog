@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.7.1](https://github.com/Frog-Movie-Tv/Frog/compare/v1.7.0...v1.7.1) (2026-11-15)
+
+
+### Features
+
+* **extension:** only on sites you allow, and never a rewatch ([f02d914](https://github.com/Frog-Movie-Tv/Frog/commit/f02d914ac51c4c2ca8e56f391faf95c98479e6cb))
+
+
+### Fixes
+
+* 1.7.1, air times from a show's usual slot, co-owners, and a smooth rating swipe ([715b3bc](https://github.com/Frog-Movie-Tv/Frog/commit/715b3bc402491e62b5b17756d01ed0b327b89e79))
+* 1.7.1, notifications that reach the phone, an extension that keeps to your sites ([c18641a](https://github.com/Frog-Movie-Tv/Frog/commit/c18641a1b62c4443e904cb26457ca30a7fed3be5))
+* **push:** a notification reaches the phone even when its picture is slow ([6b8bb83](https://github.com/Frog-Movie-Tv/Frog/commit/6b8bb83a8bd6769b0dfcf5510413ed4d06077f00))
+
+
+### Documentation
+
+* bring the README, roadmap and architecture up to 1.7.0 ([caf2a7e](https://github.com/Frog-Movie-Tv/Frog/commit/caf2a7e21db17cc06cc824d3902db91256508924))
+
+
+### Chores
+
+* release 1.7.1 ([9c70d65](https://github.com/Frog-Movie-Tv/Frog/commit/9c70d65b0c46b8df5f8705e653a9ad26b068f929))
+
 ## [1.7.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.6.1...v1.7.0) (2026-11-15)
 
 
