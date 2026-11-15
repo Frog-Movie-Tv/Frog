@@ -13,6 +13,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Fixes
+
+- Frog keeps you signed in while it restarts for an update.
+
 ## [1.7.2] — Chorus Frog — 2026-11-15
 
 A few improvements and fixes.

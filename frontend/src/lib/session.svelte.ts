@@ -13,8 +13,9 @@ const REMEMBERED = 'frog.session.v1';
  * Offline, the status request cannot reach the server, and treating that as
  * "signed out" sent every page to the sign-in screen, which made offline
  * mode useless. So the last confirmed status is remembered, and used only
- * when the network is unreachable. A real answer from the server always
- * wins, and signing out forgets it.
+ * when the server cannot answer: no network, or a server error while it
+ * restarts or updates (a 502 from the proxy signed everyone out). A real
+ * answer from the server always wins, and signing out forgets it.
  */
 class Session {
 	status = $state<AuthStatus | null>(null);
@@ -27,7 +28,7 @@ class Session {
 			this.offline = false;
 			this.remember(this.status);
 		} catch (e) {
-			const unreachable = e instanceof ApiError && e.status === 0;
+			const unreachable = e instanceof ApiError && (e.status === 0 || e.status >= 500);
 			this.offline = unreachable;
 			this.status = unreachable ? this.recall() : null;
 		} finally {
