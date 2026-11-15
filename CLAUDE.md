@@ -633,7 +633,10 @@ part you are about to touch; change it when the code changes.
   The token reaches `/api/ext` and nothing else (`tokens::TokenAuth`, and
   `Auth` answers a bearer token with 403); a log is the title page's tick
   (`release::after_watch`), idempotent per token for six hours
-  (`extension_log`). Releases attach it under fixed names (`frog-extension-firefox.xpi`,
+  (`extension_log`), and never a rewatch: a film or episode already watched
+  (or a film already Completed) answers `seen` and writes nothing, since
+  playing something again in a browser is as often a check or a scene shown
+  to someone. Releases attach it under fixed names (`frog-extension-firefox.xpi`,
   `frog-extension-chrome.zip`, `updates.json`), so `releases/latest/download`
   is always the newest: Settings → Connections links there and Firefox's
   `update_url` reads it. Frog serves the Firefox file itself as

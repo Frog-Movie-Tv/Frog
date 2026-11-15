@@ -560,7 +560,7 @@ async fn logging_is_the_checkmark_and_happens_once() {
     let (_, me) = h.call("GET", "/api/ext/me", Who::Token(&token), None).await;
     assert_eq!(me["watching"][0]["next"]["episode_number"], json!(2));
 
-    // Another browser's token is another watch.
+    // Another browser finds it already watched: a browser never adds a rewatch.
     let (_, other) = h.token(&cookie, "Zen").await;
     let (_, third) = h
         .ext(
@@ -569,8 +569,8 @@ async fn logging_is_the_checkmark_and_happens_once() {
             json!({ "title_id": 1, "season": 1, "episode": 1 }),
         )
         .await;
-    assert_eq!(third["already"], json!(false));
-    assert_eq!(h.count("SELECT COUNT(*) FROM watch_event").await, 2);
+    assert_eq!(third["seen"], json!(true), "{third}");
+    assert_eq!(h.count("SELECT COUNT(*) FROM watch_event").await, 1);
 
     // A show needs its episode; an episode needs to exist.
     let (status, _) = h.ext("log", &token, json!({ "title_id": 1 })).await;
@@ -806,4 +806,73 @@ async fn without_a_build_to_give_the_link_goes_to_the_release_page() {
             .unwrap()
             .ends_with("/latest/download/frog-extension-firefox.xpi"));
     }
+}
+
+#[tokio::test]
+async fn what_was_already_watched_is_left_alone() {
+    let h = Harness::new().await;
+    let cookie = h.owner().await;
+    h.catalogue().await;
+    let (_, token) = h.token(&cookie, "Brave").await;
+    // Heat watched, Severance's first episode watched, both a month ago.
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, 3, 'completed', '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z'),
+                (1, 1, 'watching', '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch, source)
+         VALUES (1, 3, NULL, '2026-10-01T20:00:00Z', 0, 'manual'),
+                (1, 1, (SELECT id FROM episode WHERE title_id = 1 AND season_number = 1
+                                                 AND episode_number = 1),
+                 '2026-10-01T20:00:00Z', 0, 'manual')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    let watches = "SELECT COUNT(*) FROM watch_event";
+
+    let (status, film) = h.ext("log", &token, json!({ "title_id": 3 })).await;
+    assert_eq!(status, StatusCode::OK, "{film}");
+    assert_eq!(film["seen"], json!(true), "{film}");
+    assert_eq!(film["log_id"], Value::Null, "nothing to undo");
+    let (_, episode) = h
+        .ext(
+            "log",
+            &token,
+            json!({ "title_id": 1, "season": 1, "episode": 1 }),
+        )
+        .await;
+    assert_eq!(episode["seen"], json!(true), "{episode}");
+    assert_eq!(h.count(watches).await, 2, "no rewatch is written");
+    assert_eq!(
+        h.count("SELECT COUNT(*) FROM extension_log").await,
+        0,
+        "and nothing to undo"
+    );
+    assert_eq!(
+        h.count("SELECT COUNT(*) FROM library_entry").await,
+        2,
+        "nor a second entry"
+    );
+
+    // The next episode is new, and is logged as ever.
+    let (_, next) = h
+        .ext(
+            "log",
+            &token,
+            json!({ "title_id": 1, "season": 1, "episode": 2 }),
+        )
+        .await;
+    assert_eq!(next["seen"], json!(false), "{next}");
+    assert!(next["log_id"].is_i64(), "{next}");
+    assert_eq!(h.count(watches).await, 3);
+    assert_eq!(
+        h.count("SELECT COUNT(*) FROM watch_event WHERE is_rewatch = 1")
+            .await,
+        0
+    );
 }

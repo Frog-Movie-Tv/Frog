@@ -11,6 +11,7 @@ import { frog, FrogError } from '../lib/frog.ts';
 import { sittingKey, watched, type VideoSample } from '../lib/playback.ts';
 import { backoff, due, label, outcome } from '../lib/queue.ts';
 import { domainOf, learn, preferenceOf } from '../lib/rules.ts';
+import { switchSite, watching } from '../lib/sites.ts';
 import {
 	cluesFrom,
 	hasAnything,
@@ -60,6 +61,8 @@ interface Tab {
 	acted: boolean;
 	progress: number | null;
 	logId: number | null;
+	/** Frog said this sitting's film or episode was already watched. */
+	seen: boolean;
 	pendingId: string | null;
 }
 
@@ -84,6 +87,7 @@ function tabOf(id: number): Tab {
 			acted: false,
 			progress: null,
 			logId: null,
+			seen: false,
 			pendingId: null
 		};
 		tabs.set(id, t);
@@ -120,9 +124,11 @@ async function badge(tabId: number) {
 			title =
 				t.state === 'logged'
 					? `Logged ${what}`
-					: t.state === 'queued'
-						? `${what}, waiting to reach Frog`
-						: `${what} (${m.confidence === 'exact' ? 'sure' : m.confidence === 'likely' ? 'likely' : 'a guess'})`;
+					: t.state === 'seen'
+						? `${what}, already watched`
+						: t.state === 'queued'
+							? `${what}, waiting to reach Frog`
+							: `${what} (${m.confidence === 'exact' ? 'sure' : m.confidence === 'likely' ? 'likely' : 'a guess'})`;
 		} else {
 			text = '?';
 			colour = COLOURS.unknown;
@@ -194,7 +200,15 @@ async function refresh(tabId: number) {
 			if (!names.some((n) => namesAgree(n, m.name))) m.confidence = 'likely';
 		}
 		t.resolution = answer;
-		t.state = t.logId ? 'logged' : t.pendingId ? 'queued' : m ? 'matched' : 'unknown';
+		t.state = t.logId
+			? 'logged'
+			: t.seen
+				? 'seen'
+				: t.pendingId
+					? 'queued'
+					: m
+						? 'matched'
+						: 'unknown';
 	} catch (e) {
 		t.resolveKey = null;
 		t.state = 'unknown';
@@ -213,7 +227,7 @@ async function onReport(
 	if (!s.url || !s.token) return;
 	const t = tabOf(tabId);
 	t.domain = domainOf(url ?? '') ?? t.domain;
-	if (t.domain && s.ignored.includes(t.domain)) return;
+	if (!watching(s, t.domain)) return;
 
 	const frame = t.frames.get(frameId) ?? { report: null, video: null };
 	if (msg.report) frame.report = msg.report;
@@ -232,9 +246,10 @@ async function onReport(
 			t.sitting = sitting;
 			t.acted = false;
 			t.logId = null;
+			t.seen = false;
 			t.pendingId = null;
 			t.playing = frameId;
-			if (t.state === 'logged' || t.state === 'queued')
+			if (t.state === 'logged' || t.state === 'queued' || t.state === 'seen')
 				t.state = t.resolution?.match ? 'matched' : 'idle';
 			// Frames with no video still know things: the page around a player.
 			browser.tabs.sendMessage(tabId, { type: 'collect' }).catch(() => {});
@@ -334,7 +349,19 @@ async function logMatch(
 	}
 
 	const result = await send(pending);
-	if (result.ok) {
+	if (result.ok && result.seen) {
+		// Already watched: Frog keeps no rewatch from a browser.
+		t.logId = null;
+		t.seen = true;
+		t.pendingId = null;
+		t.state = 'seen';
+		await toast(
+			tabId,
+			`Already watched ${what}`,
+			[{ label: 'OK', action: 'dismiss' }],
+			UNDO_SECONDS
+		);
+	} else if (result.ok) {
 		t.logId = result.logId;
 		t.pendingId = null;
 		t.state = 'logged';
@@ -359,7 +386,9 @@ async function logMatch(
 	await badge(tabId);
 }
 
-type Sent = { ok: true; logId: number } | { ok: false; outcome: string; message: string };
+type Sent =
+	| { ok: true; logId: number | null; seen: boolean }
+	| { ok: false; outcome: string; message: string };
 
 /** Try one queued watch now, and keep the queue honest about it. */
 async function send(p: Pending): Promise<Sent> {
@@ -374,7 +403,7 @@ async function send(p: Pending): Promise<Sent> {
 			episode: p.episode,
 			watched_at: p.watched_at
 		});
-		result = { ok: true, logId: answer.log_id };
+		result = { ok: true, logId: answer.log_id, seen: !!answer.seen };
 	} catch (e) {
 		const status = e instanceof FrogError ? e.status : 0;
 		result = { ok: false, outcome: outcome(status), message: e instanceof Error ? e.message : '' };
@@ -397,7 +426,8 @@ async function send(p: Pending): Promise<Sent> {
 		if (t?.pendingId === p.id) {
 			t.pendingId = null;
 			t.logId = result.logId;
-			t.state = 'logged';
+			t.seen = result.seen;
+			t.state = result.seen ? 'seen' : 'logged';
 			await badge(p.tab);
 		}
 	}
@@ -451,7 +481,8 @@ async function view(tabId: number): Promise<TabView> {
 	}
 	return {
 		domain,
-		ignored: !!domain && s.ignored.includes(domain),
+		ignored: !watching(s, domain),
+		allowOnly: s.allowOnly,
 		state: t?.state ?? 'idle',
 		match: t?.resolution?.match ?? null,
 		alternatives: t?.resolution?.alternatives ?? [],
@@ -493,10 +524,7 @@ async function onPopup(msg: FromPopup): Promise<unknown> {
 			const s = await store.settings();
 			const domain = (await view(msg.tab)).domain;
 			if (!domain) return view(msg.tab);
-			const ignored = msg.on
-				? s.ignored.filter((d) => d !== domain)
-				: [...new Set([...s.ignored, domain])];
-			await store.saveSettings({ ignored });
+			await store.saveSettings(switchSite(s, domain, msg.on));
 			if (!msg.on) {
 				tabs.delete(msg.tab);
 				await badge(msg.tab);

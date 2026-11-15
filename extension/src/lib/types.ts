@@ -51,8 +51,12 @@ export interface Settings {
 	threshold: number;
 	/** Ask before logging even when the match is exact. */
 	askFirst: boolean;
-	/** Domains where nothing is detected. */
+	/** Domains where nothing is detected, while the allowlist is off. */
 	ignored: string[];
+	/** Detect only on `allowed`, instead of everywhere but `ignored`. */
+	allowOnly: boolean;
+	/** The only domains detected on, while the allowlist is on. */
+	allowed: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -60,7 +64,9 @@ export const DEFAULT_SETTINGS: Settings = {
 	token: '',
 	threshold: 90,
 	askFirst: false,
-	ignored: []
+	ignored: [],
+	allowOnly: false,
+	allowed: []
 };
 
 /** A watch on its way to Frog. Kept until Frog has it, whatever happens in between. */
@@ -86,8 +92,12 @@ export interface Pending {
 /** What the popup draws for the tab it was opened over. */
 export interface TabView {
 	domain: string | null;
+	/** Nothing is detected on this tab's site. */
 	ignored: boolean;
-	state: 'idle' | 'resolving' | 'matched' | 'unknown' | 'logged' | 'queued';
+	/** Sites are detected on only when allowed. */
+	allowOnly: boolean;
+	/** `seen`: already watched, so Frog left it as it was. */
+	state: 'idle' | 'resolving' | 'matched' | 'unknown' | 'logged' | 'queued' | 'seen';
 	match: Match | null;
 	alternatives: Candidate[];
 	/** The page's own name for it, to start a search with. */

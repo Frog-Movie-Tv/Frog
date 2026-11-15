@@ -131,9 +131,11 @@
 					<span class="faint small-caps">
 						{view?.state === 'logged'
 							? 'Logged'
-							: view?.state === 'queued'
-								? 'Waiting to reach Frog'
-								: 'Playing'}
+							: view?.state === 'seen'
+								? 'Already watched'
+								: view?.state === 'queued'
+									? 'Waiting to reach Frog'
+									: 'Playing'}
 					</span>
 					<span class="chip {m.confidence}">{CONFIDENCE[m.confidence]}</span>
 				</div>
@@ -155,6 +157,8 @@
 						<button class="btn" disabled={busy} onclick={() => act({ type: 'undo', tab: tab! })}
 							>Undo</button
 						>
+					{:else if view?.state === 'seen'}
+						<!-- Already in the diary: nothing to log, nothing to take back. -->
 					{:else if m.kind === 'movie' || m.episode != null}
 						<button
 							class="btn primary"
@@ -235,7 +239,9 @@
 			<label class="card site">
 				<span>
 					<strong>Detect on {view.domain}</strong>
-					{#if view.hasRule}<span class="faint">Frog knows this site.</span>{/if}
+					{#if view.allowOnly && view.ignored}
+						<span class="faint">Not one of your allowed sites.</span>
+					{:else if view.hasRule}<span class="faint">Frog knows this site.</span>{/if}
 				</span>
 				<input
 					type="checkbox"

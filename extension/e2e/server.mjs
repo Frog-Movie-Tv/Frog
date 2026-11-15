@@ -73,6 +73,9 @@ const TITLES = {
 const calls = { resolve: [], log: [], undo: [], me: 0 };
 let failing = false;
 let nextLog = 1;
+/** What has been watched, as Frog would know it: a log of it again changes nothing. */
+const watched = new Map();
+const watchKey = (b) => `${b.title_id ?? b.tmdb_id}|${b.season ?? ''}|${b.episode ?? ''}`;
 
 const card = (t) => ({ ...t, poster_path: null, in_library: false });
 
@@ -123,6 +126,7 @@ async function frog(req, res) {
 		calls.me = 0;
 		failing = false;
 		nextLog = 1;
+		watched.clear();
 		return send(200, { ok: true });
 	}
 	if (path === '/__fail') {
@@ -142,18 +146,23 @@ async function frog(req, res) {
 	}
 	if (path === '/api/ext/log') {
 		const b = await body(req);
-		const log_id = nextLog++;
-		calls.log.push({ ...b, log_id });
+		const seen = [...watched.values()].includes(watchKey(b));
+		const log_id = seen ? null : nextLog++;
+		calls.log.push({ ...b, log_id, seen });
+		if (!seen) watched.set(log_id, watchKey(b));
 		return send(200, {
 			log_id,
-			already: false,
+			already: seen,
+			seen,
 			title_id: b.title_id,
 			name: 'x',
 			status: 'watching'
 		});
 	}
 	if (path === '/api/ext/undo') {
-		calls.undo.push(await body(req));
+		const b = await body(req);
+		calls.undo.push(b);
+		watched.delete(b.log_id);
 		return send(200, { ok: true });
 	}
 	return send(404, { error: 'not found' });

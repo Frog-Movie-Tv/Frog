@@ -156,12 +156,13 @@ test('a title alone asks first, and the answer teaches the site', async ({ conte
 		localhost: { nameFrom: 'title', episodeFrom: 'title', titles: { severance: 1 } }
 	});
 
-	// Next time on this site the match is exact, and it logs on its own.
+	// Next time on this site the match is exact, and it goes to Frog without
+	// asking; the same episode again is one Frog already has.
 	await page.reload();
 	await play(page, 0.95);
 	await expect.poll(async () => (await frog.calls()).log.length).toBe(2);
 	expect((await frog.calls()).resolve.at(-1)).toMatchObject({ title_id: 1 });
-	await expect(toast(page)).toContainText('Logged Severance S1E3');
+	await expect(toast(page)).toContainText('Already watched Severance S1E3');
 });
 
 test('a video inside a shadow root is found', async ({ context }) => {
@@ -260,6 +261,47 @@ test('an ignored site is left alone', async ({ context, worker }) => {
 	const calls = await frog.calls();
 	expect(calls.resolve).toHaveLength(0);
 	expect(calls.log).toHaveLength(0);
+});
+
+test('something already watched is left as it was, with nothing to undo', async ({ context }) => {
+	const page = await context.newPage();
+	await page.goto(`${SITE}/tv/95396/2/7`);
+	await play(page, 0.95);
+	await expect.poll(async () => (await frog.calls()).log.length).toBe(1);
+	await expect(toast(page)).toContainText('Logged Severance S2E7');
+
+	// Watched again another evening: Frog keeps no rewatch from a browser.
+	await page.reload();
+	await play(page, 0.95);
+	await expect.poll(async () => (await frog.calls()).log.length).toBe(2);
+	expect((await frog.calls()).log[1]).toMatchObject({ seen: true, log_id: null });
+	await expect(toast(page)).toContainText('Already watched Severance S2E7');
+	await expect(toast(page).getByRole('button', { name: 'Undo' })).toHaveCount(0);
+});
+
+test('with the allowlist on, only an allowed site is watched', async ({ context, worker }) => {
+	const allow = (allowed: string[]) =>
+		worker.evaluate(
+			(allowed) =>
+				chrome.storage.local
+					.get('settings')
+					.then(({ settings }: { settings: object }) =>
+						chrome.storage.local.set({ settings: { ...settings, allowOnly: true, allowed } })
+					),
+			allowed
+		);
+
+	await allow(['example.org']);
+	const page = await context.newPage();
+	await page.goto(`${SITE}/tv/95396/2/7`);
+	await play(page);
+	await page.waitForTimeout(4000);
+	expect((await frog.calls()).resolve).toHaveLength(0);
+
+	await allow(['localhost']);
+	await page.reload();
+	await play(page);
+	await expect.poll(async () => (await frog.calls()).resolve.length).toBeGreaterThan(0);
 });
 
 test('nothing but what resolve needs ever reaches Frog', async ({ context }) => {

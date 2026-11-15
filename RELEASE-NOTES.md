@@ -22,6 +22,10 @@ In progress.
 - Manga stats sit side by side, authors included.
 - Owners can make someone else an owner from Administration.
 - Swiping rating cards on a phone follows your finger smoothly.
+- The browser extension can watch only the sites you allow: switch on Only
+  on sites you allow in its settings.
+- The browser extension leaves a film or episode you have already watched as
+  it was, instead of adding it again.
 
 ### Fixes
 

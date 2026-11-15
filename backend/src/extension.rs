@@ -793,10 +793,14 @@ pub struct LogRequest {
 
 #[derive(Debug, Serialize)]
 pub struct Logged {
-    pub log_id: i64,
+    /// None when nothing was written because it was already watched.
+    pub log_id: Option<i64>,
     /// True when this was already logged within `SAME_WATCH_HOURS`, and
     /// nothing new was written.
     pub already: bool,
+    /// True when the film or episode was already watched before: the
+    /// browser never logs a rewatch, so nothing was written.
+    pub seen: bool,
     pub title_id: i64,
     pub season: Option<i64>,
     pub episode: Option<i64>,
@@ -884,8 +888,9 @@ pub async fn log(
     );
     if let Some((log_id,)) = earlier {
         return Ok(Logged {
-            log_id,
+            log_id: Some(log_id),
             already: true,
+            seen: false,
             title_id,
             season: numbers.0,
             episode: numbers.1,
@@ -895,6 +900,29 @@ pub async fn log(
     let before = store::get_entry(&state.pool, user_id, title_id)
         .await?
         .map(|e| e.status);
+    // Something already watched is left as it is. Playing it again in a
+    // browser is as often a rewatch as a check, a trailer or a scene shown
+    // to someone, so a rewatch is only ever recorded by hand.
+    let (watched_before,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM watch_event
+          WHERE user_id = ? AND title_id = ? AND episode_id IS ?",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .bind(episode_id)
+    .fetch_one(&state.pool)
+    .await?;
+    let film_done = title.kind == "movie" && before.as_deref() == Some("completed");
+    if watched_before > 0 || film_done {
+        return Ok(Logged {
+            log_id: None,
+            already: true,
+            seen: true,
+            title_id,
+            season: numbers.0,
+            episode: numbers.1,
+        });
+    }
     let watch_id = store::add_watch(
         &state.pool,
         user_id,
@@ -937,8 +965,9 @@ pub async fn log(
     .await?;
 
     Ok(Logged {
-        log_id,
+        log_id: Some(log_id),
         already: false,
+        seen: false,
         title_id,
         season: numbers.0,
         episode: numbers.1,
