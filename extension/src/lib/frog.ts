@@ -64,6 +64,13 @@ export const frog = {
 			watched_at: string;
 		}
 	) =>
-		call<{ log_id: number; already: boolean; name: string; status: string | null }>(s, 'log', body),
+		call<{
+			/** Null when it was already watched and nothing was written. */
+			log_id: number | null;
+			already: boolean;
+			seen?: boolean;
+			name: string;
+			status: string | null;
+		}>(s, 'log', body),
 	undo: (s: Settings, logId: number) => call<{ ok: true }>(s, 'undo', { log_id: logId })
 };

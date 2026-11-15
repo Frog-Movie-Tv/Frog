@@ -81,7 +81,9 @@ At 90% (Settings → Logging changes it), or when the video ends:
 A log is the same as ticking the episode on its page in Frog: the show joins
 your library as Watching, finishes when its last episode does, and the watch
 reaches the diary. The same episode from the same browser within six hours is
-one watch. If Frog cannot be reached, the watch waits in the extension and is
+one watch. A film or episode you have already watched is left as it was: the
+extension says so and writes nothing, so a rewatch is only ever added by hand
+in Frog. If Frog cannot be reached, the watch waits in the extension and is
 sent when Frog is back; nothing is dropped. The popup shows what is waiting.
 
 The toolbar badge says what it thinks is playing: `S2E7` or `Film`, green
@@ -125,8 +127,12 @@ written into the extension. In Settings → **Site rules** you can read, edit
 (as JSON), delete (with Undo), export and import them. When a site moves to a
 new address, **Copy to…** gives the new domain the same rule.
 
-**Detect on this site** in the popup switches a site off; Settings →
-**Ignored sites** lists them.
+**Detect on this site** in the popup switches a site off; Settings → **Sites**
+lists them. **Only on sites you allow** turns that around: nothing is
+detected anywhere but the sites on the allowed list, and the same switch in
+the popup adds a site to it or takes it off. Either list covers a site's
+subdomains, so `max.com` takes in `play.max.com`. The decision is
+`lib/sites.ts`, tested in `tests/sites.test.ts`.
 
 ## What leaves the browser
 

@@ -11,6 +11,7 @@
 		type Rule,
 		type Rules
 	} from '../../lib/rules.ts';
+	import { switchSite } from '../../lib/sites.ts';
 	import * as store from '../../lib/storage.ts';
 	import type { Me, Settings } from '../../lib/types.ts';
 
@@ -91,12 +92,27 @@
 		settings = await store.saveSettings(change);
 	}
 
+	/** The list the current mode uses: allowed sites, or ignored ones. */
+	const listed = $derived(
+		settings ? (settings.allowOnly ? settings.allowed : settings.ignored) : []
+	);
+
 	async function addSite(event: SubmitEvent) {
 		event.preventDefault();
 		const domain = cleanDomain(newSite);
 		if (!domain || !settings) return;
-		await save({ ignored: [...new Set([...settings.ignored, domain])].sort() });
+		// Adding to the allowlist switches a site on; to the ignored list, off.
+		await save(switchSite(settings, domain, settings.allowOnly));
 		newSite = '';
+	}
+
+	async function removeSite(domain: string) {
+		if (!settings) return;
+		await save(
+			settings.allowOnly
+				? { allowed: settings.allowed.filter((d) => d !== domain) }
+				: { ignored: settings.ignored.filter((d) => d !== domain) }
+		);
 	}
 
 	async function saveRules(next: Rules) {
@@ -269,25 +285,40 @@
 		</section>
 
 		<section class="card">
-			<h2>Ignored sites</h2>
-			<p class="faint">Nothing is detected on these.</p>
-			{#if settings.ignored.length}
+			<h2>Sites</h2>
+			<label class="row">
+				<span>
+					<strong>Only on sites you allow</strong>
+					<span class="faint">Nothing is detected anywhere else.</span>
+				</span>
+				<input
+					type="checkbox"
+					class="switch"
+					checked={settings.allowOnly}
+					onchange={(e) => save({ allowOnly: (e.currentTarget as HTMLInputElement).checked })}
+				/>
+			</label>
+			<h3>{settings.allowOnly ? 'Allowed sites' : 'Ignored sites'}</h3>
+			<p class="faint">
+				{settings.allowOnly
+					? 'Detected on these and nowhere else.'
+					: 'Nothing is detected on these.'}
+			</p>
+			{#if listed.length}
 				<ul class="list">
-					{#each settings.ignored as domain (domain)}
+					{#each listed as domain (domain)}
 						<li>
 							<span>{domain}</span>
-							<button
-								class="btn ghost small"
-								onclick={() => save({ ignored: settings!.ignored.filter((d) => d !== domain) })}
-								>Remove</button
-							>
+							<button class="btn ghost small" onclick={() => removeSite(domain)}>Remove</button>
 						</li>
 					{/each}
 				</ul>
 			{/if}
 			<form class="inline" onsubmit={addSite}>
 				<input class="input" bind:value={newSite} placeholder="example.com" aria-label="Site" />
-				<button class="btn" disabled={!cleanDomain(newSite)}>Ignore</button>
+				<button class="btn" disabled={!cleanDomain(newSite)}
+					>{settings.allowOnly ? 'Allow' : 'Ignore'}</button
+				>
 			</form>
 		</section>
 
@@ -418,6 +449,11 @@
 	h2 {
 		font-size: 1rem;
 		margin-bottom: 8px;
+	}
+
+	h3 {
+		font-size: 0.9rem;
+		margin: 14px 0 4px;
 	}
 
 	.card p {

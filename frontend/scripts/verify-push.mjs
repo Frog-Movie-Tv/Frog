@@ -8,7 +8,10 @@
  *   3. an episode of a followed show whose time has just come is announced
  *      by the worker within the minute, through FCM, decrypted in the
  *      worker, with the title's picture, and the muted show stays silent,
- *   4. turning notifications off removes the device.
+ *   4. a picture slower than the worker will wait for leaves the
+ *      notification without it, rather than without the notification,
+ *   5. a device the server let go is sent back as Frog opens, on any page,
+ *   6. turning notifications off removes the device.
  *
  *   node scripts/verify-push.mjs     (needs the TMDB key and a release build)
  */
@@ -219,6 +222,17 @@ check(
 );
 await page.screenshot({ path: join(out, '1-settings-on.png') });
 
+console.log('\n== a device the server let go ==');
+await api('POST', '/api/push/unsubscribe', { endpoint });
+check('the server forgot it', (await api('GET', '/api/push')).body?.devices === 0);
+await page.goto(`${BASE}/library`);
+let back = 0;
+for (let i = 0; i < 20 && back === 0; i++) {
+	await new Promise((r) => setTimeout(r, 250));
+	back = (await api('GET', '/api/push')).body?.devices ?? 0;
+}
+check('opening Frog sends it back', back === 1, String(back));
+
 console.log('\n== per-show switch ==');
 await page.goto(`${BASE}/title/tv/${THE_OFFICE}`);
 const bell = page.getByRole('button', { name: /New episode alerts/ });
@@ -284,7 +298,34 @@ await stop();
 	db.close();
 	check('the episode is marked as announced', sent.n === 1, String(sent.n));
 }
+
+console.log('\n== a slow picture ==');
+// The next episode airs in a moment, and its picture takes half a minute.
+{
+	const next = new Date(Date.now() + 20_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+	const db = new DatabaseSync(dbFile);
+	db.prepare(
+		`UPDATE episode SET air_date = ?, air_at = ?, air_source = 'tvmaze'
+		  WHERE season_number = 1 AND episode_number = 2
+		    AND title_id = (SELECT title_id FROM title_external
+		                     WHERE provider = 'tmdb' AND external_id = ?)`
+	).run(next.slice(0, 10), next, `tv/${BREAKING_BAD}`);
+	db.close();
+}
+await context.route('**/img/**', async (route) => {
+	await new Promise((r) => setTimeout(r, 30_000));
+	await route.continue().catch(() => undefined);
+});
 await start();
+await shown();
+let slow = null;
+for (const until = Date.now() + 120_000; !slow && Date.now() < until;) {
+	slow = (await shown()).find((n) => /S1 E2/.test(n.body ?? '')) ?? null;
+	if (!slow) await new Promise((r) => setTimeout(r, 1000));
+}
+check('the notification still shows', !!slow, JSON.stringify(slow));
+check('without waiting for its picture', slow && !/^data:/.test(slow.image ?? ''), slow?.image);
+await context.unroute('**/img/**');
 
 console.log('\n== turning off ==');
 await page.goto(`${BASE}/settings`);

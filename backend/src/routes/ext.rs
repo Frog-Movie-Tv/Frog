@@ -45,6 +45,7 @@ pub async fn log(
     Ok(Json(json!({
         "log_id": logged.log_id,
         "already": logged.already,
+        "seen": logged.seen,
         "title_id": logged.title_id,
         "name": name,
         "season": logged.season,

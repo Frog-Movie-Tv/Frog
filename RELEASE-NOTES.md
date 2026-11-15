@@ -22,6 +22,10 @@ In progress.
 - Manga stats sit side by side, authors included.
 - Owners can make someone else an owner from Administration.
 - Swiping rating cards on a phone follows your finger smoothly.
+- The browser extension can watch only the sites you allow: switch on Only
+  on sites you allow in its settings.
+- The browser extension leaves a film or episode you have already watched as
+  it was, instead of adding it again.
 
 ### Fixes
 
@@ -30,6 +34,9 @@ In progress.
 - Airing this week shows the time an episode airs when a special shares its
   day.
 - The Stars choice in Settings no longer touches its edges.
+- A notification shows even when its picture is slow to load.
+- A device that stopped getting notifications gets them again as soon as
+  Frog is opened on it.
 
 ## [1.7.0] — Chorus Frog — 2026-11-15
 
