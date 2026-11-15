@@ -309,7 +309,9 @@ part you are about to touch; change it when the code changes.
   and taken only when exactly one show answers.
   `cargo run --example airtime_check -- <tmdb id> <season> all` prints a
   season's pairing.
-  `refresh_due` works every listed or tracked show out every six hours;
+  `refresh_due` works every listed or tracked show out every six hours, so
+  a release that changes how times are found reaches Airing only as each
+  show comes round again, up to six hours after the update;
   `airtime_show` keeps how a show is found, for good (a TVmaze miss is asked
   again after a week). `released!()` uses `air_at` when there is one.
   Notifications are checked every minute: an episode at its `air_at`, an
