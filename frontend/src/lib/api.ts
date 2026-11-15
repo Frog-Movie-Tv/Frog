@@ -55,7 +55,12 @@ import type {
 	TitleDetail,
 	TitleHistory,
 	RatedTitle,
-	Comparison
+	Comparison,
+	Choosable,
+	Companion,
+	Notice,
+	NoticeWants,
+	Recommendation
 } from './types';
 
 export class ApiError extends Error {
@@ -185,7 +190,24 @@ export type BulkAction =
 	| ({ action: 'status'; status: 'completed' } & Picked & WhenAnswer)
 	| ({ action: 'status'; status: Exclude<Status, 'completed'> } & Picked)
 	| ({ action: 'favourite'; favourite: boolean } & Picked)
-	| ({ action: 'shelf'; shelf_id: number } & Picked);
+	| ({ action: 'shelf'; shelf_id: number } & Picked)
+	| ({
+			action: 'add';
+			status: Status;
+			title_ids?: number[];
+			/** Titles Frog may not have yet, by TMDB's id: a studio's. */
+			refs?: { kind: 'movie' | 'tv'; tmdb_id: number }[];
+	  } & Partial<WhenAnswer>);
+
+/** What adding answers: what came in (undo takes those out) and what was left. */
+export interface Added {
+	added: number[];
+	/** Already in the library, left as they were. */
+	skipped: number;
+	marked: number;
+	/** Asked for as Completed but not out yet: on the Watchlist instead. */
+	not_out: number;
+}
 
 interface Marked {
 	marked: number;
@@ -206,7 +228,9 @@ type BulkAnswer<A extends BulkAction['action'], Finishing extends boolean> = A e
 			? { restored: number }
 			: A extends 'shelf'
 				? { added: number }
-				: { before: EntryRecord[] };
+				: A extends 'add'
+					? Added
+					: { before: EntryRecord[] };
 
 /** Home's days as they fall where the viewer is, for anything with a time. */
 function localHome(home: HomeData): HomeData {
@@ -439,6 +463,37 @@ export const api = {
 		send<{ ok: true }>('PUT', `/api/shelves/${id}/items/order`, { title_ids: titleIds }),
 	titleShelves: (titleId: number) =>
 		get<{ shelves: { id: number; name: string; on: boolean }[] }>(`/api/t/${titleId}/shelves`),
+	notifications: (before?: number) =>
+		get<{
+			items: Notice[];
+			next: number | null;
+			for_you: Recommendation[] | null;
+			unread: number;
+		}>(`/api/notifications${before ? `?before=${before}` : ''}`),
+	unread: () => get<{ unread: number }>('/api/notifications/unread'),
+	markRead: (ids: number[] = []) =>
+		send<{ unread: number }>('POST', '/api/notifications/read', { ids }),
+	noticeWants: () => get<NoticeWants>('/api/notifications/settings'),
+	setNoticeWants: (wants: NoticeWants) =>
+		send<NoticeWants>('PUT', '/api/notifications/settings', wants),
+	/** Who may be chosen: for a recommendation (marking who has this title already), or a watch. */
+	choosable: (purpose: 'recommend' | 'together', titleId?: number) =>
+		get<{ people: Choosable[] }>(
+			`/api/people/choosable?for=${purpose}${titleId ? `&title_id=${titleId}` : ''}`
+		),
+	recommend: (titleId: number, to: number[], note: string | null) =>
+		send<{ told: number }>('POST', `/api/t/${titleId}/recommend`, { to, note }),
+	answerRecommendation: (id: number, answer: 'added' | 'dismissed' | null) =>
+		send<{ ok: true }>('POST', `/api/recommendations/${id}/answer`, { answer }),
+	/** Who a show is being watched with now. */
+	togetherOf: (titleId: number) => get<{ with: Companion[] }>(`/api/t/${titleId}/together`),
+	setTogether: (titleId: number, ids: number[]) =>
+		send<{ with: Companion[] }>('PUT', `/api/t/${titleId}/together`, { with: ids }),
+	/** Who one diary day's watches of a title were with. */
+	setDiaryWith: (body: { title_id: number; day: string; film: boolean; with: number[] }) =>
+		send<{ with: Companion[] }>('PUT', '/api/diary/with', body),
+	answerTogether: (id: number, action: 'add' | 'not_me', status?: Status) =>
+		send<{ copied?: number }>('POST', `/api/notifications/${id}/together`, { action, status }),
 	pushStatus: () => get<{ public_key: string; devices: number }>('/api/push'),
 	/** With this browser's zone, which says when midnight is for a day with no time. */
 	pushSubscribe: (subscription: PushSubscriptionJSON) =>

@@ -11,7 +11,9 @@
 	import { session } from '#lib/session.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import { whenWatched } from '#lib/when.svelte';
-	import { KIND_ICON, type Kind } from '#lib/types';
+	import { KIND_ICON, type Companion, type Kind } from '#lib/types';
+	import { contextMenu, type MenuSource } from '#lib/menu.svelte';
+	import { namesOf, peoplePicker, reachable } from '#lib/people.svelte';
 
 	interface Episode {
 		season_number: number;
@@ -37,6 +39,8 @@
 		episodes: Episode[];
 		/** A manga's chapters read that day. */
 		chapters: number[];
+		/** Who these watches were with. */
+		with?: Companion[];
 	}
 
 	let entries = $state<Entry[]>([]);
@@ -173,6 +177,43 @@
 		}
 	}
 
+	/** Who a day's watches of a title were with: added people are told. */
+	async function watchedWith(entry: Entry) {
+		const chosen = await peoplePicker.ask({
+			heading: `Watched ${entry.title} with`,
+			purpose: 'together',
+			picked: (entry.with ?? []).map((c) => c.id),
+			confirm: 'Save',
+			allowNone: true
+		});
+		if (!chosen) return;
+		try {
+			const { with: now } = await api.setDiaryWith({
+				title_id: entry.id,
+				day: entry.day,
+				film: entry.film,
+				with: chosen.ids
+			});
+			entries = entries.map((e) => (keyOf(e) === keyOf(entry) ? { ...e, with: now } : e));
+			toasts.push(now.length ? `Watched with ${namesOf(now)}` : 'Watched alone');
+		} catch (e) {
+			toasts.error(e);
+		}
+	}
+
+	/** A right-click or a hold on an entry: its date, and who it was with. */
+	function entryMenu(entry: Entry): MenuSource {
+		return {
+			title: entry.title,
+			items: () => [
+				{ label: 'Change date', icon: 'calendar', run: () => changeDate(entry) },
+				...(entry.kind !== 'manga' && reachable.together
+					? [{ label: 'Watched with…', icon: 'users' as const, run: () => watchedWith(entry) }]
+					: [])
+			]
+		};
+	}
+
 	/** "Mon", in the reader's language, for a YYYY-MM-DD day. */
 	function weekday(day: string): string {
 		return new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' });
@@ -215,7 +256,7 @@
 							{@const key = keyOf(entry)}
 							{@const expandable = entry.episodes.length > 1}
 							{@const newDay = i === 0 || month.entries[i - 1].day !== entry.day}
-							<li class="entry" class:new-day={newDay}>
+							<li class="entry" class:new-day={newDay} use:contextMenu={entryMenu(entry)}>
 								<!-- The day once, at the first thing watched on it. -->
 								<span class="date" aria-hidden={!newDay}>
 									{#if newDay}
@@ -257,6 +298,9 @@
 												{:else}
 													{range(entry.episodes)} · {plural(entry.count, 'episode')}
 													<Icon name={open === key ? 'chevron-up' : 'chevron-down'} size={13} />
+												{/if}
+												{#if entry.with?.length}
+													<span class="with">· with {namesOf(entry.with)}</span>
 												{/if}
 											</span>
 										</button>

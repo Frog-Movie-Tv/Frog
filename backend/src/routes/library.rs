@@ -195,6 +195,17 @@ pub enum BulkBody {
         title_ids: Vec<i64>,
         shelf_id: i64,
     },
+    /// Into the library with one status: titles Frog has (`title_ids`) and
+    /// titles named by their provider (`refs`), such as a studio's.
+    Add {
+        #[serde(default)]
+        title_ids: Vec<i64>,
+        #[serde(default)]
+        refs: Vec<bulk::ProviderRef>,
+        status: String,
+        #[serde(flatten)]
+        marking: Marking,
+    },
 }
 
 pub async fn bulk(
@@ -204,7 +215,40 @@ pub async fn bulk(
 ) -> AppResult<Json<Value>> {
     let me = auth.user_id();
     let pool = &state.pool;
+    // Who it was with is checked before anything is written.
+    if let BulkBody::Add { marking, .. }
+    | BulkBody::Watched { marking, .. }
+    | BulkBody::Status { marking, .. } = &body
+    {
+        if let Some(with) = marking.with.as_deref() {
+            crate::together::allowed(pool, me, with).await?;
+        }
+    }
     Ok(Json(match body {
+        BulkBody::Add {
+            mut title_ids,
+            refs,
+            status,
+            marking,
+        } => {
+            let count = title_ids.len() + refs.len();
+            if count == 0 {
+                return Err(AppError::BadRequest("choose at least one title".into()));
+            }
+            if count > bulk::MAX_ADD {
+                return Err(AppError::BadRequest(format!(
+                    "add at most {} titles at once",
+                    bulk::MAX_ADD
+                )));
+            }
+            title_ids.extend(bulk::resolve_refs(&state, &refs).await?);
+            let since = crate::together::newest_watch(pool, me).await?;
+            let added = bulk::add(&state, me, &title_ids, &status, &marking).await?;
+            if let Some(with) = marking.with.as_deref() {
+                crate::together::after(&state, me, since, &added.added, Some(with)).await?;
+            }
+            json!(added)
+        }
         BulkBody::Remove { title_ids } => {
             bulk::check_size(&title_ids)?;
             json!({ "before": bulk::remove(pool, me, &title_ids).await? })
@@ -217,7 +261,12 @@ pub async fn bulk(
         }
         BulkBody::Watched { title_ids, marking } => {
             bulk::check_size(&title_ids)?;
-            json!(bulk::mark_watched(&state, me, &title_ids, &marking, false).await?)
+            let since = crate::together::newest_watch(pool, me).await?;
+            let marked = bulk::mark_watched(&state, me, &title_ids, &marking, false).await?;
+            if let Some(with) = marking.with.as_deref() {
+                crate::together::after(&state, me, since, &title_ids, Some(with)).await?;
+            }
+            json!(marked)
         }
         BulkBody::Status {
             title_ids,
@@ -229,7 +278,12 @@ pub async fn bulk(
                 return Err(AppError::BadRequest(format!("unknown status {status}")));
             }
             if status == "completed" {
-                json!(bulk::mark_watched(&state, me, &title_ids, &marking, true).await?)
+                let since = crate::together::newest_watch(pool, me).await?;
+                let marked = bulk::mark_watched(&state, me, &title_ids, &marking, true).await?;
+                if let Some(with) = marking.with.as_deref() {
+                    crate::together::after(&state, me, since, &title_ids, Some(with)).await?;
+                }
+                json!(marked)
             } else {
                 json!({ "before": bulk::set_status(pool, me, &title_ids, &status).await? })
             }

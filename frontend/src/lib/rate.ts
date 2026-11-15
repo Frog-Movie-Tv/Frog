@@ -61,3 +61,42 @@ export function choiceForKey(key: string, count: number): number | null {
 	const index = key === '0' ? 9 : Number(key) - 1;
 	return index < count ? index : null;
 }
+
+/**
+ * One thing done to a card, in the order done, so Undo takes them back
+ * newest first: a score, a skip, a status changed, or the title removed.
+ * `left` says whether it took the card out of the pile: a status change on
+ * a card in hand leaves it there.
+ */
+export interface Step<T extends { id: number }> {
+	key: number;
+	kind: 'rate' | 'skip' | 'move' | 'remove';
+	item: T;
+	left: boolean;
+}
+
+/** How many cards were scored, of the steps still standing. */
+export function ratedIn<T extends { id: number }>(steps: Step<T>[]): number {
+	return steps.filter((s) => s.kind === 'rate').length;
+}
+
+/**
+ * Take one step back, wherever it is in the history: Undo takes the newest,
+ * and a save the server refused takes back its own. A card that left the
+ * pile comes back on top of it, once.
+ */
+export function takeBack<T extends { id: number }, S extends Step<T>>(
+	queue: T[],
+	steps: S[],
+	key: number
+): { queue: T[]; steps: S[]; step: S | null } {
+	const step = steps.find((s) => s.key === key) ?? null;
+	if (!step) return { queue, steps, step };
+	const rest = steps.filter((s) => s.key !== key);
+	if (!step.left) return { queue, steps: rest, step };
+	return {
+		queue: [step.item, ...queue.filter((i) => i.id !== step.item.id)],
+		steps: rest,
+		step
+	};
+}

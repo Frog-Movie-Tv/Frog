@@ -5470,6 +5470,125 @@ async fn a_bad_date_changes_nothing() {
 }
 
 #[tokio::test]
+async fn adding_many_titles_skips_what_is_held_and_undoes_cleanly() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    // Four titles Frog has, none in either library yet.
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, release_date) VALUES
+            (1, 'movie', 11, 'Out', '1995-12-15'),
+            (2, 'movie', 12, 'Not Out', '2099-01-01'),
+            (3, 'tv', 13, 'Airing', '2020-01-01'),
+            (4, 'tv', 14, 'Coming', '2099-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    // A film Frog has never seen, as TMDB would answer it.
+    cache_film(&h, 77, "From the Studio", "2001", &[]).await;
+
+    // One already held, at a status the add must not touch.
+    bulk(
+        &h,
+        json!({ "action": "add", "status": "paused", "title_ids": [3] }),
+        &owner,
+    )
+    .await;
+
+    let answer = bulk(
+        &h,
+        json!({ "action": "add", "status": "planned", "title_ids": [1, 3, 3],
+                "refs": [{ "kind": "tv", "tmdb_id": 14 }, { "kind": "movie", "tmdb_id": 77 }] }),
+        &owner,
+    )
+    .await;
+    assert_eq!(answer["skipped"], json!(1), "{answer}");
+    let added: Vec<i64> = serde_json::from_value(answer["added"].clone()).unwrap();
+    assert_eq!(
+        added.len(),
+        3,
+        "the film, the show by its ref and the new film"
+    );
+    let studio = h.tid("movie", 77).await;
+    assert!(added.contains(&studio));
+    assert!(added.contains(&4), "a ref Frog already has is that title");
+    let pool = h.state.pool.clone();
+    let status = |id: i64| {
+        let pool = pool.clone();
+        async move {
+            frog::store::get_entry(&pool, 1, id)
+                .await
+                .unwrap()
+                .map(|e| e.status)
+        }
+    };
+    assert_eq!(
+        status(3).await.as_deref(),
+        Some("paused"),
+        "held, untouched"
+    );
+    assert_eq!(status(studio).await.as_deref(), Some("planned"));
+    assert!(
+        frog::store::get_entry(&h.state.pool, 2, 1)
+            .await
+            .unwrap()
+            .is_none(),
+        "the other account's library is its own"
+    );
+    let _ = guest;
+
+    // Undo is a remove of exactly what came in.
+    bulk(
+        &h,
+        json!({ "action": "remove", "title_ids": answer["added"] }),
+        &owner,
+    )
+    .await;
+    for id in [1, 4, studio] {
+        assert!(status(id).await.is_none(), "title {id}");
+    }
+    assert_eq!(status(3).await.as_deref(), Some("paused"));
+
+    // Completed marks them watched, on the day asked; one not out waits.
+    let done = bulk(
+        &h,
+        json!({ "action": "add", "status": "completed", "title_ids": [1, 2],
+                "when": "date", "date": "2021-03-04" }),
+        &owner,
+    )
+    .await;
+    assert_eq!((&done["marked"], &done["not_out"]), (&json!(1), &json!(1)));
+    assert_eq!(status(1).await.as_deref(), Some("completed"));
+    assert_eq!(status(2).await.as_deref(), Some("planned"));
+    let film = watches_of(&h, 1).await;
+    assert_eq!(film.len(), 1);
+    assert_eq!(film[0].1, "2021-03-04T20:00:00Z");
+
+    // A bad date adds nothing at all.
+    let (code, _, _) = h
+        .post(
+            "/api/library/bulk",
+            json!({ "action": "add", "status": "completed", "title_ids": [4],
+                    "when": "date", "date": "3000-01-01" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    assert!(status(4).await.is_none());
+
+    // Nothing, an unknown status, and more than a request may hold.
+    for body in [
+        json!({ "action": "add", "status": "planned" }),
+        json!({ "action": "add", "status": "someday", "title_ids": [4] }),
+        json!({ "action": "add", "status": "planned",
+                "title_ids": (0..=frog::bulk::MAX_ADD as i64).collect::<Vec<_>>() }),
+    ] {
+        let (code, _, _) = h.post("/api/library/bulk", body, Some(&owner)).await;
+        assert_eq!(code, StatusCode::BAD_REQUEST);
+    }
+}
+
+#[tokio::test]
 async fn undoing_a_remove_puts_back_every_field() {
     let h = Harness::new().await;
     let (owner, _) = two_accounts(&h).await;
@@ -6779,4 +6898,441 @@ async fn the_database_view_is_read_only_and_keeps_secrets_back() {
         body.to_string().contains("\"title\""),
         "title is still there"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Recommendations and the Notifications page.
+// ---------------------------------------------------------------------------
+
+async fn account_id(h: &Harness, name: &str) -> i64 {
+    let (id,): (i64,) = sqlx::query_as("SELECT id FROM app_user WHERE username = ?")
+        .bind(name)
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    id
+}
+
+#[tokio::test]
+async fn a_recommendation_reaches_only_who_it_was_for_and_answers_once() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    let zjef = account_id(&h, "zjef").await;
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (1, 'tv', 11, 'Severance')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    // A private profile cannot be chosen, nor sent anything.
+    let (_, people) = h
+        .get("/api/people/choosable?title_id=1", Some(&owner))
+        .await;
+    assert_eq!(people["people"], json!([]), "{people}");
+    let (code, _, _) = h
+        .post("/api/t/1/recommend", json!({ "to": [zjef] }), Some(&owner))
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+
+    h.send(
+        "PUT",
+        "/api/account/profile",
+        json!({ "public": true }),
+        &guest,
+    )
+    .await;
+    let (_, people) = h
+        .get("/api/people/choosable?title_id=1", Some(&owner))
+        .await;
+    assert_eq!(people["people"][0]["username"], json!("zjef"));
+    assert_eq!(people["people"][0]["sent"], json!(false));
+
+    let (code, sent, _) = h
+        .post(
+            "/api/t/1/recommend",
+            json!({ "to": [zjef], "note": "  The second season!  " }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{sent}");
+    assert_eq!(sent["told"], json!(1));
+    // Again: the same one, told afresh, never two.
+    h.post("/api/t/1/recommend", json!({ "to": [zjef] }), Some(&owner))
+        .await;
+
+    let (_, feed) = h.get("/api/notifications", Some(&guest)).await;
+    let for_you = feed["for_you"].as_array().unwrap();
+    assert_eq!(for_you.len(), 1, "{feed}");
+    assert_eq!(for_you[0]["title"]["name"], json!("Severance"));
+    assert_eq!(for_you[0]["from"]["username"], json!("mihai"));
+    assert_eq!(
+        for_you[0]["note"],
+        json!(null),
+        "the newest note is what it says"
+    );
+    let items = feed["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{feed}");
+    assert_eq!(items[0]["kind"], json!("recommendation"));
+    assert_eq!(feed["unread"], json!(1));
+    let (_, people) = h
+        .get("/api/people/choosable?title_id=1", Some(&owner))
+        .await;
+    assert_eq!(people["people"][0]["sent"], json!(true));
+
+    // The sender's own page holds none of it, and cannot answer it.
+    let (_, mine) = h.get("/api/notifications", Some(&owner)).await;
+    assert_eq!(mine["items"], json!([]), "{mine}");
+    assert_eq!(mine["for_you"], json!([]));
+    let id = for_you[0]["id"].as_i64().unwrap();
+    let (code, _, _) = h
+        .post(
+            &format!("/api/recommendations/{id}/answer"),
+            json!({ "answer": "dismissed" }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+
+    // Read, dismissed, undone, added: the sender hears of the add, once.
+    let (_, read, _) = h
+        .post("/api/notifications/read", json!({}), Some(&guest))
+        .await;
+    assert_eq!(read["unread"], json!(0));
+    for answer in [
+        json!("dismissed"),
+        json!(null),
+        json!("added"),
+        json!("added"),
+    ] {
+        let (code, _, _) = h
+            .post(
+                &format!("/api/recommendations/{id}/answer"),
+                json!({ "answer": answer }),
+                Some(&guest),
+            )
+            .await;
+        assert_eq!(code, StatusCode::OK);
+        if answer == json!("dismissed") {
+            let (_, feed) = h.get("/api/notifications", Some(&guest)).await;
+            assert_eq!(feed["for_you"], json!([]), "a dismissed one is gone");
+        }
+    }
+    let (_, mine) = h.get("/api/notifications", Some(&owner)).await;
+    let kinds: Vec<&str> = mine["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|i| i["kind"].as_str())
+        .collect();
+    assert_eq!(kinds, ["added"], "{mine}");
+    assert_eq!(mine["items"][0]["actor"]["username"], json!("zjef"));
+
+    // Someone who wants no recommendations is not offered, nor sent any.
+    let (_, wants) = h.get("/api/notifications/settings", Some(&guest)).await;
+    let mut off = wants.clone();
+    off["recommendations"] = json!(false);
+    h.send("PUT", "/api/notifications/settings", off, &guest)
+        .await;
+    let (_, people) = h.get("/api/people/choosable", Some(&owner)).await;
+    assert_eq!(people["people"], json!([]));
+    let (code, _, _) = h
+        .post("/api/t/1/recommend", json!({ "to": [zjef] }), Some(&owner))
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+
+    // A note past the limit is refused.
+    h.send("PUT", "/api/notifications/settings", wants, &guest)
+        .await;
+    let (code, _, _) = h
+        .post(
+            "/api/t/1/recommend",
+            json!({ "to": [zjef], "note": "x".repeat(frog::recommend::NOTE_MAX + 1) }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn a_film_out_today_reaches_the_page_once_without_push() {
+    let h = Harness::new().await;
+    let (_, guest) = two_accounts(&h).await;
+    let zjef = account_id(&h, "zjef").await;
+    let now = chrono::Utc::now();
+    let today = now.format("%Y-%m-%d").to_string();
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, release_date) VALUES (1, 'movie', 11, 'Out Today', ?)",
+    )
+    .bind(&today)
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, notify, added_at, updated_at)
+         VALUES (?, 1, 'planned', 1, 'x', 'x')",
+    )
+    .bind(zjef)
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    for _ in 0..2 {
+        frog::announce::run(&h.state, now).await.unwrap();
+    }
+    let (_, feed) = h.get("/api/notifications", Some(&guest)).await;
+    let items = feed["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{feed}");
+    assert_eq!(items[0]["kind"], json!("film"));
+    assert_eq!(items[0]["title"]["name"], json!("Out Today"));
+    let (_, unread) = h.get("/api/notifications/unread", Some(&guest)).await;
+    assert_eq!(unread["unread"], json!(1));
+}
+
+#[tokio::test]
+async fn releases_switched_off_are_neither_on_the_page_nor_announced_later() {
+    let h = Harness::new().await;
+    let (_, guest) = two_accounts(&h).await;
+    let zjef = account_id(&h, "zjef").await;
+    let now = chrono::Utc::now();
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, release_date) VALUES (1, 'movie', 11, 'Quiet', ?)",
+    )
+    .bind(now.format("%Y-%m-%d").to_string())
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, notify, added_at, updated_at)
+         VALUES (?, 1, 'planned', 1, 'x', 'x')",
+    )
+    .bind(zjef)
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    let (_, mut wants) = h.get("/api/notifications/settings", Some(&guest)).await;
+    wants["releases"] = json!(false);
+    h.send("PUT", "/api/notifications/settings", wants.clone(), &guest)
+        .await;
+    frog::announce::run(&h.state, now).await.unwrap();
+    // Switched back on, the day's film was already passed over: no burst.
+    wants["releases"] = json!(true);
+    h.send("PUT", "/api/notifications/settings", wants, &guest)
+        .await;
+    frog::announce::run(&h.state, now).await.unwrap();
+    let (_, feed) = h.get("/api/notifications", Some(&guest)).await;
+    assert_eq!(feed["items"], json!([]), "{feed}");
+}
+
+// ---------------------------------------------------------------------------
+// Who a watch was with.
+// ---------------------------------------------------------------------------
+
+async fn together_lines(h: &Harness, cookie: &str) -> Vec<Value> {
+    let (_, feed) = h.get("/api/notifications", Some(cookie)).await;
+    feed["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["kind"] == json!("together"))
+        .cloned()
+        .collect()
+}
+
+async fn named_on(h: &Harness, owner: i64, title: i64) -> i64 {
+    let (n,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM watch_with x JOIN watch_event w ON w.id = x.watch_event_id
+          WHERE x.user_id = ? AND w.title_id = ?",
+    )
+    .bind(owner)
+    .bind(title)
+    .fetch_one(&h.state.pool)
+    .await
+    .unwrap();
+    n
+}
+
+#[tokio::test]
+async fn watching_with_someone_tells_them_and_never_writes_for_them() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    let mihai = account_id(&h, "mihai").await;
+    let zjef = account_id(&h, "zjef").await;
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, release_date) VALUES
+            (1, 'movie', 11, 'Together Film', '2001-01-01'),
+            (2, 'tv', 12, 'Together Show', '2020-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    for n in 1..=4 {
+        sqlx::query(
+            "INSERT INTO episode (title_id, season_number, episode_number, name, air_date)
+             VALUES (2, 1, ?, 'Aired', '2020-01-01')",
+        )
+        .bind(n)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    }
+
+    // A private profile cannot be named.
+    let (code, _, _) = h
+        .post(
+            "/api/library/bulk",
+            json!({ "action": "add", "status": "completed", "title_ids": [1],
+                    "when": "today", "with": [zjef] }),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    assert!(frog::store::get_entry(&h.state.pool, mihai, 1)
+        .await
+        .unwrap()
+        .is_none());
+
+    h.send(
+        "PUT",
+        "/api/account/profile",
+        json!({ "public": true }),
+        &guest,
+    )
+    .await;
+    bulk(
+        &h,
+        json!({ "action": "add", "status": "completed", "title_ids": [1],
+                "when": "date", "date": "2021-05-01", "with": [zjef] }),
+        &owner,
+    )
+    .await;
+    assert_eq!(named_on(&h, mihai, 1).await, 1);
+    let lines = together_lines(&h, &guest).await;
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(
+        lines[0]["payload"]["text"],
+        json!("mihai watched Together Film with you")
+    );
+    // Nothing of theirs changed.
+    assert!(frog::store::get_entry(&h.state.pool, zjef, 1)
+        .await
+        .unwrap()
+        .is_none());
+
+    // One episode before the show is watched together, three after: only
+    // those three name them, on one line.
+    let tick = |n: i64| format!("/api/t/2/episodes/1/{n}/watch");
+    h.post(&tick(1), json!({}), Some(&owner)).await;
+    let (code, set) = h
+        .send(
+            "PUT",
+            "/api/t/2/together",
+            json!({ "with": [zjef] }),
+            &owner,
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{set}");
+    assert_eq!(set["with"][0]["username"], json!("zjef"));
+    for n in 2..=4 {
+        h.post(&tick(n), json!({}), Some(&owner)).await;
+    }
+    assert_eq!(named_on(&h, mihai, 2).await, 3);
+    let lines = together_lines(&h, &guest).await;
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    let show = lines
+        .iter()
+        .find(|l| l["title"]["name"] == json!("Together Show"))
+        .unwrap();
+    assert_eq!(
+        show["payload"]["text"],
+        json!("mihai watched 3 episodes of Together Show with you")
+    );
+
+    // Added to their own diary, once, however often they ask.
+    let id = show["id"].as_i64().unwrap();
+    let path = format!("/api/notifications/{id}/together");
+    let (_, first, _) = h
+        .post(
+            &path,
+            json!({ "action": "add", "status": "watching" }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(first["copied"], json!(3), "{first}");
+    let (_, again, _) = h
+        .post(&path, json!({ "action": "add" }), Some(&guest))
+        .await;
+    assert_eq!(again["copied"], json!(0));
+    let (mine,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM watch_event WHERE user_id = ? AND title_id = 2")
+            .bind(zjef)
+            .fetch_one(&h.state.pool)
+            .await
+            .unwrap();
+    assert_eq!(mine, 3);
+    // The owner cannot answer for them.
+    let (code, _, _) = h
+        .post(&path, json!({ "action": "not_me" }), Some(&owner))
+        .await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+
+    // Undo of a removal keeps who the film was with.
+    let removed = bulk(&h, json!({ "action": "remove", "title_ids": [1] }), &owner).await;
+    assert_eq!(named_on(&h, mihai, 1).await, 0);
+    bulk(
+        &h,
+        json!({ "action": "restore", "entries": removed["before"] }),
+        &owner,
+    )
+    .await;
+    assert_eq!(named_on(&h, mihai, 1).await, 1, "undo brings the name back");
+
+    // The export names them by username.
+    let (_, export) = h.get("/api/export/library.json", Some(&owner)).await;
+    let film = export["titles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == json!("Together Film"))
+        .unwrap();
+    assert_eq!(film["watched_with"][0]["with"], json!("zjef"), "{film}");
+
+    // Not me: their name comes off the film, and the line goes.
+    let film_line = together_lines(&h, &guest)
+        .await
+        .into_iter()
+        .find(|l| l["title"]["name"] == json!("Together Film"))
+        .unwrap();
+    let path = format!("/api/notifications/{}/together", film_line["id"]);
+    h.post(&path, json!({ "action": "not_me" }), Some(&guest))
+        .await;
+    assert_eq!(named_on(&h, mihai, 1).await, 0);
+    assert_eq!(named_on(&h, mihai, 2).await, 3, "only that line's watches");
+
+    // Someone who would rather not be named cannot be.
+    let (_, mut wants) = h.get("/api/notifications/settings", Some(&guest)).await;
+    wants["together"] = json!(false);
+    h.send("PUT", "/api/notifications/settings", wants, &guest)
+        .await;
+    let (code, _) = h
+        .send(
+            "PUT",
+            "/api/t/2/together",
+            json!({ "with": [zjef] }),
+            &owner,
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+
+    // An account that goes takes every mention of it.
+    frog::admin::delete_account(&h.state.pool, zjef)
+        .await
+        .unwrap();
+    assert_eq!(named_on(&h, mihai, 2).await, 0);
+    let (left,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM watching_with WHERE user_id = ?")
+        .bind(mihai)
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
 }

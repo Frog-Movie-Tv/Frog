@@ -41,6 +41,9 @@ pub struct Marking {
     pub when: When,
     /// yyyy-mm-dd, required when `when` is `date`.
     pub date: Option<String>,
+    /// Who else was there, by account: named on every watch this makes.
+    #[serde(default)]
+    pub with: Option<Vec<i64>>,
 }
 
 impl Marking {
@@ -390,6 +393,101 @@ pub async fn add_to_shelf(
     Ok(added)
 }
 
+/// The most titles one add may bring in. Each one Frog has not seen yet is a
+/// TMDB read, so a whole studio goes in a few requests rather than one.
+pub const MAX_ADD: usize = 100;
+
+/// A title by its provider's id, for adding one Frog may not have yet: a
+/// studio's or a search's results.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProviderRef {
+    /// "movie" or "tv".
+    pub kind: String,
+    pub tmdb_id: i64,
+}
+
+/// What adding titles did.
+#[derive(Debug, Default, serde::Serialize)]
+pub struct Added {
+    /// Frog's ids of the titles that came in: what undo takes back out.
+    pub added: Vec<i64>,
+    /// Already in the library, so left exactly as they were.
+    pub skipped: i64,
+    /// Added as Completed, with their watches.
+    pub marked: i64,
+    /// Asked for as Completed but not out yet, so on the Watchlist instead.
+    pub not_out: i64,
+}
+
+/// Frog's id for each ref, reading the ones it has not seen from TMDB.
+pub async fn resolve_refs(state: &AppState, refs: &[ProviderRef]) -> AppResult<Vec<i64>> {
+    let mut ids = Vec::with_capacity(refs.len());
+    for r in refs {
+        if r.kind != "movie" && r.kind != "tv" {
+            return Err(AppError::BadRequest(format!("unknown kind {}", r.kind)));
+        }
+        let external = catalog::ExternalId::tmdb(&r.kind, r.tmdb_id);
+        let id = match catalog::find(&state.pool, &external).await? {
+            Some(id) => id,
+            None => catalog::ensure(state, &external).await?.0,
+        };
+        ids.push(id);
+    }
+    Ok(ids)
+}
+
+/// Put titles into the library with one status. A title already there keeps
+/// what it has: adding is never a way of moving something. Completed marks
+/// them watched by the same rules as moving them there.
+pub async fn add(
+    state: &AppState,
+    user_id: i64,
+    title_ids: &[i64],
+    status: &str,
+    marking: &Marking,
+) -> AppResult<Added> {
+    if !store::STATUSES.contains(&status) {
+        return Err(AppError::BadRequest(format!("unknown status {status}")));
+    }
+    // Checked before anything is written, so a bad date adds nothing.
+    marking.chosen()?;
+    let pool = &state.pool;
+    let mut out = Added::default();
+    let mut seen = std::collections::HashSet::new();
+    let first = if status == "completed" {
+        "planned"
+    } else {
+        status
+    };
+    for &id in title_ids {
+        if !seen.insert(id) {
+            continue;
+        }
+        catalog::get_title(pool, id).await?;
+        if store::get_entry(pool, user_id, id).await?.is_some() {
+            out.skipped += 1;
+            continue;
+        }
+        store::apply_patch(
+            pool,
+            user_id,
+            id,
+            &LibraryPatch {
+                status: Some(first.to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+        out.added.push(id);
+    }
+    if status == "completed" && !out.added.is_empty() {
+        let marked = mark_watched(state, user_id, &out.added, marking, true).await?;
+        out.marked = marked.marked;
+        out.not_out = marked.skipped;
+    }
+    Ok(out)
+}
+
 /// Refuse a request naming nothing, or more than one library holds.
 pub fn check_size(title_ids: &[i64]) -> AppResult<()> {
     if title_ids.is_empty() {
@@ -450,7 +548,8 @@ mod tests {
         assert!(evening_of("3000-01-01").is_err());
         assert!(Marking {
             when: When::Date,
-            date: None
+            date: None,
+            with: None,
         }
         .chosen()
         .is_err());

@@ -4,6 +4,10 @@
 	import Icon from './Icon.svelte';
 	import { localDay } from '#lib/day';
 	import { whenWatched, type WhenMode } from '#lib/when.svelte';
+	import { api } from '#lib/api';
+	import { reachable } from '#lib/people.svelte';
+	import type { Choosable } from '#lib/types';
+	import PeopleList from './PeopleList.svelte';
 
 	const today = localDay();
 
@@ -11,6 +15,20 @@
 	let date = $state(today);
 	let picked = $state<number[]>([]);
 	let dialog: HTMLDivElement | undefined = $state();
+	/** Who else was there: folded away until asked for, and never needed. */
+	let withOpen = $state(false);
+	let people = $state<Choosable[] | null>(null);
+	let together = $state<number[]>([]);
+
+	async function openWith() {
+		withOpen = true;
+		if (people) return;
+		try {
+			people = (await api.choosable('together')).people;
+		} catch {
+			people = [];
+		}
+	}
 
 	const pending = $derived(whenWatched.pending);
 
@@ -21,6 +39,8 @@
 			mode = pending.reading ? 'date' : 'release';
 			date = pending.day ?? today;
 			picked = [];
+			withOpen = false;
+			together = [];
 			queueMicrotask(() => dialog?.querySelector<HTMLButtonElement>('.option.on')?.focus());
 		}
 	});
@@ -59,7 +79,10 @@
 	);
 
 	function confirm() {
-		const extras = picked.length ? { extras: picked } : {};
+		const extras = {
+			...(picked.length ? { extras: picked } : {}),
+			...(withOpen && together.length ? { with: together } : {})
+		};
 		whenWatched.answer(
 			mode === 'date' ? { when: 'date', date, ...extras } : { when: mode, ...extras }
 		);
@@ -139,6 +162,19 @@
 					{/each}
 				</ul>
 			</fieldset>
+		{/if}
+
+		{#if !pending.reading && pending.together && reachable.together}
+			{#if withOpen}
+				<div class="with">
+					<span class="with-label">Watched with</span>
+					<PeopleList {people} bind:picked={together} label="Watched with" />
+				</div>
+			{:else}
+				<button class="btn ghost small with-open" onclick={openWith}>
+					<Icon name="users" size={15} /> Watched with…
+				</button>
+			{/if}
 		{/if}
 
 		<div class="actions">
@@ -311,5 +347,21 @@
 		display: flex;
 		justify-content: flex-end;
 		gap: 10px;
+	}
+
+	.with-open {
+		margin-bottom: 14px;
+	}
+
+	.with {
+		margin-bottom: 14px;
+	}
+
+	.with-label {
+		display: block;
+		margin-bottom: 8px;
+		font-size: 0.84rem;
+		font-weight: 650;
+		color: var(--text-dim);
 	}
 </style>

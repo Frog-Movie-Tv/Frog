@@ -64,6 +64,11 @@ pub const PLAIN: &[(&str, &str, &str)] = &[
     ),
     ("studio_match", "name_key", "a studio's folded name"),
     (
+        "notification",
+        "ref_key",
+        "which event a notification is about, so it lands once",
+    ),
+    (
         "extension_log",
         "token_id",
         "which token made a log, by its row id, never the token",

@@ -44,6 +44,10 @@ async fn main() -> anyhow::Result<()> {
 
     auth::prepare_decoy();
     routes::auth::bootstrap_from_env(&state).await?;
+    // Everyone here before it hears that Frog is a new version, once.
+    if let Err(e) = frog::inbox::note_update(&state.pool, env!("CARGO_PKG_VERSION")).await {
+        tracing::warn!(error = %e, "the update could not be noted");
+    }
     let worker = jobs::spawn(state.clone());
 
     let app = routes::router(state);

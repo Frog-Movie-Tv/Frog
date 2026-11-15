@@ -6,6 +6,8 @@ export interface WhenAnswer {
 	date?: string;
 	/** Which of the offered extras were ticked, by key. */
 	extras?: number[];
+	/** Who else was there, by account; left out when nobody was named. */
+	with?: number[];
 }
 
 /** Something to tick on top, such as one special of a completed show. */
@@ -28,6 +30,8 @@ export interface AskOptions {
 	confirm?: string;
 	extras?: Extra[];
 	extrasLabel?: string;
+	/** Offer "Watched with…": a watch being made, not one being moved. */
+	together?: boolean;
 }
 
 interface Pending extends Required<Omit<AskOptions, 'day'>> {
@@ -61,6 +65,7 @@ class WhenWatched {
 				confirm: options.confirm ?? 'Mark watched',
 				extras: options.extras ?? [],
 				extrasLabel: options.extrasLabel ?? '',
+				together: options.together ?? options.confirm === undefined,
 				resolve
 			};
 		});

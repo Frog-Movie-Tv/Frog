@@ -12,6 +12,7 @@ pub mod images;
 pub mod invites;
 pub mod library;
 pub mod meta;
+pub mod notifications;
 pub mod profiles;
 pub mod push;
 pub mod search;
@@ -20,6 +21,7 @@ pub mod shelves;
 pub mod stats;
 pub mod timeline;
 pub mod titles;
+pub mod together;
 pub mod tokens;
 pub mod transfer;
 pub mod two_factor;
@@ -91,6 +93,22 @@ pub fn router(state: AppState) -> Router {
             "/shelves/{id}/items/{title_id}",
             delete(shelves::remove_item),
         )
+        .route("/notifications", get(notifications::feed))
+        .route("/notifications/unread", get(notifications::unread))
+        .route("/notifications/read", post(notifications::read))
+        .route(
+            "/notifications/settings",
+            get(notifications::get_wants).put(notifications::put_wants),
+        )
+        .route("/people/choosable", get(notifications::people))
+        .route("/recommendations/{id}/answer", post(notifications::answer))
+        .route("/t/{id}/recommend", post(notifications::recommend))
+        .route(
+            "/t/{id}/together",
+            get(together::get_default).put(together::set_default),
+        )
+        .route("/diary/with", put(together::set_on_day))
+        .route("/notifications/{id}/together", post(together::answer))
         .route("/push", get(push::status))
         .route("/push/subscribe", post(push::subscribe))
         .route("/push/unsubscribe", post(push::unsubscribe))

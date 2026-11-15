@@ -223,7 +223,8 @@ test('keyboard hints only show where there is a keyboard', async ({ page, isMobi
 		await close.click();
 		await expect(palette).toBeHidden();
 	} else {
-		await expect(page.locator('.bar kbd')).toHaveText('Ctrl K');
+		// A Mac writes it ⌘K, everything else Ctrl K.
+		await expect(page.locator('.bar kbd')).toHaveText(/^(Ctrl K|⌘K)$/);
 		await expect(palette.getByText('esc')).toBeVisible();
 		await expect(palette.locator('footer')).toBeVisible();
 		await expect(close).toBeHidden();
@@ -287,7 +288,7 @@ test('the about page credits its sources', async ({ page }) => {
 	await page.goto('/about');
 
 	await expect(page.getByRole('heading', { name: 'Frog', level: 1 })).toBeVisible();
-	await expect(page.getByText('Tomato Frog')).toBeVisible();
+	await expect(page.getByText('Chorus Frog')).toBeVisible();
 	await expect(page.getByRole('link', { name: /TMDB/ }).first()).toBeVisible();
 	await expect(page.getByRole('link', { name: /Phosphor/ })).toBeVisible();
 });
@@ -1497,6 +1498,10 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/search/genres',
 		'/api/t/1/scores',
 		'/api/studios/1',
+		'/api/notifications',
+		'/api/notifications/unread',
+		'/api/notifications/settings',
+		'/api/people/choosable',
 		'/img/w342/nope.jpg'
 	]) {
 		const res = await request.get(path);
@@ -1527,7 +1532,10 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/account/tokens',
 		'/api/ext/resolve',
 		'/api/ext/log',
-		'/api/ext/undo'
+		'/api/ext/undo',
+		'/api/notifications/read',
+		'/api/t/1/recommend',
+		'/api/recommendations/1/answer'
 	]) {
 		const res = await request.post(path, { data: {} });
 		expect(res.status(), `POST ${path} should be 401`).toBe(401);
@@ -2146,6 +2154,508 @@ test('a very long name never widens a page on a phone', async ({
 		await context.close();
 	}
 	expect(problems).toEqual([]);
+});
+
+/** Titles Frog already has, out of anyone's library: there is no TMDB key here. */
+function seedTitles(project: string, titles: [number, 'movie' | 'tv', string][]) {
+	const db = new DatabaseSync(join('.e2e-data', project, 'e2e.db'));
+	db.exec('PRAGMA busy_timeout = 5000');
+	const now = '2026-01-01T00:00:00Z';
+	for (const [id, kind, name] of titles) {
+		db.prepare(
+			`INSERT OR IGNORE INTO title (id, kind, name, genres_json, release_date, refreshed_at)
+			 VALUES (?, ?, ?, '[]', '2020-01-01', ?)`
+		).run(id, kind, name, now);
+		db.prepare(
+			`INSERT OR IGNORE INTO title_external (title_id, provider, external_id, is_primary, added_at)
+			 VALUES (?, 'tmdb', ?, 1, ?)`
+		).run(id, `${kind}/${id}`, now);
+		db.prepare('DELETE FROM library_entry WHERE title_id = ?').run(id);
+		db.prepare('DELETE FROM watch_event WHERE title_id = ?').run(id);
+	}
+	db.close();
+}
+
+/** Where a title stands in the signed-in account's library, straight from the database. */
+function statusOf(project: string, titleId: number): string | null {
+	const db = new DatabaseSync(join('.e2e-data', project, 'e2e.db'));
+	db.exec('PRAGMA busy_timeout = 5000');
+	const row = db
+		.prepare(
+			`SELECT l.status FROM library_entry l JOIN app_user u ON u.id = l.user_id
+			  WHERE u.username = ? AND l.title_id = ?`
+		)
+		.get(USER, titleId) as { status: string } | undefined;
+	db.close();
+	return row?.status ?? null;
+}
+
+/** Search answering with these titles, which Frog already has. */
+async function searchAnswers(page: Page, titles: [number, 'movie' | 'tv', string][]) {
+	const results = titles.map(([id, kind, name]) => ({
+		kind,
+		tmdb_id: id,
+		id,
+		name,
+		poster_path: null,
+		backdrop_path: null,
+		year: 2020,
+		overview: null,
+		vote: null,
+		popularity: 1,
+		vote_count: 1,
+		genre_ids: [],
+		in_library: null
+	}));
+	await page.route('**/api/search?*', (route) =>
+		route.fulfill({ json: { results, next_page: null } })
+	);
+	await page.route('**/api/search/more?*', (route) =>
+		route.fulfill({ json: { people: [], characters: [], studios: [] } })
+	);
+}
+
+test('the + asks for a status, and adds nothing when closed', async ({ page }, testInfo) => {
+	await signIn(page);
+	const project = testInfo.project.name;
+	const titles: [number, 'movie' | 'tv', string][] = [
+		[9201, 'tv', 'Plus Show'],
+		[9202, 'movie', 'Plus Film']
+	];
+	seedTitles(project, titles);
+	const saved = await (await page.request.get('/api/settings')).json();
+	await page.request.put('/api/settings', { data: { ...saved, addStatus: 'ask' } });
+	await searchAnswers(page, titles);
+
+	await page.goto('/search?q=plus');
+	const plus = page.getByRole('button', { name: 'Add Plus Show to your library' });
+	await plus.click();
+	const menu = page.getByRole('menu');
+	await expect(menu).toBeVisible();
+	// The Watchlist is focused, so Enter alone would take it.
+	await expect(menu.getByRole('menuitem', { name: 'Watchlist' })).toBeFocused();
+	await page.keyboard.press('Escape');
+	await expect(menu).toHaveCount(0);
+	expect(statusOf(project, 9201)).toBeNull();
+
+	await plus.click();
+	await page.getByRole('menuitem', { name: 'Watching', exact: true }).click();
+	await expect(page.getByText('Added Plus Show to Watching')).toBeVisible();
+	await expect.poll(() => statusOf(project, 9201)).toBe('watching');
+
+	// Undo takes it back out.
+	await page.getByRole('button', { name: 'Undo' }).click();
+	await expect.poll(() => statusOf(project, 9201)).toBeNull();
+
+	await page.request.put('/api/settings', { data: saved });
+	seedTitles(project, titles);
+});
+
+test('with a status chosen in Settings, the + adds in one tap', async ({ page }, testInfo) => {
+	await signIn(page);
+	const project = testInfo.project.name;
+	const titles: [number, 'movie' | 'tv', string][] = [[9203, 'tv', 'One Tap Show']];
+	seedTitles(project, titles);
+	const saved = await (await page.request.get('/api/settings')).json();
+	await page.request.put('/api/settings', { data: { ...saved, addStatus: 'planned' } });
+	await searchAnswers(page, titles);
+
+	await page.goto('/search?q=tap');
+	await page.getByRole('button', { name: 'Add One Tap Show to your library' }).click();
+	await expect(page.getByText('Added One Tap Show to Watchlist')).toBeVisible();
+	await expect(page.getByRole('menu')).toHaveCount(0);
+	await expect.poll(() => statusOf(project, 9203)).toBe('planned');
+
+	await page.request.put('/api/settings', { data: saved });
+	seedTitles(project, titles);
+});
+
+test('an old default status carries over only when it was not the Watchlist', async ({ page }) => {
+	await signIn(page);
+	const saved = await (await page.request.get('/api/settings')).json();
+	const { addStatus: _gone, ...older } = saved;
+	const shown = () =>
+		page
+			.locator('.row', { hasText: 'Adding a title' })
+			.getByRole('button', { name: /Adding a title/ });
+
+	await page.request.put('/api/settings', { data: { ...older, defaultStatus: 'paused' } });
+	await page.goto('/settings#watching');
+	await expect(shown()).toContainText('On hold');
+
+	await page.request.put('/api/settings', { data: { ...older, defaultStatus: 'planned' } });
+	// The same address again only scrolls: reload, so the settings are read anew.
+	await page.reload();
+	await expect(shown()).toContainText('Ask each time');
+
+	await page.request.put('/api/settings', { data: saved });
+});
+
+/** Another account on this Frog, signed in, with its profile on and the welcome read. */
+async function anotherAccount(
+	page: Page,
+	playwright: { request: import('@playwright/test').APIRequest },
+	baseURL: string | undefined,
+	prefix: string
+) {
+	const name = `${prefix}${Date.now() % 100000}`;
+	const invite = await (await page.request.post('/api/invites', { data: { role: 'user' } })).json();
+	const them = await playwright.request.newContext({ baseURL });
+	await them.post('/api/auth/register', {
+		data: { username: name, password: 'another-long-pass', invite: invite.code, remember: true }
+	});
+	await them.put('/api/account/profile', { data: { public: true } });
+	const settings = await (await them.get('/api/settings')).json();
+	await them.put('/api/settings', { data: { ...settings, onboarded: true } });
+	return { name, them };
+}
+
+test('a recommendation goes to the one person, who adds it from Notifications', async ({
+	page,
+	browser,
+	playwright,
+	baseURL
+}, testInfo) => {
+	await signIn(page);
+	const project = testInfo.project.name;
+	seedTitles(project, [[9401, 'tv', 'Rec Show']]);
+	const { name, them } = await anotherAccount(page, playwright, baseURL, 'rec');
+	await page.route('**/api/t/9401', (route) =>
+		route.fulfill({ json: titleAnswer(9401, 'tv', 'Rec Show', {}) })
+	);
+
+	await page.goto('/t/9401');
+	await page.getByRole('button', { name: 'Recommend' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Recommend Rec Show' });
+	await expect(dialog).toBeVisible();
+	// Nobody ticked yet: nothing to send.
+	await expect(dialog.getByRole('button', { name: 'Send' })).toBeDisabled();
+	await dialog.getByText(name, { exact: true }).click();
+	// The note is out of the way until asked for.
+	await expect(dialog.getByRole('textbox')).toHaveCount(0);
+	await dialog.getByRole('button', { name: 'Add a note' }).click();
+	await dialog.getByRole('textbox').fill('Season two is the one');
+	await dialog.getByRole('button', { name: 'Send' }).click();
+	await expect(page.getByText('Recommended Rec Show')).toBeVisible();
+
+	// Only they have it.
+	const mine = await (await page.request.get('/api/notifications')).json();
+	expect(mine.for_you.map((r: { title: { name: string } }) => r.title.name)).not.toContain(
+		'Rec Show'
+	);
+
+	const context = await browser.newContext({ baseURL, storageState: await them.storageState() });
+	const theirs = await context.newPage();
+	await theirs.goto('/notifications');
+	await expect(theirs.getByRole('heading', { name: 'Notifications' })).toBeVisible();
+	const card = theirs.locator('.rec', { hasText: 'Rec Show' });
+	await expect(card).toBeVisible();
+	await expect(card).toContainText('Season two is the one');
+	// Seen is read: the bell has nothing left to say.
+	await expect(theirs.getByRole('link', { name: 'Notifications', exact: true })).toBeVisible();
+
+	await card.getByRole('button', { name: 'Add' }).click();
+	await theirs.getByRole('menuitem', { name: 'Watching', exact: true }).click();
+	await expect(theirs.getByText('Added Rec Show to Watching')).toBeVisible();
+	await expect(card).toContainText('Watching');
+
+	// The sender hears, quietly, that it was added.
+	await expect
+		.poll(async () => {
+			const r = await (await page.request.get('/api/notifications')).json();
+			return r.items.some((i: { kind: string }) => i.kind === 'added');
+		})
+		.toBe(true);
+	await page.goto('/notifications');
+	await expect(page.getByText(new RegExp(`${name} added Rec Show`))).toBeVisible();
+
+	await context.close();
+	await them.put('/api/account/profile', { data: { public: false } });
+	await them.dispose();
+});
+
+test('the bell counts what is new and hides at nothing', async ({
+	page,
+	playwright,
+	baseURL
+}, testInfo) => {
+	await signIn(page);
+	seedTitles(testInfo.project.name, [[9402, 'movie', 'Bell Film']]);
+	const { them } = await anotherAccount(page, playwright, baseURL, 'bell');
+	await page.request.post('/api/notifications/read', { data: { ids: [] } });
+	await page.goto('/search');
+	await expect(page.getByRole('link', { name: 'Notifications', exact: true })).toBeVisible();
+
+	// Someone recommends something: on the next look, the bell says so.
+	const account = await (await page.request.get('/api/account')).json();
+	await page.request.put('/api/account/profile', { data: { public: true } });
+	const people = await (await them.get('/api/people/choosable?for=recommend')).json();
+	const mihai = people.people.find((p: { username: string }) => p.username === USER);
+	expect(mihai, 'the owner can be chosen').toBeTruthy();
+	await them.post('/api/t/9402/recommend', { data: { to: [mihai.id] } });
+	await page.reload();
+	await expect(page.getByRole('link', { name: 'Notifications, 1 new' })).toBeVisible();
+
+	await page.getByRole('link', { name: 'Notifications, 1 new' }).click();
+	await expect(page).toHaveURL('/notifications');
+	await expect(page.getByRole('link', { name: 'Notifications', exact: true })).toBeVisible();
+	await page.request.put('/api/account/profile', { data: { public: account.profile_public } });
+	await them.put('/api/account/profile', { data: { public: false } });
+	await them.dispose();
+});
+
+test("a studio's titles go in together, and come out together", async ({ page }, testInfo) => {
+	await signIn(page);
+	const project = testInfo.project.name;
+	const seeded: [number, 'movie' | 'tv', string][] = [
+		[9501, 'movie', 'Studio One'],
+		[9502, 'movie', 'Studio Two'],
+		[9503, 'tv', 'Studio Three'],
+		[9504, 'movie', 'Studio Held']
+	];
+	seedTitles(project, seeded);
+	// One already in the library, which stays exactly as it is.
+	await page.request.post('/api/library/bulk', {
+		data: { action: 'add', status: 'paused', title_ids: [9504] }
+	});
+	const titles = seeded.map(([id, kind, name]) => ({
+		kind,
+		tmdb_id: id,
+		// As TMDB lists them: by its ids only.
+		id: id === 9504 ? 9504 : null,
+		name,
+		poster_path: null,
+		backdrop_path: null,
+		year: 2020,
+		overview: null,
+		vote: null,
+		popularity: 1,
+		vote_count: 1,
+		genre_ids: [],
+		in_library: id === 9504 ? 'paused' : null
+	}));
+	await page.route('**/api/studios/7*', (route) =>
+		route.fulfill({ json: { id: 7, name: 'A Studio', titles } })
+	);
+
+	await page.goto('/studio/7');
+	await page.getByRole('button', { name: 'Select' }).click();
+	const bar = page.getByRole('toolbar', { name: 'Choose titles' });
+	await expect(bar).toContainText('0 selected');
+	// What is held cannot be ticked.
+	await page.getByRole('checkbox', { name: /Studio Held/ }).click({ force: true });
+	await expect(bar).toContainText('0 selected');
+	await bar.getByRole('button', { name: 'Select all' }).click();
+	await expect(bar).toContainText('3 selected');
+
+	await bar.getByRole('button', { name: 'Add 3' }).click();
+	await page.getByRole('menuitem', { name: 'Watching', exact: true }).click();
+	await expect(page.getByText('Added 3 titles to Watching')).toBeVisible();
+	for (const id of [9501, 9502, 9503]) {
+		await expect.poll(() => statusOf(project, id)).toBe('watching');
+	}
+	expect(statusOf(project, 9504)).toBe('paused');
+
+	await page.getByRole('button', { name: 'Undo' }).click();
+	for (const id of [9501, 9502, 9503]) {
+		await expect.poll(() => statusOf(project, id)).toBeNull();
+	}
+	expect(statusOf(project, 9504)).toBe('paused');
+	seedTitles(project, seeded);
+});
+
+/** Finished, unrated titles in the signed-in account's library, for the rating deck. */
+function rateDeck(project: string, titles: [number, 'movie' | 'tv', string][]) {
+	seedTitles(project, titles);
+	const db = new DatabaseSync(join('.e2e-data', project, 'e2e.db'));
+	db.exec('PRAGMA busy_timeout = 5000');
+	const { id: user } = db.prepare('SELECT id FROM app_user WHERE username = ?').get(USER) as {
+		id: number;
+	};
+	// Each finished a day apart, newest first, so the deck deals them in this order.
+	titles.forEach(([id], i) => {
+		const day = `2026-0${1 + Math.floor(i / 9)}-${String(28 - i).padStart(2, '0')}T20:00:00Z`;
+		db.prepare(
+			`INSERT OR REPLACE INTO library_entry (user_id, title_id, status, added_at, updated_at)
+			 VALUES (?, ?, 'completed', ?, ?)`
+		).run(user, id, day, day);
+	});
+	db.close();
+}
+
+function ratingOf(project: string, titleId: number): number | null {
+	const db = new DatabaseSync(join('.e2e-data', project, 'e2e.db'));
+	db.exec('PRAGMA busy_timeout = 5000');
+	const row = db
+		.prepare(
+			`SELECT l.rating FROM library_entry l JOIN app_user u ON u.id = l.user_id
+			  WHERE u.username = ? AND l.title_id = ?`
+		)
+		.get(USER, titleId) as { rating: number | null } | undefined;
+	db.close();
+	return row?.rating ?? null;
+}
+
+const FAST: [number, 'movie' | 'tv', string][] = [
+	[9601, 'movie', 'Fast One'],
+	[9602, 'movie', 'Fast Two'],
+	[9603, 'movie', 'Fast Three'],
+	[9604, 'movie', 'Fast Four'],
+	[9605, 'movie', 'Fast Five']
+];
+
+test('ratings given as fast as the keys go are every one saved, on the right card', async ({
+	page
+}, testInfo) => {
+	await signIn(page);
+	const project = testInfo.project.name;
+	rateDeck(project, FAST);
+	const restore = await smileys(page);
+	await page.goto('/rate');
+	await expect(page.locator('.card.top h2')).toHaveText('Fast One');
+	// 1, 2, 3, 1, 2: no waiting for a card to leave.
+	for (const key of ['1', '2', '3', '1', '2']) await page.keyboard.press(key);
+	const want = [33, 67, 100, 33, 67];
+	for (const [i, [id]] of FAST.entries()) {
+		await expect.poll(() => Math.round(ratingOf(project, id) ?? -1)).toBe(want[i]);
+	}
+	await expect(page.getByText('5 rated')).toBeVisible();
+	await restore();
+	seedTitles(project, FAST);
+});
+
+test('a rating the server refuses brings its card back', async ({ page }, testInfo) => {
+	await signIn(page);
+	const project = testInfo.project.name;
+	rateDeck(project, FAST.slice(0, 2));
+	const restore = await smileys(page);
+	await page.route('**/api/t/9601/library', (route) =>
+		route.request().method() === 'PUT' ? route.fulfill({ status: 500, json: {} }) : route.continue()
+	);
+	await page.goto('/rate');
+	const top = page.locator('.card.top h2');
+	await expect(top).toHaveText('Fast One');
+	await expect(page.getByText('2 to go')).toBeVisible();
+	await page.keyboard.press('3');
+	await expect(top).toHaveText('Fast One');
+	await expect(page.getByText('2 to go')).toBeVisible();
+	await expect(page.getByText(/rated/)).toHaveCount(0);
+	expect(ratingOf(project, 9601)).toBeNull();
+	await restore();
+	seedTitles(project, FAST);
+});
+
+test('a card can leave the library, or the watched pile, and come back with Undo', async ({
+	page
+}, testInfo) => {
+	await signIn(page);
+	const project = testInfo.project.name;
+	rateDeck(project, FAST.slice(0, 3));
+	await page.goto('/rate');
+	const top = page.locator('.card.top h2');
+	await expect(top).toHaveText('Fast One');
+
+	// Never watched: back to the Watchlist, and out of the deck.
+	await page.getByRole('button', { name: 'Fix this title' }).click();
+	await page.getByRole('menuitem', { name: 'Not watched yet' }).click();
+	await expect(top).toHaveText('Fast Two');
+	await expect.poll(() => statusOf(project, 9601)).toBe('planned');
+
+	// Removed: gone from the library.
+	await page.getByRole('button', { name: 'Fix this title' }).click();
+	await page.getByRole('menuitem', { name: 'Remove from library' }).click();
+	await expect(top).toHaveText('Fast Three');
+	await expect.poll(() => statusOf(project, 9602)).toBeNull();
+
+	// The page's Undo takes both back, newest first.
+	const undo = page.locator('.moves').getByRole('button', { name: 'Undo' });
+	await undo.click();
+	await expect(top).toHaveText('Fast Two');
+	await expect.poll(() => statusOf(project, 9602)).toBe('completed');
+	await undo.click();
+	await expect(top).toHaveText('Fast One');
+	await expect.poll(() => statusOf(project, 9601)).toBe('completed');
+
+	// A status changed on the card stays on the card.
+	await page.getByRole('button', { name: 'Fix this title' }).click();
+	await page.getByRole('menuitem', { name: 'Change status' }).click();
+	await page.getByRole('menuitemcheckbox', { name: 'On hold' }).click();
+	await expect.poll(() => statusOf(project, 9601)).toBe('paused');
+	await expect(top).toHaveText('Fast One');
+	await expect(page.locator('.card.top .facts')).toContainText('On hold');
+
+	// And the count starts again with another deck.
+	await page.keyboard.press('ArrowRight');
+	await page.getByRole('button', { name: 'Everything', exact: true }).click();
+	await expect(page.getByText(/rated/)).toHaveCount(0);
+	seedTitles(project, FAST);
+});
+
+function watchesOf(project: string, username: string, titleId: number): number {
+	const db = new DatabaseSync(join('.e2e-data', project, 'e2e.db'));
+	db.exec('PRAGMA busy_timeout = 5000');
+	const row = db
+		.prepare(
+			`SELECT COUNT(*) AS n FROM watch_event w JOIN app_user u ON u.id = w.user_id
+			  WHERE u.username = ? AND w.title_id = ?`
+		)
+		.get(username, titleId) as { n: number };
+	db.close();
+	return row.n;
+}
+
+test('a film watched with someone reaches them, and they add it to their own diary', async ({
+	page,
+	browser,
+	playwright,
+	baseURL
+}, testInfo) => {
+	await signIn(page);
+	const project = testInfo.project.name;
+	const films: [number, 'movie' | 'tv', string][] = [
+		[9701, 'movie', 'With Film'],
+		[9702, 'movie', 'Alone Film']
+	];
+	seedTitles(project, films);
+	const { name, them } = await anotherAccount(page, playwright, baseURL, 'with');
+	const saved = await (await page.request.get('/api/settings')).json();
+	await page.request.put('/api/settings', { data: { ...saved, addStatus: 'ask' } });
+	await searchAnswers(page, films);
+	await page.goto('/search?q=film');
+
+	// Without opening the row, Completed is still one click away.
+	await page.getByRole('button', { name: 'Add Alone Film to your library' }).click();
+	await page.getByRole('menuitem', { name: 'Completed', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByRole('button', { name: 'Watched with…' })).toBeVisible();
+	await dialog.getByRole('button', { name: 'Mark watched' }).click();
+	await expect(page.getByText('Added Alone Film to Completed')).toBeVisible();
+	expect(watchesOf(project, USER, 9702)).toBe(1);
+
+	await page.getByRole('button', { name: 'Add With Film to your library' }).click();
+	await page.getByRole('menuitem', { name: 'Completed', exact: true }).click();
+	await dialog.getByRole('button', { name: 'Watched with…' }).click();
+	await dialog.getByText(name, { exact: true }).click();
+	await dialog.getByRole('button', { name: 'Mark watched' }).click();
+	await expect(page.getByText('Added With Film to Completed')).toBeVisible();
+	// Nothing written for them.
+	expect(watchesOf(project, name, 9701)).toBe(0);
+
+	const context = await browser.newContext({ baseURL, storageState: await them.storageState() });
+	const theirs = await context.newPage();
+	await theirs.goto('/notifications');
+	const line = theirs.locator('li', { hasText: 'With Film' });
+	await expect(line).toContainText(`${USER} watched With Film with you`);
+	await line.getByRole('button', { name: 'Add to my diary' }).click();
+	await theirs.getByRole('menuitem', { name: 'Completed', exact: true }).click();
+	await expect(theirs.getByText('Added to your diary')).toBeVisible();
+	await expect.poll(() => watchesOf(project, name, 9701)).toBe(1);
+
+	await context.close();
+	await page.request.put('/api/settings', { data: saved });
+	await them.put('/api/account/profile', { data: { public: false } });
+	await them.dispose();
+	seedTitles(project, films);
 });
 
 async function signIn(page: import('@playwright/test').Page) {

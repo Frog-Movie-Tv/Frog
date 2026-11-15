@@ -4,17 +4,41 @@ What is still to build, and what is known to be broken. Nothing else lives
 here: how things work is in [CLAUDE.md](CLAUDE.md), and what shipped is in
 [RELEASE-NOTES.md](RELEASE-NOTES.md). Take an item off when it ships.
 
-**Release:** 1.6.0 Tomato Frog. **Next codename:** not chosen yet. **Live at** a DuckDNS hostname on Oracle Cloud Always
+**Release:** 1.6.1 Tomato Frog. **Next codename:** Chorus Frog, for 1.7.0. **Live at** a DuckDNS hostname on Oracle Cloud Always
 Free, updating itself from each release (`docs/DEPLOY-ORACLE.md`).
 
 ## To build
 
-Nothing at the moment.
+Left over from 1.7.0 Chorus Frog, each kept small on purpose so Frog did not
+get busier:
+
+- **Read "watched with" back from a Frog backup.** The JSON export writes
+  `watched_with` (username per watch); an import ignores it. Bring it back
+  only for usernames that exist on this Frog.
+- **"With Sam" on Activity cards**, for viewers who may see both profiles
+  (`store::shown_to`). The owner sees it on the title page and in the diary.
+- **"Watching with…" from a title's own page.** Today it is in a card's
+  right-click or long-press menu, in the "when did you watch it" dialog, and,
+  once set, the title page's quiet "With Sam" line. A title page has no menu
+  of its own to put it in without adding a button.
+- **Select on a person's page**, as a studio has it (`PickBar.svelte`,
+  `addMany`). Not wired in 1.7: the credits grid needs its own selection code.
+- **A "watched most with" figure in Stats**, from `watch_with`.
+- **Measure Rate your library on a large library.** It reads the whole
+  library to deal (`api.library()`); not timed on a 600-title library for
+  1.7 (no TMDB key on the machine it was built on).
 
 ## To check by hand
 
 Nothing automated can stand in for these. An owner tries each and takes it
 off, or turns it into a fix above.
+
+- **1.7 on a real phone:** the + status sheet, the people picker as a sheet
+  (Recommend and Watched with), the bell and its count in the top bar, a long
+  press on a studio's poster while not selecting, and the rating card's "…"
+  sheet.
+- **A recommendation and a "watched with you" reaching a phone** as push
+  notifications, and tapping one opening Notifications.
 
 - **A notification at air time on the Android phone:** the picture, Frog's
   icon and badge, and tapping it opening the title.

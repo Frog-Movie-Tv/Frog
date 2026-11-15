@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { chooseStatus, statusEntries } from '#lib/add';
 	import { api, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
@@ -10,54 +11,99 @@
 	import Stars from '#lib/components/Stars.svelte';
 	import { failure, type Failure } from '#lib/failure';
 	import { formatScore, fromDisplay, toDisplay } from '#lib/format';
-	import { choiceForKey, choices, deckOf, type DeckScope } from '#lib/rate';
+	import { InOrder } from '#lib/in-order';
+	import { showFrom } from '#lib/menu.svelte';
+	import {
+		choiceForKey,
+		choices,
+		deckOf,
+		ratedIn,
+		takeBack,
+		type DeckScope,
+		type Step
+	} from '#lib/rate';
 	import { sliding } from '#lib/score-entry';
 	import { settings } from '#lib/settings.svelte';
 	import { titleHref } from '#lib/titles';
 	import { toasts } from '#lib/toast.svelte';
-	import { KIND_LABEL, statusLabel, type LibraryItem, type TitleScore } from '#lib/types';
+	import {
+		KIND_LABEL,
+		statusLabel,
+		type EntryRecord,
+		type LibraryItem,
+		type Status,
+		type TitleScore
+	} from '#lib/types';
+	import { whenWatched } from '#lib/when.svelte';
 
 	/*
 	 * A library rated one card at a time: the title, what it was about and what
 	 * other sites made of it, then a score and on to the next. Which titles are
 	 * dealt, and what the buttons offer, live in `lib/rate.ts`.
+	 *
+	 * The cards still to rate are a queue, and every key and tap acts on its
+	 * first card the moment it is pressed. A card on its way out is drawn
+	 * apart from the queue (`flying`), so the next one is already in hand
+	 * while the last one's stamp lands and it flies: nothing pressed during
+	 * an animation is lost, and nothing is given to the wrong card. Saves go
+	 * out one after another (`InOrder`), so an Undo never races the score it
+	 * takes back. A save the server refuses brings its card back on top.
 	 */
 
 	let items = $state<LibraryItem[] | null>(null);
 	let failed = $state<Failure | null>(null);
 	let scope = $state<DeckScope>('finished');
-	let deck = $state<LibraryItem[]>([]);
-	let at = $state(0);
-	let rated = $state(0);
-	/** What each step did, so Undo can take it back. */
-	let steps = $state<{ index: number; id: number; before: number | null; skipped: boolean }[]>([]);
-	/**
-	 * The card on its way out: which way, the score stamped on it, and how far
-	 * along. A rated card holds for a beat while the stamp lands, then flies;
-	 * a skipped one flies at once. The card under it rises as it flies, so it
-	 * is already in front when the first is gone.
-	 */
-	let leaving = $state<{
-		dir: -1 | 1;
-		stamp: string | null;
-		stars: number | null;
-		flying: boolean;
-	} | null>(null);
+	/** The cards still to go, the one in hand first. */
+	let queue = $state<LibraryItem[]>([]);
+	/** How many were dealt, for the bar along the top. */
+	let dealt = $state(0);
+	/** What each step did, newest last, so Undo can take it back. */
+	let steps = $state<(Step<LibraryItem> & Undo)[]>([]);
+	/** Cards on their way out: the stamp landing, then the flight. */
+	let flying = $state<Flyer[]>([]);
 	/** A card brought back by Undo comes in from the side it left by. */
 	let returning = $state<-1 | 1 | null>(null);
 	/** How far the card has been dragged sideways, in pixels. */
 	let drag = $state(0);
 	let dragging = $state(false);
 	let scores = $state<Record<number, TitleScore[] | 'loading'>>({});
+	let fixButton: HTMLButtonElement | undefined = $state();
+
+	/** What it takes to take a step back on the server. */
+	interface Undo {
+		/** The rating before a score. */
+		before?: number | null;
+		/** The entry before a move or a removal, and how to put it back. */
+		entries?: EntryRecord[];
+		via?: 'restore' | 'unmark';
+		/** The status the card showed before a move, for the card itself. */
+		was?: Status;
+	}
+
+	interface Flyer {
+		key: number;
+		item: LibraryItem;
+		/** Sideways, or up and away for a title taken out of the library. */
+		dir: -1 | 1 | 0;
+		stamp: string | null;
+		stars: number | null;
+		/** Where it was let go, for a card thrown by hand. */
+		from?: string;
+		flying: boolean;
+	}
+
+	const saves = new InOrder();
+	let nextKey = 0;
 
 	const format = $derived(settings.current.scoreFormat);
 	const options = $derived(choices(format, settings.current.halfStars));
 	/** A hundred points, or ten with a decimal: slid to, not picked. */
 	const slide = $derived(sliding(format));
-	const card = $derived<LibraryItem | undefined>(deck[at]);
+	const card = $derived<LibraryItem | undefined>(queue[0]);
 	/** The card in hand and the two under it, top first. */
-	const pile = $derived(deck.slice(at, at + 3));
-	const left = $derived(Math.max(0, deck.length - at));
+	const pile = $derived(queue.slice(0, 3));
+	const left = $derived(queue.length);
+	const rated = $derived(ratedIn(steps));
 
 	function load() {
 		failed = null;
@@ -80,11 +126,14 @@
 		load();
 	});
 
+	/** A fresh deck: its own count and its own history. */
 	function deal(next: DeckScope) {
 		scope = next;
-		deck = deckOf(items ?? [], next);
-		at = 0;
+		queue = deckOf(items ?? [], next);
+		dealt = queue.length;
 		steps = [];
+		flying = [];
+		returning = null;
 	}
 
 	// The card in hand and the next two have their scores waiting.
@@ -111,86 +160,215 @@
 
 	const moving = () => !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-	let busy = false;
-
 	/** How long a stamp holds, and how long a card takes to fly, in ms. */
 	const HOLD = 260;
 	const FLY = 320;
 
-	/** The card leaves that way, and the next one comes up. */
-	function onward(dir: -1 | 1, stamp: string | null, stars: number | null = null) {
+	/**
+	 * The card in hand leaves the queue, and is drawn on its way out. A skip
+	 * flies from where the hand left it (`from`), so a swiped card carries on
+	 * instead of vanishing where it was let go.
+	 */
+	function send(
+		it: LibraryItem,
+		dir: -1 | 1 | 0,
+		stamp: string | null,
+		stars: number | null,
+		from?: string
+	) {
 		returning = null;
-		const motion = moving();
-		leaving = { dir, stamp, stars, flying: !stamp || !motion };
+		queue = queue.filter((i) => i.id !== it.id);
+		drag = 0;
+		// Back to the middle as the next card takes the top, or it would be
+		// drawn where the last one was swiped to.
+		if (swiper) centre(swiper);
+		const key = ++nextKey;
+		if (!moving()) return;
+		flying = [...flying, { key, item: it, dir, stamp, stars, from, flying: false }];
 		const fly = () => {
-			if (leaving) leaving = { ...leaving, flying: true };
-			setTimeout(
-				() => {
-					leaving = null;
-					drag = 0;
-					// Back to the middle before the next card takes the top, or it
-					// would be drawn where the last one was swiped to.
-					if (swiper) centre(swiper);
-					at += 1;
-					busy = false;
-				},
-				motion ? FLY : 0
-			);
+			flying = flying.map((f) => (f.key === key ? { ...f, flying: true } : f));
+			setTimeout(() => (flying = flying.filter((f) => f.key !== key)), FLY);
 		};
-		if (stamp && motion) setTimeout(fly, HOLD);
-		else fly();
+		if (stamp) setTimeout(fly, HOLD);
+		// Drawn where it was first, then sent: a card that starts out gone
+		// never moves.
+		else requestAnimationFrame(() => requestAnimationFrame(fly));
+	}
+
+	function record(kind: Step<LibraryItem>['kind'], it: LibraryItem, left: boolean, undo: Undo) {
+		const step = { key: ++nextKey, kind, item: it, left, ...undo };
+		steps = [...steps, step];
+		return step.key;
 	}
 
 	/** Give the card in hand a score, 0..100. */
-	async function rate(value: number) {
+	function rate(value: number) {
 		const it = card;
-		if (!it || busy) return;
-		busy = true;
-		steps = [...steps, { index: at, id: it.id, before: it.entry?.rating ?? null, skipped: false }];
-		rated += 1;
-		onward(1, formatScore(value, format), format === 'star5' ? toDisplay(value, format) : null);
-		try {
-			await api.track(it.id, { rating: value });
-			if (it.entry) it.entry.rating = value;
-		} catch (e) {
-			toasts.error(e);
+		if (!it) return;
+		const key = record('rate', it, true, { before: it.entry?.rating ?? null });
+		send(it, 1, formatScore(value, format), format === 'star5' ? toDisplay(value, format) : null);
+		const { done } = saves.run(() => api.track(it.id, { rating: value }));
+		done
+			.then(() => {
+				if (it.entry) it.entry.rating = value;
+			})
+			.catch((e) => {
+				// Refused: the card comes back to be rated again, and the count with it.
+				if (!steps.some((s) => s.key === key)) return;
+				giveBack(key, 1);
+				toasts.error(e);
+			});
+	}
+
+	function skip(dir: -1 | 1 = -1, from?: string) {
+		const it = card;
+		if (!it) return;
+		record('skip', it, true, {});
+		send(it, dir, null, null, from);
+	}
+
+	/** One step back, in the queue and on the screen; not on the server. */
+	function giveBack(key: number, from: -1 | 1) {
+		const back = takeBack(queue, steps, key);
+		if (!back.step) return null;
+		flying = flying.filter((f) => f.item.id !== back.step!.item.id);
+		queue = back.queue;
+		steps = back.steps;
+		if (back.step.left) {
+			returning = from;
+			setTimeout(() => (returning = null), 400);
 		}
-	}
-
-	function skip(dir: -1 | 1 = -1) {
-		const it = card;
-		if (!it || busy) return;
-		busy = true;
-		steps = [...steps, { index: at, id: it.id, before: it.entry?.rating ?? null, skipped: true }];
-		onward(dir, null);
-	}
-
-	async function undo() {
-		const last = steps.at(-1);
-		if (!last || busy) return;
-		steps = steps.slice(0, -1);
-		returning = last.skipped ? -1 : 1;
-		at = last.index;
 		drag = 0;
-		if (last.skipped) return;
-		rated -= 1;
+		return back.step;
+	}
+
+	/** Take a step back, the newest one unless named: the page's Undo, or a toast's. */
+	function undo(key = steps.at(-1)?.key) {
+		if (key === undefined) return;
+		const step = giveBack(key, steps.find((s) => s.key === key)?.kind === 'skip' ? -1 : 1);
+		if (!step || step.kind === 'skip') return;
+		const it = step.item;
+		const { done } = saves.run(async () => {
+			if (step.kind === 'rate') {
+				await api.track(it.id, { rating: step.before ?? null });
+				if (it.entry) it.entry.rating = step.before ?? null;
+			} else if (step.entries) {
+				await api.bulk({ action: step.via ?? 'restore', entries: step.entries });
+				if (it.entry && step.was) it.entry.status = step.was;
+			}
+		});
+		done.catch((e) => toasts.error(e));
+	}
+
+	/** Move the card in hand to another status. It stays in hand: it may still want a score. */
+	async function move(status: Status, leaves = false) {
+		const it = card;
+		if (!it || !it.entry || status === it.entry.status) return;
+		let answer = null;
+		if (status === 'completed') {
+			answer = await whenWatched.ask(
+				it.name,
+				it.kind === 'tv' ? 'Every aired episode' : 'Marked as watched',
+				{ film: it.kind === 'movie', reading: it.kind === 'manga' }
+			);
+			if (!answer) return;
+		}
+		const was = it.entry.status;
 		try {
-			await api.track(last.id, { rating: last.before });
-			const it = deck.find((d) => d.id === last.id);
-			if (it?.entry) it.entry.rating = last.before;
+			const { done } = saves.run(() =>
+				status === 'completed' && answer
+					? api.bulk({ action: 'status', status: 'completed', title_ids: [it.id], ...answer })
+					: api.bulk({
+							action: 'status',
+							status: status as Exclude<Status, 'completed'>,
+							title_ids: [it.id]
+						})
+			);
+			const { before } = await done;
+			const key = record('move', it, leaves, {
+				entries: before,
+				via: status === 'completed' ? 'unmark' : 'restore',
+				was
+			});
+			it.entry.status = status;
+			if (leaves) send(it, 0, null, null);
+			toasts.undoable(`Moved ${it.name} to ${statusLabel(status, it.kind)}`, () => undo(key));
 		} catch (e) {
 			toasts.error(e);
 		}
+	}
+
+	/** Out of the library altogether: an import that brought in the wrong title. */
+	async function remove() {
+		const it = card;
+		if (!it) return;
+		try {
+			const { done } = saves.run(() => api.bulk({ action: 'remove', title_ids: [it.id] }));
+			const { before } = await done;
+			const key = record('remove', it, true, { entries: before, via: 'restore' });
+			send(it, 0, null, null);
+			toasts.undoable(`Removed ${it.name}`, () => undo(key));
+		} catch (e) {
+			toasts.error(e);
+		}
+	}
+
+	/** The status picker for the card in hand, from the "…" button or the S key. */
+	async function pickStatus(e?: MouseEvent) {
+		const it = card;
+		if (!it?.entry || !fixButton) return;
+		const status = await chooseStatus(it, fixButton, {
+			event: e,
+			current: it.entry.status,
+			title: it.name
+		});
+		if (status) void move(status);
+	}
+
+	/** Everything a card can be fixed with, behind one button. */
+	function fixes(e: MouseEvent) {
+		const it = card;
+		if (!it?.entry || !fixButton) return;
+		showFrom(
+			fixButton,
+			{
+				title: it.name,
+				items: () => [
+					{
+						label: it.kind === 'manga' ? 'Not read yet' : 'Not watched yet',
+						icon: 'eye-off',
+						run: () => void move('planned', true)
+					},
+					{
+						label: 'Change status',
+						icon: 'filter',
+						key: 'S',
+						children: () =>
+							statusEntries(it.kind, (s) => void move(s), { current: it.entry?.status })
+					},
+					'rule',
+					{
+						label: 'Remove from library',
+						icon: 'trash',
+						danger: true,
+						key: 'Del',
+						run: () => void remove()
+					}
+				]
+			},
+			e
+		);
 	}
 
 	function onKey(e: KeyboardEvent) {
 		if (e.ctrlKey || e.metaKey || e.altKey) return;
 		const target = e.target as HTMLElement | null;
-		if (target?.closest('input, textarea, select, [role="dialog"], [role="slider"]')) return;
+		if (target?.closest('input, textarea, select, [role="dialog"], [role="slider"], [role="menu"]'))
+			return;
 		const pick = slide ? null : choiceForKey(e.key, options.length);
 		if (pick !== null) {
 			e.preventDefault();
-			void rate(fromDisplay(options[pick], format) ?? 0);
+			rate(fromDisplay(options[pick], format) ?? 0);
 		} else if (e.key === 'ArrowLeft') {
 			e.preventDefault();
 			skip(-1);
@@ -199,7 +377,13 @@
 			skip(1);
 		} else if (e.key === 'Backspace' || e.key === 'z') {
 			e.preventDefault();
-			void undo();
+			undo();
+		} else if (e.key === 's' || e.key === 'S') {
+			e.preventDefault();
+			void pickStatus();
+		} else if (e.key === 'Delete') {
+			e.preventDefault();
+			void remove();
 		}
 	}
 
@@ -221,7 +405,7 @@
 	let skipMark: HTMLElement | null = null;
 
 	function down(e: PointerEvent) {
-		if (busy || e.button !== 0 || (e.target as HTMLElement).closest('a, button')) return;
+		if (e.button !== 0 || (e.target as HTMLElement).closest('a, button')) return;
 		held = e.currentTarget as HTMLElement;
 		skipMark = held.querySelector('.stamp.skip');
 		dragging = true;
@@ -229,7 +413,7 @@
 		held.setPointerCapture(e.pointerId);
 	}
 
-	function move(e: PointerEvent) {
+	function move_(e: PointerEvent) {
 		if (!dragging) return;
 		lastX = e.clientX;
 		frame ||= requestAnimationFrame(() => {
@@ -255,8 +439,7 @@
 		skipMark?.style.removeProperty('opacity');
 		skipMark = null;
 		if (Math.abs(moved) > THROW) {
-			drag = moved;
-			skip(moved < 0 ? -1 : 1);
+			skip(moved < 0 ? -1 : 1, `translateX(${moved}px) rotate(${moved / 22}deg)`);
 		} else {
 			drag = 0;
 			// Back to where the page has it: the transform it drew is the same
@@ -292,15 +475,15 @@
 		const settled = () => {
 			const end = el.scrollWidth - el.clientWidth;
 			const side = el.scrollLeft <= 2 ? 1 : el.scrollLeft >= end - 2 ? -1 : 0;
-			// While a card is on its way out, `onward` brings the scroller back
-			// to the middle as the next one comes up.
-			if (!side || busy) return;
-			if (card) skip(side);
+			if (!side) return;
+			// Where `@keyframes swipe` left it, so its flight carries on from there.
+			if (card) skip(side, `translateX(${side * 60}%) rotate(${side * 10}deg)`);
 			else centre(el);
 		};
 		// `scrollend` is not sent every time (not for a card partly above the
 		// screen, for one), so a pause in the scrolling with no finger down
-		// settles it too. Settling twice does nothing: the first skip is busy.
+		// settles it too. Settling twice does nothing: the first skip brings the
+		// scroller back to the middle (`send`).
 		let touching = false;
 		let pause = 0;
 		const later = () => {
@@ -312,9 +495,7 @@
 			touching = false;
 			later();
 		};
-		const resized = new ResizeObserver(() => {
-			if (!busy) centre(el);
-		});
+		const resized = new ResizeObserver(() => centre(el));
 		resized.observe(el);
 		el.addEventListener('scrollend', settled);
 		el.addEventListener('scroll', later, { passive: true });
@@ -346,16 +527,15 @@
 
 	/** Where a card in the pile sits: the top one follows the hand. */
 	function placed(depth: number) {
-		// While the top card flies, everything under it moves up a place.
-		const rise = leaving?.flying && depth > 0 ? 1 : 0;
-		const place = depth - rise;
-		if (place > 0) return `translateY(${place * 14}px) scale(${1 - place * 0.05})`;
-		if (depth > 0) return 'none';
-		if (leaving?.flying) {
-			return `translateX(${leaving.dir * 125}%) translateY(-4%) rotate(${leaving.dir * 12}deg)`;
-		}
-		if (leaving) return 'scale(1.02)';
+		if (depth > 0) return `translateY(${depth * 14}px) scale(${1 - depth * 0.05})`;
 		return `translateX(${drag}px) rotate(${drag / 22}deg)`;
+	}
+
+	/** Where a card on its way out is: holding for its stamp, then gone. */
+	function away(f: Flyer) {
+		if (!f.flying) return f.from ?? (f.stamp ? 'scale(1.02)' : 'none');
+		if (f.dir === 0) return 'translateY(-115%) scale(0.92)';
+		return `translateX(${f.dir * 125}%) translateY(-4%) rotate(${f.dir * 12}deg)`;
 	}
 
 	const year = (d: string | null) => (d ? d.slice(0, 4) : null);
@@ -374,6 +554,53 @@
 </svelte:head>
 
 <svelte:window onkeydown={onKey} />
+
+{#snippet face(it: LibraryItem, top: boolean)}
+	{#if it.backdrop_path}
+		<img class="backdrop" src={img(it.backdrop_path, 'w780')} alt="" draggable="false" />
+	{/if}
+	<div class="veil"></div>
+
+	<div class="body">
+		<div class="top-row">
+			{#if it.poster_path}
+				<img class="poster" src={img(it.poster_path, 'w342')} alt="" draggable="false" />
+			{/if}
+			<div class="title">
+				<span class="facts">{facts(it)}</span>
+				<h2>{it.name}</h2>
+				{#if it.genres.length}
+					<span class="genres">{it.genres.slice(0, 3).join(', ')}</span>
+				{/if}
+				{#if it.kind === 'tv' && it.total_episodes}
+					<span class="watched">
+						Watched {it.watched_episodes} of {it.total_episodes} episodes
+					</span>
+				{:else if it.kind === 'manga' && it.watched_episodes}
+					<span class="watched">
+						Read {it.watched_episodes}{it.total_episodes ? ` of ${it.total_episodes}` : ''} chapters
+					</span>
+				{/if}
+			</div>
+		</div>
+
+		{#if it.overview}<p class="overview">{it.overview}</p>{/if}
+
+		<div class="scores">
+			{#if scores[it.id] === 'loading' && !shown(it).length}
+				<span class="faint">Finding scores…</span>
+			{:else if shown(it).length}
+				<Scores scores={shown(it)} />
+			{:else}
+				<span class="faint">No scores yet</span>
+			{/if}
+		</div>
+
+		<a class="open hit" href={titleHref(it)} tabindex={top ? 0 : -1}>
+			Open the title <Icon name="chevron-right" size={14} />
+		</a>
+	</div>
+{/snippet}
 
 <div class="page">
 	<div class="page-head">
@@ -396,7 +623,7 @@
 		<LoadFailed {failed} onretry={load} />
 	{:else if !items}
 		<Spinner label="Dealing your library" />
-	{:else if !card}
+	{:else if !card && !flying.length}
 		<Empty
 			art="done"
 			title={rated ? 'All rated' : 'Nothing to rate'}
@@ -405,13 +632,13 @@
 				: 'Every title in your library has a rating.'}
 		>
 			{#if steps.length}
-				<button class="btn" onclick={undo}><Icon name="undo" size={15} /> Undo</button>
+				<button class="btn" onclick={() => undo()}><Icon name="undo" size={15} /> Undo</button>
 			{/if}
 			<a class="btn primary" href="/library">Back to Library</a>
 		</Empty>
 	{:else}
 		<div class="progress" aria-hidden="true">
-			<i style:width="{deck.length ? (at / deck.length) * 100 : 0}%"></i>
+			<i style:width="{dealt ? ((dealt - left) / dealt) * 100 : 0}%"></i>
 		</div>
 
 		<div class="table" class:swiping={swipeable}>
@@ -421,7 +648,6 @@
 					class="card"
 					class:top={depth === 0}
 					class:dragging={depth === 0 && dragging}
-					class:gone={depth === 0 && leaving?.flying}
 					class:back={depth === 0 && returning !== null}
 					style:--from={returning ?? 1}
 					style:transform={placed(depth)}
@@ -429,64 +655,39 @@
 					style:--tint={it.accent.shade}
 					aria-hidden={depth > 0}
 					onpointerdown={depth === 0 ? down : undefined}
-					onpointermove={depth === 0 ? move : undefined}
+					onpointermove={depth === 0 ? move_ : undefined}
 					onpointerup={depth === 0 ? up : undefined}
 					onpointercancel={depth === 0 ? up : undefined}
 				>
-					{#if it.backdrop_path}
-						<img class="backdrop" src={img(it.backdrop_path, 'w780')} alt="" draggable="false" />
-					{/if}
-					<div class="veil"></div>
-
-					<div class="body">
-						<div class="top-row">
-							{#if it.poster_path}
-								<img class="poster" src={img(it.poster_path, 'w342')} alt="" draggable="false" />
-							{/if}
-							<div class="title">
-								<span class="facts">{facts(it)}</span>
-								<h2>{it.name}</h2>
-								{#if it.genres.length}
-									<span class="genres">{it.genres.slice(0, 3).join(', ')}</span>
-								{/if}
-								{#if it.kind === 'tv' && it.total_episodes}
-									<span class="watched">
-										Watched {it.watched_episodes} of {it.total_episodes} episodes
-									</span>
-								{:else if it.kind === 'manga' && it.watched_episodes}
-									<span class="watched">
-										Read {it.watched_episodes}{it.total_episodes ? ` of ${it.total_episodes}` : ''} chapters
-									</span>
-								{/if}
-							</div>
-						</div>
-
-						{#if it.overview}<p class="overview">{it.overview}</p>{/if}
-
-						<div class="scores">
-							{#if scores[it.id] === 'loading' && !shown(it).length}
-								<span class="faint">Finding scores…</span>
-							{:else if shown(it).length}
-								<Scores scores={shown(it)} />
-							{:else}
-								<span class="faint">No scores yet</span>
-							{/if}
-						</div>
-
-						<a class="open hit" href={titleHref(it)} tabindex={depth === 0 ? 0 : -1}>
-							Open the title <Icon name="chevron-right" size={14} />
-						</a>
-					</div>
-
-					{#if depth === 0 && leaving?.stamp}
-						<span class="stamp" aria-hidden="true">
-							{#if leaving.stars !== null}<Stars
-									value={leaving.stars}
-									size={34}
-								/>{:else}{leaving.stamp}{/if}
-						</span>
-					{:else if depth === 0 && !leaving}
+					{@render face(it, depth === 0)}
+					{#if depth === 0}
 						<span class="stamp skip" aria-hidden="true">Skip</span>
+						<button
+							class="fix hit"
+							bind:this={fixButton}
+							aria-label="Fix this title"
+							title="Fix this title"
+							aria-haspopup="menu"
+							onclick={fixes}
+						>
+							<Icon name="more" size={18} />
+						</button>
+					{/if}
+				</article>
+			{/each}
+			{#each flying as f (f.key)}
+				<article
+					class="card flyer"
+					class:gone={f.flying}
+					style:transform={away(f)}
+					style:--tint={f.item.accent.shade}
+					aria-hidden="true"
+				>
+					{@render face(f.item, false)}
+					{#if f.stamp}
+						<span class="stamp">
+							{#if f.stars !== null}<Stars value={f.stars} size={34} />{:else}{f.stamp}{/if}
+						</span>
 					{/if}
 				</article>
 			{/each}
@@ -499,35 +700,37 @@
 			{/if}
 		</div>
 
-		{#if slide}
-			<div class="typed">
-				<ScoreSlider {format} autofocus reset={card.id} onsubmit={(v) => rate(v)} />
-			</div>
-		{:else if format === 'star5'}
-			<div class="filled">
-				<StarPicker
-					halves={settings.current.halfStars}
-					size={44}
-					reset={card.id}
-					onpick={(stars) => rate(fromDisplay(stars, format) ?? 0)}
-				/>
-			</div>
-		{:else}
-			<div class="choices" role="group" aria-label="Your rating">
-				{#each options as option, i (option)}
-					<button class="choice" onclick={() => rate(fromDisplay(option, format) ?? 0)}>
-						<span>{formatScore(fromDisplay(option, format), format)}</span>
-						{#if i < 10}<kbd>{i === 9 ? 0 : i + 1}</kbd>{/if}
-					</button>
-				{/each}
-			</div>
+		{#if card}
+			{#if slide}
+				<div class="typed">
+					<ScoreSlider {format} autofocus reset={card.id} onsubmit={(v) => rate(v)} />
+				</div>
+			{:else if format === 'star5'}
+				<div class="filled">
+					<StarPicker
+						halves={settings.current.halfStars}
+						size={44}
+						reset={card.id}
+						onpick={(stars) => rate(fromDisplay(stars, format) ?? 0)}
+					/>
+				</div>
+			{:else}
+				<div class="choices" role="group" aria-label="Your rating">
+					{#each options as option, i (option)}
+						<button class="choice" onclick={() => rate(fromDisplay(option, format) ?? 0)}>
+							<span>{formatScore(fromDisplay(option, format), format)}</span>
+							{#if i < 10}<kbd>{i === 9 ? 0 : i + 1}</kbd>{/if}
+						</button>
+					{/each}
+				</div>
+			{/if}
 		{/if}
 
 		<div class="moves">
-			<button class="btn ghost" onclick={undo} disabled={!steps.length}>
+			<button class="btn ghost" onclick={() => undo()} disabled={!steps.length}>
 				<Icon name="undo" size={15} /> Undo
 			</button>
-			<button class="btn ghost" onclick={() => skip(-1)}>
+			<button class="btn ghost" disabled={!card} onclick={() => skip(-1)}>
 				Skip <Icon name="chevron-right" size={15} />
 			</button>
 		</div>
@@ -624,6 +827,36 @@
 
 	.card.gone {
 		opacity: 0;
+	}
+
+	/* A card on its way out sits over the pile and goes where it was sent;
+	   it was already drawn, so it does not fade in. */
+	.card.flyer {
+		z-index: 20;
+		pointer-events: none;
+		animation: none;
+	}
+
+	/* The card's fixes: one quiet button in its corner. */
+	.fix {
+		position: absolute;
+		z-index: 21;
+		top: 12px;
+		right: 12px;
+		display: grid;
+		place-items: center;
+		width: 36px;
+		height: 36px;
+		border: 1px solid var(--line);
+		border-radius: 50%;
+		background: color-mix(in srgb, var(--bg-float) 80%, transparent);
+		color: var(--text-dim);
+		cursor: pointer;
+	}
+
+	.fix:hover {
+		color: var(--text);
+		background: var(--bg-hover);
 	}
 
 	/* A card new to the pile fades in where it lies: only opacity, so it never
@@ -798,6 +1031,16 @@
 		scroll-timeline: --swipe x;
 		overscroll-behavior-x: contain;
 		scrollbar-width: none;
+		/* The card's "…" corner is left out, and a clipped part takes no
+		   touches, so the button under it is pressed as it is, with its sheet. */
+		clip-path: polygon(
+			0 0,
+			calc(100% - 60px) 0,
+			calc(100% - 60px) 60px,
+			100% 60px,
+			100% 100%,
+			0 100%
+		);
 	}
 
 	.swipe::-webkit-scrollbar {

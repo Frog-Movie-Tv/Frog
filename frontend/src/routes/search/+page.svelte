@@ -5,9 +5,9 @@
 	import { page } from '$app/state';
 	import { address } from '#lib/address';
 	import Icon from '#lib/components/Icon.svelte';
-	import { api, frogId, img, SEARCH_PAUSE, MORE_PAUSE, isAbort } from '#lib/api';
+	import { api, img, SEARCH_PAUSE, MORE_PAUSE, isAbort } from '#lib/api';
 	import { titleMenu } from '#lib/menus';
-	import { completeShow } from '#lib/complete';
+	import { addAs, addFrom } from '#lib/add';
 	import Empty from '#lib/components/Empty.svelte';
 	import FilterMenu from '#lib/components/FilterMenu.svelte';
 	import Grid from '#lib/components/Grid.svelte';
@@ -17,7 +17,6 @@
 	import RailSkeleton from '#lib/components/RailSkeleton.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { session } from '#lib/session.svelte';
-	import { settings } from '#lib/settings.svelte';
 	import { toasts } from '#lib/toast.svelte';
 	import { uniqueBy } from '#lib/unique';
 	import type {
@@ -323,24 +322,23 @@
 		}
 	}
 
-	async function add(item: SearchItem, status: Status = settings.current.defaultStatus) {
+	/**
+	 * The + asks for a status (or uses the one Settings names), the play
+	 * button means Watching. Either way the result shows where it went.
+	 */
+	async function add(item: SearchItem, from: HTMLElement, e: MouseEvent, status?: Status) {
 		const key = titleKey(item);
 		adding = key;
 		try {
-			const id = await frogId(item);
-			const { item: added } = await api.track(id, { status });
+			const done = status
+				? await addAs(item, status, () => refresh(item))
+				: await addFrom(item, from, e, () => refresh(item));
+			if (!done) return;
 			const mark = (list: SearchItem[]) =>
-				list.map((r) => (sameTitle(r, item) ? { ...r, id, in_library: status } : r));
+				list.map((r) => (sameTitle(r, item) ? { ...r, id: done.id, in_library: done.status } : r));
 			results = mark(results);
 			trending = mark(trending);
 			more = { ...more, manga: mark(more.manga) };
-			toasts.push(`Added ${item.name} to ${statusLabel(status, item.kind)}`);
-			// Completed is watched: every aired episode, as on the show's page.
-			if (status === 'completed' && added.kind === 'tv' && added.total_episodes > 0) {
-				await completeShow(id, added.name);
-			}
-		} catch (e) {
-			toasts.error(e);
 		} finally {
 			adding = null;
 		}
@@ -482,7 +480,7 @@
 					disabled={adding === key}
 					title="Add to your library"
 					aria-label="Add {item.name} to your library"
-					onclick={() => add(item)}
+					onclick={(e) => add(item, e.currentTarget, e)}
 				>
 					<Icon name="plus" size={15} />
 				</button>
@@ -491,7 +489,7 @@
 					disabled={adding === key}
 					title={item.kind === 'manga' ? 'Mark as reading' : 'Mark as watching'}
 					aria-label="Mark {item.name} as {item.kind === 'manga' ? 'reading' : 'watching'}"
-					onclick={() => add(item, 'watching')}
+					onclick={(e) => add(item, e.currentTarget, e, 'watching')}
 				>
 					<Icon name="play" size={13} filled />
 				</button>

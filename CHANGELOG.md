@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.6.1...v1.7.0) (2026-11-15)
+
+
+### Features
+
+* 1.7.0 Chorus Frog ([3090d65](https://github.com/Frog-Movie-Tv/Frog/commit/3090d6503ab44b0259dce880d259ed80c6067437))
+* 1.7.0 Chorus Frog: status picker, recommendations, notifications, studio select, rating fixes, watched with ([e180a67](https://github.com/Frog-Movie-Tv/Frog/commit/e180a67e20a68dea46d14b9848418654b33062b4))
+
 ## [1.6.1](https://github.com/Frog-Movie-Tv/Frog/compare/v1.6.0...v1.6.1) (2026-11-14)
 
 

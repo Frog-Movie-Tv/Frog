@@ -309,8 +309,15 @@ pub async fn diary(
             .await?
         };
 
+        let with = if manga {
+            Vec::new()
+        } else {
+            let ids = crate::together::on_day(pool, user_id, title_id, &day, film == 1).await?;
+            crate::together::names(pool, &ids).await?
+        };
         entries.push(json!({
             "day": day,
+            "with": with,
             "watched_at": latest,
             "id": title_id,
             "kind": kind,

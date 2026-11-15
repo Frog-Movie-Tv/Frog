@@ -235,12 +235,19 @@ pub async fn award(
             "url": format!("/people/{}", urlencoding::encode(&username)),
             "tag": format!("frog-badge-{id}"),
         });
-        let state = state.clone();
-        tokio::spawn(async move {
-            if let Err(e) = crate::push::broadcast(&state, user_id, &payload).await {
-                tracing::warn!(error = %e, "a badge's notification failed");
-            }
-        });
+        crate::inbox::tell(
+            &state,
+            user_id,
+            &crate::inbox::Event {
+                kind: crate::inbox::BADGE,
+                actor_id: None,
+                payload: json!({ "badge_id": id, "name": badge.name, "username": username }),
+                ref_key: Some(format!("badge:{id}:{}", chrono::Utc::now().timestamp())),
+                ..Default::default()
+            },
+            Some(payload),
+        )
+        .await?;
     }
     Ok(Json(json!({ "ok": true })))
 }

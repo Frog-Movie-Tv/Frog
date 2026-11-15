@@ -320,6 +320,34 @@ part you are about to touch; change it when the code changes.
   `verify-push` points `TVMAZE_API_URL` nowhere, so its hand-set times stay.
   `cargo run --example airtime_check -- <tmdb id> <season> <episode>` shows
   what one episode resolves to.
+- **Notifications live in two places from one decision** (`inbox.rs`,
+  `recommend.rs`, `routes/notifications.rs`). Whatever decides to tell an
+  account (`announce::run`, a badge given, a server failure, a
+  recommendation) writes a `notification` row with a `ref_key` and pushes in
+  the same step (`inbox::tell`), so the page works without push and a push
+  retried after a network failure never adds a second row. `announce::run`
+  now goes through every enabled account, not only those with a browser
+  subscribed, and `push_sent` means announced. Each kind can be switched off
+  in Settings → Account → Notifications (`inbox::Wants`, `app_setting`
+  `notify_kinds`); off covers push and the page, and Recommendations off
+  also takes the account out of everyone's Recommend list. The bell's
+  number (`lib/inbox.svelte.ts`) is read on load, on focus and every three
+  minutes. A version change is noted once per account at startup
+  (`inbox::note_update`).
+- **Who a watch was with is told, never written for** (`together.rs`). It
+  names other accounts only, on the owner's own watches (`watch_with`). A
+  request that makes watches says who was there in its marking (`with`),
+  checked before anything is written; the watches it made are those after
+  `together::newest_watch` from before it. A show's "watching with"
+  (`watching_with`) names them on every episode ticked after, the browser
+  extension's included. The people named get one line per show per day
+  (ref_key `together:{owner}:{title}:{day}`, grown as more episodes come),
+  and only their own Add to my diary writes into their account: copies of
+  the watches on the same days, once each, naming the owner back. A line's
+  watches are found by owner, title and day rather than by row id, because
+  an undo puts a watch back as a new row; `WatchRecord.with` carries the
+  names through undo. Off in Settings (`Wants::together`) takes an account
+  out of everyone's picker.
 - **The Airing page** (`airing.rs`, `routes/airing.rs`). Once a day the
   worker reads TMDB's `/discover/movie` for films released in `FROG_REGION`
   in the window (last week to four weeks ahead; 25 pages, in cinemas or
@@ -467,6 +495,19 @@ part you are about to touch; change it when the code changes.
   them into the signed-in account whatever they say. A title page's remove goes
   the same way. Marking a show here is `bulk::tick_aired`, the same code as Mark
   all watched.
+- **Adding a title** (`frontend/src/lib/add.ts`) is one place for every +:
+  Search's, a title page's Add to library, and the menu's. The + asks for a
+  status in the shared context menu (`chooseStatus`, which `showFrom` opens
+  under a button; a sheet on a phone) with the likely choice focused, unless
+  Settings → Watching's `addStatus` names one. Completed asks when, as moving
+  a title there does. It sends bulk `add` (`bulk::add`), which never touches a
+  title already in the library and answers the ids it added, so Undo is a
+  bulk `remove` of exactly those. The same action takes TMDB refs
+  (`bulk::resolve_refs`, at most `MAX_ADD` per request), which is how a
+  studio's titles go in: Select on its page (`PickBar.svelte`, `addMany`,
+  a hundred to a request). Saved settings from before carry `defaultStatus`
+  over only when it was not the Watchlist (`current()` in
+  `lib/settings.svelte.ts`).
 - **Your people** (`backend/src/activity.rs`, `/api/home/activity`) is its own
   request, so nobody who switched the row off reads other accounts. Fourteen
   days, three titles a person with the rest as a number on their last card,
@@ -549,6 +590,13 @@ part you are about to touch; change it when the code changes.
 - **Manga search is ranked here** (`media::rank_manga`): AniList answers by
   synonym and description too, so only what a title answers is kept,
   synonyms after titles, light novels left out.
+- **Rate your library is a queue** (`routes/rate`, `lib/rate.ts`). Every key
+  and tap acts on the first card the moment it lands; a card on its way out
+  is drawn apart (`flying`), so nothing pressed during its animation is lost.
+  Each thing done is a `Step`, and Undo, a refused save and a toast's Undo all
+  go through `takeBack`, which puts the card back on top once. Saves go out
+  in order (`InOrder`). A card's fixes (not watched yet, another status,
+  remove) are behind its one "…" button, with S and Delete as keys.
 - **New Home rows** reach saved layouts once, through `homeRowsSeen` in
   `lib/settings.svelte.ts`. Add the id to `HOME_ROWS` and to the default list.
 

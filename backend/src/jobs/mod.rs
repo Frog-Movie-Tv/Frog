@@ -84,6 +84,8 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
     state.token_failures.sweep();
     crate::reset::purge_expired(&state.pool).await?;
 
+    crate::inbox::trim(&state.pool).await?;
+
     let expired = crate::auth::purge_expired_sessions(&state.pool).await?;
     if expired > 0 {
         tracing::info!(expired, "purged expired sessions");
@@ -276,7 +278,20 @@ pub async fn report_ops_failures(state: &AppState) -> anyhow::Result<Vec<(i64, u
         // next time, as new-episode alerts do.
         let mut unreachable = false;
         for f in &failures {
-            let result = crate::push::broadcast(state, user_id, &crate::ops::payload(f)).await?;
+            let payload = crate::ops::payload(f);
+            // On the page as well, once per failure, whether or not a browser is subscribed.
+            crate::inbox::record(
+                &state.pool,
+                user_id,
+                &crate::inbox::Event {
+                    kind: crate::inbox::OPS,
+                    payload: serde_json::json!({ "title": payload["title"], "body": payload["body"] }),
+                    ref_key: Some(format!("ops:{}:{}", f.kind, f.at)),
+                    ..Default::default()
+                },
+            )
+            .await?;
+            let result = crate::push::broadcast(state, user_id, &payload).await?;
             if result.sent == 0 && result.failed > 0 {
                 unreachable = true;
                 break;
