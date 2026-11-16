@@ -12,6 +12,14 @@ import type { NetflixMeta } from './netflix';
  * never need to know where a row came from. Ratings are rescaled to 0..100
  * by the reader, which is the only scale the rest of Frog uses.
  */
+/** One watch of a Frog backup and the username it was with. */
+export interface WatchedWith {
+	season: number | null;
+	episode: number | null;
+	watched_at: string | null;
+	with: string;
+}
+
 export interface Incoming {
 	key: string;
 	title: string;
@@ -35,6 +43,8 @@ export interface Incoming {
 	film_watches?: { watched_at: string; rewatch: boolean }[];
 	/** A manga's chapters, each on the day it was read (a Frog backup). */
 	reads?: { chapter: number; read_at: string }[];
+	/** Who watches were with, by username (a Frog backup). */
+	watched_with?: WatchedWith[];
 	favourite: boolean;
 	rewatch: boolean;
 	/** Which file inside the export this came from, shown in the preview. */

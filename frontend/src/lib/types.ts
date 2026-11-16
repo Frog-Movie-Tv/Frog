@@ -424,6 +424,8 @@ export interface FullStats {
 	library: Partial<Record<Status, number>>;
 	/** Manga in the library: whether Stats has a manga half. */
 	manga: number;
+	/** Who you said you watched with most, in the year or all time. */
+	most_with: { username: string; display_name: string | null; watches: number } | null;
 	totals: {
 		films: number;
 		episodes: number;
@@ -491,6 +493,8 @@ export interface ActivityItem {
 	season: number | null;
 	episode: number | null;
 	at: string;
+	/** Who they said they watched it with that day, you included. */
+	with?: { username: string; display_name: string | null; avatar: string | null }[];
 }
 
 /** A recommendation to you not answered yet, as Home's hero shows it. */
@@ -901,6 +905,8 @@ export interface Comparison {
 	}[];
 	only_theirs: (ProfileCard & { status: Status })[];
 	only_mine: (ProfileCard & { status: Status })[];
+	/** Watched together, either of you saying so: newest first. */
+	together: (Pick<ProfileCard, 'id' | 'kind' | 'name' | 'poster_path'> & { days: number })[];
 }
 
 export interface Profile {
@@ -1198,7 +1204,15 @@ export interface Actor {
 }
 
 export type NoticeKind =
-	'recommendation' | 'added' | 'episode' | 'film' | 'badge' | 'update' | 'ops' | 'together';
+	| 'recommendation'
+	| 'added'
+	| 'episode'
+	| 'film'
+	| 'badge'
+	| 'update'
+	| 'ops'
+	| 'together'
+	| 'digest';
 
 /** One line on the Notifications page. */
 export interface Notice {
@@ -1251,4 +1265,5 @@ export interface NoticeWants {
 	badges: boolean;
 	updates: boolean;
 	together: boolean;
+	digest: boolean;
 }

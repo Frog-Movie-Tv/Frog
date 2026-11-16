@@ -32,6 +32,12 @@ In progress.
 - A badge's notification shows the badge itself.
 - About credits MDBList for scores and fanart.tv for logos.
 - Searching a name you searched before answers at once.
+- Your week: on Monday morning, a note of what you and your people watched
+  and what airs next. Switch it off in Settings → Account → Notifications.
+- Compare with someone shows what you watched together.
+- Stats shows who you watched with most.
+- Activity cards say who a title was watched with.
+- A Frog backup brings back who each watch was with.
 
 ### Fixes
 

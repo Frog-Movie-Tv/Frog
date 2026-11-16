@@ -37,6 +37,8 @@ pub const UPDATE: &str = "update";
 pub const OPS: &str = "ops";
 /// Someone says you watched something with them.
 pub const TOGETHER: &str = "together";
+/// The weekly digest (`crate::digest`).
+pub const DIGEST: &str = "digest";
 
 /// The kinds an account can switch off, each covering push and the page.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -49,6 +51,8 @@ pub struct Wants {
     pub updates: bool,
     /// Off also takes the account out of everyone's "Watched with" list.
     pub together: bool,
+    /// Monday's line about the week.
+    pub digest: bool,
 }
 
 impl Default for Wants {
@@ -59,6 +63,7 @@ impl Default for Wants {
             badges: true,
             updates: true,
             together: true,
+            digest: true,
         }
     }
 }
@@ -72,6 +77,7 @@ impl Wants {
             BADGE => self.badges,
             UPDATE => self.updates,
             TOGETHER => self.together,
+            DIGEST => self.digest,
             _ => true,
         }
     }

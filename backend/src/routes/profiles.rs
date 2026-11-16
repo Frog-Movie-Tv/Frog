@@ -138,7 +138,14 @@ pub async fn compare(
     let theirs = taste::library_of(pool, other).await?;
     let compared = taste::compare(&mine, &theirs);
 
-    let mut ids: Vec<i64> = mine.iter().chain(&theirs).map(|h| h.title_id).collect();
+    let together = crate::together::between(pool, auth.user_id(), other).await?;
+
+    let mut ids: Vec<i64> = mine
+        .iter()
+        .chain(&theirs)
+        .map(|h| h.title_id)
+        .chain(together.iter().map(|(id, _)| *id))
+        .collect();
     ids.sort_unstable();
     ids.dedup();
     let titles = profiles::titles_by_id(pool, &ids).await?;
@@ -155,6 +162,10 @@ pub async fn compare(
         })).collect::<Vec<_>>(),
         "only_theirs": compared.only_theirs.iter().map(card).collect::<Vec<_>>(),
         "only_mine": compared.only_mine.iter().map(card).collect::<Vec<_>>(),
+        "together": together.iter().map(|(id, days)| {
+            let (kind, name, poster) = titles.get(id).cloned().unwrap_or_default();
+            json!({ "id": id, "kind": kind, "name": name, "poster_path": poster, "days": days })
+        }).collect::<Vec<_>>(),
     })))
 }
 

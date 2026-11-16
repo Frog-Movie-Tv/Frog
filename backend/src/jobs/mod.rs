@@ -279,6 +279,9 @@ async fn announce(state: &AppState) -> Next {
     if let Err(e) = crate::announce::run(state, Utc::now()).await {
         tracing::warn!(error = %e, "notifications failed");
     }
+    if let Err(e) = crate::digest::run(state, Utc::now()).await {
+        tracing::warn!(error = %e, "weekly digest failed");
+    }
     Some(ANNOUNCE_TICK)
 }
 

@@ -32,7 +32,8 @@ export function applyItem(row: Foldable) {
 		finished_at: row.incoming.finished_at ?? null,
 		rewatches: row.incoming.rewatches ?? 0,
 		reads: chosen.kind === 'manga' ? (row.incoming.reads ?? []) : [],
-		film_watches: chosen.kind === 'movie' ? (row.incoming.film_watches ?? []) : []
+		film_watches: chosen.kind === 'movie' ? (row.incoming.film_watches ?? []) : [],
+		watched_with: row.incoming.watched_with ?? []
 	};
 }
 

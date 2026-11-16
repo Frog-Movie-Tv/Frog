@@ -287,6 +287,19 @@ function readFrogJson(text: string): Incoming[] {
 				.filter((r) => typeof r.chapter === 'number' && typeof r.read_at === 'string')
 				.map((r) => ({ chapter: r.chapter as number, read_at: r.read_at as string }));
 		}
+		// Who watches were with: kept by username, which this Frog matches
+		// against its own accounts.
+		if (Array.isArray(t.watched_with)) {
+			const num = (v: unknown) => (typeof v === 'number' ? v : null);
+			row.watched_with = (t.watched_with as Record<string, unknown>[])
+				.filter((w) => typeof w.with === 'string' && w.with !== '')
+				.map((w) => ({
+					season: num(w.season),
+					episode: num(w.episode),
+					watched_at: typeof w.watched_at === 'string' ? w.watched_at : null,
+					with: w.with as string
+				}));
+		}
 		if (seen.length) {
 			row.watches = seen.map((e) => ({
 				season: e.season,

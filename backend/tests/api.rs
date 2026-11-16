@@ -263,6 +263,63 @@ async fn an_entry_is_never_finished_before_it_was_started() {
 }
 
 #[tokio::test]
+async fn the_weekly_digest_is_written_once_and_names_the_week() {
+    let h = Harness::new().await;
+    h.post(
+        "/api/auth/setup",
+        json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+        None,
+    )
+    .await;
+    // The account is older than the week the digest is about.
+    sqlx::query("UPDATE app_user SET created_at = '2026-01-01T00:00:00Z'")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (1, 'movie', 7, 'A Film')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    for (at, undated) in [
+        ("2026-11-25T20:00:00Z", 0),
+        // Undated, and the week before: neither counts.
+        ("2026-11-25T20:00:00Z", 1),
+        ("2026-11-20T20:00:00Z", 0),
+    ] {
+        sqlx::query(
+            "INSERT INTO watch_event (user_id, title_id, watched_at, undated, source)
+             VALUES (1, 1, ?, ?, 'manual')",
+        )
+        .bind(at)
+        .bind(undated)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    }
+    let digests = || async {
+        sqlx::query_as::<_, (String,)>(
+            "SELECT payload FROM notification WHERE user_id = 1 AND kind = 'digest'",
+        )
+        .fetch_all(&h.state.pool)
+        .await
+        .unwrap()
+    };
+    // Monday before nine: not yet.
+    let early = "2026-11-30T08:00:00Z".parse().unwrap();
+    frog::digest::run(&h.state, early).await.unwrap();
+    assert!(digests().await.is_empty());
+    let monday = "2026-11-30T10:00:00Z".parse().unwrap();
+    frog::digest::run(&h.state, monday).await.unwrap();
+    frog::digest::run(&h.state, monday).await.unwrap();
+    let written = digests().await;
+    assert_eq!(written.len(), 1, "once a week");
+    let payload: Value = serde_json::from_str(&written[0].0).unwrap();
+    assert_eq!(payload["body"], json!("You watched 1 film."));
+}
+
+#[tokio::test]
 async fn a_fresh_instance_asks_for_setup_then_signs_you_in() {
     let h = Harness::new().await;
 
@@ -7672,6 +7729,31 @@ async fn watching_with_someone_tells_them_and_never_writes_for_them() {
         .unwrap();
     assert_eq!(film["watched_with"][0]["with"], json!("zjef"), "{film}");
 
+    // And a backup read back in names them again, without telling them.
+    sqlx::query(
+        "DELETE FROM watch_with WHERE user_id = ?
+            AND watch_event_id IN (SELECT id FROM watch_event WHERE title_id = 1)",
+    )
+    .bind(mihai)
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    let told = together_lines(&h, &guest).await.len();
+    let (code, applied, _) = h
+        .post(
+            "/api/import/apply",
+            json!({ "on_conflict": "overwrite", "items": [{
+                "kind": "movie", "tmdb_id": 11, "status": "completed",
+                "watched_at": film["watches"][0]["watched_at"],
+                "watched_with": film["watched_with"],
+            }]}),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{applied}");
+    assert_eq!(named_on(&h, mihai, 1).await, 1, "{applied}");
+    assert_eq!(together_lines(&h, &guest).await.len(), told);
+
     // Not me: their name comes off the film, and the line goes.
     let film_line = together_lines(&h, &guest)
         .await
@@ -7683,6 +7765,35 @@ async fn watching_with_someone_tells_them_and_never_writes_for_them() {
         .await;
     assert_eq!(named_on(&h, mihai, 1).await, 0);
     assert_eq!(named_on(&h, mihai, 2).await, 3, "only that line's watches");
+
+    // Their card says who it was with, to whoever may see both.
+    h.send(
+        "PUT",
+        "/api/account/profile",
+        json!({ "public": true }),
+        &owner,
+    )
+    .await;
+    let (_, feed) = h.get("/api/home/activity", Some(&guest)).await;
+    let card = feed["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["title"]["name"] == json!("Together Show") && c["who"]["username"] == "mihai")
+        .unwrap_or_else(|| panic!("{feed}"));
+    assert_eq!(card["with"][0]["username"], json!("zjef"), "{card}");
+    assert!(card.get("who_id").is_none(), "an id is never sent");
+
+    // The pair's list, from either side, and the figure in Stats.
+    assert_eq!(
+        frog::together::between(&h.state.pool, zjef, mihai)
+            .await
+            .unwrap(),
+        vec![(2, 1)]
+    );
+    let (_, stats) = h.get("/api/stats", Some(&owner)).await;
+    assert_eq!(stats["most_with"]["username"], json!("zjef"), "{stats}");
+    assert_eq!(stats["most_with"]["watches"], json!(3));
 
     // Someone who would rather not be named cannot be.
     let (_, mut wants) = h.get("/api/notifications/settings", Some(&guest)).await;

@@ -15,6 +15,7 @@ pub mod clock;
 pub mod config;
 pub mod db;
 pub mod dbview;
+pub mod digest;
 pub mod error;
 pub mod extension;
 pub mod fanart;

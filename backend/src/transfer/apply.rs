@@ -92,6 +92,9 @@ pub struct ApplyItem {
     /// all).
     #[serde(default)]
     pub film_watches: Vec<FilmWatch>,
+    /// Who watches were with, by username (a Frog backup).
+    #[serde(default)]
+    pub watched_with: Vec<crate::together::Named>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -296,6 +299,10 @@ async fn apply_one(
             )
             .await?;
         }
+    }
+
+    if !item.watched_with.is_empty() {
+        crate::together::restore_names(pool, user_id, title_id, &item.watched_with).await?;
     }
 
     if kind == "tv" {

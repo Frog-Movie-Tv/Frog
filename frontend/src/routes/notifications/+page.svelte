@@ -306,6 +306,13 @@
 					href: titleHref,
 					icon: 'users'
 				};
+			case 'digest':
+				return {
+					text: 'Your week',
+					detail: text('body'),
+					href: '/activity',
+					icon: 'calendar'
+				};
 		}
 		return { text: name, href: titleHref, icon: 'bell' };
 	}

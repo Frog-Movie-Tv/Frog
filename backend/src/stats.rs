@@ -497,10 +497,26 @@ pub async fn stats(state: &AppState, user_id: i64, q: &StatsQuery) -> AppResult<
     .fetch_one(pool)
     .await?;
 
+    // The person watched with most, among those this account may still see.
+    let shown = crate::store::shown_to(pool, user_id).await?;
+    let most_with = crate::together::most_with(pool, user_id, scope.year.as_deref())
+        .await?
+        .into_iter()
+        .find_map(|(id, watches)| {
+            shown.iter().find(|p| p.id == id).map(|p| {
+                json!({
+                    "username": p.shown.username,
+                    "display_name": p.shown.display_name,
+                    "watches": watches,
+                })
+            })
+        });
+
     Ok(json!({
         "year": q.year,
         "years": years,
         "library": crate::store::to_map(library),
+        "most_with": most_with,
         // Whether there is a manga half to offer.
         "manga": manga,
         "totals": {

@@ -160,6 +160,7 @@
 			label: 'Watched together',
 			hint: 'Off, nobody can say you watched with them'
 		},
+		{ key: 'digest', label: 'Your week', hint: 'Monday morning: what you watched, what airs' },
 		{ key: 'badges', label: 'Badges', hint: 'When you earn or are given one' },
 		{ key: 'updates', label: 'Frog updates', hint: 'When Frog gets a new version' }
 	];
