@@ -44,7 +44,7 @@ function contrast(a, b) {
 }
 
 test('every theme was found, with its background', () => {
-	assert.equal(themes.length, 7);
+	assert.equal(themes.length, 4);
 	for (const t of themes) assert.match(t.bg ?? '', /^#/, t.id);
 });
 

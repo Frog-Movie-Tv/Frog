@@ -330,9 +330,11 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
 - **Design tokens in `app.css`.** Every colour, radius and spacing step is a
   custom property. Frog is drawn as glass: translucent panes over a light that
   sits fixed behind the page (`body::before`, built from three glows). Every
-  appearance (Glass, the default, Glass Light, Pond, Pond Light, Dark, AMOLED,
-  Light) is only a token set over the same components; the token contract is
-  at the top of `app.css`. Panes (`--bg-elev`) are translucent and never
+  appearance (Glass, the default, Glass Light, Dark, Light) is only a token
+  set over the same components; the token contract is at the top of
+  `app.css`. A glow chosen in Appearance (`lib/glow.ts`) writes the three
+  `--room` glows onto the root over any theme's own; themes taken out are
+  moved to their nearest when settings load (`glow::moveTheme`). Panes (`--bg-elev`) are translucent and never
   blurred, since only the light is behind them. Anything that opens over the
   page uses `--bg-float`, which is solid, so a menu never shows what is under
   its words. Only the two bars are frosted (`--frost`): a blurred pane makes

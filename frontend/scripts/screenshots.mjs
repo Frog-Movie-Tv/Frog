@@ -300,60 +300,65 @@ try {
 	console.log('taking screenshots…');
 	const browser = await chromium.launch();
 
-	await shoot(browser, { name: 'home-desktop-pond', path: '/', viewport: DESKTOP, theme: 'pond' });
 	await shoot(browser, {
-		name: 'library-desktop-pond',
+		name: 'home-desktop-glass',
+		path: '/',
+		viewport: DESKTOP,
+		theme: 'glass'
+	});
+	await shoot(browser, {
+		name: 'library-desktop-glass',
 		path: '/library',
 		viewport: DESKTOP,
-		theme: 'pond'
+		theme: 'glass'
 	});
 	await shoot(browser, {
-		name: 'title-desktop-pond',
+		name: 'title-desktop-glass',
 		path: '/title/tv/95396',
 		viewport: DESKTOP,
-		theme: 'pond'
+		theme: 'glass'
 	});
 	await shoot(browser, {
-		name: 'settings-desktop-pond',
+		name: 'settings-desktop-glass',
 		path: '/settings',
 		viewport: DESKTOP,
-		theme: 'pond'
+		theme: 'glass'
 	});
 	await shoot(browser, {
-		name: 'profile-desktop-pond',
+		name: 'profile-desktop-glass',
 		path: `/people/${USER}`,
 		viewport: DESKTOP,
-		theme: 'pond'
+		theme: 'glass'
 	});
 	await shoot(browser, {
-		name: 'stats-desktop-pond',
+		name: 'stats-desktop-glass',
 		path: '/stats',
 		viewport: DESKTOP,
-		theme: 'pond'
+		theme: 'glass'
 	});
 	await shoot(browser, {
-		name: 'calendar-desktop-pond',
+		name: 'calendar-desktop-glass',
 		path: '/calendar',
 		viewport: DESKTOP,
-		theme: 'pond'
+		theme: 'glass'
 	});
 	await shoot(browser, {
-		name: 'diary-desktop-pond',
+		name: 'diary-desktop-glass',
 		path: '/diary',
 		viewport: DESKTOP,
-		theme: 'pond'
+		theme: 'glass'
 	});
 	await shoot(browser, {
-		name: 'import-desktop-pond',
+		name: 'import-desktop-glass',
 		path: '/import',
 		viewport: DESKTOP,
-		theme: 'pond'
+		theme: 'glass'
 	});
 	await shoot(browser, {
-		name: 'search-desktop-pond',
+		name: 'search-desktop-glass',
 		path: '/search?q=nolan',
 		viewport: DESKTOP,
-		theme: 'pond'
+		theme: 'glass'
 	});
 	await shoot(browser, {
 		name: 'home-desktop-dark',
@@ -365,48 +370,48 @@ try {
 		name: 'library-desktop-light',
 		path: '/library',
 		viewport: DESKTOP,
-		theme: 'pond-light'
+		theme: 'glass-light'
 	});
 
 	await shoot(browser, {
-		name: 'shelves-desktop-pond',
+		name: 'shelves-desktop-glass',
 		path: '/shelves',
 		viewport: DESKTOP,
-		theme: 'pond'
+		theme: 'glass'
 	});
 	if (mangaPath) {
 		await shoot(browser, {
-			name: 'manga-desktop-pond',
+			name: 'manga-desktop-glass',
 			path: mangaPath,
 			viewport: DESKTOP,
-			theme: 'pond'
+			theme: 'glass'
 		});
 		await shoot(browser, {
-			name: 'stats-manga-desktop-pond',
+			name: 'stats-manga-desktop-glass',
 			path: '/stats?half=manga',
 			viewport: DESKTOP,
-			theme: 'pond'
+			theme: 'glass'
 		});
 	}
-	await shoot(browser, { name: 'home-phone-pond', path: '/', viewport: PHONE, theme: 'pond' });
+	await shoot(browser, { name: 'home-phone-glass', path: '/', viewport: PHONE, theme: 'glass' });
 	await shoot(browser, {
-		name: 'library-phone-pond',
+		name: 'library-phone-glass',
 		path: '/library',
 		viewport: PHONE,
-		theme: 'pond'
+		theme: 'glass'
 	});
 	await shoot(browser, {
-		name: 'title-phone-pond',
+		name: 'title-phone-glass',
 		path: '/title/tv/95396',
 		viewport: PHONE,
-		theme: 'pond'
+		theme: 'glass'
 	});
 
 	await shoot(browser, {
-		name: 'search-phone-pond',
+		name: 'search-phone-glass',
 		path: '/search?q=nolan',
 		viewport: PHONE,
-		theme: 'pond'
+		theme: 'glass'
 	});
 
 	await browser.close();

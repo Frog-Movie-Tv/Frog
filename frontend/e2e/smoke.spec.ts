@@ -338,15 +338,21 @@ test('settings shows the instance facts and switches theme', async ({ page }) =>
 	// Glass is the default.
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'glass');
 
-	await page.getByRole('button', { name: /AMOLED/ }).click();
-	await expect(page.locator('html')).toHaveAttribute('data-theme', 'amoled');
+	await page.getByRole('button', { name: 'Dark', exact: true }).click();
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
 	// The choice must survive a reload, or it is not a setting.
 	await page.reload();
-	await expect(page.locator('html')).toHaveAttribute('data-theme', 'amoled');
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
-	await page.getByRole('button', { name: /^Pond$/ }).click();
-	await expect(page.locator('html')).toHaveAttribute('data-theme', 'pond');
+	await page.getByRole('button', { name: 'Glass Light', exact: true }).click();
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'glass-light');
+
+	// A glow of its own lights the page on any theme, and goes with the theme's own.
+	await page.getByRole('radio', { name: 'Green' }).click();
+	await expect(page.locator('html')).toHaveAttribute('style', /--room-1: rgba\(80, 210, 110/);
+	await page.getByRole('radio', { name: 'The theme’s own' }).click();
+	await expect(page.locator('html')).not.toHaveAttribute('style', /--room-1/);
 });
 
 test('preferences are kept on the server, not just in this browser', async ({ page, context }) => {

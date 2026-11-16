@@ -1,10 +1,10 @@
 import { browser } from '$app/env';
 import { chooseZone } from './day';
 import type { ScoreFormat } from './format';
+import { moveTheme, rooms, type Glow } from './glow';
 import type { Status } from './types';
 
-export type ThemeName =
-	'glass' | 'glass-light' | 'pond' | 'pond-light' | 'dark' | 'amoled' | 'light';
+export type ThemeName = 'glass' | 'glass-light' | 'dark' | 'light';
 export type MascotName =
 	'classic' | 'sleepy' | 'popcorn' | 'cinema' | 'starry' | 'bow' | 'delighted' | 'sprout';
 export type CardStyle = 'poster' | 'landscape' | 'list' | 'compact';
@@ -37,32 +37,11 @@ export const THEMES: {
 		swatches: ['#eef1f7', '#ffffff', '#0a6fe0']
 	},
 	{
-		id: 'pond',
-		label: 'Pond',
-		hint: 'Built from the logo',
-		tone: 'dark',
-		swatches: ['#07120e', '#16302a', '#6cc46b']
-	},
-	{
-		id: 'pond-light',
-		label: 'Pond Light',
-		hint: 'Cream and green',
-		tone: 'light',
-		swatches: ['#f1eee1', '#fbf9f1', '#2a7247']
-	},
-	{
 		id: 'dark',
 		label: 'Dark',
 		hint: 'Deep charcoal',
 		tone: 'dark',
 		swatches: ['#08080c', '#191922', '#7a5cff']
-	},
-	{
-		id: 'amoled',
-		label: 'AMOLED',
-		hint: 'True black',
-		tone: 'dark',
-		swatches: ['#000000', '#121217', '#7a5cff']
 	},
 	{
 		id: 'light',
@@ -86,6 +65,8 @@ export const MASCOTS: { id: MascotName; label: string; hint: string }[] = [
 
 export interface Settings {
 	theme: ThemeName;
+	/** The light behind the page in a colour of its own, on any theme. */
+	glow?: Glow;
 	mascot: MascotName;
 
 	scoreFormat: ScoreFormat;
@@ -263,7 +244,7 @@ const RETIRED = ['customTheme', 'savedThemes', 'font', 'textScale', 'animations'
 /** Saved settings without the ones Frog no longer has. */
 export function current(saved: unknown): Partial<Settings> {
 	if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {};
-	const kept = { ...(saved as Record<string, unknown>) };
+	const kept = moveTheme({ ...(saved as Record<string, unknown>) });
 	for (const key of RETIRED) delete kept[key];
 	// Adding used to go straight to "Default status". Anyone who chose a
 	// status other than the Watchlist meant it and keeps one tap; the
@@ -433,11 +414,18 @@ class SettingsStore {
 		const s = this.current;
 		const root = document.documentElement;
 
+		const tone = THEMES.find((t) => t.id === s.theme)?.tone ?? 'dark';
 		root.dataset.theme = s.theme;
-		root.dataset.tone = THEMES.find((t) => t.id === s.theme)?.tone ?? 'dark';
+		root.dataset.tone = tone;
 		root.dataset.card = s.cardStyle;
 
 		const style = root.style;
+		// A glow of its own, over the theme's three.
+		const glows = rooms(s.glow, tone);
+		for (const [i, name] of ['--room-1', '--room-2', '--room-3'].entries()) {
+			if (glows) style.setProperty(name, glows[i]);
+			else style.removeProperty(name);
+		}
 		// Not --poster-min itself: an inline value would beat the phone size.
 		style.setProperty('--poster-size', `${s.posterSize}px`);
 

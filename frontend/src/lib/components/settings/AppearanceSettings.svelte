@@ -1,6 +1,8 @@
 <script lang="ts">
 	import Select from '#lib/components/Select.svelte';
+	import Icon from '#lib/components/Icon.svelte';
 	import ThemePreview from '#lib/components/ThemePreview.svelte';
+	import { GLOWS, swatch } from '#lib/glow';
 	import {
 		MASCOTS,
 		THEMES,
@@ -12,6 +14,12 @@
 
 	/** Appearance: theme, mascot, cards and title pages. */
 	const s = $derived(settings.current);
+
+	/** The theme's own glow, drawn from its colours: the page and its accent. */
+	const ownGlow = $derived.by(() => {
+		const [bg, pane, accent] = THEMES.find((t) => t.id === s.theme)?.swatches ?? THEMES[0].swatches;
+		return `radial-gradient(circle at 30% 25%, ${accent}, transparent 70%), radial-gradient(circle at 80% 90%, ${pane}, transparent 70%), ${bg}`;
+	});
 
 	const cardToggles = [
 		['showBadge', 'Status'],
@@ -38,6 +46,30 @@
 				<span class="faint hint">{t.hint}</span>
 			</button>
 		{/each}
+	</div>
+
+	<div class="glow">
+		<span class="label">
+			<strong>Glow</strong>
+			<span class="faint">The light behind the page, on any theme.</span>
+		</span>
+		<div class="swatches" role="radiogroup" aria-label="Glow">
+			{#each GLOWS as g (g.id)}
+				{@const on = (s.glow ?? 'theme') === g.id}
+				<button
+					class="swatch {g.id}"
+					class:on
+					role="radio"
+					aria-checked={on}
+					aria-label={g.label}
+					title={g.label}
+					style:background={g.id === 'theme' ? ownGlow : (swatch(g.id) ?? undefined)}
+					onclick={() => settings.set('glow', g.id)}
+				>
+					{#if on}<Icon name="check" size={14} />{/if}
+				</button>
+			{/each}
+		</div>
 	</div>
 </section>
 
@@ -148,6 +180,69 @@
 		box-shadow:
 			inset 0 1px 0 var(--shine),
 			var(--shadow-2);
+	}
+
+	.glow {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px 20px;
+		margin-bottom: 14px;
+		padding: 16px 20px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+		background: var(--bg-elev);
+	}
+
+	.glow .label {
+		display: grid;
+		gap: 2px;
+	}
+
+	.glow .label .faint {
+		font-size: 0.82rem;
+	}
+
+	.swatches {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.swatch {
+		display: grid;
+		place-items: center;
+		width: 34px;
+		height: 34px;
+		border-radius: 50%;
+		border: 1px solid var(--line-strong);
+		color: #fff;
+		cursor: pointer;
+		transition: transform var(--fast) var(--ease);
+	}
+
+	.swatch:hover {
+		transform: scale(1.08);
+	}
+
+	.swatch.on {
+		outline: 2px solid var(--text);
+		outline-offset: 2px;
+	}
+
+	/* No glow: the page's own colour, struck through. */
+	.swatch.off {
+		background:
+			linear-gradient(
+				135deg,
+				transparent 45%,
+				var(--line-strong) 45%,
+				var(--line-strong) 55%,
+				transparent 55%
+			),
+			var(--bg);
+		color: var(--text);
 	}
 
 	.tile {

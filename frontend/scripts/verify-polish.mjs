@@ -98,7 +98,7 @@ async function signedIn(viewport, extra = {}) {
 	});
 	await page.request.put(`${BASE}/api/settings`, {
 		data: {
-			theme: 'pond-light',
+			theme: 'glass-light',
 			lastSeenVersion: (await (await page.request.get(`${BASE}/api/health`)).json()).version
 		}
 	});
@@ -124,7 +124,7 @@ async function signedIn(viewport, extra = {}) {
 		return value;
 	});
 	check('the label uses the accent colour, not faint grey', color === accent, color);
-	await page.screenshot({ path: join(out, '1-hero-pond-light.png') });
+	await page.screenshot({ path: join(out, '1-hero-glass-light.png') });
 
 	console.log('\n== calendar on desktop ==');
 	await page.request.put(`${BASE}/api/settings`, {

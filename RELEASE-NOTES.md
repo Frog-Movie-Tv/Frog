@@ -29,6 +29,11 @@ In progress.
   in use is plain to see.
 - Choose a banner from any film or show: search for it and pick from all of
   its pictures.
+- Cards in your library, on your shelves and in Continue watching say who
+  you watched a title with.
+- Four themes, Glass, Glass Light, Dark and Light, and a glow behind the page
+  in any of nine colours, or none. Pond and Pond Light become Glass and Glass
+  Light, and AMOLED becomes Dark with no glow.
 
 ### Fixes
 
