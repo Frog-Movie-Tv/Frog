@@ -2535,7 +2535,9 @@ test('a notification can be removed, and Clear all takes the rest, each with Und
 	await them.dispose();
 });
 
-test('Home’s hero turns through recommendations, then what airs this week', async ({ page }) => {
+test('Home’s hero takes turns: recommendations, trending, what airs this week', async ({
+	page
+}) => {
 	await signIn(page);
 	const item = (id: number, kind: 'movie' | 'tv', name: string) =>
 		titleAnswer(id, kind, name, {}).item;
@@ -2570,6 +2572,9 @@ test('Home’s hero turns through recommendations, then what airs this week', as
 		shelves: []
 	};
 	await page.route('**/api/home', (route) => route.fulfill({ json: home }));
+	await page.route('**/api/home/featured', (route) =>
+		route.fulfill({ json: { items: [{ item: item(9605, 'movie', 'Trending Film'), rank: 2 }] } })
+	);
 	const answered: unknown[] = [];
 	await page.route('**/api/recommendations/*/answer', (route) => {
 		answered.push(route.request().postDataJSON());
@@ -2580,8 +2585,14 @@ test('Home’s hero turns through recommendations, then what airs this week', as
 	const hero = page.getByRole('region', { name: 'Featured' });
 	await expect(hero).toBeVisible();
 	const dots = hero.getByRole('group', { name: 'Choose a slide' }).getByRole('button');
-	await expect(dots).toHaveCount(3);
-	// Recommendations first, with who sent it and their note.
+	// One of each kind in turn, so a long list of one never pushes the
+	// others out: recommendation, trending, this week, recommendation.
+	await expect(dots).toHaveCount(4);
+	await expect(dots.nth(0)).toHaveAccessibleName(/Recommended Film/);
+	await expect(dots.nth(1)).toHaveAccessibleName(/Trending Film/);
+	await expect(dots.nth(2)).toHaveAccessibleName(/Airing Show/);
+	await expect(dots.nth(3)).toHaveAccessibleName(/Second Pick/);
+	// A recommendation, with who sent it and their note.
 	await expect(hero).toContainText('Recommended by Sam');
 	await expect(hero).toContainText('The second season is the one');
 	// Never what you are in the middle of; that goes back in its row.
@@ -2589,19 +2600,28 @@ test('Home’s hero turns through recommendations, then what airs this week', as
 	await expect(page.getByRole('heading', { name: 'Continue watching' })).toBeVisible();
 	await expect(page.locator('main')).toContainText('Continuing Show');
 
-	// It turns by itself, about every eight seconds.
-	await expect(hero).toContainText('Second Pick', { timeout: 11000 });
+	// It turns by itself, about every eight seconds: trending, with its place.
+	await expect(hero).toContainText('Trending Film', { timeout: 11000 });
+	await expect(hero).toContainText('#2');
+	await expect(hero).toContainText('Trending this week');
+	await expect(hero.getByRole('link', { name: 'More info' })).toBeVisible();
 	await dots.nth(2).click();
 	await expect(hero).toContainText('Airing Show');
 	await expect(hero).toContainText('S02E03');
 	await expect(hero.getByRole('link', { name: 'View show' })).toBeVisible();
+	await dots.nth(3).click();
+	await expect(hero).toContainText('Second Pick');
 
 	// Declining answers it and takes it out of the rotation.
 	await dots.nth(0).click();
 	await expect(hero).toContainText('Recommended Film');
 	home = { ...home, recommended: home.recommended.slice(1) };
-	await hero.getByRole('button', { name: 'Not for me' }).click();
-	await expect(dots).toHaveCount(2);
+	// The slide shown, not the one fading out behind it.
+	await hero
+		.getByRole('group', { name: '1 of 4' })
+		.getByRole('button', { name: 'Not for me' })
+		.click();
+	await expect(dots).toHaveCount(3);
 	expect(answered).toEqual([{ answer: 'dismissed' }]);
 	await expect(hero).not.toContainText('Recommended Film');
 });

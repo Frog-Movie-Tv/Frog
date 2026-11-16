@@ -271,6 +271,13 @@
 	/** Words leave quickly; the next slide's arrive a beat later, in order. */
 	const LEAVE_MS = 160;
 
+	/** The leaving slide fades out, and can no longer be pressed, focused or
+	 *  read out while it does: only the arriving slide is there. */
+	function leave(node: HTMLElement) {
+		node.inert = true;
+		return fade(node, { duration: still ? 0 : LEAVE_MS });
+	}
+
 	async function add(featured: LibraryItem, e: MouseEvent) {
 		busy = true;
 		try {
@@ -344,7 +351,7 @@
 			{#key slideKey(slide)}
 				<div
 					class="hero-body"
-					out:fade={{ duration: still ? 0 : LEAVE_MS }}
+					out:leave
 					role={count > 1 ? 'group' : undefined}
 					aria-roledescription={count > 1 ? 'slide' : undefined}
 					aria-label={count > 1 ? `${at + 1} of ${count}` : undefined}
