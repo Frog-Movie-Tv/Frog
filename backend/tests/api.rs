@@ -1454,6 +1454,45 @@ async fn the_worker_backfills_credits_for_older_titles() {
     assert_eq!(n, 1);
 }
 
+/// A title already stored opens from the cached detail without storing it
+/// again; the backfill still writes its credits, and asks only once.
+#[tokio::test]
+async fn the_credits_backfill_finishes_a_title_that_was_already_stored() {
+    let h = Harness::with_tmdb_key("test-key").await;
+    an_owner(&h).await;
+    cache_film(&h, 22, "Stored Before", "2007", &[(6, "Someone Else")]).await;
+    sqlx::query(
+        "INSERT INTO title_seed (kind, tmdb_id, name) VALUES ('movie', 22, 'Stored Before')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE title SET refreshed_at = '2026-11-16T00:00:00Z', people_synced_at = NULL")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, 1, 'completed', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    assert_eq!(frog::jobs::backfill_credits_once(&h.state).await, 1);
+    assert_eq!(
+        frog::jobs::backfill_credits_once(&h.state).await,
+        0,
+        "not asked again"
+    );
+    let (n,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM title_person WHERE name = 'Someone Else'")
+            .fetch_one(&h.state.pool)
+            .await
+            .unwrap();
+    assert_eq!(n, 1);
+}
+
 /// Each account's browser says which zone it is in, which decides when
 /// midnight is for an episode with no time. A zone nobody knows is ignored.
 #[tokio::test]

@@ -445,8 +445,16 @@ pub async fn backfill_credits_once(state: &AppState) -> usize {
 
     let mut done = 0;
     for (title_id,) in rows {
-        match catalog::load(state, title_id).await {
-            Ok(_) => done += 1,
+        // `load` opens a title already stored from the cached detail without
+        // storing anything, so the credits are written here from what it
+        // returns; that also marks the title, which a title that answered
+        // with nobody would otherwise never be.
+        let stored = match catalog::load(state, title_id).await {
+            Ok((_, detail)) => catalog::store_credits(&state.pool, title_id, &detail).await,
+            Err(e) => Err(e),
+        };
+        match stored {
+            Ok(()) => done += 1,
             Err(e) => {
                 // Most likely offline; the rest of the batch would fail too.
                 tracing::debug!(title_id, error = %e, "credits backfill paused");
