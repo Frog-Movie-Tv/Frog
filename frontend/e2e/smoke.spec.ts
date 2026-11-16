@@ -415,8 +415,8 @@ test('settings saved with a custom theme still load, and drop it on the next sav
 		data: { ...saved, theme: 'pond', customTheme: custom, savedThemes: [custom] }
 	});
 	await page.goto('/settings#appearance');
-	// The theme it was built on, none of its colours.
-	await expect(page.getByRole('button', { name: 'Pond', exact: true })).toHaveAttribute(
+	// The theme it was built on, none of its colours. Pond is Glass now.
+	await expect(page.getByRole('button', { name: 'Glass', exact: true })).toHaveAttribute(
 		'aria-pressed',
 		'true'
 	);
@@ -426,13 +426,13 @@ test('settings saved with a custom theme still load, and drop it on the next sav
 	expect(inline).toBe('');
 	await expect(page.getByText('Colour editor')).toHaveCount(0);
 
-	await page.getByRole('button', { name: 'Glass', exact: true }).click();
+	await page.getByRole('button', { name: 'Dark', exact: true }).click();
 	await expect
 		.poll(async () => Object.keys(await (await page.request.get('/api/settings')).json()))
 		.not.toContain('customTheme');
 	const after = await (await page.request.get('/api/settings')).json();
 	expect(after.savedThemes).toBeUndefined();
-	expect(after.theme).toBe('glass');
+	expect(after.theme).toBe('dark');
 	await page.request.put('/api/settings', { data: saved });
 });
 
