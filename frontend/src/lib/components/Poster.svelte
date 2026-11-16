@@ -6,9 +6,10 @@
 	import { contextMenu, type MenuSource } from '#lib/menu.svelte';
 	import { morph as opened } from '#lib/morph.svelte';
 	import { settings } from '#lib/settings.svelte';
+	import { withLine } from '#lib/together';
 	import { titleHref, type TitleRef } from '#lib/titles';
 	import type { HTMLAnchorAttributes } from 'svelte/elements';
-	import type { Kind, Status } from '#lib/types';
+	import type { Kind, Mate, Status } from '#lib/types';
 	import { KIND_ICON, KIND_LABEL, statusLabel } from '#lib/types';
 
 	interface Props extends HTMLAnchorAttributes {
@@ -35,6 +36,8 @@
 		rewatches?: number;
 		/** What a right-click, or a hold, offers. Unset, the card has no menu. */
 		menu?: MenuSource;
+		/** Who it was watched with, said under its name. */
+		together?: Mate[];
 	}
 
 	let {
@@ -54,6 +57,7 @@
 		selected,
 		rewatches = 0,
 		menu,
+		together = [],
 		...rest
 	}: Props = $props();
 
@@ -156,6 +160,11 @@
 						>· <Icon name="repeat" size={11} />{rewatches}×</span
 					>
 				{/if}
+			</span>
+		{/if}
+		{#if together.length}
+			<span class="with" title={withLine(together)}>
+				<Icon name="users" size={11} />{withLine(together)}
 			</span>
 		{/if}
 	</div>
@@ -375,6 +384,22 @@
 		font-size: 0.72rem;
 		font-weight: 600;
 		color: var(--text-dim);
+	}
+
+	.with {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		font-size: 0.72rem;
+		color: var(--text-faint);
+	}
+
+	.with :global(svg) {
+		flex: none;
 	}
 
 	.state i {

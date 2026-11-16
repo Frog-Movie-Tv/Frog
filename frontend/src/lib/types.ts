@@ -90,6 +90,15 @@ export interface LibraryItem {
 	last_watched_at: string | null;
 	/** Watched again this many times. */
 	rewatches: number;
+	/** Who it was watched with, most recent first. Only on your own library. */
+	watched_with?: Mate[];
+}
+
+/** Someone a title was watched with. */
+export interface Mate {
+	id: number;
+	username: string;
+	display_name: string | null;
 }
 
 /** What someone else's profile shows of a library entry: never their notes. */

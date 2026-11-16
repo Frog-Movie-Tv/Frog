@@ -602,8 +602,10 @@ part you are about to touch; change it when the code changes.
   with nothing to tick, a title page does behind the page, and the worker fills
   any left (`fill_missing_episodes`, 25 a tick). Without them a show has no next
   episode, and its total is only TMDB's count.
-- **Lists of titles are built from one reading** (`store::ItemFacts`): five
-  queries for the whole account, then `item` per title. Library and shelves go
+- **Lists of titles are built from one reading** (`store::ItemFacts`): six
+  queries for the whole account, then `item` per title. One of them is who
+  each title was watched with (`watch_with` and `watching_with`), which only
+  the owner's `LibraryItem` carries; `SharedItem` leaves it out. Library and shelves go
   through `build_items`; Home loads it once and shares it across its rows. On
   the 611-title library a 399-title shelf went from about 640 ms to 96 ms and
   Home from 145 ms to 86 ms, field for field the same JSON. A six-title shelf

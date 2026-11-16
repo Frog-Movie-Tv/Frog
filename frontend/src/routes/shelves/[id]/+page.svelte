@@ -501,6 +501,7 @@
 							watched={item.watched_episodes}
 							total={item.total_episodes}
 							rewatches={item.rewatches}
+							together={item.watched_with}
 						/>
 					{/each}
 				</Grid>

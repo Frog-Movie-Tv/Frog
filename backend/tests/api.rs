@@ -7699,3 +7699,78 @@ async fn watched_together_is_one_line_per_show_until_it_is_answered() {
         .await;
     assert_eq!(named_on(&h, mihai, 2).await, 4);
 }
+
+#[tokio::test]
+async fn a_card_names_who_it_was_watched_with_for_its_owner_only() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    let zjef = account_id(&h, "zjef").await;
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, release_date) VALUES
+            (1, 'movie', 11, 'Together Film', '2001-01-01'),
+            (2, 'tv', 12, 'Together Show', '2020-01-01'),
+            (3, 'movie', 13, 'Alone Film', '2002-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    for cookie in [&owner, &guest] {
+        h.send(
+            "PUT",
+            "/api/account/profile",
+            json!({ "public": true }),
+            cookie,
+        )
+        .await;
+    }
+    bulk(
+        &h,
+        json!({ "action": "add", "status": "completed", "title_ids": [1],
+                "when": "date", "date": "2021-05-01", "with": [zjef] }),
+        &owner,
+    )
+    .await;
+    bulk(
+        &h,
+        json!({ "action": "add", "status": "completed", "title_ids": [3],
+                "when": "date", "date": "2021-05-02" }),
+        &owner,
+    )
+    .await;
+    bulk(
+        &h,
+        json!({ "action": "add", "status": "watching", "title_ids": [2] }),
+        &owner,
+    )
+    .await;
+    // A show being watched with someone names them before an episode is.
+    h.send(
+        "PUT",
+        "/api/t/2/together",
+        json!({ "with": [zjef] }),
+        &owner,
+    )
+    .await;
+
+    let (code, mine) = h.get("/api/library", Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK);
+    let card = |id: i64| {
+        mine["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["id"] == json!(id))
+            .cloned()
+            .unwrap()
+    };
+    assert_eq!(card(1)["watched_with"][0]["username"], json!("zjef"));
+    assert_eq!(card(2)["watched_with"][0]["username"], json!("zjef"));
+    assert!(card(3).get("watched_with").is_none(), "{}", card(3));
+
+    // Someone else's view of that library never says who.
+    let (code, theirs) = h.get("/api/profiles/mihai/library", Some(&guest)).await;
+    assert_eq!(code, StatusCode::OK);
+    let items = theirs["items"].as_array().unwrap();
+    assert_eq!(items.len(), 3);
+    assert!(items.iter().all(|i| i.get("watched_with").is_none()));
+}
