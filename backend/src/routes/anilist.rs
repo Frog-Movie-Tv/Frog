@@ -182,8 +182,6 @@ pub async fn entries(auth: Auth, State(state): State<AppState>) -> AppResult<Jso
                 "manual": r.manual,
                 "media_status": r.media_status,
                 "start_date": r.start_date,
-                // No longer on the AniList list; kept in Frog as it is.
-                "gone": r.gone_at.is_some(),
                 // When Frog looks for its place again.
                 "next_try_at": r.next_try_at,
                 // In the library as it is on AniList, until it is placed.

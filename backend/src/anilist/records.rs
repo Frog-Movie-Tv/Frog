@@ -19,15 +19,17 @@ use crate::error::AppResult;
 // --- entries -----------------------------------------------------------------
 
 /// Entries gone from the AniList list are marked, and ones back unmarked.
-/// Nothing in the library goes with them. A list that comes back empty when
+/// Says which were already marked at the sync before and are still gone:
+/// those are taken out of Frog (`forget_gone`). Two syncs in a row, so one
+/// odd answer never removes anything. A list that comes back empty when
 /// Frog knows entries is more likely a hiccup than a cleared list, so then
-/// nothing is marked at all.
+/// nothing is marked or removed at all.
 pub(super) async fn mark_gone(
     pool: &SqlitePool,
     user_id: i64,
     remotes: &[Remote],
     known: &HashMap<i64, Known>,
-) -> AppResult<i64> {
+) -> AppResult<Vec<i64>> {
     let present: HashSet<i64> = remotes.iter().map(|r| r.media_id).collect();
     let now = Utc::now().to_rfc3339();
     for (media_id, k) in known {
@@ -47,21 +49,90 @@ pub(super) async fn mark_gone(
             known = known.len(),
             "AniList returned an empty list; nothing marked as removed"
         );
-        return Ok(0);
+        return Ok(Vec::new());
     }
-    let mut removed = 0;
+    let mut confirmed = Vec::new();
     for (media_id, k) in known {
-        if !k.gone && !present.contains(media_id) {
-            sqlx::query("UPDATE anilist_entry SET gone_at = ? WHERE user_id = ? AND media_id = ?")
-                .bind(&now)
-                .bind(user_id)
-                .bind(media_id)
-                .execute(pool)
-                .await?;
-            removed += 1;
+        if present.contains(media_id) {
+            continue;
         }
+        if k.gone {
+            confirmed.push(*media_id);
+            continue;
+        }
+        sqlx::query("UPDATE anilist_entry SET gone_at = ? WHERE user_id = ? AND media_id = ?")
+            .bind(&now)
+            .bind(user_id)
+            .bind(media_id)
+            .execute(pool)
+            .await?;
     }
-    Ok(removed)
+    confirmed.sort_unstable();
+    Ok(confirmed)
+}
+
+/// The title in this account's library that only this entry holds, if any:
+/// where it is placed, or the AniList-only title kept for it. A show placed
+/// from several entries stays while another of them is still on the list.
+/// An ignored entry never put anything in the library.
+pub(super) async fn held_only_by(
+    pool: &SqlitePool,
+    user_id: i64,
+    media_id: i64,
+) -> AppResult<Option<i64>> {
+    let row: Option<(String, Option<i64>)> = sqlx::query_as(
+        "SELECT state, title_id FROM anilist_entry WHERE user_id = ? AND media_id = ?",
+    )
+    .bind(user_id)
+    .bind(media_id)
+    .fetch_optional(pool)
+    .await?;
+    let Some((state, placed)) = row else {
+        return Ok(None);
+    };
+    if state == "ignored" {
+        return Ok(None);
+    }
+    let title = match placed.filter(|_| state == "placed") {
+        Some(t) => Some(t),
+        None => {
+            let own: Option<(i64,)> = sqlx::query_as(
+                "SELECT title_id FROM title_external
+                  WHERE provider = 'anilist' AND external_id = CAST(? AS TEXT)
+                    AND is_primary = 1",
+            )
+            .bind(media_id)
+            .fetch_optional(pool)
+            .await?;
+            own.map(|r| r.0)
+        }
+    };
+    let Some(title) = title else {
+        return Ok(None);
+    };
+    let (shared, in_library): (bool, bool) = sqlx::query_as(
+        "SELECT EXISTS (SELECT 1 FROM anilist_entry
+                         WHERE user_id = ?1 AND title_id = ?2 AND media_id != ?3
+                           AND state = 'placed' AND gone_at IS NULL),
+                EXISTS (SELECT 1 FROM library_entry WHERE user_id = ?1 AND title_id = ?2)",
+    )
+    .bind(user_id)
+    .bind(title)
+    .bind(media_id)
+    .fetch_one(pool)
+    .await?;
+    Ok((in_library && !shared).then_some(title))
+}
+
+/// Forget an entry Frog no longer follows: it is off the AniList list. If it
+/// comes back, it is new again.
+pub(super) async fn forget(pool: &SqlitePool, user_id: i64, media_id: i64) -> AppResult<()> {
+    sqlx::query("DELETE FROM anilist_entry WHERE user_id = ? AND media_id = ?")
+        .bind(user_id)
+        .bind(media_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// One stored entry, as the sync reads it back.
@@ -849,14 +920,15 @@ pub struct Listed {
     pub manual: bool,
     pub media_status: Option<String>,
     pub start_date: Option<String>,
-    pub gone_at: Option<String>,
     pub next_try_at: Option<String>,
     /// The AniList-only title it is kept as, when this account keeps it.
     pub kept_id: Option<i64>,
     pub kept_kind: Option<String>,
 }
 
-/// Every entry, the unsure ones first.
+/// Every entry still on the AniList list, the unsure ones first. One gone
+/// from it leaves Frog at the next sync (`sync::forget_gone`), so there is
+/// nothing left to check about it.
 pub async fn listing(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Listed>> {
     Ok(sqlx::query_as(
         "SELECT a.media_id, a.name, a.format, a.episodes, a.state, a.candidates_json,
@@ -864,7 +936,7 @@ pub async fn listing(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Listed>> 
                 tx.external_id AS title_tmdb, a.season,
                 a.episode_offset, a.al_status, a.al_progress, a.outcome, a.method,
                 a.confidence, a.note,
-                a.manual, a.media_status, a.start_date, a.gone_at, a.next_try_at,
+                a.manual, a.media_status, a.start_date, a.next_try_at,
                 k.id AS kept_id, k.kind AS kept_kind
            FROM anilist_entry a LEFT JOIN title t ON t.id = a.title_id
            LEFT JOIN title_external tx
@@ -875,7 +947,7 @@ pub async fn listing(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Listed>> 
            LEFT JOIN title k ON k.id = kx.title_id
                 AND EXISTS (SELECT 1 FROM library_entry l
                              WHERE l.user_id = a.user_id AND l.title_id = k.id)
-          WHERE a.user_id = ?
+          WHERE a.user_id = ? AND a.gone_at IS NULL
           ORDER BY CASE a.state WHEN 'unsure' THEN 0 WHEN 'placed' THEN 1 ELSE 2 END,
                    a.name COLLATE NOCASE",
     )

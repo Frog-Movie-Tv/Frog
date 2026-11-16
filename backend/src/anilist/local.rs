@@ -269,9 +269,10 @@ async fn sync_local_episodes(
         (snap_al, snap_frog)
     };
     let c = Changes::between(snap_al.as_ref(), snap_frog.as_ref(), a, f.as_ref());
+    let mut applied = None;
     match c.mode(false) {
         Some(mode) => {
-            let created = library::apply(
+            let done = library::apply(
                 state,
                 user_id,
                 remote,
@@ -281,7 +282,8 @@ async fn sync_local_episodes(
                 snap_al.as_ref(),
             )
             .await?;
-            let firm = if created { Mode::Follow } else { mode };
+            applied = Some(done);
+            let firm = if done.created { Mode::Follow } else { mode };
             settle_show(state, user_id, title_id, &[(1, 0, a.status.clone())], firm).await?;
         }
         None => release::reconcile(&state.pool, user_id, title_id).await?,
@@ -295,7 +297,14 @@ async fn sync_local_episodes(
     }
     let f_now = view(&state.pool).await?;
 
-    save_snapshots(&state.pool, user_id, remote.media_id, a, f_now.as_ref()).await?;
+    save_snapshots(
+        &state.pool,
+        user_id,
+        remote.media_id,
+        &library::reached(a, applied),
+        f_now.as_ref(),
+    )
+    .await?;
     Ok(f_now != f)
 }
 

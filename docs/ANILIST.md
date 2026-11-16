@@ -32,7 +32,10 @@ and `sync_user`.
 3. `client::read_list` — the whole anime list, then the manga list, 500 at a
    time; any failed chunk fails the sync, because a list read halfway looks
    like entries removed.
-4. `records::mark_gone` — entries no longer on the list get `gone_at`.
+4. `records::mark_gone` — entries no longer on the list get `gone_at`; those
+   already marked at the sync before leave Frog (`sync::forget_gone`): their
+   title comes out of the library as the library's Remove takes it, unless
+   another entry still on the list holds it, and the entry is forgotten.
 5. For each entry (`sync::Run::entry`):
    - ignored ("Not in Frog") → nothing;
    - kept apart (`kept_apart`, set when the person undid the merge that
@@ -65,6 +68,12 @@ failed for it, and it is tried again with backoff.
   back; a watch logged in Frog is history and stays.
 - A first sync, a re-placed entry and an adopted title only add: nothing on
   either side is lowered or removed.
+- AniList is where the list is kept: a title taken off AniList leaves Frog
+  after two syncs that both miss it, and one removed in Frog while AniList
+  still lists it comes back. "Not in Frog" is how to keep one out.
+- AniList's snapshot holds only the progress Frog reached
+  (`library::Applied.held`), so an episode held back is applied again at
+  every sync until it lands.
 - Paused and dropped are the person's word; a merge never overrides them
   (`transfer::merged_status`).
 - Manual placements are never moved by the matcher.
@@ -102,8 +111,19 @@ failed for it, and it is tried again with backoff.
   never removes it on AniList — both on purpose. An entry removed from the
   library in Frog is added back on the next sync as AniList has it (its
   snapshots are dropped, so it is new again); "Not in Frog" in Settings
-  (`ignored`) is how to keep one out. `anilist_entry.detached` is no longer
-  set and stays 0.
+  (`ignored`) is how to keep one out. An entry taken off AniList is marked
+  `gone_at` at the first sync that misses it (Settings stops listing it) and
+  at the next one its title leaves the library, watches and all, and the
+  entry is forgotten (`sync::forget_gone`); a show placed from several
+  entries stays while any of them is on the list. `anilist_entry.detached`
+  is no longer set and stays 0.
+- **Progress Frog could not tick yet** (`library::Applied`). Progress only
+  ticks episodes that are out, and an episode TMDB has not listed yet
+  cannot be ticked at all. Those held back are subtracted from AniList's
+  snapshot (`library::reached`), so the next sync still sees AniList ahead
+  and applies it again; once the episode is out, or TMDB lists it on a show
+  still airing, it is ticked, dated to that sync. Progress past what TMDB
+  lists on a finished show is a numbering difference and is not waited for.
 - **Dates and rewatches** (`store::replace_known_dates`). Each entry's
   `startedAt`, `completedAt` and `repeat` are gathered per title over the
   whole sync (`sync::KnownDays`: across a show's several entries the earliest
@@ -156,8 +176,8 @@ failed for it, and it is tried again with backoff.
   transaction, logs it in `title_merge`, and points the old title on with
   `merged_into` once nobody keeps it; its AniList id then resolves to the
   TMDB title (`catalog::find`). Progress lowered on AniList takes back
-  only `source = 'anilist'` ticks. Entries gone from the list get `gone_at`
-  and nothing else; an entirely empty answer marks nothing.
+  only `source = 'anilist'` ticks. Entries gone from the list leave Frog at
+  the second sync that misses them; an entirely empty answer marks nothing.
 - **AniList-only titles look like TMDB ones** (`backend/src/anilist/media.rs`).
   One AniList query (plus its airing schedule, 50 a page) is rewritten into
   TMDB's detail shape, so every reader in `tmdb/models.rs` works unchanged:

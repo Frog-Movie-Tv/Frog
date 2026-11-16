@@ -857,8 +857,6 @@ export interface AniListEntry {
 	} | null;
 	status: string | null;
 	progress: number | null;
-	/** No longer on the AniList list; kept in Frog as it is. */
-	gone?: boolean;
 	/** When Frog next looks for its place. */
 	next_try_at?: string | null;
 	/** In the library as it is on AniList until it is placed. */
