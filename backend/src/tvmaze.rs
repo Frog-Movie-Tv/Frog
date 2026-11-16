@@ -1,8 +1,9 @@
 //! TVmaze: the moment an episode airs, and nothing else.
 //!
 //! Only an episode's season, number, day and `airstamp` are read, for
-//! episodes TMDB already lists (`crate::airtime` matches them). No title,
-//! name or picture from TVmaze reaches a page. Its data is CC BY-SA, credited
+//! episodes TMDB already lists (`crate::airtime` matches them), and a show's
+//! usual time and ids, for finding it. No title, name or picture from TVmaze
+//! reaches a page. Its data is CC BY-SA, credited
 //! in the footer and on the Airing page.
 //!
 //! The public API needs no key and allows about 20 calls every 10 seconds, so
@@ -10,7 +11,7 @@
 
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use serde::Deserialize;
 use serde_json::Value;
@@ -75,24 +76,101 @@ pub fn parse_episodes(body: &[u8]) -> AppResult<Vec<Episode>> {
     Ok(episodes_from(raw))
 }
 
+/// A show's zone: its network's, or its streaming channel's when it has no
+/// network. A channel for the whole world has none.
+fn zone_of(show: &Value) -> Option<Tz> {
+    ["network", "webChannel"]
+        .iter()
+        .find_map(|k| show[k]["country"]["timezone"].as_str())
+        .and_then(|z| z.parse::<Tz>().ok())
+}
+
+/// The time a show's schedule gives, "21:00", when it gives one.
+fn schedule_time(show: &Value) -> Option<NaiveTime> {
+    show["schedule"]["time"]
+        .as_str()
+        .and_then(|t| NaiveTime::parse_from_str(t.trim(), "%H:%M").ok())
+}
+
+/// An episode TVmaze gives a day and no time takes the show's own time, on
+/// that day in its channel's zone: TVmaze writes the time on the show and
+/// leaves it off episodes that keep it.
+fn timed_by_show(episodes: &mut [Episode], zone: Option<Tz>, time: Option<NaiveTime>) {
+    let (Some(zone), Some(time)) = (zone, time) else {
+        return;
+    };
+    for e in episodes.iter_mut().filter(|e| e.at.is_none()) {
+        let Some(day) = e.airdate else { continue };
+        e.at = zone
+            .from_local_datetime(&day.and_time(time))
+            .earliest()
+            .map(|at| at.with_timezone(&Utc));
+    }
+}
+
 /// A show from `/shows/{id}?embed=episodeswithspecials`: its episodes and its
-/// network's zone, or its streaming channel's when it has no network.
+/// network's zone, or its streaming channel's when it has no network. An
+/// episode with a day and no time takes the show's (`timed_by_show`).
 pub fn parse_listing(body: &[u8]) -> AppResult<Listing> {
     let show: Value =
         serde_json::from_slice(body).map_err(|e| fail(format!("TVmaze show: {e}")))?;
-    let zone = ["network", "webChannel"]
-        .iter()
-        .find_map(|k| show[k]["country"]["timezone"].as_str())
-        .and_then(|z| z.parse::<Tz>().ok());
+    let zone = zone_of(&show);
     let raw: Vec<RawEpisode> = match &show["_embedded"]["episodeswithspecials"] {
         Value::Null => Vec::new(),
         list => serde_json::from_value(list.clone())
             .map_err(|e| fail(format!("TVmaze episodes: {e}")))?,
     };
-    Ok(Listing {
-        zone,
-        episodes: episodes_from(raw),
-    })
+    let mut episodes = episodes_from(raw);
+    timed_by_show(&mut episodes, zone, schedule_time(&show));
+    Ok(Listing { zone, episodes })
+}
+
+/// One line of a day's schedule: the episode, and enough of its show to tell
+/// which of TMDB's it is.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Scheduled {
+    pub show: i64,
+    pub name: String,
+    pub tvdb_id: Option<i64>,
+    pub imdb_id: Option<String>,
+    pub episode: Episode,
+}
+
+/// A day's schedule, `/schedule?country=…` (the show under `show`) or
+/// `/schedule/web` (under `_embedded.show`). An episode with no time takes
+/// its show's, as in a listing.
+pub fn parse_schedule(body: &[u8]) -> AppResult<Vec<Scheduled>> {
+    let lines: Vec<Value> =
+        serde_json::from_slice(body).map_err(|e| fail(format!("TVmaze schedule: {e}")))?;
+    let mut out = Vec::new();
+    for line in lines {
+        let show = match &line["show"] {
+            Value::Null => &line["_embedded"]["show"],
+            show => show,
+        };
+        let Some(id) = show["id"].as_i64() else {
+            continue;
+        };
+        let Ok(raw) = serde_json::from_value::<RawEpisode>(line.clone()) else {
+            continue;
+        };
+        let mut episodes = episodes_from(vec![raw]);
+        timed_by_show(&mut episodes, zone_of(show), schedule_time(show));
+        let Some(episode) = episodes.pop() else {
+            continue;
+        };
+        out.push(Scheduled {
+            show: id,
+            name: show["name"].as_str().unwrap_or("").to_string(),
+            tvdb_id: show["externals"]["thetvdb"].as_i64().filter(|id| *id > 0),
+            imdb_id: show["externals"]["imdb"]
+                .as_str()
+                .filter(|id| id.starts_with("tt"))
+                .map(str::to_string),
+            episode,
+        });
+    }
+    Ok(out)
 }
 
 fn episodes_from(raw: Vec<RawEpisode>) -> Vec<Episode> {
@@ -219,6 +297,26 @@ pub async fn search(state: &AppState, name: &str) -> AppResult<Value> {
     }
 }
 
+/// What airs on `day`: on television in `country` (an ISO code), or, with
+/// `None`, on streaming channels everywhere.
+pub async fn schedule(
+    state: &AppState,
+    country: Option<&str>,
+    day: NaiveDate,
+) -> AppResult<Vec<Scheduled>> {
+    let path = match country {
+        Some(c) => format!(
+            "/schedule?country={}&date={day}",
+            urlencoding::encode(&c.to_ascii_uppercase())
+        ),
+        None => format!("/schedule/web?date={day}"),
+    };
+    match get(state, &path).await? {
+        Some(body) => parse_schedule(&body),
+        None => Ok(Vec::new()),
+    }
+}
+
 /// Every episode of a show, specials included, and its zone, in one call.
 pub async fn listing(state: &AppState, show: i64) -> AppResult<Listing> {
     match get(state, &format!("/shows/{show}?embed=episodeswithspecials")).await? {
@@ -272,5 +370,82 @@ mod tests {
         let listing = parse_listing(streamed).unwrap();
         assert_eq!(listing.zone, None);
         assert!(listing.episodes.is_empty());
+    }
+
+    #[test]
+    fn an_episode_with_a_day_and_no_time_takes_the_shows_time() {
+        let body = br#"{
+            "id": 2193,
+            "schedule": { "time": "19:30", "days": ["Monday"] },
+            "network": { "name": "Syndication", "country": { "timezone": "America/New_York" } },
+            "_embedded": { "episodeswithspecials": [
+                { "season": 43, "number": 51, "airdate": "2026-11-16", "airtime": "",
+                  "airstamp": "2026-11-16T12:00:00+00:00" },
+                { "season": 43, "number": 52, "airdate": "2026-11-17", "airtime": "20:00",
+                  "airstamp": "2026-11-18T01:00:00+00:00" },
+                { "season": 43, "number": 53, "airdate": null, "airtime": "", "airstamp": null }
+            ] }
+        }"#;
+        let eps = parse_listing(body).unwrap().episodes;
+        // 19:30 in New York in November is 00:30 UTC the next day.
+        assert_eq!(
+            eps[0].at.map(|a| a.to_rfc3339()),
+            Some("2026-11-17T00:30:00+00:00".into())
+        );
+        assert_eq!(
+            eps[1].at.map(|a| a.to_rfc3339()),
+            Some("2026-11-18T01:00:00+00:00".into()),
+            "its own time stands"
+        );
+        assert_eq!(eps[2].at, None, "no day, no time");
+
+        // No zone to read the show's time in, or no time: nothing.
+        let worldwide = br#"{ "schedule": { "time": "03:00" },
+            "webChannel": { "name": "Netflix", "country": null },
+            "_embedded": { "episodeswithspecials": [
+                { "season": 1, "number": 1, "airdate": "2026-11-20", "airtime": "" } ] } }"#;
+        assert_eq!(parse_listing(worldwide).unwrap().episodes[0].at, None);
+        let untimed = br#"{ "schedule": { "time": "" },
+            "network": { "country": { "timezone": "Europe/London" } },
+            "_embedded": { "episodeswithspecials": [
+                { "season": 1, "number": 1, "airdate": "2026-11-20", "airtime": "" } ] } }"#;
+        assert_eq!(parse_listing(untimed).unwrap().episodes[0].at, None);
+    }
+
+    #[test]
+    fn both_kinds_of_schedule_are_read() {
+        let tv = br#"[
+            { "season": 2026, "number": 210, "name": "Episode 210", "airdate": "2026-11-17",
+              "airtime": "", "airstamp": "2026-11-17T12:00:00+00:00",
+              "show": { "id": 500, "name": "El hormiguero",
+                        "schedule": { "time": "21:45" },
+                        "network": { "country": { "timezone": "Europe/Madrid" } },
+                        "externals": { "thetvdb": 0, "imdb": "tt1234567" } } },
+            { "season": 1, "number": 2, "airdate": "2026-11-17", "airtime": "20:00",
+              "airstamp": "2026-11-17T19:00:00+00:00", "show": { "name": "No id" } }
+        ]"#;
+        let lines = parse_schedule(tv).unwrap();
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].show, 500);
+        assert_eq!(lines[0].tvdb_id, None, "0 is no id");
+        assert_eq!(lines[0].imdb_id.as_deref(), Some("tt1234567"));
+        assert_eq!(
+            lines[0].episode.at.map(|a| a.to_rfc3339()),
+            Some("2026-11-17T20:45:00+00:00".into())
+        );
+
+        let web = br#"[
+            { "season": 3, "number": 4, "airdate": "2026-11-17", "airtime": "18:00",
+              "airstamp": "2026-11-17T10:00:00+00:00",
+              "_embedded": { "show": { "id": 77, "name": "Streamed",
+                                       "externals": { "thetvdb": 4242, "imdb": null } } } }
+        ]"#;
+        let lines = parse_schedule(web).unwrap();
+        assert_eq!(lines[0].show, 77);
+        assert_eq!(lines[0].tvdb_id, Some(4242));
+        assert_eq!(
+            lines[0].episode.at.map(|a| a.to_rfc3339()),
+            Some("2026-11-17T10:00:00+00:00".into())
+        );
     }
 }

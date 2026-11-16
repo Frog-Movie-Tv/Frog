@@ -7,6 +7,7 @@
 	import ActivityCard from '#lib/components/ActivityCard.svelte';
 	import ContinueCard from '#lib/components/ContinueCard.svelte';
 	import Empty from '#lib/components/Empty.svelte';
+	import HomeHero, { slidesOf } from '#lib/components/HomeHero.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import LoadFailed from '#lib/components/LoadFailed.svelte';
 	import Poster from '#lib/components/Poster.svelte';
@@ -14,13 +15,13 @@
 	import RailSkeleton from '#lib/components/RailSkeleton.svelte';
 	import ShelfCard from '#lib/components/ShelfCard.svelte';
 	import { failure, type Failure } from '#lib/failure';
-	import { airTime, episodeCode, prettyDate, relativeDate, runtime, year } from '#lib/format';
+	import { airTime, relativeDate, year } from '#lib/format';
+	import { episodeRange, firstMoment } from '#lib/thisweek';
 	import { session } from '#lib/session.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import { shelfMenu, titleMenu } from '#lib/menus';
 	import type {
 		ActivityItem,
-		AiringEntry,
 		BecauseRow,
 		HomeData,
 		LibraryItem,
@@ -95,26 +96,23 @@
 		titleMenu({ ...item, status: item.in_library }, { onchanged: load });
 
 	const hero = $derived(data?.hero ?? null);
-	const heroItem = $derived(hero?.item ?? null);
-	const heroNext = $derived(hero?.next ?? null);
-	const heroCaughtUp = $derived(!!heroNext && !heroNext.aired);
-	/** Marked as watching, but not a single episode ticked yet. */
-	const heroFresh = $derived(
-		!!heroItem && heroItem.kind === 'tv' && heroItem.watched_episodes === 0 && !heroCaughtUp
-	);
-	const heroLabel = $derived(
-		heroCaughtUp
-			? 'Caught up'
-			: heroFresh
-				? 'Start watching'
-				: heroItem?.kind === 'manga' && heroItem.entry?.status === 'watching'
-					? 'Continue reading'
-					: heroNext || heroItem?.entry?.status === 'watching'
-						? 'Continue watching'
-						: // Nothing in progress: the hero is simply the newest addition.
-							'Recently added'
-	);
 	const heroStyle = $derived(settings.current.heroStyle);
+	/** Recommendations answered from the hero, out of it at once. */
+	let answered = $state<number[]>([]);
+	const slides = $derived(
+		data
+			? slidesOf(
+					(data.recommended ?? []).filter((r) => !answered.includes(r.id)),
+					data.this_week,
+					hero
+				)
+			: []
+	);
+	/** The hero turns through other things: its own title goes back in its row. */
+	const rotating = $derived(slides.length > 0 && slides[0].kind !== 'today');
+	/** Not shown as the hero, by rotation or by Settings: back in its own row. */
+	const putBack = $derived(rotating || heroStyle === 'off');
+	const heroItem = $derived(putBack ? null : (hero?.item ?? null));
 
 	const isEmpty = $derived(
 		!!data && !data.hero && !data.continue.length && !data.recent.length && !data.favourites.length
@@ -136,19 +134,21 @@
 
 	/** What you are following, the hero's own title left out: in progress
 	 *  first, then the shows waiting on their next episode. */
-	const following = $derived(
-		data ? [...data.continue, ...data.waiting].filter((e) => e.item.id !== heroItem?.id) : []
+	const following = $derived.by(() => {
+		if (!data) return [];
+		const back = (row: 'continue' | 'waiting') =>
+			putBack && hero && data?.hero_row === row ? [hero] : [];
+		return [...back('continue'), ...data.continue, ...back('waiting'), ...data.waiting].filter(
+			(e) => e.item.id !== heroItem?.id
+		);
+	});
+	const recent = $derived(
+		data
+			? putBack && hero && data.hero_row === 'recent'
+				? [hero.item, ...data.recent]
+				: data.recent
+			: []
 	);
-
-	/** The earliest moment on the entry's first day. The first episode may be a
-	 * special no provider times while the episode beside it has a time. */
-	function firstMoment(entry: AiringEntry): string | null {
-		const moments = entry.episodes
-			.filter((e) => e.air_date === entry.air_date && e.air_at)
-			.map((e) => e.air_at as string)
-			.sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-		return moments[0] ?? null;
-	}
 
 	const rows = $derived.by(() => {
 		if (!data) return [];
@@ -156,30 +156,13 @@
 			shelves: data.shelves.length > 0,
 			continue: following.length > 0,
 			thisweek: data.this_week.length > 0,
-			recent: data.recent.length > 0,
+			recent: recent.length > 0,
 			favourites: data.favourites.length > 0,
 			because: because.length > 0,
 			activity: activity.length > 0
 		};
 		return settings.current.homeRows.filter((id) => available[id]);
 	});
-
-	/** "S01E05" for one, "S01E05–E06" for a run of them. A special that airs
-	 * beside regular episodes counts towards "2 episodes" but not the range,
-	 * which would otherwise read "S00E07–S01E07". */
-	function episodeRange(entry: AiringEntry): string {
-		const regular = entry.episodes.filter((e) => e.season_number > 0);
-		const run = regular.length ? regular : entry.episodes;
-		const first = run[0];
-		const last = run[run.length - 1];
-		const start = episodeCode(first.season_number, first.episode_number);
-		if (run.length === 1) return start;
-		const end =
-			last.season_number === first.season_number
-				? `E${String(last.episode_number).padStart(2, '0')}`
-				: episodeCode(last.season_number, last.episode_number);
-		return `${start}–${end}`;
-	}
 </script>
 
 <svelte:head>
@@ -209,76 +192,13 @@
 	{/if}
 {:else if data}
 	<div class="home">
-		{#if heroItem && heroStyle !== 'off'}
-			<header
-				class="hero"
-				class:pictured={(heroStyle === 'backdrop' && !!heroItem.backdrop_path) ||
-					(heroStyle === 'poster' && !!heroItem.poster_path)}
-			>
-				{#if heroStyle === 'backdrop' && heroItem.backdrop_path}
-					<img
-						class="backdrop"
-						src={img(heroItem.backdrop_path, 'w1280')}
-						alt=""
-						fetchpriority="high"
-					/>
-				{:else if heroStyle === 'poster' && heroItem.poster_path}
-					<img
-						class="backdrop poster"
-						src={img(heroItem.poster_path, 'w780')}
-						alt=""
-						fetchpriority="high"
-					/>
-				{/if}
-				<div class="veil" aria-hidden="true"></div>
-
-				<div class="hero-body">
-					<span class="hero-label">{heroLabel}</span>
-
-					{#if heroItem.logo_path}
-						<img class="logo" src={img(heroItem.logo_path, 'w500')} alt={heroItem.name} />
-					{:else}
-						<h1>{heroItem.name}</h1>
-					{/if}
-
-					<p class="facts">
-						{#if year(heroItem.release_date)}<span>{year(heroItem.release_date)}</span>{/if}
-						{#if heroItem.kind === 'movie' && heroItem.runtime}
-							<span>{runtime(heroItem.runtime)}</span>
-						{/if}
-						{#if heroItem.genres.length}<span>{heroItem.genres.slice(0, 3).join(' · ')}</span>{/if}
-					</p>
-
-					{#if heroNext}
-						<p class="upnext">
-							{#if heroCaughtUp}
-								Next episode {heroNext.air_date ? prettyDate(heroNext.air_date) : 'to be announced'}
-								{#if heroNext.air_date}· {airTime(heroNext.air_at)}{/if}
-							{:else}
-								<strong>{episodeCode(heroNext.season_number, heroNext.episode_number)}</strong>
-								{heroNext.name ?? ''}
-							{/if}
-						</p>
-					{/if}
-
-					<div class="hero-actions">
-						{#if heroCaughtUp}
-							<a class="btn" href={titleHref(heroItem)}>View show</a>
-						{:else}
-							<a class="btn primary" href={titleHref(heroItem)}>
-								<Icon name="play" size={14} filled />
-								{heroFresh
-									? 'Start watching'
-									: heroItem.kind === 'manga'
-										? `Chapter ${heroItem.watched_episodes + 1}`
-										: heroNext
-											? 'Next episode'
-											: 'Open'}
-							</a>
-						{/if}
-					</div>
-				</div>
-			</header>
+		{#if heroStyle !== 'off' && slides.length}
+			<HomeHero
+				{slides}
+				style={heroStyle}
+				onanswered={(id) => (answered = [...answered, id])}
+				onchanged={load}
+			/>
 		{/if}
 
 		<div class="page rows">
@@ -361,7 +281,7 @@
 					{/each}
 				{:else if row === 'recent'}
 					<Rail title="Recently added">
-						{#each data.recent as item (item.id)}
+						{#each recent as item (item.id)}
 							<Poster
 								menu={menuOf(item)}
 								kind={item.kind}
@@ -436,148 +356,14 @@
 		padding: 0 2px;
 	}
 
-	/* The screen belongs to one title: its picture fills it and fades into
-	   the light behind the page, so the hero has no bottom edge. */
-	.hero {
-		position: relative;
-		isolation: isolate;
-		min-height: min(56vh, 480px);
-		display: flex;
-		align-items: flex-end;
-		padding: calc(var(--header-h) + 48px) var(--page-pad) 56px;
-		overflow: hidden;
-	}
-
-	.hero.pictured {
-		min-height: 88vh;
-		padding-bottom: 72px;
-	}
-
 	.hero-skeleton {
 		height: min(52vh, 420px);
 		margin: calc(var(--header-h) * -0.2) 0 28px;
 		border-radius: var(--radius-lg);
 	}
 
-	.backdrop {
-		position: absolute;
-		inset: 0;
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		object-position: center 20%;
-		z-index: -2;
-		/* The picture fades out itself, so its edge never shows as a line where
-		   the page begins. */
-		mask-image: linear-gradient(to top, transparent 0, #000 34%);
-	}
-
-	.backdrop.poster {
-		object-position: center 12%;
-	}
-
-	/* Shade behind the words, on the left where they sit, fading out with
-	   the picture. */
-	.veil {
-		position: absolute;
-		inset: 0;
-		z-index: -1;
-		background:
-			linear-gradient(to right, color-mix(in srgb, var(--bg) 84%, transparent), transparent 64%),
-			linear-gradient(
-				to top,
-				color-mix(in srgb, var(--bg) 70%, transparent) 0,
-				color-mix(in srgb, var(--bg) 38%, transparent) 32%,
-				transparent 56%
-			);
-		mask-image: linear-gradient(to top, transparent 0, #000 28%);
-	}
-
-	.hero-label {
-		font-size: 1rem;
-		font-weight: 700;
-		color: var(--text);
-		opacity: 0.85;
-	}
-
-	.hero .facts,
-	.hero .upnext {
-		color: var(--text);
-	}
-
-	.hero-body {
-		max-width: 1440px;
-		margin: 0 auto;
-		width: 100%;
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 12px;
-	}
-
-	.logo {
-		max-width: min(620px, 82vw);
-		max-height: 200px;
-		object-fit: contain;
-		object-position: left bottom;
-		filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.65));
-	}
-
-	/* On a dark theme a black logo would vanish into the page; a faint light
-	   halo keeps its outline without changing a coloured one. */
-	:global(:root[data-tone='dark']) .logo {
-		filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.45))
-			drop-shadow(0 0 14px rgb(255 255 255 / 0.12)) drop-shadow(0 4px 18px rgb(0 0 0 / 0.5));
-	}
-
-	/* On a light theme the hero fades to a pale page, where a white logo
-	   would lose its edges: a dark outline and a closer shadow keep them. */
-	:global(:root[data-tone='light']) .logo {
-		filter: drop-shadow(0 0 1px rgb(0 0 0 / 0.6)) drop-shadow(0 1px 3px rgb(0 0 0 / 0.45))
-			drop-shadow(0 6px 22px rgb(0 0 0 / 0.55));
-	}
-
-	.facts {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 14px;
-		font-size: 0.88rem;
-		color: var(--text-dim);
-	}
-
-	.upnext {
-		font-size: 0.95rem;
-		color: var(--text-dim);
-	}
-
-	.upnext strong {
-		color: var(--accent);
-		font-variant-numeric: tabular-nums;
-		margin-right: 6px;
-	}
-
-	.hero h1 {
-		font-size: clamp(3rem, 7vw, 5.6rem);
-		letter-spacing: -0.045em;
-	}
-
-	.hero-actions {
-		display: flex;
-		gap: 10px;
-		margin-top: 6px;
-	}
-
-	/* The one thing to do, in the page's own ink, as a TV app's Play is. */
-	.hero-actions .btn.primary {
-		min-height: 50px;
-		padding: 0 30px;
-		background: var(--text);
-		color: var(--bg);
-		font-size: 1rem;
-		box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6);
-	}
-
-	.hero + .rows {
+	/* Under the hero (HomeHero), the rows start close. */
+	.home > :global(.hero + .rows) {
 		padding-top: 8px;
 	}
 
@@ -653,21 +439,5 @@
 
 	.when::first-letter {
 		text-transform: uppercase;
-	}
-
-	@media (max-width: 720px) {
-		.hero {
-			min-height: 48vh;
-			padding-top: calc(var(--header-h) + 24px);
-		}
-
-		.hero.pictured {
-			min-height: 72vh;
-			padding-bottom: 40px;
-		}
-
-		.logo {
-			max-height: 120px;
-		}
 	}
 </style>

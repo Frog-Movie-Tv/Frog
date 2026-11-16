@@ -63,7 +63,7 @@
 	</button>
 
 	{#if open}
-		<div class="menu" role="menu" aria-label="Account" use:onScreen>
+		<div class="menu" role="menu" aria-label="Account" use:onScreen={false}>
 			<div class="who">
 				<strong>{name}</strong>
 				<span class="faint">{role}</span>

@@ -889,6 +889,47 @@ test('the rating menu opens whole, above everything, and listens only while open
 	await restore();
 });
 
+test('the shelves menu stays on the screen and never widens the page', async ({
+	page,
+	isMobile
+}) => {
+	await signIn(page);
+	await ratedFilm(page, 9197);
+	await page.route('**/api/t/9197/shelves', (route) =>
+		route.fulfill({
+			json: {
+				shelves: [
+					{ id: 1, name: 'Sunday nights with a very long shelf name indeed', on: true },
+					{ id: 2, name: 'Comfort', on: false }
+				]
+			}
+		})
+	);
+	await page.goto('/t/9197');
+	await page.getByRole('button', { name: 'Add to shelf' }).click();
+	const menu = page.getByRole('menu', { name: 'Shelves' });
+	await expect(menu).toBeVisible();
+	await page.waitForTimeout(400);
+	const box = (await menu.boundingBox())!;
+	const view = page.viewportSize()!;
+	expect(box.x).toBeGreaterThanOrEqual(0);
+	expect(box.x + box.width).toBeLessThanOrEqual(view.width);
+	expect(box.y + box.height).toBeLessThanOrEqual(view.height);
+	// Anchored, it ran past the right edge and the page panned sideways.
+	const wide = await page.evaluate(() => ({
+		scroll: document.documentElement.scrollWidth,
+		client: document.documentElement.clientWidth
+	}));
+	expect(wide.scroll).toBe(wide.client);
+	if (isMobile) {
+		// A sheet along the bottom, like a card's menu.
+		expect(Math.round(box.y + box.height)).toBe(view.height);
+	}
+	await expect(page.getByRole('menuitemcheckbox', { name: 'Comfort' })).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(menu).toBeHidden();
+});
+
 test("a title's picture keeps its size when a status or rating is saved", async ({ page }) => {
 	await signIn(page);
 	// Short enough that the words over the picture are taller than its least height.
@@ -1545,6 +1586,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/ext/log',
 		'/api/ext/undo',
 		'/api/notifications/read',
+		'/api/notifications/restore',
 		'/api/t/1/recommend',
 		'/api/recommendations/1/answer'
 	]) {
@@ -1558,7 +1600,8 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/anilist/entries/1',
 		'/api/admin/badges/1',
 		'/api/admin/badges/1/holders/1',
-		'/api/account/badges'
+		'/api/account/badges',
+		'/api/account/device'
 	]) {
 		const res = await request.put(path, { data: { rating: 80 } });
 		expect(res.status(), `PUT ${path} should be 401`).toBe(401);
@@ -1576,7 +1619,9 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/t/1/library',
 		'/api/admin/badges/1',
 		'/api/admin/badges/1/holders/1',
-		'/api/account/tokens/1'
+		'/api/account/tokens/1',
+		'/api/notifications',
+		'/api/notifications/1'
 	]) {
 		const res = await request.delete(path, { data: {} });
 		expect(res.status(), `DELETE ${path} should be 401`).toBe(401);
@@ -2413,6 +2458,139 @@ test('the bell counts what is new and hides at nothing', async ({
 	await page.request.put('/api/account/profile', { data: { public: account.profile_public } });
 	await them.put('/api/account/profile', { data: { public: false } });
 	await them.dispose();
+});
+
+test('a notification can be removed, and Clear all takes the rest, each with Undo', async ({
+	page,
+	playwright,
+	baseURL,
+	isMobile
+}, testInfo) => {
+	await signIn(page);
+	seedTitles(testInfo.project.name, [
+		[9403, 'movie', 'Gone Film'],
+		[9404, 'movie', 'Kept Film']
+	]);
+	const { them } = await anotherAccount(page, playwright, baseURL, 'rm');
+	const account = await (await page.request.get('/api/account')).json();
+	await page.request.put('/api/account/profile', { data: { public: true } });
+	const people = await (await them.get('/api/people/choosable?for=recommend')).json();
+	const me = people.people.find((p: { username: string }) => p.username === USER);
+	await them.post('/api/t/9403/recommend', { data: { to: [me.id] } });
+	await them.post('/api/t/9404/recommend', { data: { to: [me.id] } });
+
+	await page.goto('/notifications');
+	await page.getByRole('button', { name: 'Everything' }).click();
+	const line = page.locator('.notices li', { hasText: 'Gone Film' });
+	await expect(line).toBeVisible();
+	if (isMobile) {
+		// Swiped away by finger.
+		const box = (await line.boundingBox())!;
+		const y = box.y + box.height / 2;
+		const touch = { pointerType: 'touch', pointerId: 7, isPrimary: true, clientY: y };
+		await line.dispatchEvent('pointerdown', { ...touch, clientX: box.x + box.width - 20 });
+		for (const x of [box.x + box.width - 60, box.x + box.width / 2, box.x + 20]) {
+			await line.dispatchEvent('pointermove', { ...touch, clientX: x });
+		}
+		await line.dispatchEvent('pointerup', { ...touch, clientX: box.x + 20 });
+	} else {
+		await line.hover();
+		await line.getByRole('button', { name: /^Remove notification/ }).click();
+	}
+	await expect(line).toHaveCount(0);
+	await expect(page.getByText('Notification removed')).toBeVisible();
+
+	// Only the line went: the recommendation can still be answered.
+	const after = await (await page.request.get('/api/notifications')).json();
+	expect(after.items.some((i: { title?: { name: string } }) => i.title?.name === 'Gone Film')).toBe(
+		false
+	);
+	expect(after.for_you.some((r: { title: { name: string } }) => r.title.name === 'Gone Film')).toBe(
+		true
+	);
+
+	await page.getByRole('button', { name: 'Undo' }).click();
+	await expect(page.locator('.notices li', { hasText: 'Gone Film' })).toBeVisible();
+
+	await page.getByRole('button', { name: 'Clear all' }).click();
+	await expect(page.locator('.notices li')).toHaveCount(0);
+	expect((await (await page.request.get('/api/notifications')).json()).items).toHaveLength(0);
+	await page.getByRole('button', { name: 'Undo' }).click();
+	await expect(page.locator('.notices li', { hasText: 'Kept Film' })).toBeVisible();
+
+	await page.request.put('/api/account/profile', { data: { public: account.profile_public } });
+	await them.put('/api/account/profile', { data: { public: false } });
+	await them.dispose();
+});
+
+test('Home’s hero turns through recommendations, then what airs this week', async ({ page }) => {
+	await signIn(page);
+	const item = (id: number, kind: 'movie' | 'tv', name: string) =>
+		titleAnswer(id, kind, name, {}).item;
+	const sam = { username: 'sam', display_name: 'Sam', avatar: false };
+	const today = new Date().toISOString().slice(0, 10);
+	let home = {
+		hero: { item: item(9601, 'tv', 'Continuing Show'), next: null },
+		hero_row: 'recent',
+		recommended: [
+			{
+				id: 71,
+				note: 'The second season is the one',
+				created_at: today,
+				from: sam,
+				item: item(9602, 'movie', 'Recommended Film')
+			},
+			{ id: 72, note: null, created_at: today, from: sam, item: item(9603, 'tv', 'Second Pick') }
+		],
+		continue: [],
+		waiting: [],
+		this_week: [
+			{
+				item: item(9604, 'tv', 'Airing Show'),
+				air_date: today,
+				episodes: [
+					{ season_number: 2, episode_number: 3, name: 'The Third', air_date: today, air_at: null }
+				]
+			}
+		],
+		recent: [],
+		favourites: [],
+		shelves: []
+	};
+	await page.route('**/api/home', (route) => route.fulfill({ json: home }));
+	const answered: unknown[] = [];
+	await page.route('**/api/recommendations/*/answer', (route) => {
+		answered.push(route.request().postDataJSON());
+		return route.fulfill({ json: { ok: true } });
+	});
+	await page.goto('/');
+
+	const hero = page.getByRole('region', { name: 'Featured' });
+	await expect(hero).toBeVisible();
+	const dots = hero.getByRole('group', { name: 'Choose a slide' }).getByRole('button');
+	await expect(dots).toHaveCount(3);
+	// Recommendations first, with who sent it and their note.
+	await expect(hero).toContainText('Recommended by Sam');
+	await expect(hero).toContainText('The second season is the one');
+	// Never what you are in the middle of; that goes back in its row.
+	await expect(hero).not.toContainText('Continuing Show');
+	await expect(page.getByRole('heading', { name: 'Recently added' })).toBeVisible();
+
+	// It turns by itself, about every eight seconds.
+	await expect(hero).toContainText('Second Pick', { timeout: 11000 });
+	await dots.nth(2).click();
+	await expect(hero).toContainText('Airing Show');
+	await expect(hero).toContainText('S02E03');
+	await expect(hero.getByRole('link', { name: 'View show' })).toBeVisible();
+
+	// Declining answers it and takes it out of the rotation.
+	await dots.nth(0).click();
+	await expect(hero).toContainText('Recommended Film');
+	home = { ...home, recommended: home.recommended.slice(1) };
+	await hero.getByRole('button', { name: 'Not for me' }).click();
+	await expect(dots).toHaveCount(2);
+	expect(answered).toEqual([{ answer: 'dismissed' }]);
+	await expect(hero).not.toContainText('Recommended Film');
 });
 
 test("a studio's titles go in together, and come out together", async ({ page }, testInfo) => {

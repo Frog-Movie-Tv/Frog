@@ -473,15 +473,23 @@ async fn store(
 ) -> AppResult<bool> {
     let genres = genre_names(detail);
     let network = detail["networks"][0]["name"].as_str();
+    let countries = detail["origin_country"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>()
+        .join(",");
     let original = (!show.original_name.is_empty()).then_some(show.original_name.as_str());
 
     let mut tx = pool.begin().await?;
     sqlx::query(
         "INSERT INTO airing_show (tmdb_id, name, search_name, poster_path, network, genres,
-                                  anime, popularity, listed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  anime, popularity, listed_at, countries)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (tmdb_id) DO UPDATE SET
             name = excluded.name,
+            countries = excluded.countries,
             search_name = excluded.search_name,
             poster_path = excluded.poster_path,
             network = excluded.network,
@@ -499,6 +507,7 @@ async fn store(
     .bind(show.anime)
     .bind(detail["popularity"].as_f64().unwrap_or(0.0))
     .bind(started)
+    .bind(&countries)
     .execute(&mut *tx)
     .await?;
 

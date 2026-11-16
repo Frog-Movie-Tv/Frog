@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { backCloses } from '#lib/layers.svelte';
-	import { onScreen } from '#lib/onscreen';
+	import { anchorTo } from '#lib/onscreen';
+	import { portal } from '#lib/portal';
 	import Icon from './Icon.svelte';
 	import NewShelf from './NewShelf.svelte';
 	import { api } from '#lib/api';
@@ -24,6 +25,10 @@
 	let creating = $state(false);
 	let shelves = $state<{ id: number; name: string; on: boolean }[] | null>(null);
 	let root: HTMLDivElement | undefined = $state();
+	let button: HTMLButtonElement | undefined = $state();
+	// The menu lives at the end of the page while open, so nothing the title
+	// page draws around it can clip it, and on a phone it is a sheet.
+	let panel: HTMLDivElement | undefined = $state();
 
 	async function toggleMenu() {
 		open = !open;
@@ -69,6 +74,7 @@
 <div class="add" bind:this={root}>
 	<button
 		class="btn"
+		bind:this={button}
 		aria-haspopup="menu"
 		aria-expanded={open}
 		aria-label="Add to shelf"
@@ -79,32 +85,37 @@
 	</button>
 
 	{#if open && shelves}
-		<div class="menu" role="menu" aria-label="Shelves" use:onScreen>
-			{#each shelves as shelf (shelf.id)}
+		<div class="layer" use:portal>
+			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+			<div class="scrim" onclick={() => (open = false)}></div>
+			<div class="menu" role="menu" aria-label="Shelves" bind:this={panel} use:anchorTo={button}>
+				<div class="handle" aria-hidden="true"></div>
+				{#each shelves as shelf (shelf.id)}
+					<button
+						class="item"
+						role="menuitemcheckbox"
+						aria-checked={shelf.on}
+						onclick={() => toggle(shelf)}
+					>
+						<span class="tick"
+							>{#if shelf.on}<Icon name="check" size={15} />{/if}</span
+						>
+						<span class="label">{shelf.name}</span>
+					</button>
+				{/each}
+				{#if shelves.length}<hr />{/if}
 				<button
 					class="item"
-					role="menuitemcheckbox"
-					aria-checked={shelf.on}
-					onclick={() => toggle(shelf)}
+					role="menuitem"
+					onclick={() => {
+						open = false;
+						creating = true;
+					}}
 				>
-					<span class="tick"
-						>{#if shelf.on}<Icon name="check" size={15} />{/if}</span
-					>
-					<span class="label">{shelf.name}</span>
+					<span class="tick"><Icon name="plus" size={15} /></span>
+					<span class="label">New shelf</span>
 				</button>
-			{/each}
-			{#if shelves.length}<hr />{/if}
-			<button
-				class="item"
-				role="menuitem"
-				onclick={() => {
-					open = false;
-					creating = true;
-				}}
-			>
-				<span class="tick"><Icon name="plus" size={15} /></span>
-				<span class="label">New shelf</span>
-			</button>
+			</div>
 		</div>
 	{/if}
 </div>
@@ -119,11 +130,12 @@
 		display: inline-flex;
 	}
 
+	/* Placed by `anchorTo` under its button, inside the window. */
 	.menu {
-		position: absolute;
-		z-index: 40;
-		top: calc(100% + 6px);
+		position: fixed;
+		z-index: 70;
 		left: 0;
+		top: 0;
 		min-width: 220px;
 		max-width: min(320px, 86vw);
 		max-height: 320px;
@@ -176,5 +188,63 @@
 		border: 0;
 		border-top: 1px solid var(--line);
 		margin: 4px 2px;
+	}
+
+	.scrim,
+	.handle {
+		display: none;
+	}
+
+	/* A phone: a sheet along the bottom, as a card's menu is, over a dimmed
+	   page. Anchored, it ran past the right edge and widened the page. */
+	@media (max-width: 600px) {
+		.scrim {
+			display: block;
+			position: fixed;
+			inset: 0;
+			z-index: 199;
+			background: rgb(0 0 0 / 0.45);
+			animation: scrim-in 160ms ease backwards;
+		}
+
+		.menu {
+			z-index: 200;
+			inset: auto 0 0 0;
+			min-width: 0;
+			max-width: none;
+			max-height: 80dvh;
+			padding: 0 10px calc(14px + env(safe-area-inset-bottom));
+			border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+			border-width: 1px 0 0;
+			animation: rise 220ms var(--ease) backwards;
+		}
+
+		.handle {
+			display: block;
+			width: 42px;
+			height: 4px;
+			border-radius: var(--radius-pill);
+			background: var(--line-strong);
+			margin: 10px auto 4px;
+		}
+
+		.item {
+			min-height: 48px;
+			padding: 10px 12px;
+			font-size: 0.96rem;
+		}
+	}
+
+	@keyframes rise {
+		from {
+			transform: translateY(24px);
+			opacity: 0;
+		}
+	}
+
+	@keyframes scrim-in {
+		from {
+			opacity: 0;
+		}
 	}
 </style>

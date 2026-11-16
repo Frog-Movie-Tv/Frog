@@ -155,6 +155,7 @@ async fn fill_airtimes(state: AppState) {
 async fn build_airing(state: AppState) {
     loop {
         crate::airing::refresh_if_due(&state).await;
+        crate::airtime::schedules_if_due(&state).await;
         tokio::time::sleep(AIRING_TICK).await;
     }
 }

@@ -13,9 +13,31 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Improvements
+
+- Choose what your banner shows from Settings → Profile, for the column and
+  across the top alike, each keeping its own.
+- A banner across the top of a profile runs edge to edge, up under the bar,
+  and fades into the page.
+- Signed-in devices shows this device first, with the rest a tap away.
+  Phones and tablets get their own icons, iPads included.
+- The top of Home turns through what people recommend to you and what is new
+  this week from the shows you follow. Add a recommendation or pass on it
+  right there.
+- Remove a notification with its × or a swipe, or clear them all, with Undo.
+- Watching a show with someone tells them in one line, however many episodes
+  and evenings it takes: a whole season, or how many episodes.
+- Recommendations and watched-with-you notifications show the title's
+  picture.
+- More episodes on Airing show the time they air.
+
 ### Fixes
 
 - Frog keeps you signed in while it restarts for an update.
+- The shelves menu on a title opens as a sheet on a phone, and stays inside
+  the screen.
+- A trailer behind a title appears only once it is playing, never with
+  YouTube's play button over it.
 
 ## [1.7.2] — Chorus Frog — 2026-11-15
 

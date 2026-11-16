@@ -157,7 +157,7 @@ In Git Bash, put cargo on PATH first: `export PATH="$HOME/.cargo/bin:$PATH"`.
 
 Ports: the owner's instance uses 8080. E2E uses 8098/8099, the extension's
 e2e 8071 (a stand-in Frog) and 8072 (fixture pages), audit 8095,
-screenshots 8096, pwa-check 8094, and the verify scripts 8084–8093 and 8097 —
+screenshots 8096, pwa-check 8094, and the verify scripts 8083–8093 and 8097 —
 each with its own throwaway database.
 
 ## Gotchas that have already cost time
@@ -306,7 +306,22 @@ part you are about to touch; change it when the code changes.
   the day, so TMDB moving the episode clears it. Nothing when TVmaze already
   lists that day or later (it is saying none airs), or the episodes disagree.
   A show TMDB's ids do not find on TVmaze is searched by name and first year,
-  and taken only when exactly one show answers.
+  and taken only when exactly one show answers. Once a day the rest get a
+  second chance from TVmaze's day schedules (`airtime::schedules_if_due`):
+  `/schedule?country=…` for each country the untimed shows come from
+  (`airing_show.countries`, TMDB's `origin_country`) and `/schedule/web`,
+  for today and the six days before. A show is found there by TMDB's TheTVDB
+  or IMDb id, else as the one show of that name, and kept only when one of
+  its episodes that day pairs with TMDB's (`schedule_match`); its TVmaze id
+  goes in `airtime_show` and the next pass times it as any other. Measured
+  on 2026-11-16: of 310 untimed episodes on one day, 39 were in that day's
+  schedules, so most of what stays TBA is shows TVmaze does not carry (local
+  dailies, soaps, Chinese and Indian streaming). An episode TVmaze gives a
+  day and an empty `airtime` takes the show's `schedule.time` in its
+  channel's zone (`tvmaze::timed_by_show`), as `air_source` 'tvmaze'; a
+  worldwide streamer has no zone and stays TBA. The Daily Show is linked to
+  TVmaze's Trevor Noah run, which ended in 2022, so it stays TBA: a kept id
+  is never second-guessed.
   `cargo run --example airtime_check -- <tmdb id> <season> all` prints a
   season's pairing.
   `refresh_due` works every listed or tracked show out every six hours, so
@@ -438,7 +453,8 @@ part you are about to touch; change it when the code changes.
   `verify-2fa`, `verify-diary`, `verify-import`, `verify-polish`,
   `verify-long-names` (real titles, ordinary and very long names, phones),
   `verify-pictures` (uploads in Chromium, as Safari with no WebP writer, and in WebKit; needs `npx playwright install webkit`),
-  `verify-accounts` (invites,
+  `verify-trailer` (the trailer behind a title, frame by frame against
+  YouTube's own player; `--webkit` for Safari's engine), `verify-accounts` (invites,
   isolation, devices, switching off), `verify-pull` (pull to refresh with
   real touch input), plus `npm run pwa-check` and
   `npm run audit`. The ones that reach TMDB need a valid key; with a bad one
@@ -589,9 +605,13 @@ part you are about to touch; change it when the code changes.
   (Frog loops by `seekTo` on state 0 instead); and a player that is never
   hidden, because a browser pauses a muted video nobody can see and YouTube
   flashes its button on resuming. So it plays under the title's picture,
-  which loads 0.8 s after the page (`AMBIENT_AFTER`), lifts 1.2 s after the
-  player says it is playing (`AMBIENT_SETTLE`), and starts 12 s in, past the
-  studio logos (`AMBIENT_FROM`). The picture fades only as it lifts: when the
+  which loads 0.8 s after the page (`AMBIENT_AFTER`) and starts 12 s in, past
+  the studio logos (`AMBIENT_FROM`). It lifts only once the player's own
+  clock has run a second (`AMBIENT_SETTLE`) past that point while playing:
+  YouTube says "playing" before it draws a frame, while it still seeks to the
+  start with its button up, and says it too when autoplay is then refused, so
+  a timer from that state showed the button. `verify-trailer` checks it
+  frame by frame. The picture fades only as it lifts: when the
   player buffers, ends or the tab is hidden it is back at once, since a fade
   back let YouTube's play button show through. It loops 3 s before the end
   (`AMBIENT_LOOP`, from the player's `infoDelivery` times), so the end

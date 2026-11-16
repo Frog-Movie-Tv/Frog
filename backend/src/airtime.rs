@@ -21,6 +21,12 @@
 //! (`usual_slot`): the time its last few episodes on that weekday all aired
 //! at, on TMDB's day. That is `air_source` 'slot', which, unlike a provider's
 //! own episode, does not own the day: TMDB moving the episode clears it.
+//!
+//! A show TMDB's ids and a search by name do not find on TVmaze gets a
+//! second chance once a day from TVmaze's day schedules (`schedules_if_due`):
+//! the schedule of each country the untimed shows come from, and streaming's,
+//! for the past week. A show found there keeps its TVmaze id and is worked
+//! out as any other.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1221,6 +1227,163 @@ pub async fn refresh_due(state: &AppState) -> usize {
     done
 }
 
+// --- found through a day's schedule -------------------------------------------
+
+/// How often the day schedules are read for shows TVmaze is not known for.
+const SCHEDULE_HOURS: i64 = 24;
+
+/// Today and the days before it whose schedules are read: a weekly show
+/// airs in one of them, and TVmaze's past days are complete.
+const SCHEDULE_DAYS: i64 = 7;
+
+/// The TVmaze show a day's schedule names for one of TMDB's: by TMDB's
+/// TheTVDB or IMDb id, else the one show there with one of its names. Taken
+/// only when one of TMDB's episodes that day pairs with one of that show's
+/// that day (`match_tvmaze`), since a wrong show would give every episode a
+/// wrong time.
+pub fn schedule_match(show: &Show, wanted: &[Wanted], lines: &[tvmaze::Scheduled]) -> Option<i64> {
+    fn one(ids: impl Iterator<Item = i64>) -> Option<i64> {
+        let ids: BTreeSet<i64> = ids.collect();
+        (ids.len() == 1).then(|| *ids.first().unwrap())
+    }
+    let by_id = one(lines
+        .iter()
+        .filter(|l| {
+            (show.tvdb_id.is_some() && l.tvdb_id == show.tvdb_id)
+                || (show.imdb_id.is_some() && l.imdb_id == show.imdb_id)
+        })
+        .map(|l| l.show));
+    let id = by_id.or_else(|| {
+        let names: Vec<String> = show_names(show).iter().map(|n| squash(n)).collect();
+        one(lines
+            .iter()
+            .filter(|l| names.contains(&squash(&l.name)))
+            .map(|l| l.show))
+    })?;
+    let episodes: Vec<tvmaze::Episode> = lines
+        .iter()
+        .filter(|l| l.show == id)
+        .map(|l| l.episode.clone())
+        .collect();
+    match_tvmaze(&episodes, wanted)
+        .iter()
+        .any(Option::is_some)
+        .then_some(id)
+}
+
+/// Once a day: read TVmaze's day schedules for the countries the Airing
+/// list's untimed shows come from, and streaming's, and keep the TVmaze id
+/// of each show they find. Its times are then worked out the usual way, on
+/// the next pass (`mark_due`).
+pub async fn schedules_if_due(state: &AppState) {
+    let row: Option<(Option<String>, Option<String>)> =
+        match sqlx::query_as("SELECT listed_at, schedules_at FROM airing_state WHERE id = 1")
+            .fetch_optional(&state.pool)
+            .await
+        {
+            Ok(row) => row,
+            Err(e) => {
+                tracing::warn!(error = %e, "could not read when schedules were read");
+                return;
+            }
+        };
+    let Some((Some(_), read)) = row else {
+        // No Airing list yet: nothing to find.
+        return;
+    };
+    if !older_than(read.as_deref(), Duration::hours(SCHEDULE_HOURS)) {
+        return;
+    }
+    let _ = sqlx::query("UPDATE airing_state SET schedules_at = ? WHERE id = 1")
+        .bind(Utc::now().to_rfc3339())
+        .execute(&state.pool)
+        .await;
+    match find_by_schedule(state, Utc::now().date_naive()).await {
+        Ok(found) => tracing::info!(found, "shows found through TVmaze's schedules"),
+        Err(e) => tracing::warn!(error = %e, "TVmaze's schedules not read"),
+    }
+}
+
+/// (TMDB id, season, episode, name, the show's countries)
+type UntimedRow = (i64, i64, i64, Option<String>, String);
+
+/// The schedules of `today` and the days before it. Says how many shows were
+/// found.
+pub async fn find_by_schedule(state: &AppState, today: NaiveDate) -> AppResult<usize> {
+    let mut found = BTreeSet::new();
+    for back in 0..SCHEDULE_DAYS {
+        let day = today - Duration::days(back);
+        let rows: Vec<UntimedRow> = sqlx::query_as(
+            "SELECT e.tmdb_id, e.season, e.episode, e.name, s.countries
+               FROM airing_episode e
+               JOIN airing_show s ON s.tmdb_id = e.tmdb_id
+               LEFT JOIN airtime_show a ON a.tmdb_id = e.tmdb_id
+              WHERE e.air_at IS NULL AND e.air_date = ? AND a.tvmaze_id IS NULL",
+        )
+        .bind(day.to_string())
+        .fetch_all(&state.pool)
+        .await?;
+        let mut shows: BTreeMap<i64, (Vec<String>, Vec<Wanted>)> = BTreeMap::new();
+        for (tmdb_id, season, episode, name, countries) in rows {
+            if found.contains(&tmdb_id) {
+                continue;
+            }
+            let entry = shows.entry(tmdb_id).or_insert_with(|| {
+                let countries = countries
+                    .split(',')
+                    .map(|c| c.trim().to_ascii_uppercase())
+                    .filter(|c| c.len() == 2)
+                    .collect();
+                (countries, Vec::new())
+            });
+            entry.1.push(Wanted {
+                season,
+                episode,
+                date: Some(day),
+                name,
+            });
+        }
+        if shows.is_empty() {
+            continue;
+        }
+        let countries: BTreeSet<String> = shows
+            .values()
+            .flat_map(|(c, _)| c.iter().cloned())
+            .collect();
+        let web = tvmaze::schedule(state, None, day).await?;
+        let mut on_tv: BTreeMap<String, Vec<tvmaze::Scheduled>> = BTreeMap::new();
+        for country in countries {
+            let lines = tvmaze::schedule(state, Some(&country), day).await?;
+            on_tv.insert(country, lines);
+        }
+        for (tmdb_id, (countries, wanted)) in shows {
+            let mut lines = web.clone();
+            for c in &countries {
+                lines.extend(on_tv.get(c).into_iter().flatten().cloned());
+            }
+            let show = show_facts(state, tmdb_id).await?;
+            let Some(id) = schedule_match(&show, &wanted, &lines) else {
+                continue;
+            };
+            sqlx::query(
+                "INSERT INTO airtime_show (tmdb_id, tvmaze_id, tvmaze_checked_at) VALUES (?, ?, ?)
+                 ON CONFLICT (tmdb_id) DO UPDATE SET
+                    tvmaze_id = excluded.tvmaze_id,
+                    tvmaze_checked_at = excluded.tvmaze_checked_at
+                  WHERE airtime_show.tvmaze_id IS NULL",
+            )
+            .bind(tmdb_id)
+            .bind(id)
+            .bind(Utc::now().to_rfc3339())
+            .execute(&state.pool)
+            .await?;
+            mark_due(&state.pool, tmdb_id).await?;
+            found.insert(tmdb_id);
+        }
+    }
+    Ok(found.len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1744,5 +1907,61 @@ mod tests {
     #[test]
     fn stamps_sort_as_text() {
         assert_eq!(stamp(at("2026-11-16T02:00:00Z")), "2026-11-16T02:00:00Z");
+    }
+
+    fn line(show: i64, name: &str, imdb: Option<&str>, e: tvmaze::Episode) -> tvmaze::Scheduled {
+        tvmaze::Scheduled {
+            show,
+            name: name.to_string(),
+            tvdb_id: None,
+            imdb_id: imdb.map(str::to_string),
+            episode: e,
+        }
+    }
+
+    fn hormiguero() -> Show {
+        Show {
+            tmdb_id: 1,
+            name: "El Hormiguero".into(),
+            original_name: "El hormiguero 3.0".into(),
+            first_year: Some(2006),
+            imdb_id: Some("tt0880581".into()),
+            ..Show::default()
+        }
+    }
+
+    #[test]
+    fn a_days_schedule_finds_a_show_by_its_ids_then_by_its_one_name() {
+        let tonight = [want(2026, 210, "2026-11-17")];
+        let ep = |n| tm(2026, n, "2026-11-17", Some("2026-11-17T20:45:00Z"));
+        // By id, whatever TVmaze calls it.
+        let lines = [
+            line(500, "Hormiguero", Some("tt0880581"), ep(210)),
+            line(600, "El Hormiguero", None, ep(1)),
+        ];
+        assert_eq!(schedule_match(&hormiguero(), &tonight, &lines), Some(500));
+        // No id in common: the one show of that name.
+        let lines = [line(600, "El hormiguero", None, ep(210))];
+        assert_eq!(schedule_match(&hormiguero(), &tonight, &lines), Some(600));
+        // Two shows of that name that day: neither.
+        let lines = [
+            line(600, "El hormiguero", None, ep(210)),
+            line(601, "El Hormiguero", None, ep(9)),
+        ];
+        assert_eq!(schedule_match(&hormiguero(), &tonight, &lines), None);
+    }
+
+    #[test]
+    fn a_show_found_in_a_schedule_must_pair_an_episode_that_day() {
+        let tonight = [want(2026, 210, "2026-11-17")];
+        // Same name, but its episode that day is not ours: another show.
+        let lines = [line(
+            600,
+            "El hormiguero",
+            None,
+            tm(1, 3, "2026-11-12", Some("2026-11-12T20:45:00Z")),
+        )];
+        assert_eq!(schedule_match(&hormiguero(), &tonight, &lines), None);
+        assert_eq!(schedule_match(&hormiguero(), &tonight, &[]), None);
     }
 }

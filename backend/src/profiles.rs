@@ -110,8 +110,10 @@ pub fn check_choice(value: &str, allowed: &[&str], what: &str) -> AppResult<Opti
 /// How a profile looks, as its owner set it.
 #[derive(Debug, Default, Clone, serde::Serialize)]
 pub struct Look {
-    /// "x% y%": which part of the banner shows.
+    /// "x% y%": which part of the banner the column shows.
     pub banner_position: Option<String>,
+    /// "x% y%": which band shows across the top. Nothing means the column's.
+    pub banner_top_position: Option<String>,
     pub profile_color: Option<String>,
     pub profile_shade: Option<String>,
     /// "classic" or "vertical"; nothing is classic.
@@ -120,8 +122,9 @@ pub struct Look {
     pub banner_height: Option<String>,
 }
 
-/// (banner position, colour, shade, layout, height)
+/// (banner position, colour, shade, layout, height, top position)
 type LookRow = (
+    Option<String>,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -130,16 +133,24 @@ type LookRow = (
 );
 
 pub async fn look(pool: &SqlitePool, user_id: i64) -> AppResult<Look> {
-    let (banner_position, profile_color, profile_shade, banner_layout, banner_height): LookRow =
-        sqlx::query_as(
-            "SELECT banner_position, profile_color, profile_shade, banner_layout, banner_height
-               FROM app_user WHERE id = ?",
-        )
-        .bind(user_id)
-        .fetch_one(pool)
-        .await?;
+    let (
+        banner_position,
+        profile_color,
+        profile_shade,
+        banner_layout,
+        banner_height,
+        banner_top_position,
+    ): LookRow = sqlx::query_as(
+        "SELECT banner_position, profile_color, profile_shade, banner_layout, banner_height,
+                banner_top_position
+           FROM app_user WHERE id = ?",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
     Ok(Look {
         banner_position,
+        banner_top_position,
         profile_color,
         profile_shade,
         banner_layout,

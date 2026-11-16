@@ -144,9 +144,23 @@ pub async fn home(state: &AppState, me: i64) -> AppResult<Value> {
 
     let this_week = airing_this_week(pool, me, &facts).await?;
     let shelves = crate::shelves::summaries(pool, me).await?;
+    let recommended = recommended(pool, me, &facts).await?;
+    // Which row the hero was taken out of: when the hero shows other things,
+    // the page puts it back there.
+    let hero_row = hero_id.map(|id| {
+        if continuing.iter().any(|u| u.item.title.id == id) {
+            "continue"
+        } else if waiting.iter().any(|u| u.item.title.id == id) {
+            "waiting"
+        } else {
+            "recent"
+        }
+    });
 
     Ok(json!({
         "hero": hero,
+        "hero_row": hero_row,
+        "recommended": recommended,
         "continue": continuing
             .iter()
             .filter(|u| Some(u.item.title.id) != hero_id)
@@ -163,6 +177,36 @@ pub async fn home(state: &AppState, me: i64) -> AppResult<Value> {
         "favourites": favourites,
         "shelves": shelves,
     }))
+}
+
+/// How many recommendations Home's hero can show.
+const HERO_RECOMMENDATIONS: i64 = 6;
+
+/// Recommendations to this account not answered yet, each with its title as
+/// the rest of Home draws one.
+async fn recommended(
+    pool: &SqlitePool,
+    me: i64,
+    facts: &store::ItemFacts,
+) -> AppResult<Vec<Value>> {
+    let mut out = Vec::new();
+    for w in crate::recommend::waiting(pool, me, HERO_RECOMMENDATIONS).await? {
+        let row: Option<TitleRow> = sqlx::query_as(&format!(
+            "SELECT {TITLE_COLUMNS} FROM title t WHERE t.id = ?"
+        ))
+        .bind(w.title_id)
+        .fetch_optional(pool)
+        .await?;
+        let Some(row) = row else { continue };
+        out.push(json!({
+            "id": w.id,
+            "note": w.note,
+            "created_at": w.created_at,
+            "from": w.from,
+            "item": facts.item(row),
+        }));
+    }
+    Ok(out)
 }
 
 /// Episodes due in the next week, one entry per show.

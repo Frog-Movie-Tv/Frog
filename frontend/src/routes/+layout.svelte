@@ -19,7 +19,8 @@
 	import { reachable } from '#lib/people.svelte';
 	import { offline } from '#lib/offline.svelte';
 	import { keepSubscribed } from '#lib/push';
-	import { paletteKey } from '#lib/platform';
+	import { isIPad, paletteKey } from '#lib/platform';
+	import { api } from '#lib/api';
 	import { session } from '#lib/session.svelte';
 	import { MAX_TABS, NAV_PAGES, settings } from '#lib/settings.svelte';
 	import type { IconName } from '#lib/components/Icon.svelte';
@@ -50,6 +51,12 @@
 	// the server let them go.
 	$effect(() => {
 		if (session.authenticated) void keepSubscribed(session.status?.username ?? null);
+	});
+
+	// An iPad says it is one: its Safari names itself a Mac.
+	$effect(() => {
+		if (session.authenticated && isIPad(navigator.platform, navigator.maxTouchPoints))
+			void api.setDeviceForm('tablet').catch(() => {});
 	});
 
 	// The bell's number, kept fresh while signed in.

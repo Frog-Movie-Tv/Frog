@@ -28,6 +28,12 @@
 	);
 	const vertical = $derived(profile.banner_layout === 'vertical');
 	const height = $derived(profile.banner_height ?? 'short');
+	/** The column's strip, or the band across the top, which follows it until chosen. */
+	const focus = $derived(
+		(vertical
+			? profile.banner_position
+			: (profile.banner_top_position ?? profile.banner_position)) ?? undefined
+	);
 	let opened = $state(false);
 	backCloses(
 		() => opened,
@@ -59,7 +65,7 @@
 	<div class="side">
 		{#if banner}
 			<button class="banner" aria-label="Open the banner" onclick={() => (opened = true)}>
-				<img src={banner} alt="" style:object-position={profile.banner_position ?? undefined} />
+				<img src={banner} alt="" style:object-position={focus} />
 				<span class="shade" aria-hidden="true"></span>
 			</button>
 		{:else}
@@ -139,10 +145,16 @@
 <style>
 	.hero {
 		position: relative;
-		/* Out to the page's edges and up to the bar, so the banner is the top
-		   of the page rather than a picture on it. */
-		margin: -24px calc(var(--page-pad) * -1) 28px;
+		/* Up under the bar, from one edge of the window to the other
+		   (ProfileShell lifts the page's width), so the banner is the top of
+		   the page rather than a picture on it, as a title page's is. */
+		margin: calc((var(--header-h) + 24px) * -1) 0 28px;
 		animation: rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+	}
+
+	/* The column, narrow, keeps the page's own width and starts at the bar. */
+	.hero.vertical {
+		margin: -24px calc(var(--page-pad) * -1) 28px;
 	}
 
 	@keyframes rise {
@@ -152,9 +164,10 @@
 		}
 	}
 
+	/* The bar's height on top of each: that much of it sits under the bar. */
 	.banner {
 		position: relative;
-		height: clamp(180px, 28vw, 320px);
+		height: calc(var(--header-h) + clamp(180px, 28vw, 320px));
 		background: var(--bg-elev-2);
 		overflow: hidden;
 		/* The banner fades out itself, so its foot never shows as a line where
@@ -179,7 +192,7 @@
 	}
 
 	.tall .banner {
-		height: clamp(240px, 44vw, 560px);
+		height: calc(var(--header-h) + clamp(240px, 44vw, 560px));
 	}
 
 	/* Full: the whole picture, as tall as it is. */
@@ -191,7 +204,7 @@
 	   there, where its position says. */
 	.full .banner img {
 		height: auto;
-		max-height: min(80vh, 860px);
+		max-height: calc(var(--header-h) + min(80vh, 860px));
 		display: block;
 	}
 

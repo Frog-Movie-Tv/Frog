@@ -24,6 +24,11 @@ get busier:
 - **Select on a person's page**, as a studio has it (`PickBar.svelte`,
   `addMany`). Not wired in 1.7: the credits grid needs its own selection code.
 - **A "watched most with" figure in Stats**, from `watch_with`.
+- **A wrong TVmaze link, found and replaced.** A kept TVmaze id is never
+  asked again, so The Daily Show (TMDB 2224) stays linked to TVmaze's Trevor
+  Noah run, ended in 2022, and every episode reads time TBA. A link whose
+  show has ended while TMDB's is running could be looked up afresh, the day
+  schedules included.
 - **Measure Rate your library on a large library.** It reads the whole
   library to deal (`api.library()`); not timed on a 600-title library for
   1.7 (no TMDB key on the machine it was built on).
@@ -65,6 +70,10 @@ off, or turns it into a fix above.
   time TBA rows. What is left should be streaming drops, shows TVmaze lists
   without a time, and shows TVmaze does not have.
 - **The colour picker's sheet and the Stats bars by finger** on the phone.
+- **The November batch on a real phone:** swiping Home's hero and a
+  notification away, the banner's Choose what shows sheet by finger, the
+  shelves sheet, and Signed-in devices showing the phone and an iPad as
+  such.
 - **AniList on the live list:** Settings → Connections, "Needs a check" and
   the "Matched" methods, manga included. And connecting AniList once from a
   laptop with the Frog-Dev client in `.env`.

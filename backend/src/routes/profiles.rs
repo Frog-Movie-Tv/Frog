@@ -205,6 +205,7 @@ pub async fn get(
         "banner": image_url("banner"),
         "banner_backdrop": banner_backdrop,
         "banner_position": facts.look.banner_position,
+        "banner_top_position": facts.look.banner_top_position,
         "profile_color": facts.look.profile_color,
         "profile_shade": facts.look.profile_shade,
         "banner_layout": facts.look.banner_layout,

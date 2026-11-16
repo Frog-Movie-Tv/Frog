@@ -60,13 +60,13 @@ pub async fn set_username(pool: &SqlitePool, user_id: i64, name: &str) -> AppRes
     Ok(())
 }
 
-/// (token hash, created_at, expires_at, user agent)
-pub type SessionRow = (String, String, String, Option<String>);
+/// (token hash, created_at, expires_at, user agent, device form)
+pub type SessionRow = (String, String, String, Option<String>, Option<String>);
 
 /// The account's devices still signed in, newest first.
 pub async fn sessions(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<SessionRow>> {
     Ok(sqlx::query_as(
-        "SELECT token_hash, created_at, expires_at, user_agent
+        "SELECT token_hash, created_at, expires_at, user_agent, device_form
            FROM session WHERE user_id = ? AND expires_at > ?
           ORDER BY created_at DESC",
     )
@@ -74,6 +74,22 @@ pub async fn sessions(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<SessionR
     .bind(Utc::now().to_rfc3339())
     .fetch_all(pool)
     .await?)
+}
+
+/// What kind of device this session is on, as its browser says.
+pub async fn set_device_form(
+    pool: &SqlitePool,
+    user_id: i64,
+    token_hash: &str,
+    form: &str,
+) -> AppResult<()> {
+    sqlx::query("UPDATE session SET device_form = ? WHERE user_id = ? AND token_hash = ?")
+        .bind(form)
+        .bind(user_id)
+        .bind(token_hash)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// Sign out the device whose token hash starts so. Says how many went.
@@ -94,7 +110,10 @@ pub enum ProfileField<'a> {
     Public(bool),
     DisplayName(Option<&'a str>),
     Bio(Option<&'a str>),
+    /// The column's strip ("x% y%").
     BannerPosition(Option<&'a str>),
+    /// The band shown across the top ("x% y%").
+    BannerTopPosition(Option<&'a str>),
     Pins(&'a str),
     /// A colour and its shade, both names from `profiles::COLOURS`.
     Colour(Option<&'a str>, Option<&'a str>),
@@ -120,6 +139,9 @@ pub async fn set_profile_field(
         ProfileField::Bio(bio) => sqlx::query("UPDATE app_user SET bio = ? WHERE id = ?").bind(bio),
         ProfileField::BannerPosition(position) => {
             sqlx::query("UPDATE app_user SET banner_position = ? WHERE id = ?").bind(position)
+        }
+        ProfileField::BannerTopPosition(position) => {
+            sqlx::query("UPDATE app_user SET banner_top_position = ? WHERE id = ?").bind(position)
         }
         ProfileField::Pins(pins) => {
             sqlx::query("UPDATE app_user SET pins_json = ? WHERE id = ?").bind(pins)

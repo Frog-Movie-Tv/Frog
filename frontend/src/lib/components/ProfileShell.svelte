@@ -94,7 +94,12 @@
 	</title>
 </svelte:head>
 
-<div class="page" class:coloured={!!colour} style={colour}>
+<div
+	class="page"
+	class:bleed={!!profile && profile.banner_layout !== 'vertical'}
+	class:coloured={!!colour}
+	style={colour}
+>
 	{#if loading && !profile}
 		<Spinner label="Loading profile" />
 	{:else if failed && !failed.missing}
@@ -118,6 +123,20 @@
 </div>
 
 <style>
+	/* Across the top, the banner runs from edge to edge of the window, past
+	   the page's 1440px, as a title page's picture does; what is under it
+	   keeps the page's column. */
+	.page.bleed {
+		max-width: none;
+		padding-inline: 0;
+	}
+
+	.bleed .tab-body {
+		max-width: 1440px;
+		margin-inline: auto;
+		padding-inline: var(--page-pad);
+	}
+
 	/* Vertical on a wide screen: the banner column on the left, the tabs and
 	   what they show beside it (ProfileHeader puts its parts in the areas). */
 	@media (min-width: 900px) {
