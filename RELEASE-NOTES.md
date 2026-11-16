@@ -9,7 +9,7 @@ people working on Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Chorus Frog —
+## Upcoming — Reed Frog —
 
 In progress.
 
@@ -55,7 +55,7 @@ In progress.
   means two today, on Home and on the Activity page alike, and a day is
   yours, not the server’s.
 
-## [1.8.0] — Chorus Frog — 2026-11-16
+## [1.8.0] — Dart Frog — 2026-11-16
 
 Badges you earn by watching, and a Home that shows what is trending.
 

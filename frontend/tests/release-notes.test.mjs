@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { layoutProblems, parseNotes } from '../scripts/changelog.mjs';
 import { needingNotes } from '../../scripts/check-release-notes.mjs';
-import { promoteUpcoming } from '../../scripts/draft-release-notes.mjs';
+import { codenameFor, promoteUpcoming } from '../../scripts/draft-release-notes.mjs';
 
 const notes = readFileSync(new URL('../../RELEASE-NOTES.md', import.meta.url), 'utf8');
 
@@ -125,9 +125,34 @@ test('notes with no sentence of their own still open with one', () => {
 	assert.equal(parseNotes(notes)[0].intro, 'A few improvements and fixes.');
 });
 
-test('a small feature carries the codename; only a big release takes a new one', () => {
-	const notes = promoteUpcoming(upcoming('### Improvements\n\n- New.'), '1.1.0', '2026-11-02');
-	assert.equal(parseNotes(notes)[0].codename, 'Bullfrog');
+test('a minor release takes the name waiting under Upcoming; a patch keeps its own', () => {
+	const minor = promoteUpcoming(upcoming('### Improvements\n\n- New.'), '1.1.0', '2026-11-02');
+	assert.equal(parseNotes(minor)[0].codename, 'Spring Peeper');
+	assert.equal(parseNotes(minor)[1].codename, 'Bullfrog');
+	const patch = promoteUpcoming(upcoming('### Fixes\n\n- A fix.'), '1.0.2', '2026-11-02');
+	assert.equal(parseNotes(patch)[0].codename, 'Bullfrog');
+});
+
+test('a name a release already has is never given to another', () => {
+	// 1.8.0 went out as 1.7's Chorus Frog this way.
+	const reused = upcoming('### Improvements\n\n- New.').replace(
+		'## Upcoming — Spring Peeper —',
+		'## Upcoming — Bullfrog —'
+	);
+	assert.equal(codenameFor(reused, '1.1.0'), 'Bullfrog');
+	assert.equal(codenameFor(upcoming(''), '2.0.0'), 'Spring Peeper');
+	assert.equal(codenameFor(upcoming(''), '1.0.3'), 'Bullfrog');
+});
+
+test('every minor and major release in the notes has a name of its own', () => {
+	const seen = new Map();
+	for (const { version, codename } of parseNotes(notes)) {
+		const [major, minor] = version.split('.');
+		const line = `${major}.${minor}`;
+		const owner = seen.get(codename);
+		assert.ok(!owner || owner === line, `${version} reuses ${codename} from ${owner}`);
+		seen.set(codename, line);
+	}
 });
 
 test('nothing written means nothing to promote', () => {

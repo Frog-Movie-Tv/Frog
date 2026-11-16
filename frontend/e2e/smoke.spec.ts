@@ -325,7 +325,14 @@ test('the about page credits its sources', async ({ page }) => {
 	await page.goto('/about');
 
 	await expect(page.getByRole('heading', { name: 'Frog', level: 1 })).toBeVisible();
-	await expect(page.getByText('Chorus Frog')).toBeVisible();
+	// The name of the release that is running, from its release notes.
+	const { version } = await (await page.request.get('/healthz')).json();
+	const releases: { version: string; codename: string }[] = await (
+		await page.request.get('/changelog.json')
+	).json();
+	const codename = releases.find((r) => r.version === version)?.codename;
+	expect(codename).toBeTruthy();
+	await expect(page.getByText(`Version ${version} · ${codename}`)).toBeVisible();
 	await expect(page.getByRole('link', { name: /TMDB/ }).first()).toBeVisible();
 	await expect(page.getByRole('link', { name: /Phosphor/ })).toBeVisible();
 });

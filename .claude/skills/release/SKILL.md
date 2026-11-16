@@ -19,9 +19,9 @@ release with a red test.
   Put `Release-As: 0.5.0` in a commit footer on `main` and the next release
   pull request becomes that version. `docs/CONTRIBUTING.md` has the detail.
 - Take the next codename from `ROADMAP.md`. It goes in the `RELEASE-NOTES.md`
-  heading, beside the version on the About page
-  (`frontend/src/routes/about/+page.svelte`) **and** in the About test in
-  `frontend/e2e/smoke.spec.ts`. All three have gone stale before.
+  heading only: the About page and its test read it from the notes. A minor
+  or major never reuses a name (`npm test` checks); a patch keeps its
+  release's.
 - Never edit `version.txt`, `Cargo.toml`, `package.json` or `CHANGELOG.md`
   by hand. They are generated.
 

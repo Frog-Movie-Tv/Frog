@@ -96,8 +96,11 @@ people editing a changelog is a merge conflict every time.
   and `docs` need nothing.
 - **The release takes it from there.** When release-please opens its pull
   request, `scripts/draft-release-notes.mjs` turns Upcoming into that version's
-  section, with the newest codename and the date. A section already written for
-  that version is left alone, which is how a new codename reaches a release. Only with nothing under
+  section, with its codename and the date. A minor or major release takes the
+  name on the Upcoming heading (`## Upcoming — Reed Frog —`), unless a release
+  already has it; a patch keeps its release's name. So once a minor goes out,
+  put the next name on the Upcoming heading. A section already written for
+  that version is left alone. Only with nothing under
   Upcoming does it draft from the commit messages, marked as a draft to rewrite.
   The bot rebuilds its pull request from `main` whenever something merges, so
   notes from several pull requests add up, and an edit made on the release
@@ -108,8 +111,8 @@ people editing a changelog is a merge conflict every time.
   at the version: merging the release pull request tags it, and `release-please.yml`
   publishes it as `:<version>` and `:latest`, which production pulls.
 - **After 1.0, `fix` bumps the patch and `feat` the minor.** Both ship the same
-  way. A small feature keeps the newest codename; a new one is a decision, with
-  `Release-As`.
+  way. Every minor and major has a name of its own; `npm test` fails when two
+  share one.
 - **Production follows the latest release tag, and there is no staging.**
   Merging a pull request builds the `:main` image, which nothing live runs;
   merging the release pull request puts it in front of people.
@@ -152,8 +155,9 @@ git commit --allow-empty -m "chore: release 0.5.0" -m "Release-As: 0.5.0"
    That section becomes three things: the *What's new* page inside the app,
    the body of the GitHub release, and what anyone following a link reads.
    `CHANGELOG.md` stays as the commit list, for people working on Frog.
-2. **Take the next codename** from the list in `ROADMAP.md`, and put it in the
-   heading, on the About page and in the About test in `e2e/smoke.spec.ts`.
+2. **Name the next release.** Put a new codename on the Upcoming heading and
+   in `ROADMAP.md`. The About page reads the running release's name from the
+   notes, so nothing else changes.
 3. **Read the README as a stranger.** A big release usually makes something in
    it untrue. The accounts release made four things untrue.
 4. **Regenerate the screenshots** if any page in them changed:
