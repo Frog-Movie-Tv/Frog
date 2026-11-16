@@ -45,6 +45,8 @@ In progress.
 - Each picture at the top of Home gives way cleanly to the next.
 - Today and yesterday mean the days on your calendar: something watched
   late last night says yesterday, not today.
+- An anime AniList no longer shares the details of shows under Not found in
+  Settings → Connections, saying why, instead of being skipped on every sync.
 
 ## [1.8.0] — Chorus Frog — 2026-11-16
 

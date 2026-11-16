@@ -44,6 +44,10 @@ struct Fake {
     studios: std::collections::HashMap<i64, Value>,
     /// How many times Search asked AniList for a name.
     name_searches: usize,
+    /// Titles still on the list that AniList answers 404 for when asked.
+    gone: std::collections::HashSet<i64>,
+    /// How many times a gone title was asked about.
+    gone_asked: usize,
 }
 
 type Shared = Arc<Mutex<Fake>>;
@@ -90,6 +94,18 @@ async fn graphql(State(fake): State<Shared>, Json(body): Json<Value>) -> axum::r
             "hasNextChunk": to < all.len(),
             "lists": [ { "entries": all[from..to] } ] } } }))
         .into_response();
+    }
+    {
+        let mut fake = fake.lock().unwrap();
+        let id = body["variables"]["id"].as_i64().unwrap_or_default();
+        if fake.gone.contains(&id) {
+            fake.gone_asked += 1;
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "errors": [{ "message": "Not Found.", "status": 404 }], "data": { "Media": null } })),
+            )
+                .into_response();
+        }
     }
     answer(State(fake), Json(body)).await.into_response()
 }
@@ -737,6 +753,62 @@ async fn a_tmdb_outage_is_retried_not_left_for_the_person() {
         .call("GET", "/api/titles/tv/95479", None, Some(&cookie))
         .await;
     assert_eq!(show["item"]["watched_episodes"], json!(24));
+}
+
+/// A title still on someone's list that AniList no longer answers for is
+/// shown as not found, with why, and asked about again only after a wait,
+/// not on every sync.
+#[tokio::test]
+async fn an_entry_anilist_lost_is_shown_and_not_asked_every_sync() {
+    let h = Harness::new().await;
+    {
+        let mut fake = h.fake.lock().unwrap();
+        fake.entries = vec![entry(113417, "Lost Title", "TV", 12, "CURRENT", 3, 0)];
+        fake.gone.insert(113417);
+    }
+    let (_, _, cookie, _) = h
+        .call(
+            "POST",
+            "/api/auth/setup",
+            Some(json!({ "username": "zjef", "password": "a-long-enough-pass" })),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+    sqlx::query(
+        "INSERT INTO anilist_link (user_id, anilist_user_id, anilist_name, token, expires_at, connected_at)
+         VALUES (1, 77, 'pondwatcher', 't', '2099-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    seed_tmdb(&h).await;
+
+    h.sync(1).await;
+    let asked = h.fake.lock().unwrap().gone_asked;
+    assert!(asked > 0, "the title was looked up");
+    let (_, entries, _, _) = h
+        .call("GET", "/api/anilist/entries", None, Some(&cookie))
+        .await;
+    let lost = entries["entries"]
+        .as_array()
+        .and_then(|a| a.iter().find(|e| e["media_id"] == json!(113417)))
+        .cloned()
+        .unwrap_or_else(|| panic!("listed for the person: {entries}"));
+    assert_eq!(lost["state"], json!("unsure"), "{lost}");
+    assert_eq!(lost["outcome"], json!("no_candidate"), "{lost}");
+    assert!(
+        lost["note"].as_str().unwrap_or("").contains("AniList"),
+        "{lost}"
+    );
+
+    // The next sync keeps it as it is rather than asking again at once.
+    h.sync(1).await;
+    assert_eq!(
+        h.fake.lock().unwrap().gone_asked,
+        asked,
+        "not asked again yet"
+    );
 }
 
 /// What Anime-IDs cannot place: a film only Fribb's list knows, and a show
