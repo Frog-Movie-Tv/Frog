@@ -200,7 +200,9 @@
 		return Number(hour);
 	}
 
-	/** The day's shows by part of the day, each part most watched first. */
+	/** The day's shows by part of the day, each timed part in time order (the
+	 *  most watched first at the same minute), time TBA and films most
+	 *  watched first. */
 	const parts = $derived.by(() => {
 		const out = PARTS.map((name) => ({ name, items: [] as AiringItem[] }));
 		for (const item of shownItems) {
@@ -214,6 +216,10 @@
 			}
 			const hour = hourHere(item.air_at);
 			out[hour < 6 ? 0 : hour < 12 ? 1 : hour < 18 ? 2 : 3].items.push(item);
+		}
+		// Stable, so a tie keeps the popularity order the list came in.
+		for (const part of out.slice(0, 4)) {
+			part.items.sort((a, b) => Date.parse(a.air_at!) - Date.parse(b.air_at!));
 		}
 		return out.filter((p) => p.items.length);
 	});
