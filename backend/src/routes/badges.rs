@@ -33,7 +33,15 @@ pub async fn list(
     AdminAuth(_): AdminAuth,
     State(state): State<AppState>,
 ) -> AppResult<Json<Value>> {
-    Ok(Json(json!({ "badges": badges::all(&state.pool).await? })))
+    let waiting: Vec<Value> = crate::awards::give::waiting(&state.pool)
+        .await?
+        .into_iter()
+        .map(|e| json!({ "key": e.key, "name": e.name, "description": e.about }))
+        .collect();
+    Ok(Json(json!({
+        "badges": badges::all(&state.pool).await?,
+        "waiting": waiting,
+    })))
 }
 
 pub async fn get(
@@ -270,10 +278,99 @@ pub async fn mine(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
     Ok(Json(json!({ "badges": shaped(&username, &held) })))
 }
 
+/// Everything there is to earn on one profile: the badges held, as the
+/// viewer may see them, then every badge Frog gives on its own that is still
+/// to come, with how far along the holder is when the viewer is the holder.
+/// A badge held out of sight is neither, so it never reads as still to come.
+pub async fn everything(
+    auth: Auth,
+    State(state): State<AppState>,
+    Path(username): Path<String>,
+) -> AppResult<Json<Value>> {
+    let pool = &state.pool;
+    let row = crate::profiles::visible(pool, auth.user_id(), &username).await?;
+    let (user_id, username) = (row.0, row.1);
+    let own = user_id == auth.user_id();
+    let held = badges::held(pool, user_id, true).await?;
+    let holding: std::collections::HashSet<i64> = held.iter().map(|b| b.id).collect();
+    let earned: Vec<badges::Held> = held.into_iter().filter(|b| own || b.shown).collect();
+    let progress = if own {
+        crate::awards::progress(pool, user_id).await?
+    } else {
+        Default::default()
+    };
+    let mut rows = badges::automatic(pool).await?;
+    let place = |key: &str| {
+        crate::awards::catalogue::all()
+            .iter()
+            .position(|e| e.key == key)
+            .unwrap_or(usize::MAX)
+    };
+    rows.sort_by_key(|b| place(&b.rule));
+    let total = rows.len() + earned.iter().filter(|b| b.rule.is_none()).count();
+    let locked: Vec<Value> = rows
+        .iter()
+        .filter(|b| !holding.contains(&b.id))
+        .map(|b| {
+            let entry = crate::awards::catalogue::get(&b.rule);
+            let step = entry.and_then(|e| e.step.as_ref());
+            let address = |size: &str| {
+                format!(
+                    "/api/badges/{}/{size}?v={}",
+                    b.id,
+                    urlencoding::encode(&b.version)
+                )
+            };
+            json!({
+                "id": b.id,
+                "name": b.name,
+                "description": b.description,
+                "small": address("small"),
+                "large": address("large"),
+                "moment": entry.is_some_and(|e| e.kind == crate::awards::catalogue::Kind::Moment),
+                "ladder": step.map(|s| s.ladder.as_str()),
+                "step": step.map(|s| s.index),
+                "progress": progress.get(&b.rule).map(|(have, need)| json!({
+                    "have": have.floor(),
+                    "need": need,
+                })),
+            })
+        })
+        .collect();
+    Ok(Json(json!({
+        "earned": shaped(&username, &earned),
+        "locked": locked,
+        "total": total,
+    })))
+}
+
+/// The picture of a badge Frog gives on its own, for the list of what there
+/// is to earn. Badges made by hand are only seen through a holder.
+pub async fn automatic_picture(
+    _auth: Auth,
+    State(state): State<AppState>,
+    Path((id, size)): Path<(i64, String)>,
+    headers: HeaderMap,
+) -> AppResult<Response> {
+    let size = Size::parse(&size).ok_or_else(missing)?;
+    if !badges::is_automatic(&state.pool, id).await? {
+        return Err(missing());
+    }
+    let (bytes, version) = badges::picture(&state.pool, id, size)
+        .await?
+        .ok_or_else(missing)?;
+    Ok(png(bytes, "image/png", &version, &headers))
+}
+
 /// Badges as pages draw them, with their pictures' addresses.
 pub fn shaped(username: &str, held: &[badges::Held]) -> Vec<Value> {
     held.iter()
         .map(|b| {
+            let step = b
+                .rule
+                .as_deref()
+                .and_then(crate::awards::catalogue::get)
+                .and_then(|e| e.step.as_ref());
             json!({
                 "id": b.id,
                 "name": b.name,
@@ -282,6 +379,12 @@ pub fn shaped(username: &str, held: &[badges::Held]) -> Vec<Value> {
                 "shown": b.shown,
                 "small": badges::address(username, b, Size::Small),
                 "large": badges::address(username, b, Size::Large),
+                "automatic": b.rule.is_some(),
+                "earned_on": b.earned_on,
+                "earned_with": b.earned_with,
+                // A ladder's steps, so a profile can show only the highest.
+                "ladder": step.map(|s| s.ladder.as_str()),
+                "step": step.map(|s| s.index),
             })
         })
         .collect()

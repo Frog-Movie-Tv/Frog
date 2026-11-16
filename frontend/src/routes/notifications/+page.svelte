@@ -183,10 +183,25 @@
 			case 'film':
 				return { text: `${name} is out today`, href: titleHref, icon: 'film' };
 			case 'badge':
+				if (p.earned) {
+					const count = typeof p.count === 'number' ? p.count : 1;
+					const names = Array.isArray(p.names) ? (p.names as string[]) : [];
+					return {
+						text:
+							count === 1
+								? `You earned ${text('name') ?? 'a badge'}`
+								: `You earned ${count} badges`,
+						detail: count === 1 ? undefined : names.join(', '),
+						href: text('username')
+							? `/people/${encodeURIComponent(text('username')!)}/badges`
+							: null,
+						icon: 'crown'
+					};
+				}
 				return {
 					text: 'You were given a badge',
 					detail: text('name'),
-					href: text('username') ? `/people/${encodeURIComponent(text('username')!)}` : null,
+					href: text('username') ? `/people/${encodeURIComponent(text('username')!)}/badges` : null,
 					icon: 'crown'
 				};
 			case 'update':

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { topSteps } from '#lib/badge-ladder';
 	import { prettyDate } from '#lib/format';
 	import { backCloses } from '#lib/layers.svelte';
 	import { portal } from '#lib/portal';
@@ -15,8 +16,9 @@
 		still?: boolean;
 	}
 
-	let { badges, size = 26, most = 3, still = false }: Props = $props();
+	let { badges: held, size = 26, most = 3, still = false }: Props = $props();
 
+	const badges = $derived(topSteps(held));
 	const shown = $derived(badges.slice(0, most));
 	const more = $derived(badges.length - shown.length);
 	let open = $state<number | null>(null);
@@ -74,7 +76,17 @@
 			<img class="large" src={current.large} alt="" />
 			<h3 id="badge-card-name">{current.name}</h3>
 			{#if current.description}<p class="about">{current.description}</p>{/if}
-			<p class="faint small">Given {prettyDate(current.awarded_at)}</p>
+			<p class="faint small">
+				{#if current.automatic && current.earned_on}
+					Earned {prettyDate(`${current.earned_on}T12:00:00`)}{current.earned_with
+						? ` with ${current.earned_with}`
+						: ''}
+				{:else if current.automatic}
+					Earned {prettyDate(current.awarded_at)}
+				{:else}
+					Given {prettyDate(current.awarded_at)}
+				{/if}
+			</p>
 			{#if badges.length > 1}
 				<div class="all" role="group" aria-label="Badges">
 					{#each badges as b, i (b.id)}

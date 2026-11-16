@@ -329,6 +329,42 @@ part you are about to touch; change it when the code changes.
   `verify-push` points `TVMAZE_API_URL` nowhere, so its hand-set times stay.
   `cargo run --example airtime_check -- <tmdb id> <season> <episode>` shows
   what one episode resolves to.
+- **Badges Frog gives on its own** (`backend/src/awards/`,
+  `backend/badges/`). Two kinds. Totals (films, episodes, hours, library…)
+  count everything however it came, imports and history included, and are
+  given as they are reached. Moments (a triple bill, a streak, a premiere)
+  count only eligible watches (`awards::eligible`): recorded after badges
+  came (`watch_event.logged_at`, NULL before), one at a time (`logged_how`
+  tick, extension, a later AniList sync, or together; never bulk, import or
+  a first AniList sync), within 36 hours of when it was watched, with a real
+  date, at a pace someone could watch (half the runtime since the last one,
+  a burst failing whole; a later sync judged per show), and not on a day
+  more than 10 titles were recorded, which is a library update. All of it
+  is so that adding films watched years ago never earns Triple Bill. A
+  moment is decided only for days that are over in the account's zone. The
+  worker (`jobs::give_badges`, every minute) works an account out again
+  from scratch when a cheap fingerprint of what badges count, or its day,
+  changes (`app_setting` `badges_seen`). An award keeps its day, what it
+  rests on (`evidence`) and `rule_version`; for 24 hours it is taken back
+  if nothing earns it any more, with its notification once nothing that
+  notification named is left, and after that it stays. One notification
+  per run (`badges:{user}:{run}`), so the first run after a release that
+  adds badges is one line however many arrive. Each catalogue badge is a
+  `badge` row with `rule` set and empty pictures: they are drawn from
+  `art.json` by `resvg` when asked for, small ones kept in memory, because
+  every nightly backup is a whole copy in git. An administrator may rename
+  or redraw one (`rule_kept`, uploaded pictures win) but not delete it. A
+  hand-made badge that already has a catalogue name keeps it; that
+  automatic badge waits, listed in Administration. A profile's Badges tab
+  lists what is held and every automatic badge still to come, greyed;
+  progress (`awards::progress`, worked out on request, not stored) shows
+  to the holder only, and a badge held out of sight is neither, so it
+  never reads as still to come. Pioneer and taste
+  badges read only accounts `store::shown_to` gives with Recommendations
+  on. Undo carries `logged_*` for a watch recorded in the last week
+  (`eligible::carried`); older comes back `unknown`. Anime is AniList's
+  word, or animated with a kana original name (`facts::is_anime`): Frog
+  keeps no country. `npm run badges` redraws the art.
 - **Notifications live in two places from one decision** (`inbox.rs`,
   `recommend.rs`, `routes/notifications.rs`). Whatever decides to tell an
   account (`announce::run`, a badge given, a server failure, a

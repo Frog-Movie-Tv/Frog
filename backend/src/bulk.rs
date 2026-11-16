@@ -117,7 +117,7 @@ pub async fn tick_aired(
 
     sqlx::query(concat!(
         "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
-                                  source, undated)
+                                  source, undated, logged_at, logged_how)
          SELECT ?6, ?1, e.id,
                 CASE ?2 WHEN 'release' THEN COALESCE(e.air_date || 'T20:00:00Z', ?3)
                         WHEN 'date' THEN ?4
@@ -125,7 +125,8 @@ pub async fn tick_aired(
                 0, 'manual',
                 CASE ?2 WHEN 'unknown' THEN 1
                         WHEN 'release' THEN e.air_date IS NULL
-                        ELSE 0 END
+                        ELSE 0 END,
+                ?3, 'bulk'
            FROM episode e
           WHERE e.title_id = ?1
             AND (?5 IS NOT NULL OR e.season_number > 0)
@@ -150,7 +151,7 @@ pub async fn tick_aired(
         for special in specials {
             sqlx::query(concat!(
                 "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
-                                          source, undated)
+                                          source, undated, logged_at, logged_how)
                  SELECT ?6, ?1, e.id,
                         CASE ?2 WHEN 'release' THEN COALESCE(e.air_date || 'T20:00:00Z', ?3)
                                 WHEN 'date' THEN ?4
@@ -158,7 +159,8 @@ pub async fn tick_aired(
                         0, 'manual',
                         CASE ?2 WHEN 'unknown' THEN 1
                                 WHEN 'release' THEN e.air_date IS NULL
-                                ELSE 0 END
+                                ELSE 0 END,
+                        ?3, 'bulk'
                    FROM episode e
                   WHERE e.title_id = ?1 AND e.season_number = 0 AND e.episode_number = ?5
                     AND ",
@@ -230,6 +232,8 @@ pub async fn mark_watched(
         before: held(pool, user_id, title_ids).await?,
         ..Marked::default()
     };
+    // One film finished is a tick like any other; many at once is catching up.
+    let how = if title_ids.len() == 1 { "tick" } else { "bulk" };
     for title in store::tracked_titles(pool, user_id, title_ids).await? {
         if title.kind == "movie" {
             if !film_is_out(title.release_date.as_deref(), &today) {
@@ -243,7 +247,7 @@ pub async fn mark_watched(
                 chosen.as_deref(),
                 &stamp,
             );
-            store::add_first_film_watch(pool, user_id, title.id, &at, undated).await?;
+            store::add_first_film_watch(pool, user_id, title.id, &at, undated, how).await?;
             out.marked += 1;
             continue;
         }

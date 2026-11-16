@@ -7,6 +7,7 @@ import type {
 	AdminBadge,
 	BadgeUpload,
 	HeldBadge,
+	BadgeBoard,
 	StatsNarrow,
 	ActivityItem,
 	AiringDay,
@@ -60,7 +61,8 @@ import type {
 	Companion,
 	Notice,
 	NoticeWants,
-	Recommendation
+	Recommendation,
+	WaitingBadge
 } from './types';
 
 export class ApiError extends Error {
@@ -327,7 +329,7 @@ export const api = {
 			patch
 		),
 	deleteUser: (id: number) => send<{ ok: true }>('DELETE', `/api/admin/users/${id}`),
-	badges: () => get<{ badges: AdminBadge[] }>('/api/admin/badges'),
+	badges: () => get<{ badges: AdminBadge[]; waiting: WaitingBadge[] }>('/api/admin/badges'),
 	badge: (id: number) =>
 		get<{ badge: AdminBadge; settings: Record<string, unknown> }>(`/api/admin/badges/${id}`),
 	createBadge: (badge: BadgeUpload) => send<{ id: number }>('POST', '/api/admin/badges', badge),
@@ -367,6 +369,8 @@ export const api = {
 	profile: (username: string) => get<Profile>(`/api/profiles/${encodeURIComponent(username)}`),
 	profileRatings: (username: string) =>
 		get<{ ratings: RatedTitle[] }>(`/api/profiles/${encodeURIComponent(username)}/ratings`),
+	profileBadges: (username: string) =>
+		get<BadgeBoard>(`/api/profiles/${encodeURIComponent(username)}/badges`),
 	profileCompare: (username: string) =>
 		get<Comparison>(`/api/profiles/${encodeURIComponent(username)}/compare`),
 	profileLibrary: (username: string, query: LibraryQuery) =>

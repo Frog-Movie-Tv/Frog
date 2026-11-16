@@ -1495,6 +1495,8 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/admin/badges/1/images/large',
 		'/api/account/badges',
 		'/api/profiles/someone/badges/1/small',
+		'/api/profiles/someone/badges',
+		'/api/badges/1/small',
 		'/api/profiles',
 		'/api/profiles/someone',
 		'/api/profiles/someone/library',
