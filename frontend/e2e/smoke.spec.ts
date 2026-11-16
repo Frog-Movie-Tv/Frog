@@ -2511,11 +2511,20 @@ test('a notification can be removed, and Clear all takes the rest, each with Und
 
 	await page.getByRole('button', { name: 'Undo' }).click();
 	await expect(page.locator('.notices li', { hasText: 'Gone Film' })).toBeVisible();
+	// The toast used is on its way out.
+	await expect(page.getByText('Notification removed')).toHaveCount(0);
 
+	const cleared = page.waitForResponse(
+		(r) => r.request().method() === 'DELETE' && r.url().endsWith('/api/notifications')
+	);
 	await page.getByRole('button', { name: 'Clear all' }).click();
+	await cleared;
 	await expect(page.locator('.notices li')).toHaveCount(0);
 	expect((await (await page.request.get('/api/notifications')).json()).items).toHaveLength(0);
-	await page.getByRole('button', { name: 'Undo' }).click();
+	await page
+		.locator('.toast', { hasText: 'Notifications cleared' })
+		.getByRole('button', { name: 'Undo' })
+		.click();
 	await expect(page.locator('.notices li', { hasText: 'Kept Film' })).toBeVisible();
 
 	await page.request.put('/api/account/profile', { data: { public: account.profile_public } });
@@ -2531,7 +2540,7 @@ test('Home’s hero turns through recommendations, then what airs this week', as
 	const today = new Date().toISOString().slice(0, 10);
 	let home = {
 		hero: { item: item(9601, 'tv', 'Continuing Show'), next: null },
-		hero_row: 'recent',
+		hero_row: 'continue',
 		recommended: [
 			{
 				id: 71,
@@ -2574,7 +2583,8 @@ test('Home’s hero turns through recommendations, then what airs this week', as
 	await expect(hero).toContainText('The second season is the one');
 	// Never what you are in the middle of; that goes back in its row.
 	await expect(hero).not.toContainText('Continuing Show');
-	await expect(page.getByRole('heading', { name: 'Recently added' })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Continue watching' })).toBeVisible();
+	await expect(page.locator('main')).toContainText('Continuing Show');
 
 	// It turns by itself, about every eight seconds.
 	await expect(hero).toContainText('Second Pick', { timeout: 11000 });
