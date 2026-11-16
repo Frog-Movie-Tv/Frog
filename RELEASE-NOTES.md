@@ -20,6 +20,10 @@ In progress.
   filter by kind, and sort by difficulty, rarity or what is nearest.
 - Choose the badges beside your name from your Badges tab, and drag them
   into order. Everyone who opens your profile sees every badge you hold.
+- Administration has a Badges page of its own: every badge in one place,
+  searchable and sortable, to make, redraw and give out. A badge made here
+  can now earn itself, at a number of films, episodes, hours or any other
+  count Frog keeps.
 
 ### Fixes
 

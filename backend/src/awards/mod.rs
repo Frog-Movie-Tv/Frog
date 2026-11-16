@@ -14,10 +14,12 @@
 //! - `facts`: what the rules read about one account.
 //! - `rules`: what each badge asks. Pure.
 //! - `give`: giving, the grace day, taking back, the notification.
+//! - `custom`: badges made here that are earned by reaching a count.
 //! - `art`: pictures drawn from the SVGs, never stored.
 
 pub mod art;
 pub mod catalogue;
+pub mod custom;
 pub mod eligible;
 pub mod facts;
 pub mod give;
@@ -50,7 +52,9 @@ async fn fingerprint(pool: &SqlitePool, user_id: i64, today: &str) -> AppResult<
                              FROM season_rating WHERE user_id = ?1)
                 || '|' || (SELECT COUNT(*) FROM shelf WHERE user_id = ?1)
                 || '|' || (SELECT COUNT(*) FROM watch_with WHERE user_id = ?1)
-                || '|' || (SELECT COUNT(*) FROM badge_award WHERE user_id = ?1)",
+                || '|' || (SELECT COUNT(*) FROM badge_award WHERE user_id = ?1)
+                || '|' || (SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at), '')
+                             FROM badge WHERE condition IS NOT NULL)",
     )
     .bind(user_id)
     .fetch_one(pool)
@@ -81,8 +85,18 @@ pub async fn run(state: &AppState, user_id: i64, force: bool) -> AppResult<give:
     }
     let facts = facts::read(pool, user_id, tz, now).await?;
     let ok = eligible::eligible(&facts.logged(), tz, now);
-    let earned = rules::all(&facts, &ok).earned;
-    let settled = give::settle(state, user_id, earned, today, now).await?;
+    let tally = rules::all(&facts, &ok);
+    let made_here: Vec<(crate::badges::Conditional, rules::Earned)> =
+        crate::badges::conditional(pool)
+            .await?
+            .into_iter()
+            .filter_map(|b| {
+                let (_, earned) = custom::reach(&tally, b.id, &b.condition);
+                earned.map(|e| (b, e))
+            })
+            .collect();
+    let settled = give::settle(state, user_id, tally.earned, today, now).await?;
+    give::settle_custom(state, user_id, made_here, now).await?;
     // Awards change the count it was taken from; mark what is there now.
     let mark = fingerprint(pool, user_id, &today.to_string()).await?;
     sqlx::query(
@@ -107,7 +121,13 @@ pub async fn progress(pool: &SqlitePool, user_id: i64) -> AppResult<HashMap<Stri
     let now = Utc::now();
     let facts = facts::read(pool, user_id, tz, now).await?;
     let ok = eligible::eligible(&facts.logged(), tz, now);
-    let mut progress = rules::all(&facts, &ok).progress;
+    let tally = rules::all(&facts, &ok);
+    let mut progress = tally.progress.clone();
+    for b in crate::badges::conditional(pool).await? {
+        let (have, _) = custom::reach(&tally, b.id, &b.condition);
+        let need = b.condition.at as f64;
+        progress.insert(custom::Condition::key(b.id), (have.min(need), need));
+    }
     let (held,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM badge_award WHERE user_id = ?")
         .bind(user_id)
         .fetch_one(pool)

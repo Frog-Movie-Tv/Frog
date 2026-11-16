@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { api } from '#lib/api';
+	import { COUNTS, conditionText } from '#lib/badge-board';
 	import { removeBackground, type Rgb } from '#lib/badge-fill';
 	import {
 		base64,
@@ -35,6 +36,7 @@
 	import { toasts } from '#lib/toast.svelte';
 	import type { AdminBadge } from '#lib/types';
 	import Icon from './Icon.svelte';
+	import Select from './Select.svelte';
 	import Spinner from './Spinner.svelte';
 
 	interface Props {
@@ -52,6 +54,13 @@
 	// The editor opens afresh for each badge, so it starts from what it was given.
 	let name = $state(untrack(() => badge?.name ?? ''));
 	let description = $state(untrack(() => badge?.description ?? ''));
+	/* How a badge made here is earned: given by hand, or on its own once a
+	   count reaches a number. Frog's own badges keep their rules. */
+	const conditional = untrack(() => !badge?.rule);
+	let earnBy = $state<'hand' | 'count'>(untrack(() => (badge?.condition ? 'count' : 'hand')));
+	let count = $state(untrack(() => badge?.condition?.count ?? 'films'));
+	let reach = $state<number>(untrack(() => badge?.condition?.at ?? 10));
+	const reachOk = $derived(Number.isInteger(reach) && reach >= 1 && reach <= 1_000_000);
 	let source = $state.raw<Source | null>(null);
 	let settings = $state<BadgeSettings | null>(null);
 	let reading = $state(false);
@@ -554,7 +563,9 @@
 		c ? `#${c.map((n) => n.toString(16).padStart(2, '0')).join('')}` : 'transparent';
 
 	// --- saving --------------------------------------------------------------
-	const ready = $derived(!!source && !!settings && !!name.trim() && !saving);
+	const ready = $derived(
+		!!source && !!settings && !!name.trim() && !saving && (earnBy === 'hand' || reachOk)
+	);
 
 	async function save() {
 		if (!source || !settings) return;
@@ -577,6 +588,9 @@
 				original
 			};
 			const { id } = badge ? await api.updateBadge(badge.id, body) : await api.createBadge(body);
+			if (conditional) {
+				await api.setBadgeCondition(id, earnBy === 'count' ? { count, at: reach } : null);
+			}
 			toasts.push(badge ? 'Badge saved' : 'Badge made');
 			onsaved(id);
 		} catch (e) {
@@ -943,6 +957,50 @@
 							placeholder="One line about it"
 						/>
 					</label>
+					{#if conditional}
+						<div class="field">
+							<span>How it is earned</span>
+							<div class="segmented" role="group" aria-label="How it is earned">
+								<button type="button" class:on={earnBy === 'hand'} onclick={() => (earnBy = 'hand')}
+									>Given by hand</button
+								>
+								<button
+									type="button"
+									class:on={earnBy === 'count'}
+									onclick={() => (earnBy = 'count')}>On its own</button
+								>
+							</div>
+							{#if earnBy === 'count'}
+								<div class="earn">
+									<Select
+										label="What is counted"
+										full
+										value={count}
+										options={COUNTS.map((c) => ({ value: c.id, label: c.label }))}
+										onchange={(v) => (count = v)}
+									/>
+									<input
+										class="input"
+										type="number"
+										min="1"
+										max="1000000"
+										step="1"
+										inputmode="numeric"
+										aria-label="How many"
+										aria-invalid={!reachOk}
+										bind:value={reach}
+									/>
+								</div>
+								<span class="faint">
+									{reachOk
+										? `${conditionText({ count, at: reach })}. Frog gives it the moment someone gets there, counting what they did before too. You can still give it by hand.`
+										: 'Pick a whole number from 1 to 1,000,000.'}
+								</span>
+							{:else}
+								<span class="faint">Only administrators give it out.</span>
+							{/if}
+						</div>
+					{/if}
 					{#if settings}
 						<span class="small strong">How it looks</span>
 						<div class="previews">
@@ -1351,6 +1409,12 @@
 		display: grid;
 		gap: 6px;
 		font-size: 0.86rem;
+	}
+
+	.earn {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 7rem;
+		gap: 8px;
 	}
 
 	.row {

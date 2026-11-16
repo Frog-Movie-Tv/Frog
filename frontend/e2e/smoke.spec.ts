@@ -1603,6 +1603,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/anilist/entries/1',
 		'/api/admin/badges/1',
 		'/api/admin/badges/1/holders/1',
+		'/api/admin/badges/1/condition',
 		'/api/account/badges',
 		'/api/account/device'
 	]) {

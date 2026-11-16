@@ -10,6 +10,8 @@ use base64::Engine;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::awards::custom::Condition;
+
 use crate::auth::{AdminAuth, Auth};
 use crate::badges::{self, Pictures, Removed, Size};
 use crate::error::{AppError, AppResult};
@@ -134,6 +136,28 @@ pub async fn update(
         return Err(missing());
     }
     Ok(Json(json!({ "id": id })))
+}
+
+#[derive(Deserialize)]
+pub struct ConditionBody {
+    pub condition: Option<Condition>,
+}
+
+/// What earns a badge made here on its own, or `null` for given by hand
+/// only. Frog's own badges keep their rules.
+pub async fn set_condition(
+    AdminAuth(_): AdminAuth,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<ConditionBody>,
+) -> AppResult<Json<Value>> {
+    if let Some(c) = &body.condition {
+        c.check().map_err(|m| AppError::BadRequest(m.into()))?;
+    }
+    if !badges::set_condition(&state.pool, id, body.condition.as_ref()).await? {
+        return Err(missing());
+    }
+    Ok(Json(json!({ "id": id, "condition": body.condition })))
 }
 
 /// Remove a badge from everyone. The answer is everything it was, which is
@@ -308,8 +332,13 @@ pub async fn everything(
             .unwrap_or(usize::MAX)
     };
     rows.sort_by_key(|b| place(&b.rule));
-    let total = rows.len() + earned.iter().filter(|b| b.rule.is_none()).count();
-    let locked: Vec<Value> = rows
+    let made_here: Vec<badges::Conditional> = badges::conditional(pool)
+        .await?
+        .into_iter()
+        .filter(|b| !holding.contains(&b.id))
+        .collect();
+    let total = rows.len() + earned.iter().filter(|b| b.rule.is_none()).count() + made_here.len();
+    let mut locked: Vec<Value> = rows
         .iter()
         .filter(|b| !holding.contains(&b.id))
         .map(|b| {
@@ -342,6 +371,35 @@ pub async fn everything(
             })
         })
         .collect();
+    // Made here, with a condition: still to come like Frog's own.
+    for b in &made_here {
+        let address = |size: &str| {
+            format!(
+                "/api/badges/{}/{size}?v={}",
+                b.id,
+                urlencoding::encode(&b.version)
+            )
+        };
+        locked.push(json!({
+            "id": b.id,
+            "name": b.name,
+            "description": b.description,
+            "small": address("small"),
+            "large": address("large"),
+            "moment": false,
+            "ladder": null,
+            "step": null,
+            "group": "custom",
+            "holders": counts.get(&b.id).copied().unwrap_or(0),
+            "difficulty": null,
+            "steps": null,
+            "condition": b.condition,
+            "progress": progress.get(&Condition::key(b.id)).map(|(have, need)| json!({
+                "have": have.floor(),
+                "need": need,
+            })),
+        }));
+    }
     let mut earned = shaped(&username, &earned);
     for b in &mut earned {
         let id = b["id"].as_i64().unwrap_or_default();
@@ -393,8 +451,12 @@ pub fn shaped(username: &str, held: &[badges::Held]) -> Vec<Value> {
                 // A ladder's steps, so a profile can show only the highest.
                 "ladder": step.map(|s| s.ladder.as_str()),
                 "step": step.map(|s| s.index),
-                "group": entry.map_or("given", |e| e.group.as_str()),
+                "group": entry.map_or(
+                    if b.condition.is_some() { "custom" } else { "given" },
+                    |e| e.group.as_str()
+                ),
                 "moment": entry.is_some_and(|e| e.kind == crate::awards::catalogue::Kind::Moment),
+                "condition": b.condition.as_deref().and_then(Condition::parse),
                 // A badge given by hand says nothing about how hard it was.
                 "difficulty": entry.map(|e| e.difficulty),
                 "steps": step.map(|s| crate::awards::catalogue::ladder(&s.ladder).count()),

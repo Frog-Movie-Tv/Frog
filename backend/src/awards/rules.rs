@@ -39,6 +39,19 @@ pub struct Earned {
 pub struct Tally {
     pub earned: Vec<Earned>,
     pub progress: HashMap<String, (f64, f64)>,
+    /// Each ladder's running count, item by item in the order they
+    /// happened, for badges made here that ask for a count of their own
+    /// (`super::custom`).
+    pub reached: HashMap<String, Vec<Reached>>,
+}
+
+/// A ladder's count after one more thing, the day it happened and what it was.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Reached {
+    pub sum: f64,
+    pub on: NaiveDate,
+    pub title: Option<i64>,
+    pub watch: Option<i64>,
 }
 
 impl Tally {
@@ -104,6 +117,19 @@ fn climb(out: &mut Tally, ladder: &str, mut items: Vec<Item>) {
         sum += i.weight;
         reached.push(sum);
     }
+    out.reached.insert(
+        ladder.to_string(),
+        items
+            .iter()
+            .zip(&reached)
+            .map(|(i, sum)| Reached {
+                sum: *sum,
+                on: i.on,
+                title: i.title,
+                watch: i.watch,
+            })
+            .collect(),
+    );
     for step in catalogue::ladder(ladder) {
         let at = step.step.as_ref().map_or(0, |s| s.at) as f64;
         out.count(&step.key, sum, at);
@@ -160,6 +186,7 @@ pub fn all(f: &Facts, eligible: &HashSet<i64>) -> Tally {
         out.push(e);
     }
     out.progress.extend(more.progress);
+    out.reached.extend(more.reached);
     out
 }
 

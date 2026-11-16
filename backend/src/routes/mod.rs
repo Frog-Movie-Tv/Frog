@@ -169,6 +169,7 @@ pub fn router(state: AppState) -> Router {
                 .layer(DefaultBodyLimit::max(badges::BODY_MAX_BYTES)),
         )
         .route("/admin/badges/{id}/original", get(badges::original))
+        .route("/admin/badges/{id}/condition", put(badges::set_condition))
         .route("/admin/badges/{id}/images/{size}", get(badges::picture))
         .route(
             "/admin/badges/{id}/holders/{user_id}",

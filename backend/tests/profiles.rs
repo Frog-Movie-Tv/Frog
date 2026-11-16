@@ -199,6 +199,11 @@ async fn badge_routes_refuse_anyone_below_administrator() {
         ),
         ("DELETE", format!("/api/admin/badges/{id}"), None),
         ("GET", format!("/api/admin/badges/{id}/original"), None),
+        (
+            "PUT",
+            format!("/api/admin/badges/{id}/condition"),
+            Some(json!({ "condition": { "count": "films", "at": 5 } })),
+        ),
         ("GET", format!("/api/admin/badges/{id}/images/large"), None),
         (
             "PUT",

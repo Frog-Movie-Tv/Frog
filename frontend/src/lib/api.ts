@@ -5,6 +5,7 @@ import type { WhenAnswer } from './when.svelte';
 import type {
 	TitleMerge,
 	AdminBadge,
+	BadgeCondition,
 	BadgeUpload,
 	HeldBadge,
 	BadgeBoard,
@@ -346,6 +347,8 @@ export const api = {
 	badgeImage: (id: number, size: 'large' | 'small', version: string) =>
 		`/api/admin/badges/${id}/images/${size}?v=${encodeURIComponent(version)}`,
 	badgeOriginal: (id: number) => `/api/admin/badges/${id}/original`,
+	setBadgeCondition: (id: number, condition: BadgeCondition | null) =>
+		send<{ id: number }>('PUT', `/api/admin/badges/${id}/condition`, { condition }),
 	giveBadge: (id: number, userId: number) =>
 		send<{ ok: true }>('PUT', `/api/admin/badges/${id}/holders/${userId}`, {}),
 	takeBadge: (id: number, userId: number) =>

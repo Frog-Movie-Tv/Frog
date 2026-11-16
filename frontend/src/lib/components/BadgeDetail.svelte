@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { DIFFICULTY, LADDERS, heldBy, share, type BadgeCard } from '#lib/badge-board';
+	import {
+		DIFFICULTY,
+		LADDERS,
+		conditionText,
+		heldBy,
+		share,
+		type BadgeCard
+	} from '#lib/badge-board';
 	import { prettyDate } from '#lib/format';
 	import { backCloses } from '#lib/layers.svelte';
 	import { portal } from '#lib/portal';
@@ -113,7 +120,18 @@
 					</dd>
 				</div>
 			{/if}
-			{#if card.group !== 'given'}
+			{#if card.condition}
+				<div>
+					<dt>To earn it</dt>
+					<dd>{conditionText(card.condition)}</dd>
+				</div>
+			{/if}
+			{#if card.group === 'given'}
+				<div>
+					<dt>How</dt>
+					<dd>Given by hand by the people who run this Frog</dd>
+				</div>
+			{:else}
 				<div>
 					<dt>What counts</dt>
 					<dd>

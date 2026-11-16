@@ -224,31 +224,83 @@ pub async fn settle(
         out.given.push(e.key.clone());
     }
     if !given.is_empty() {
-        tell(state, user_id, run, &given).await?;
+        let told: Vec<(String, String)> = given
+            .iter()
+            .filter_map(|e| catalogue::get(&e.key).map(|c| (c.name.clone(), c.about.clone())))
+            .collect();
+        tell(state, user_id, run, &told).await?;
     }
     Ok(out)
+}
+
+/// Badges made here with a condition, given once it is met. Frog never takes
+/// one back on its own: whoever made it decides that.
+pub async fn settle_custom(
+    state: &AppState,
+    user_id: i64,
+    reached: Vec<(crate::badges::Conditional, Earned)>,
+    now: DateTime<Utc>,
+) -> AppResult<()> {
+    if reached.is_empty() {
+        return Ok(());
+    }
+    let pool = &state.pool;
+    let held: HashSet<i64> =
+        sqlx::query_as::<_, (i64,)>("SELECT badge_id FROM badge_award WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_all(pool)
+            .await?
+            .into_iter()
+            .map(|(b,)| b)
+            .collect();
+    // A millisecond past the run's own, so its notification stays apart.
+    let run = now.timestamp_millis() + 1;
+    let stamp = now.to_rfc3339();
+    let mut told = Vec::new();
+    for (badge, e) in reached.into_iter().filter(|(b, _)| !held.contains(&b.id)) {
+        let mut evidence = serde_json::to_value(&e.evidence).unwrap_or_else(|_| json!({}));
+        evidence["run"] = json!(run);
+        sqlx::query(
+            "INSERT INTO badge_award (user_id, badge_id, awarded_at, awarded_by, shown, position,
+                                      earned_on, evidence, rule_version)
+             VALUES (?1, ?2, ?3, NULL, 1,
+                     COALESCE((SELECT MAX(position) FROM badge_award WHERE user_id = ?1), -1) + 1,
+                     ?4, ?5, ?6)
+             ON CONFLICT (user_id, badge_id) DO NOTHING",
+        )
+        .bind(user_id)
+        .bind(badge.id)
+        .bind(&stamp)
+        .bind(e.on.to_string())
+        .bind(evidence.to_string())
+        .bind(RULE_VERSION)
+        .execute(pool)
+        .await?;
+        told.push((badge.name, badge.description.unwrap_or_default()));
+    }
+    if !told.is_empty() {
+        tell(state, user_id, run, &told).await?;
+    }
+    Ok(())
 }
 
 pub fn ref_key(user_id: i64, run: i64) -> String {
     format!("badges:{user_id}:{run}")
 }
 
-/// One notification for a run, however many it gave.
-async fn tell(state: &AppState, user_id: i64, run: i64, given: &[&Earned]) -> AppResult<()> {
-    let names: Vec<&str> = given
-        .iter()
-        .filter_map(|e| catalogue::get(&e.key).map(|c| c.name.as_str()))
-        .collect();
+/// One notification for a run, however many it gave, as (name, about).
+async fn tell(
+    state: &AppState,
+    user_id: i64,
+    run: i64,
+    given: &[(String, String)],
+) -> AppResult<()> {
+    let names: Vec<&str> = given.iter().map(|(name, _)| name.as_str()).collect();
     let username = crate::badges::holder_name(&state.pool, user_id)
         .await?
         .unwrap_or_default();
     let (title, body) = match names.as_slice() {
-        [one] => (
-            format!("You earned {one}"),
-            catalogue::get(&given[0].key)
-                .map(|c| c.about.clone())
-                .unwrap_or_default(),
-        ),
+        [one] => (format!("You earned {one}"), given[0].1.clone()),
         many => (format!("You earned {} badges", many.len()), many.join(", ")),
     };
     let push = json!({

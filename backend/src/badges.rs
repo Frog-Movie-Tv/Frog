@@ -13,6 +13,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
+use crate::awards::custom::Condition;
 use crate::error::{AppError, AppResult};
 
 /// The picture opened large, and the one drawn everywhere else.
@@ -200,14 +201,25 @@ pub struct Badge {
     pub holders: Vec<i64>,
     /// Set for one Frog gives on its own: its catalogue key.
     pub rule: Option<String>,
+    /// For one made here: what earns it on its own, when anything does.
+    pub condition: Option<Condition>,
 }
 
-type BadgeRow = (i64, String, Option<String>, String, String, Option<String>);
+/// (id, name, description, created_at, updated_at, rule, condition)
+type BadgeRow = (
+    i64,
+    String,
+    Option<String>,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+);
 
 /// Every badge, by name, with who holds each.
 pub async fn all(pool: &SqlitePool) -> AppResult<Vec<Badge>> {
     let rows: Vec<BadgeRow> = sqlx::query_as(
-        "SELECT id, name, description, created_at, updated_at, rule FROM badge
+        "SELECT id, name, description, created_at, updated_at, rule, condition FROM badge
           ORDER BY rule IS NOT NULL, name COLLATE NOCASE",
     )
     .fetch_all(pool)
@@ -220,7 +232,7 @@ pub async fn all(pool: &SqlitePool) -> AppResult<Vec<Badge>> {
     Ok(rows
         .into_iter()
         .map(
-            |(id, name, description, created_at, updated_at, rule)| Badge {
+            |(id, name, description, created_at, updated_at, rule, condition)| Badge {
                 holders: held
                     .iter()
                     .filter(|(b, _)| *b == id)
@@ -232,6 +244,7 @@ pub async fn all(pool: &SqlitePool) -> AppResult<Vec<Badge>> {
                 created_at,
                 updated_at,
                 rule,
+                condition: condition.as_deref().and_then(Condition::parse),
             },
         )
         .collect())
@@ -247,15 +260,17 @@ pub async fn one(pool: &SqlitePool, id: i64) -> AppResult<Option<(Badge, String)
         String,
         String,
         Option<String>,
+        Option<String>,
     );
     let row: Option<OneRow> = sqlx::query_as(
-        "SELECT id, name, description, created_at, updated_at, settings_json, rule FROM badge
-          WHERE id = ?",
+        "SELECT id, name, description, created_at, updated_at, settings_json, rule, condition
+           FROM badge WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(pool)
     .await?;
-    let Some((id, name, description, created_at, updated_at, settings, rule)) = row else {
+    let Some((id, name, description, created_at, updated_at, settings, rule, condition)) = row
+    else {
         return Ok(None);
     };
     let holders: Vec<(i64,)> =
@@ -272,6 +287,7 @@ pub async fn one(pool: &SqlitePool, id: i64) -> AppResult<Option<(Badge, String)
             updated_at,
             holders: holders.into_iter().map(|(u,)| u).collect(),
             rule,
+            condition: condition.as_deref().and_then(Condition::parse),
         },
         settings,
     )))
@@ -625,10 +641,12 @@ pub struct Held {
     pub rule: Option<String>,
     pub earned_on: Option<String>,
     pub earned_with: Option<String>,
+    /// For one made here, what earns it on its own, as kept.
+    pub condition: Option<String>,
 }
 
 /// (id, name, description, awarded_at, shown, version, rule, earned_on,
-///  earned with)
+///  condition, earned with)
 type HeldRow = (
     i64,
     String,
@@ -636,6 +654,7 @@ type HeldRow = (
     String,
     bool,
     String,
+    Option<String>,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -664,7 +683,7 @@ pub async fn holders(pool: &SqlitePool) -> AppResult<(std::collections::HashMap<
 pub async fn held(pool: &SqlitePool, user_id: i64, with_hidden: bool) -> AppResult<Vec<Held>> {
     let rows: Vec<HeldRow> = sqlx::query_as(
         "SELECT b.id, b.name, b.description, a.awarded_at, a.shown, b.updated_at, b.rule,
-                a.earned_on,
+                a.earned_on, b.condition,
                 (SELECT t.name FROM title t
                   WHERE t.id = json_extract(a.evidence, '$.title'))
            FROM badge_award a JOIN badge b ON b.id = a.badge_id
@@ -678,8 +697,20 @@ pub async fn held(pool: &SqlitePool, user_id: i64, with_hidden: bool) -> AppResu
     Ok(rows
         .into_iter()
         .map(
-            |(id, name, description, awarded_at, shown, version, rule, earned_on, earned_with)| {
+            |(
+                id,
+                name,
+                description,
+                awarded_at,
+                shown,
+                version,
+                rule,
+                earned_on,
+                condition,
+                earned_with,
+            )| {
                 Held {
+                    condition,
                     id,
                     name,
                     description,
@@ -741,14 +772,68 @@ pub async fn automatic(pool: &SqlitePool) -> AppResult<Vec<Automatic>> {
         .collect())
 }
 
-/// Whether a badge is one Frog gives on its own: anyone signed in may see
-/// those, earned or not.
-pub async fn is_automatic(pool: &SqlitePool, id: i64) -> AppResult<bool> {
-    let (yes,): (bool,) =
-        sqlx::query_as("SELECT EXISTS (SELECT 1 FROM badge WHERE id = ? AND rule IS NOT NULL)")
+/// A badge made here that Frog gives on its own once its condition is met.
+pub struct Conditional {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    /// When its pictures last changed, for their addresses.
+    pub version: String,
+    pub condition: Condition,
+}
+
+/// Every badge made here with a condition Frog can count.
+pub async fn conditional(pool: &SqlitePool) -> AppResult<Vec<Conditional>> {
+    let rows: Vec<(i64, String, Option<String>, String, String)> = sqlx::query_as(
+        "SELECT id, name, description, updated_at, condition FROM badge
+          WHERE condition IS NOT NULL AND rule IS NULL
+          ORDER BY name COLLATE NOCASE",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(id, name, description, version, condition)| {
+            Some(Conditional {
+                id,
+                name,
+                description,
+                version,
+                condition: Condition::parse(&condition)?,
+            })
+        })
+        .collect())
+}
+
+/// What earns a badge made here on its own, or nothing for one only ever
+/// given by hand. Frog's own badges keep their rules; false for those and
+/// for a badge that is not there.
+pub async fn set_condition(
+    pool: &SqlitePool,
+    id: i64,
+    condition: Option<&Condition>,
+) -> AppResult<bool> {
+    let text = condition.map(|c| serde_json::json!(c).to_string());
+    let done =
+        sqlx::query("UPDATE badge SET condition = ?, updated_at = ? WHERE id = ? AND rule IS NULL")
+            .bind(text)
+            .bind(Utc::now().to_rfc3339())
             .bind(id)
-            .fetch_one(pool)
+            .execute(pool)
             .await?;
+    Ok(done.rows_affected() > 0)
+}
+
+/// Whether a badge is one anyone may earn, Frog's own or one made here with a
+/// condition: anyone signed in may see those, earned or not.
+pub async fn is_automatic(pool: &SqlitePool, id: i64) -> AppResult<bool> {
+    let (yes,): (bool,) = sqlx::query_as(
+        "SELECT EXISTS (SELECT 1 FROM badge
+                         WHERE id = ? AND (rule IS NOT NULL OR condition IS NOT NULL))",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await?;
     Ok(yes)
 }
 

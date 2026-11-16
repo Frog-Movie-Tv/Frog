@@ -637,11 +637,19 @@ export interface HeldBadge {
 	steps?: number | null;
 	/** How many people on this Frog hold it (the badges page only). */
 	holders?: number;
+	/** For one made here: what earns it on its own. */
+	condition?: BadgeCondition | null;
 }
 
 /** The parts of the badges page. */
 export type BadgeGroup =
-	'watching' | 'moments' | 'taste' | 'anime' | 'frog' | 'collector' | 'given';
+	'watching' | 'moments' | 'taste' | 'anime' | 'frog' | 'collector' | 'custom' | 'given';
+
+/** What earns a badge made here on its own: a count reaching a number. */
+export interface BadgeCondition {
+	count: string;
+	at: number;
+}
 
 /** A badge Frog gives on its own that someone has still to earn. */
 export interface LockedBadge {
@@ -660,6 +668,7 @@ export interface LockedBadge {
 	difficulty?: number | null;
 	steps?: number | null;
 	holders?: number;
+	condition?: BadgeCondition | null;
 }
 
 /** Everything there is to earn on one profile. */
@@ -683,6 +692,8 @@ export interface AdminBadge {
 	holders: number[];
 	/** Set for a badge Frog gives on its own. */
 	rule?: string | null;
+	/** For one made here: what earns it on its own, or nothing for by hand only. */
+	condition?: BadgeCondition | null;
 }
 
 /** A badge Frog would give on its own, held back because its name is taken. */

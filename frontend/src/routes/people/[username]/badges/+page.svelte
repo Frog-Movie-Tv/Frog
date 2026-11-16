@@ -10,6 +10,7 @@
 		LADDERS,
 		SORTS,
 		cards as toCards,
+		conditionText,
 		fromAddress,
 		grouped,
 		heldBy,
@@ -305,6 +306,8 @@
 												<span class="eyebrow"
 													>{LADDERS[c.ladder] ?? c.ladder} · step {c.step + 1} of {c.steps}</span
 												>
+											{:else if c.condition}
+												<span class="eyebrow">Made here · {conditionText(c.condition)}</span>
 											{/if}
 											<strong>{c.name}</strong>
 											<span class="tags">

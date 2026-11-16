@@ -4,7 +4,7 @@
  * drive it without a page.
  */
 
-import type { BadgeBoard, BadgeGroup, HeldBadge, LockedBadge } from './types';
+import type { BadgeBoard, BadgeCondition, BadgeGroup, HeldBadge, LockedBadge } from './types';
 
 export interface BadgeCard {
 	id: number;
@@ -26,6 +26,8 @@ export interface BadgeCard {
 	day: string | null;
 	held: HeldBadge | null;
 	progress: { have: number; need: number } | null;
+	/** For one made here: what earns it on its own. */
+	condition: BadgeCondition | null;
 }
 
 export const GROUPS: { id: BadgeGroup; label: string; about: string }[] = [
@@ -35,6 +37,7 @@ export const GROUPS: { id: BadgeGroup; label: string; about: string }[] = [
 	{ id: 'anime', label: 'Anime and manga', about: 'Episodes, films and chapters.' },
 	{ id: 'frog', label: 'Your Frog', about: 'Your library, your shelves and your people.' },
 	{ id: 'collector', label: 'Collector', about: 'Badges for badges.' },
+	{ id: 'custom', label: 'Made on this Frog', about: 'Made here, earned like any other.' },
 	{ id: 'given', label: 'Given by hand', about: 'From the people who run this Frog.' }
 ];
 
@@ -61,6 +64,49 @@ export const LADDERS: Record<string, string> = {
 	days: 'Days watched',
 	notes: 'Notes'
 };
+
+/**
+ * What a badge made here can count, as the server allows it
+ * (`awards::custom::COUNTS`), and how a number of it reads.
+ */
+export const COUNTS: { id: string; label: string; reads: (n: string) => string }[] = [
+	{ id: 'films', label: 'Films watched', reads: (n) => `${n} films` },
+	{ id: 'episodes', label: 'Episodes watched', reads: (n) => `${n} episodes` },
+	{ id: 'hours', label: 'Hours watched', reads: (n) => `${n} hours watched` },
+	{
+		id: 'days',
+		label: 'Days with something watched',
+		reads: (n) => `Something watched on ${n} days`
+	},
+	{ id: 'seasons', label: 'Seasons finished', reads: (n) => `${n} seasons finished` },
+	{ id: 'completed', label: 'Shows finished', reads: (n) => `${n} shows finished` },
+	{ id: 'rewatches', label: 'Rewatches', reads: (n) => `${n} rewatches` },
+	{ id: 'library', label: 'Titles in the library', reads: (n) => `${n} titles in your library` },
+	{ id: 'ratings', label: 'Titles rated', reads: (n) => `${n} titles rated` },
+	{ id: 'favourites', label: 'Favourites', reads: (n) => `${n} favourites` },
+	{ id: 'notes', label: 'Titles with notes', reads: (n) => `Notes on ${n} titles` },
+	{ id: 'anime', label: 'Anime watched', reads: (n) => `${n} anime` },
+	{ id: 'chapters', label: 'Manga chapters read', reads: (n) => `${n} manga chapters` },
+	{ id: 'manga', label: 'Manga finished', reads: (n) => `${n} manga finished` },
+	{
+		id: 'together',
+		label: 'Watched with someone',
+		reads: (n) => `${n} titles watched with someone`
+	},
+	{
+		id: 'extension',
+		label: 'Logged by the browser extension',
+		reads: (n) => `${n} logged by the browser extension`
+	},
+	{ id: 'years', label: 'Years on Frog', reads: (n) => `${n} years on Frog` }
+];
+
+/** "25 films", or nothing for a count Frog does not know. */
+export function conditionText(c: BadgeCondition | null | undefined): string {
+	if (!c) return '';
+	const count = COUNTS.find((x) => x.id === c.count);
+	return count ? count.reads(c.at.toLocaleString()) : '';
+}
 
 export type Show = 'all' | 'earned' | 'locked';
 export type Sort = 'kind' | 'recent' | 'closest' | 'easiest' | 'hardest' | 'rarest' | 'name';
@@ -96,7 +142,8 @@ export function cards(board: BadgeBoard): BadgeCard[] {
 		holders: b.holders ?? 0,
 		day: heldDay(b),
 		held: b,
-		progress: null
+		progress: null,
+		condition: b.condition ?? null
 	}));
 	const locked = board.locked.map((b: LockedBadge): BadgeCard => ({
 		id: b.id,
@@ -114,7 +161,8 @@ export function cards(board: BadgeBoard): BadgeCard[] {
 		holders: b.holders ?? 0,
 		day: null,
 		held: null,
-		progress: b.progress
+		progress: b.progress,
+		condition: b.condition ?? null
 	}));
 	return [...earned, ...locked];
 }
