@@ -2,6 +2,7 @@ import { browser } from '$app/env';
 import { chooseZone } from './day';
 import type { ScoreFormat } from './format';
 import { moveTheme, rooms, type Glow } from './glow';
+import { toasts } from './toast.svelte';
 import type { Status } from './types';
 
 export type ThemeName = 'glass' | 'glass-light' | 'dark' | 'light';
@@ -294,40 +295,53 @@ class SettingsStore {
 	private timer: ReturnType<typeof setTimeout> | null = null;
 	private dirty = false;
 	private flushInstalled = false;
+	/** What changed here while the server copy was on its way, which the
+	 *  server copy must not undo when it lands (the welcome's "done", a theme
+	 *  picked in the first second). Null when no load is waiting. */
+	private changedDuringLoad: Partial<Settings> | null = null;
+	/** A save was refused: said once, until one goes through. */
+	private failing = false;
 
 	set<K extends keyof Settings>(key: K, value: Settings[K]) {
 		this.current = { ...this.current, [key]: value };
+		if (this.changedDuringLoad) this.changedDuringLoad[key] = value;
 		this.afterChange();
 	}
 
 	patch(values: Partial<Settings>) {
 		this.current = { ...this.current, ...values };
+		if (this.changedDuringLoad) Object.assign(this.changedDuringLoad, values);
 		this.afterChange();
 	}
 
 	replace(values: Settings) {
 		this.current = { ...DEFAULTS, ...current(values) };
+		if (this.changedDuringLoad) this.changedDuringLoad = { ...this.current };
 		this.afterChange();
 	}
 
 	reset() {
 		this.current = { ...DEFAULTS };
+		if (this.changedDuringLoad) this.changedDuringLoad = { ...this.current };
 		this.afterChange();
 	}
 
 	/** Pull the server copy once a session is known to exist. */
 	async load() {
 		if (!browser) return;
+		this.changedDuringLoad = {};
 		try {
 			const res = await fetch('/api/settings', { credentials: 'same-origin' });
 			if (res.ok) {
 				// An account that has never saved anything starts from the
 				// defaults, not from whatever this device last showed.
-				this.current = introduceRows({ ...DEFAULTS, ...current(await res.json()) });
+				const saved = current(await res.json());
+				this.current = introduceRows({ ...DEFAULTS, ...saved, ...this.changedDuringLoad });
 			}
 		} catch {
 			// Offline: the local copy is already applied.
 		} finally {
+			this.changedDuringLoad = null;
 			this.loaded = true;
 			this.cacheLocally();
 			this.apply();
@@ -410,16 +424,27 @@ class SettingsStore {
 
 	async save() {
 		if (!browser) return;
+		let refused = false;
 		try {
-			await fetch('/api/settings', {
+			const res = await fetch('/api/settings', {
 				method: 'PUT',
 				credentials: 'same-origin',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify(this.current)
 			});
-			this.dirty = false;
+			// Signed out is not a failed save: the sign-in screen is coming.
+			if (res.ok || res.status === 401) {
+				this.dirty = false;
+				this.failing = false;
+				return;
+			}
+			refused = true;
 		} catch {
-			// The local copy still holds; it will sync on the next change.
+			// Offline: the local copy holds, and goes with the next change.
+		}
+		if (refused && !this.failing) {
+			this.failing = true;
+			toasts.push('Your settings could not be saved. Try again in a moment.', 'error');
 		}
 	}
 
