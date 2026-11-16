@@ -137,27 +137,12 @@
 		border-radius: var(--radius-sm);
 		background: var(--bg-elev-2);
 		color: var(--text-dim);
-		cursor: grab;
-		/* The handle owns the gesture; without this a touch drag scrolls. */
-		touch-action: none;
-	}
-
-	.arranging li {
-		transition: transform var(--fast) var(--ease);
-	}
-
-	.arranging :global([data-dragging]) {
-		transform: scale(1.03);
 	}
 
 	.arranging :global([data-dragging] .cover) {
 		box-shadow:
 			0 0 0 2px var(--accent),
 			var(--shadow-3);
-	}
-
-	:global([data-sorting]) .handle {
-		cursor: grabbing;
 	}
 
 	@media (max-width: 520px) {

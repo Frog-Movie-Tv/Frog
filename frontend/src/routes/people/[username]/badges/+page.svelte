@@ -523,9 +523,8 @@
 		height: 52px;
 	}
 
-	.slots li:global([data-dragging]) {
-		z-index: 2;
-		opacity: 0.85;
+	.slots li:global([data-dragging]) .slot {
+		border-color: var(--accent);
 	}
 
 	.slot {

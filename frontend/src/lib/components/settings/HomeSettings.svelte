@@ -10,18 +10,19 @@
 		settings,
 		type HeroStyle
 	} from '#lib/settings.svelte';
+	import { moved, sortable } from '#lib/sortable';
 	import { toasts } from '#lib/toast.svelte';
 
 	/** Home and menus: where Frog opens, the rows on Home, and the navigation. */
 	const s = $derived(settings.current);
 
-	function moveRow(id: string, delta: number) {
-		const rows = [...s.homeRows];
-		const i = rows.indexOf(id);
-		const j = i + delta;
-		if (i < 0 || j < 0 || j >= rows.length) return;
-		[rows[i], rows[j]] = [rows[j], rows[i]];
-		settings.set('homeRows', rows);
+	/** The order while a row is being dragged; saved once it is let go. */
+	let rowDraft = $state<string[] | null>(null);
+	const rows = $derived((rowDraft ?? s.homeRows).filter((id) => rowInfo(id)));
+
+	function saveRows() {
+		if (rowDraft) settings.set('homeRows', rowDraft);
+		rowDraft = null;
 	}
 
 	function toggleRow(id: string) {
@@ -48,21 +49,18 @@
 		return HOME_ROWS.find((r) => r.id === id);
 	}
 
+	let navDraft = $state<string[] | null>(null);
 	const navPages = $derived.by(() => {
-		const order = s.navOrder;
+		const order = navDraft ?? s.navOrder;
 		const known = order
 			.map((href) => NAV_PAGES.find((p) => p.href === href))
 			.filter((p): p is (typeof NAV_PAGES)[number] => !!p);
 		return [...known, ...NAV_PAGES.filter((p) => !order.includes(p.href))];
 	});
 
-	function moveNav(href: string, delta: number) {
-		const order = navPages.map((p) => p.href);
-		const i = order.indexOf(href);
-		const j = i + delta;
-		if (j < 0 || j >= order.length) return;
-		[order[i], order[j]] = [order[j], order[i]];
-		settings.set('navOrder', order);
+	function saveNav() {
+		if (navDraft) settings.set('navOrder', navDraft);
+		navDraft = null;
 	}
 
 	function toggleHidden(href: string, hide: boolean) {
@@ -160,31 +158,26 @@
 	</div>
 
 	<h3 class="sub">Home rows</h3>
-	<ul class="builder list-pane">
-		{#each s.homeRows as id, i (id)}
+	<ul
+		class="builder list-pane"
+		use:sortable={{
+			onmove: (from, to) => (rowDraft = moved(rows, from, to)),
+			onend: saveRows
+		}}
+	>
+		{#each rows as id (id)}
 			{@const row = rowInfo(id)}
 			{#if row}
-				<li>
+				<li data-sort-item>
+					<button
+						class="grip"
+						data-sort-handle
+						aria-label="Move {row.label}: drag, or use the arrow keys"
+					>
+						<Icon name="grip" size={16} />
+					</button>
 					<span class="label">
 						<strong>{row.label}</strong><span class="faint">{row.hint}</span>
-					</span>
-					<span class="order">
-						<button
-							class="icon-btn"
-							disabled={i === 0}
-							aria-label="Move {row.label} up"
-							onclick={() => moveRow(id, -1)}
-						>
-							<Icon name="chevron-up" size={15} />
-						</button>
-						<button
-							class="icon-btn"
-							disabled={i === s.homeRows.length - 1}
-							aria-label="Move {row.label} down"
-							onclick={() => moveRow(id, 1)}
-						>
-							<Icon name="chevron-down" size={15} />
-						</button>
 					</span>
 					<button class="icon-btn" aria-label="Remove {row.label}" onclick={() => toggleRow(id)}>
 						<Icon name="x" size={15} />
@@ -212,18 +205,36 @@
 <section class="block">
 	<div class="section-head"><h2>Navigation</h2></div>
 
-	<ul class="builder nav list-pane">
+	<ul
+		class="builder nav list-pane"
+		use:sortable={{
+			onmove: (from, to) =>
+				(navDraft = moved(
+					navPages.map((p) => p.href),
+					from,
+					to
+				)),
+			onend: saveNav
+		}}
+	>
 		<li class="legend" aria-hidden="true">
+			<span class="grip-space"></span>
 			<span class="label"></span>
 			<span class="col">Tab bar <span class="count">{s.navTabs.length}/{MAX_TABS}</span></span>
 			<span class="col">Menu</span>
-			<span class="order"></span>
 		</li>
-		{#each navPages as navPage, i (navPage.href)}
+		{#each navPages as navPage (navPage.href)}
 			{@const inBar = !s.navHidden.includes(navPage.href)}
 			{@const inTabs = s.navTabs.includes(navPage.href)}
 			{@const key = goKeys[navPage.href]}
-			<li>
+			<li data-sort-item>
+				<button
+					class="grip"
+					data-sort-handle
+					aria-label="Move {navPage.label}: drag, or use the arrow keys"
+				>
+					<Icon name="grip" size={16} />
+				</button>
 				<span class="nav-icon"><Icon name={navPage.icon as IconName} size={17} /></span>
 				<span class="label">
 					<strong>{navPage.label}</strong>
@@ -280,24 +291,6 @@
 						disabled={navPage.fixed}
 						onchange={(e) => toggleHidden(navPage.href, !e.currentTarget.checked)}
 					/>
-				</span>
-				<span class="order">
-					<button
-						class="icon-btn"
-						disabled={i === 0}
-						aria-label="Move {navPage.label} up"
-						onclick={() => moveNav(navPage.href, -1)}
-					>
-						<Icon name="chevron-up" size={15} />
-					</button>
-					<button
-						class="icon-btn"
-						disabled={i === navPages.length - 1}
-						aria-label="Move {navPage.label} down"
-						onclick={() => moveNav(navPage.href, 1)}
-					>
-						<Icon name="chevron-down" size={15} />
-					</button>
 				</span>
 			</li>
 		{/each}
@@ -476,11 +469,34 @@
 		cursor: not-allowed;
 	}
 
-	.order {
+	.grip,
+	.grip-space {
 		flex: none;
-		display: flex;
-		gap: 4px;
-		width: 60px;
+		width: 28px;
+	}
+
+	.grip {
+		display: grid;
+		place-items: center;
+		height: 32px;
+		margin-left: -6px;
+		padding: 0;
+		border: 0;
+		border-radius: 7px;
+		background: none;
+		color: var(--text-faint);
+	}
+
+	.grip:hover,
+	.grip:focus-visible {
+		color: var(--text);
+	}
+
+	/* Lifted: a pane of its own over the rows it passes. */
+	.builder li:global([data-dragging]) {
+		background: var(--bg-float);
+		border-radius: var(--radius);
+		box-shadow: var(--shadow-2);
 	}
 
 	.icon-btn {
@@ -504,17 +520,14 @@
 		cursor: not-allowed;
 	}
 
-	/* With a mouse, moving a row is offered where the pointer is, so the
+	/* With a mouse, a shortcut is offered where the pointer is, so the
 	   list reads as names and switches until then. */
 	@media (hover: hover) {
-		.builder li .order,
 		.builder li .key.empty {
 			opacity: 0;
 			transition: opacity var(--fast) var(--ease);
 		}
 
-		.builder li:hover .order,
-		.builder li:focus-within .order,
 		.builder li:hover .key.empty,
 		.builder li .key.empty:focus-visible {
 			opacity: 1;
@@ -538,15 +551,16 @@
 	}
 
 	@media (max-width: 760px) {
-		.order {
-			width: auto;
-		}
-
 		/* Big enough for a finger. */
 		.icon-btn,
-		.tab-toggle {
+		.tab-toggle,
+		.grip {
 			width: 44px;
 			height: 44px;
+		}
+
+		.grip-space {
+			width: 44px;
 		}
 	}
 

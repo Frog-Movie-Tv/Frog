@@ -13,6 +13,24 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Improvements
+
+- Drag your pinned titles into the order your profile shows them.
+- Anything you arrange by dragging lifts under your finger or pointer and
+  follows it, while the rest slide aside to make room: shelves, the titles
+  on a shelf, Home rows, the menu, your pinned titles and the badges beside
+  your name. Esc puts it back.
+- Genres read the same for films and shows everywhere: Science Fiction,
+  Fantasy, Action and Adventure, once each, in Stats, profiles, filters and
+  shelves.
+
+### Fixes
+
+- An episode your AniList counts as watched reaches Frog as soon as it is
+  out, even when you watched it early.
+- A title you take off AniList leaves Frog too, and Connections no longer
+  asks you to look at it.
+
 ## [1.9.0] — Reed Frog — 2026-11-16
 
 A few improvements and fixes.

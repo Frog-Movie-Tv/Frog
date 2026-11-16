@@ -8,6 +8,7 @@
 	import ProfileLook from '#lib/components/settings/ProfileLook.svelte';
 	import { AVATAR_PIXELS, BANNER_PIXELS, decode, encode, shrink, staysAsItIs } from '#lib/picture';
 	import { session } from '#lib/session.svelte';
+	import { moved, sortable } from '#lib/sortable';
 	import { toasts } from '#lib/toast.svelte';
 	import type { Account, LibraryItem, ProfileEdit } from '#lib/types';
 
@@ -126,7 +127,22 @@
 				? img(account.banner_backdrop, 'w1280')
 				: null
 	);
-	const pinned = $derived(account?.pinned ?? []);
+	/** Pinned titles in the order being dragged into, until it is saved. */
+	let pinDraft = $state<NonNullable<Account['pinned']> | null>(null);
+	const pinned = $derived(pinDraft ?? account?.pinned ?? []);
+
+	/** Save the order the chips were dragged into. A pin whose title has left
+	 *  the library is not drawn, so it keeps its place at the end. */
+	async function savePinOrder() {
+		const draft = pinDraft;
+		if (!draft) return;
+		const shown = new Set(draft.map((t) => t.id));
+		const rest = (account?.pins ?? []).filter((p) => !shown.has(p.title_id));
+		const order = [...draft.map((t) => ({ title_id: t.id })), ...rest];
+		const same = order.every((p, i) => account?.pins?.[i]?.title_id === p.title_id);
+		if (!same) await save({ pins: order });
+		pinDraft = null;
+	}
 
 	// Finding a title to pin: the best rated to start, then the whole library
 	// by name as you type.
@@ -418,7 +434,11 @@
 			<span class="setting-tile" aria-hidden="true"><Icon name="bookmark" size={18} /></span>
 			<span class="setting-label">
 				<strong>Pinned titles</strong>
-				<span class="faint">Up to {PINS_MAX}, at the top of your profile.</span>
+				<span class="faint">
+					{pinned.length > 1
+						? `Up to ${PINS_MAX}, in this order at the top of your profile. Drag to change it.`
+						: `Up to ${PINS_MAX}, at the top of your profile.`}
+				</span>
 			</span>
 			{#if pinned.length < PINS_MAX || choosingPins}
 				<button
@@ -433,11 +453,28 @@
 			{/if}
 		</div>
 		{#if pinned.length}
-			<ul class="pinned setting-body">
+			<ul
+				class="pinned setting-body"
+				use:sortable={{
+					onmove: (from, to) => (pinDraft = moved(pinned, from, to)),
+					onend: savePinOrder
+				}}
+			>
 				{#each pinned as t (t.id)}
-					<li class="pin">
-						{#if img(t.poster_path, 'w92')}<img src={img(t.poster_path, 'w92')} alt="" />{/if}
-						<span class="pin-name">{t.name}</span>
+					<li class="pin" data-sort-item>
+						<button
+							class="pin-grab"
+							data-sort-handle
+							aria-label="Move {t.name}: drag, or use the arrow keys"
+							title={pinned.length > 1 ? 'Drag to change the order' : undefined}
+						>
+							{#if img(t.poster_path, 'w92')}<img
+									src={img(t.poster_path, 'w92')}
+									alt=""
+									draggable="false"
+								/>{/if}
+							<span class="pin-name">{t.name}</span>
+						</button>
 						<button class="unpin hit" aria-label="Unpin {t.name}" onclick={() => togglePin(t.id)}>
 							<Icon name="x" size={14} />
 						</button>
@@ -952,6 +989,27 @@
 		font-size: 0.85rem;
 		min-width: 0;
 		max-width: 100%;
+	}
+
+	/* The poster and name are the handle: the chip is picked up by them. */
+	.pin-grab {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+		padding: 0;
+		border: 0;
+		border-radius: 4px;
+		background: none;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+	}
+
+	.pin:global([data-dragging]) {
+		border-color: var(--accent);
+		background: var(--bg-float);
+		box-shadow: var(--shadow-2);
 	}
 
 	.pin img {
