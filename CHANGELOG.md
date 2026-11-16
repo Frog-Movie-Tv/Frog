@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.9.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.8.0...v1.9.0) (2026-11-16)
+
+
+### Features
+
+* a Badges tab and admin page, banners from any title, glow colours, livelier shelves, Diary in Calendar ([fb901e3](https://github.com/Frog-Movie-Tv/Frog/commit/fb901e3bf7753da3050ed44a86bf31c87374c3c7))
+* **admin:** say when the server's deploy scripts are older than the release ([2a7530c](https://github.com/Frog-Movie-Tv/Frog/commit/2a7530c7a01de0c0037c7a976ab44ec9257477b4))
+* **appearance:** four themes, and a glow in any colour ([9044b39](https://github.com/Frog-Movie-Tv/Frog/commit/9044b393d85402dbb74a37a2aae4179e6ea9d200))
+* **badges:** a Badges tab of cards, sortable by difficulty and rarity ([8f24767](https://github.com/Frog-Movie-Tv/Frog/commit/8f247675526e64ae2f52f643d5ef5f5fdc7d431e))
+* **badges:** an admin Badges page, and badges made here that earn themselves ([defd080](https://github.com/Frog-Movie-Tv/Frog/commit/defd0804dff0ad38522738c3cb6d1c13a9ac1105))
+* **calendar:** bring the diary into the calendar as a third view ([4549e4b](https://github.com/Frog-Movie-Tv/Frog/commit/4549e4bfcaadf060bc578e0d9522a4632fef9d6e))
+* **library:** cards say who a title was watched with ([92a69c1](https://github.com/Frog-Movie-Tv/Frog/commit/92a69c195e5ef0fa8c630c75bcddf163288595f9))
+* **pages:** Airing is a Calendar view, the Diary an Activity view ([432acf8](https://github.com/Frog-Movie-Tv/Frog/commit/432acf81b74ba7efe86e53b8ac19d6af9d5e852f))
+* **profile:** a clearer banner layout choice, and a banner from any title ([cae07c0](https://github.com/Frog-Movie-Tv/Frog/commit/cae07c0518278f24a8e9c46a57c810c89537691d))
+* **shelves:** shelves deal out their posters, and open with their name ([ac36338](https://github.com/Frog-Movie-Tv/Frog/commit/ac36338e33d901b3c51a79845c974e1be8830d50))
+
+
+### Fixes
+
+* **activity:** a card counts one day, the viewer's ([bf89ab5](https://github.com/Frog-Movie-Tv/Frog/commit/bf89ab556651b120008466ff29130991d75dd73f))
+* **airing:** find more shows on TVmaze, and look again sooner ([8a00551](https://github.com/Frog-Movie-Tv/Frog/commit/8a0055196914791d5d2dfa4c781f1996e72f9625))
+* **anilist:** an entry AniList no longer answers for is shown, not retried ([a3d9ada](https://github.com/Frog-Movie-Tv/Frog/commit/a3d9adab29a9d1ab92666971917fab4b97913efd))
+* **credits:** the backfill stores credits for a title already stored ([79fc00d](https://github.com/Frog-Movie-Tv/Frog/commit/79fc00d09623af76f6c554e7e07f6e6e54305865))
+* **dates:** today and yesterday are calendar days where you are ([11b55ba](https://github.com/Frog-Movie-Tv/Frog/commit/11b55ba092e69a0ddbedb4c7df1f6db8802070ee))
+* **deploy:** install.sh sets up staging only when asked ([062eb1e](https://github.com/Frog-Movie-Tv/Frog/commit/062eb1e3f51b0f3518e0d516d3dcfdb03327577b))
+* **release:** every minor and major release has a name of its own ([8558419](https://github.com/Frog-Movie-Tv/Frog/commit/855841940cea35d10b0a9ceaa85e8f7704ab24a0))
+* reliability fixes, true Activity counts, and Airing and Diary folded into Calendar and Activity ([005de9d](https://github.com/Frog-Movie-Tv/Frog/commit/005de9d85d358e14bb44c46b02972dbb3c3819a3))
+
+
+### Performance
+
+* **cache:** keep TMDB's answers gzipped ([ed1e71c](https://github.com/Frog-Movie-Tv/Frog/commit/ed1e71c1ee4270eb63d2aa2f6020dcb0b7a0dbac))
+
+
+### Documentation
+
+* **screenshots:** retake every screen on Glass, with Diary in Calendar ([f6e986b](https://github.com/Frog-Movie-Tv/Frog/commit/f6e986b3fd556a53637389ee84d95e16930e696a))
+
 ## [1.8.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.7.2...v1.8.0) (2026-11-16)
 
 
