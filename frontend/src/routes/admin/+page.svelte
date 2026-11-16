@@ -34,6 +34,12 @@
 	let users = $state<AdminUser[]>([]);
 	let instance = $state<InstanceInfo | null>(null);
 	let server = $state<ServerStatus | null>(null);
+	/** A job that failed, or deploy scripts behind this version. */
+	const serverTrouble = $derived(
+		server?.backup?.ok === false ||
+			server?.update?.ok === false ||
+			server?.scripts_current === false
+	);
 
 	const ROLE: Record<AdminUser['role'], string> = {
 		owner: 'Owner',
@@ -279,14 +285,8 @@
 				<span class="kpi-icon" aria-hidden="true"><Icon name="server" size={18} /></span>
 				<span class="eyebrow">Server</span>
 				<strong class="health">
-					<span
-						class="dot"
-						class:bad={server?.backup?.ok === false || server?.update?.ok === false}
-						aria-hidden="true"
-					></span>
-					{server?.backup?.ok === false || server?.update?.ok === false
-						? 'Needs a look'
-						: 'Healthy'}
+					<span class="dot" class:bad={serverTrouble} aria-hidden="true"></span>
+					{serverTrouble ? 'Needs a look' : 'Healthy'}
 				</strong>
 				<span class="faint">Version {session.status?.version ?? '—'}</span>
 			</a>
@@ -546,6 +546,22 @@
 							<div>
 								<dt>{server.rollback.kind === 'restore' ? 'Last restore' : 'Last rollback'}</dt>
 								<dd>{@render outcome(server.rollback)}</dd>
+							</div>
+						{/if}
+						{#if server?.scripts_current !== null && server?.scripts_current !== undefined}
+							<div>
+								<dt>Server scripts</dt>
+								<dd>
+									{#if server.scripts_current}
+										Up to date
+									{:else}
+										<span class="outcome failed">
+											<Icon name="x" size={14} />
+											<span>Older than this version</span>
+											<span class="faint">Run install.sh again on the server</span>
+										</span>
+									{/if}
+								</dd>
 							</div>
 						{/if}
 					</dl>

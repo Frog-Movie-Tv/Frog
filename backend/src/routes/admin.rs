@@ -225,6 +225,10 @@ pub async fn server(
     let events = crate::ops::read(&state.config.database_url);
     let mut out = crate::ops::summary(&events);
     out["recorded"] = json!(!events.is_empty());
+    out["scripts_current"] = json!(crate::ops::scripts_current(
+        &events,
+        crate::ops::release_scripts()
+    ));
     Ok(Json(out))
 }
 

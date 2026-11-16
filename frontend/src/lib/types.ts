@@ -777,6 +777,11 @@ export interface ServerStatus {
 	update: ServerEvent | null;
 	/** The latest rollback or restore, if there ever was one. */
 	rollback: ServerEvent | null;
+	/**
+	 * Whether the server's deploy scripts are this release's; null when it
+	 * cannot be told (nothing recorded yet, or not running from the image).
+	 */
+	scripts_current: boolean | null;
 }
 
 /** The AniList connection as Settings shows it. */

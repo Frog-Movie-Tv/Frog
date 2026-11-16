@@ -469,7 +469,11 @@ part you are about to touch; change it when the code changes.
   previous one of its kind (the timer retrying a broken release) stays quiet.
   Each administrator's mark is `app_setting` key `ops_seen`. The scripts
   reach the server only by re-running `install.sh` from a checkout, never
-  with an image update.
+  with an image update, so each line also carries the scripts' fingerprint
+  (`ops_scripts`), the image carries its own release's under `/app/deploy`,
+  and Administration → Server says when they differ
+  (`ops::scripts_current`). The two hash the same bytes; the Rust test pins
+  what the shell prints.
 
 - **Migrations are never edited once applied** — sqlx compares checksums and
   refuses to start, which takes a running instance down on its next deploy.

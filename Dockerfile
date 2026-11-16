@@ -50,6 +50,10 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=api /src/target/release/frog /usr/local/bin/frog
 COPY --from=web /web/build /app/static
+# Only read: their fingerprint is compared with what the server's own copies
+# record, so Administration can say when install.sh needs running again.
+COPY deploy/*.sh /app/deploy/
+COPY deploy/systemd/ /app/deploy/systemd/
 
 ENV DATABASE_URL="sqlite:/data/frog.db?mode=rwc" \
 	FROG_BIND="0.0.0.0:8080" \
