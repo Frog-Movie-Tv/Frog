@@ -144,7 +144,7 @@ const routes = (me, pal) => [
 	'/search?q=interstellar',
 	'/search?q=' + pal.slice(0, 20),
 	'/calendar',
-	'/calendar?view=diary',
+	'/activity?view=diary',
 	'/stats',
 	'/shelves',
 	`/shelves/${shelf}`,

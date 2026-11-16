@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import DiaryView from '#lib/components/DiaryView.svelte';
+	import AiringView from '#lib/components/AiringView.svelte';
 	import { titleHref } from '#lib/titles';
 	import { ApiError, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
@@ -32,13 +32,21 @@
 	let entries = $state<Entry[]>([]);
 	let loading = $state(true);
 
-	// Month and Agenda look ahead, Diary looks back: one page, the view in
-	// the address so Back, a link and a reload keep it.
-	const VIEWS = ['month', 'agenda', 'diary'] as const;
+	// What is coming, three ways: your shows by month or as a list, and
+	// everything on air this week. One page, the view in the address so Back,
+	// a link and a reload keep it.
+	const VIEWS = ['month', 'agenda', 'airing'] as const;
 	type View = (typeof VIEWS)[number];
 	const view = $derived.by((): View => {
 		const asked = page.url.searchParams.get('view');
 		return VIEWS.find((v) => v === asked) ?? 'month';
+	});
+
+	// The diary was a view here for a while; it lives with Activity now.
+	$effect(() => {
+		if (page.url.searchParams.get('view') === 'diary') {
+			void goto('/activity?view=diary', { replace: true });
+		}
 	});
 
 	function show(next: View) {
@@ -150,7 +158,7 @@
 </script>
 
 <svelte:head>
-	<title>{view === 'diary' ? 'Diary' : 'Calendar'} · Frog</title>
+	<title>{view === 'airing' ? 'Airing' : 'Calendar'} · Frog</title>
 </svelte:head>
 
 <div class="page">
@@ -168,15 +176,15 @@
 				onclick={() => show('agenda')}>Agenda</button
 			>
 			<button
-				class:on={view === 'diary'}
-				aria-pressed={view === 'diary'}
-				onclick={() => show('diary')}>Diary</button
+				class:on={view === 'airing'}
+				aria-pressed={view === 'airing'}
+				onclick={() => show('airing')}>Airing</button
 			>
 		</div>
 	</div>
 
-	{#if view === 'diary'}
-		<DiaryView />
+	{#if view === 'airing'}
+		<AiringView />
 	{:else if loading}
 		<Spinner label="Loading the calendar" />
 	{:else if failed}

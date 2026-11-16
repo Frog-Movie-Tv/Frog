@@ -421,7 +421,7 @@ part you are about to touch; change it when the code changes.
   an undo puts a watch back as a new row; `WatchRecord.with` carries the
   names through undo. Off in Settings (`Wants::together`) takes an account
   out of everyone's picker.
-- **The Airing page** (`airing.rs`, `routes/airing.rs`). Once a day the
+- **Airing** (`airing.rs`, `routes/airing.rs`, the Calendar's Airing view). Once a day the
   worker reads TMDB's `/discover/movie` for films released in `FROG_REGION`
   in the window (last week to four weeks ahead; 25 pages, in cinemas or
   digital), then `/discover/tv`, every page, then each show and its running
@@ -532,10 +532,14 @@ part you are about to touch; change it when the code changes.
   answers items, status counts and genres from one request; a status counts every
   filter but itself, so its number is what choosing it shows. The page keeps its
   last answer in the module, so Back draws at once and the scroll lands.
-- **The diary is a view of the Calendar** (`/calendar?view=diary`, drawn by
-  `DiaryView.svelte`). `/diary` only sends people there, so old links and
-  bookmarks still work, and saved settings that name `/diary` (tab bar,
-  menu order, landing page) read it as `/calendar` as they load.
+- **Two pages hold four.** Calendar looks ahead: Month, Agenda and Airing
+  (`/calendar?view=airing`, drawn by `AiringView.svelte`). Activity looks
+  back: Everyone and Diary (`/activity?view=diary`, `DiaryView.svelte`).
+  `/airing`, `/diary` and `/calendar?view=diary` only send people there, so
+  old links and bookmarks still work. Saved settings move as they load
+  (`current()` in `lib/settings.svelte.ts`): the menu's place that held
+  Airing or the Diary becomes Activity's, a tab or landing page goes where
+  its page went, and hiding either hides nothing.
 - **Shelves have one place on Home**, the Your shelves row. A shelf used to be
   able to add a row of its own, which showed it twice; saved layouts lose those
   rows as they load (`introduceRows`).

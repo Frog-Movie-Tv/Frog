@@ -37,8 +37,10 @@ In progress.
 - Shelves come to life: each one deals out its posters as the page opens,
   fans them wider under the pointer, and carries its name into the shelf as
   you open it.
-- Calendar and Diary are one page: switch between Month, Agenda and Diary
-  at the top. Links and bookmarks to the Diary still open it.
+- Fewer pages, everything still there. Calendar is what is coming: Month,
+  Agenda and Airing at the top. Activity is what was watched: everyone's,
+  or your own Diary. Links, bookmarks, your tab bar and your menu follow
+  along.
 
 ### Fixes
 

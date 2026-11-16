@@ -1,6 +1,9 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { api } from '#lib/api';
 	import ActivityCard from '#lib/components/ActivityCard.svelte';
+	import DiaryView from '#lib/components/DiaryView.svelte';
 	import Empty from '#lib/components/Empty.svelte';
 	import LoadMore from '#lib/components/LoadMore.svelte';
 	import Spinner from '#lib/components/Spinner.svelte';
@@ -8,12 +11,32 @@
 	import { toasts } from '#lib/toast.svelte';
 	import type { ActivityItem } from '#lib/types';
 
+	// What was watched, two ways: by everyone here, or your own diary. One
+	// page, the view in the address so Back, a link and a reload keep it.
+	const VIEWS = ['everyone', 'diary'] as const;
+	type View = (typeof VIEWS)[number];
+	const view = $derived.by((): View => {
+		const asked = page.url.searchParams.get('view');
+		return VIEWS.find((v) => v === asked) ?? 'everyone';
+	});
+
+	function show(next: View) {
+		void goto(next === 'everyone' ? '/activity' : `/activity?view=${next}`, {
+			replace: true,
+			reset: false
+		});
+	}
+
 	let items = $state<ActivityItem[]>([]);
 	let next = $state<string | null>(null);
 	let loading = $state(true);
 	let more = $state(false);
 
+	let started = false;
 	$effect(() => {
+		// Read once, the first time Everyone is shown.
+		if (view !== 'everyone' || started) return;
+		started = true;
 		void api
 			.allActivity()
 			.then((r) => {
@@ -56,15 +79,29 @@
 </script>
 
 <svelte:head>
-	<title>Activity · Frog</title>
+	<title>{view === 'diary' ? 'Diary' : 'Activity'} · Frog</title>
 </svelte:head>
 
 <div class="page">
 	<div class="page-head">
 		<h1>Activity</h1>
+		<div class="segmented" role="group" aria-label="View">
+			<button
+				class:on={view === 'everyone'}
+				aria-pressed={view === 'everyone'}
+				onclick={() => show('everyone')}>Everyone</button
+			>
+			<button
+				class:on={view === 'diary'}
+				aria-pressed={view === 'diary'}
+				onclick={() => show('diary')}>Diary</button
+			>
+		</div>
 	</div>
 
-	{#if loading}
+	{#if view === 'diary'}
+		<DiaryView />
+	{:else if loading}
 		<Spinner label="Loading activity" />
 	{:else if !items.length}
 		<Empty
