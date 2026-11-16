@@ -493,6 +493,12 @@ export interface HomeRecommendation {
 	item: LibraryItem;
 }
 
+/** A trending title for Home's hero, with its place on TMDB's list this week. */
+export interface FeaturedTitle {
+	item: LibraryItem;
+	rank: number;
+}
+
 export interface HomeData {
 	hero: UpNextEntry | null;
 	/** The row the hero's title was taken out of, so it can go back when the hero rotates. */

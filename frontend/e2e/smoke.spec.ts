@@ -1518,6 +1518,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/t/1/seasons/1',
 		'/api/t/1/shelves',
 		'/api/home/because',
+		'/api/home/featured',
 		'/api/home/activity',
 		'/api/activity',
 		'/api/account',

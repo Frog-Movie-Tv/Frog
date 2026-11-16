@@ -38,6 +38,7 @@ import type {
 	ResetLink,
 	MatchResult,
 	Kind,
+	FeaturedTitle,
 	LibraryItem,
 	SharedLibrary,
 	PersonDetail,
@@ -413,6 +414,8 @@ export const api = {
 
 	home: () => get<HomeData>('/api/home').then(localHome),
 	because: () => get<{ rows: BecauseRow[] }>('/api/home/because'),
+	/** Trending this week and not in your library, for the hero. */
+	featured: () => get<{ items: FeaturedTitle[] }>('/api/home/featured'),
 	/** More like a title, a page at a time: what "View more" lists. */
 	moreLike: (titleId: number, page: number) =>
 		get<{ seed: { id: number; name: string }; items: SearchItem[]; next_page: number | null }>(

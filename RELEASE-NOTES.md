@@ -21,9 +21,9 @@ In progress.
   and fades into the page.
 - Signed-in devices shows this device first, with the rest a tap away.
   Phones and tablets get their own icons, iPads included.
-- The top of Home turns through what people recommend to you and what is new
-  this week from the shows you follow. Add a recommendation or pass on it
-  right there.
+- The top of Home turns through what people recommend to you, what is
+  trending this week, and what is new from the shows you follow. Add a
+  recommendation or a trending title, or pass on it, right there.
 - Remove a notification with its × or a swipe, or clear them all, with Undo.
 - Watching a show with someone tells them in one line, however many episodes
   and evenings it takes: a whole season, or how many episodes.

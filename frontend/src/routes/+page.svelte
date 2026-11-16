@@ -23,6 +23,7 @@
 	import type {
 		ActivityItem,
 		BecauseRow,
+		FeaturedTitle,
 		HomeData,
 		LibraryItem,
 		SearchItem,
@@ -33,11 +34,19 @@
 	let loading = $state(true);
 	let failed = $state<Failure | null>(null);
 	let because = $state<BecauseRow[]>([]);
+	/** Trending titles for the hero, asked for apart: they may need TMDB. */
+	let featured = $state<FeaturedTitle[]>([]);
 	let activity = $state<ActivityItem[]>([]);
 
 	$effect(() => {
 		if (!session.authenticated) return;
 		void load();
+		if (untrack(() => settings.current.heroStyle) !== 'off') {
+			void api
+				.featured()
+				.then((r) => (featured = r.items))
+				.catch(() => undefined);
+		}
 		// Recommendations may need TMDB; Home does not wait for them.
 		// Read once: the effect must not rerun on every settings change.
 		if (untrack(() => settings.current.homeRows.includes('because'))) {
@@ -103,6 +112,7 @@
 		data
 			? slidesOf(
 					(data.recommended ?? []).filter((r) => !answered.includes(r.id)),
+					featured,
 					data.this_week,
 					hero
 				)
@@ -197,6 +207,7 @@
 				{slides}
 				style={heroStyle}
 				onanswered={(id) => (answered = [...answered, id])}
+				onadded={(id) => (featured = featured.filter((f) => f.item.id !== id))}
 				onchanged={load}
 			/>
 		{/if}

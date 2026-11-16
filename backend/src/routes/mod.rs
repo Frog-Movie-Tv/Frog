@@ -63,6 +63,7 @@ pub fn router(state: AppState) -> Router {
         .route("/studios/{id}", get(browse::studio))
         .route("/home", get(home::home))
         .route("/home/because", get(home::because))
+        .route("/home/featured", get(home::featured))
         .route("/home/activity", get(home::activity))
         .route("/activity", get(home::all_activity))
         .route("/calendar", get(timeline::calendar))

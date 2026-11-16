@@ -2237,6 +2237,106 @@ async fn because_you_watched_skips_your_library_and_never_repeats() {
     assert_eq!(body["rows"], json!([]), "no key, no rows, no error");
 }
 
+#[tokio::test]
+async fn featured_is_trending_with_a_picture_and_not_in_your_library() {
+    let h = Harness::with_tmdb_key("test-key").await;
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (1, 'movie', 301, 'Mine')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, 1, 'planned', 'x', 'x')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let film = |id: i64, backdrop: Option<&str>| {
+        json!({ "id": id, "media_type": "movie", "title": format!("Seed {id}"),
+                "poster_path": "/p.jpg", "backdrop_path": backdrop, "release_date": "2026-01-01" })
+    };
+    let trending = json!({ "results": [
+        film(301, Some("/b.jpg")),
+        film(302, None),
+        { "id": 900, "media_type": "person", "name": "Someone" },
+        film(303, Some("/b.jpg")),
+        film(304, Some("/b.jpg")),
+        film(305, Some("/b.jpg")),
+        film(306, Some("/b.jpg")),
+        film(307, Some("/b.jpg")),
+    ]});
+    sqlx::query(
+        "INSERT INTO tmdb_cache (cache_key, body, fetched_at, expires_at)
+         VALUES ('/trending/all/week?lang=en-US', ?, '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')",
+    )
+    .bind(trending.to_string())
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    for id in 303..=307 {
+        cache_recommending(&h, id, &[]).await;
+    }
+
+    let names = |body: &serde_json::Value| -> Vec<String> {
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["item"]["name"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let (status, body) = h.get("/api/home/featured", Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        names(&body),
+        ["Seed 303", "Seed 304", "Seed 305", "Seed 306"],
+        "not yours, not without a picture, not a person, four at most"
+    );
+    assert!(
+        body["items"][0]["item"]["id"].as_i64().is_some(),
+        "a Frog title: {body}"
+    );
+    let ranks: Vec<i64> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["rank"].as_i64().unwrap())
+        .collect();
+    assert_eq!(ranks, [3, 4, 5, 6], "TMDB's own places, people not counted");
+    let (_, again) = h.get("/api/home/featured", Some(&cookie)).await;
+    assert_eq!(names(&again), names(&body), "read back from the catalog");
+
+    let (status, _) = h.get("/api/home/featured", None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let plain = Harness::new().await;
+    let (_, _, c) = plain
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let (_, body) = plain.get("/api/home/featured", c.as_deref()).await;
+    assert_eq!(
+        body["items"],
+        json!([]),
+        "no key, nothing featured, no error"
+    );
+}
+
 /// A database migrated from a checkout with other line endings still starts;
 /// a migration whose SQL really changed is still refused.
 #[tokio::test]
