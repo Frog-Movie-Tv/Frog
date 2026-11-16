@@ -26,45 +26,6 @@
 		() => (choosingBanner = false)
 	);
 
-	// --- where the banner sits -------------------------------------------
-	const parsePosition = (value: string | null | undefined) => {
-		const m = value?.match(/^([\d.]+)% ([\d.]+)%$/);
-		return m ? { x: Number(m[1]), y: Number(m[2]) } : { x: 50, y: 50 };
-	};
-	// Follows what is saved, and is written over while a drag is under way.
-	let bannerPos = $derived(parsePosition(account?.banner_position));
-	let dragging: { x: number; y: number; from: { x: number; y: number } } | null = null;
-
-	function bannerDown(event: PointerEvent) {
-		const el = event.currentTarget as HTMLImageElement;
-		el.setPointerCapture(event.pointerId);
-		dragging = { x: event.clientX, y: event.clientY, from: { ...bannerPos } };
-	}
-
-	/** Moving the picture right shows more of its left: the position falls. */
-	function bannerMove(event: PointerEvent) {
-		if (!dragging) return;
-		const el = event.currentTarget as HTMLImageElement;
-		const box = el.getBoundingClientRect();
-		const scale = Math.max(box.width / el.naturalWidth, box.height / el.naturalHeight);
-		const spareX = el.naturalWidth * scale - box.width;
-		const spareY = el.naturalHeight * scale - box.height;
-		const clamp = (n: number) => Math.min(100, Math.max(0, n));
-		bannerPos = {
-			x: spareX > 1 ? clamp(dragging.from.x - ((event.clientX - dragging.x) / spareX) * 100) : 50,
-			y: spareY > 1 ? clamp(dragging.from.y - ((event.clientY - dragging.y) / spareY) * 100) : 50
-		};
-	}
-
-	function bannerUp() {
-		if (!dragging) return;
-		dragging = null;
-		void save(
-			{ banner_position: `${bannerPos.x.toFixed(1)}% ${bannerPos.y.toFixed(1)}%` },
-			'Banner position saved'
-		);
-	}
-
 	// --- framing a new profile picture ------------------------------------
 	const FRAME = 200;
 	let framing = $state<{ url: string; type: string; width: number; height: number } | null>(null);
@@ -147,9 +108,15 @@
 		() => (choosingPins = false)
 	);
 
-	// How tall the banner is across the top, which shapes the frame it is dragged in.
+	// How tall the banner is across the top, and which part of it each layout
+	// shows (chosen in Banner, below).
 	const layout = $derived(account?.banner_layout ?? 'classic');
 	const height = $derived(account?.banner_height ?? 'short');
+	const bannerPosition = $derived(
+		(layout === 'vertical'
+			? account?.banner_position
+			: (account?.banner_top_position ?? account?.banner_position)) ?? undefined
+	);
 
 	// The session first: it is what a rename on this same page updates.
 	const username = $derived(session.status?.username ?? account?.username ?? '');
@@ -311,18 +278,7 @@
 		>
 			<span class="frame">
 				{#if bannerSrc}
-					<img
-						class="movable"
-						src={bannerSrc}
-						alt=""
-						draggable="false"
-						style:object-position="{bannerPos.x}% {bannerPos.y}%"
-						onpointerdown={bannerDown}
-						onpointermove={bannerMove}
-						onpointerup={bannerUp}
-						onpointercancel={bannerUp}
-					/>
-					<span class="hint" aria-hidden="true"><Icon name="move" size={14} /> Drag to move</span>
+					<img src={bannerSrc} alt="" style:object-position={bannerPosition} />
 				{/if}
 			</span>
 		</div>
@@ -669,44 +625,6 @@
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
-	}
-
-	.banner .movable {
-		cursor: grab;
-		touch-action: none;
-		user-select: none;
-	}
-
-	.banner .movable:active {
-		cursor: grabbing;
-	}
-
-	.hint {
-		position: absolute;
-		right: 12px;
-		bottom: 12px;
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		padding: 5px 10px;
-		border-radius: 999px;
-		font-size: 0.76rem;
-		font-weight: 600;
-		color: #fff;
-		background: rgb(0 0 0 / 0.5);
-		pointer-events: none;
-		opacity: 0;
-		transition: opacity var(--fast) var(--ease);
-	}
-
-	.banner:hover .hint {
-		opacity: 1;
-	}
-
-	@media (hover: none) {
-		.hint {
-			opacity: 1;
-		}
 	}
 
 	.cover-actions {

@@ -144,9 +144,23 @@ pub async fn home(state: &AppState, me: i64) -> AppResult<Value> {
 
     let this_week = airing_this_week(pool, me, &facts).await?;
     let shelves = crate::shelves::summaries(pool, me).await?;
+    let recommended = recommended(pool, me, &facts).await?;
+    // Which row the hero was taken out of: when the hero shows other things,
+    // the page puts it back there.
+    let hero_row = hero_id.map(|id| {
+        if continuing.iter().any(|u| u.item.title.id == id) {
+            "continue"
+        } else if waiting.iter().any(|u| u.item.title.id == id) {
+            "waiting"
+        } else {
+            "recent"
+        }
+    });
 
     Ok(json!({
         "hero": hero,
+        "hero_row": hero_row,
+        "recommended": recommended,
         "continue": continuing
             .iter()
             .filter(|u| Some(u.item.title.id) != hero_id)
@@ -163,6 +177,36 @@ pub async fn home(state: &AppState, me: i64) -> AppResult<Value> {
         "favourites": favourites,
         "shelves": shelves,
     }))
+}
+
+/// How many recommendations Home's hero can show.
+const HERO_RECOMMENDATIONS: i64 = 6;
+
+/// Recommendations to this account not answered yet, each with its title as
+/// the rest of Home draws one.
+async fn recommended(
+    pool: &SqlitePool,
+    me: i64,
+    facts: &store::ItemFacts,
+) -> AppResult<Vec<Value>> {
+    let mut out = Vec::new();
+    for w in crate::recommend::waiting(pool, me, HERO_RECOMMENDATIONS).await? {
+        let row: Option<TitleRow> = sqlx::query_as(&format!(
+            "SELECT {TITLE_COLUMNS} FROM title t WHERE t.id = ?"
+        ))
+        .bind(w.title_id)
+        .fetch_optional(pool)
+        .await?;
+        let Some(row) = row else { continue };
+        out.push(json!({
+            "id": w.id,
+            "note": w.note,
+            "created_at": w.created_at,
+            "from": w.from,
+            "item": facts.item(row),
+        }));
+    }
+    Ok(out)
 }
 
 /// Episodes due in the next week, one entry per show.
@@ -323,18 +367,7 @@ pub async fn because(state: &AppState, me: i64) -> AppResult<Value> {
         return Ok(json!({ "rows": [] }));
     }
     let pool = &state.pool;
-    // TMDB ids already in the library, as `title_external` writes them.
-    let tracked: std::collections::HashSet<String> = sqlx::query_as::<_, (String,)>(
-        "SELECT x.external_id FROM library_entry l
-           JOIN title_external x ON x.title_id = l.title_id AND x.provider = 'tmdb'
-          WHERE l.user_id = ?",
-    )
-    .bind(me)
-    .fetch_all(pool)
-    .await?
-    .into_iter()
-    .map(|r| r.0)
-    .collect();
+    let tracked = tracked_tmdb(pool, me).await?;
 
     let slot = chrono::Utc::now().timestamp() / SEED_SECONDS;
     let mut offered = std::collections::HashSet::new();
@@ -373,6 +406,99 @@ pub async fn because(state: &AppState, me: i64) -> AppResult<Value> {
         }
     }
     Ok(json!({ "rows": rows }))
+}
+
+/// TMDB ids already in this account's library, as `title_external` writes them.
+async fn tracked_tmdb(pool: &SqlitePool, me: i64) -> AppResult<std::collections::HashSet<String>> {
+    Ok(sqlx::query_as::<_, (String,)>(
+        "SELECT x.external_id FROM library_entry l
+           JOIN title_external x ON x.title_id = l.title_id AND x.provider = 'tmdb'
+          WHERE l.user_id = ?",
+    )
+    .bind(me)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(|r| r.0)
+    .collect())
+}
+
+/// How many trending titles Home's hero features.
+const FEATURED: usize = 4;
+
+/// What Home's hero features beside recommendations: this week's trending
+/// films and shows on TMDB that this account does not have yet, each with a
+/// picture to fill the screen. Separate from `home` because a pick Frog has
+/// not seen before is fetched from TMDB to become a Frog title, and Home
+/// itself must stay instant. A TMDB that does not answer features nothing.
+pub async fn featured(state: &AppState, me: i64) -> AppResult<Value> {
+    let none = || json!({ "items": [] });
+    if !state.tmdb.is_configured() {
+        return Ok(none());
+    }
+    let raw = match state.tmdb.trending(1).await {
+        Ok(raw) => raw,
+        Err(e) => {
+            tracing::debug!(error = %e, "nothing featured: no trending list");
+            return Ok(none());
+        }
+    };
+    let pool = &state.pool;
+    let tracked = tracked_tmdb(pool, me).await?;
+    let picks: Vec<crate::tmdb::models::SearchItem> = raw["results"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| crate::tmdb::models::SearchItem::from_value(v, None))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Its place on TMDB's list, counted before anything is left out, so "#3"
+    // means what it says.
+    let ranked = crate::tmdb::models::unique_items(picks)
+        .into_iter()
+        .filter(|p| matches!(p.kind.as_str(), "movie" | "tv"))
+        .enumerate()
+        .map(|(i, p)| (i + 1, p));
+
+    let facts = store::ItemFacts::load(pool, me).await?;
+    let mut items: Vec<Value> = Vec::new();
+    let mut chosen: Vec<i64> = Vec::new();
+    for (rank, pick) in ranked {
+        if chosen.len() >= FEATURED {
+            break;
+        }
+        if pick.backdrop_path.is_none() {
+            continue;
+        }
+        let Some(source) = pick.external() else {
+            continue;
+        };
+        if tracked.contains(&source.key()) {
+            continue;
+        }
+        // A title Frog already holds is read as it is; only a new one waits
+        // for TMDB, once.
+        let title_id = match crate::catalog::find(pool, &source).await? {
+            Some(id) => id,
+            None => match crate::catalog::ensure(state, &source).await {
+                Ok((id, _)) => id,
+                Err(e) => {
+                    tracing::debug!(key = %source.key(), error = %e, "not featured");
+                    continue;
+                }
+            },
+        };
+        let item = facts.item(crate::catalog::get_title(pool, title_id).await?);
+        // In the library under another provider's id: not something to offer.
+        if item.entry.is_some() || chosen.contains(&item.title.id) {
+            continue;
+        }
+        chosen.push(item.title.id);
+        items.push(json!({ "item": item, "rank": rank }));
+    }
+    Ok(json!({ "items": items }))
 }
 
 /// Every row query here is scoped to one account, and each uses `?1` for it so

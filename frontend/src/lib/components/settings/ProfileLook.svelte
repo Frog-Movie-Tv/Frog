@@ -11,6 +11,7 @@
 	} from '#lib/profile-colours';
 	import { currentTone } from '#lib/settings.svelte';
 	import Icon from '../Icon.svelte';
+	import BannerFocus, { type BannerShape } from './BannerFocus.svelte';
 	import type { Account, ProfileEdit } from '#lib/types';
 
 	interface Props {
@@ -21,44 +22,6 @@
 	}
 
 	let { account, save, banner = null }: Props = $props();
-
-	// The vertical column, and what a phone shows of it, in a portrait frame
-	// of its own. The same position as the wide banner, so moving either
-	// moves both.
-	const position = (value: string | null | undefined) => {
-		const m = value?.match(/^([\d.]+)% ([\d.]+)%$/);
-		return m ? { x: Number(m[1]), y: Number(m[2]) } : { x: 50, y: 50 };
-	};
-	let pos = $derived(position(account?.banner_position));
-	let held: { x: number; y: number; from: { x: number; y: number } } | null = null;
-
-	function down(event: PointerEvent) {
-		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-		held = { x: event.clientX, y: event.clientY, from: { ...pos } };
-	}
-
-	function move(event: PointerEvent) {
-		if (!held) return;
-		const el = event.currentTarget as HTMLImageElement;
-		const box = el.getBoundingClientRect();
-		const scale = Math.max(box.width / el.naturalWidth, box.height / el.naturalHeight);
-		const spareX = el.naturalWidth * scale - box.width;
-		const spareY = el.naturalHeight * scale - box.height;
-		const clamp = (n: number) => Math.min(100, Math.max(0, n));
-		pos = {
-			x: spareX > 1 ? clamp(held.from.x - ((event.clientX - held.x) / spareX) * 100) : pos.x,
-			y: spareY > 1 ? clamp(held.from.y - ((event.clientY - held.y) / spareY) * 100) : pos.y
-		};
-	}
-
-	function up() {
-		if (!held) return;
-		held = null;
-		void save(
-			{ banner_position: `${pos.x.toFixed(1)}% ${pos.y.toFixed(1)}%` },
-			'Banner position saved'
-		);
-	}
 
 	const colour = $derived.by(() => {
 		const c = account?.profile_color;
@@ -71,6 +34,32 @@
 	const tone = $derived(currentTone());
 	const layout = $derived(account?.banner_layout ?? 'classic');
 	const height = $derived(account?.banner_height ?? 'short');
+
+	// Each layout keeps its own part of the picture: the column a strip,
+	// across the top a band. Across the top follows the column's until it is
+	// chosen, as both shared one before.
+	let choosing = $state(false);
+	const focus = $derived(
+		layout === 'vertical'
+			? account?.banner_position
+			: (account?.banner_top_position ?? account?.banner_position)
+	);
+	const shape = $derived<BannerShape>(
+		layout === 'vertical'
+			? 'column'
+			: height === 'tall'
+				? 'tall'
+				: height === 'full'
+					? 'full'
+					: 'short'
+	);
+
+	function saveFocus(position: string) {
+		void save(
+			layout === 'vertical' ? { banner_position: position } : { banner_top_position: position },
+			'Banner position saved'
+		);
+	}
 </script>
 
 <div class="setting">
@@ -148,27 +137,7 @@
 			{/each}
 		</div>
 
-		{#if layout === 'vertical'}
-			{#if banner}
-				<div class="column">
-					<span class="portrait">
-						<img
-							src={banner}
-							alt=""
-							draggable="false"
-							style:object-position="{pos.x}% {pos.y}%"
-							onpointerdown={down}
-							onpointermove={move}
-							onpointerup={up}
-							onpointercancel={up}
-						/>
-					</span>
-					<span class="faint small">
-						Drag to choose what the column shows. A phone shows the same part across the top.
-					</span>
-				</div>
-			{/if}
-		{:else}
+		{#if layout !== 'vertical'}
 			<div class="height">
 				<span class="small">Height</span>
 				<div class="segmented" role="radiogroup" aria-label="Banner height">
@@ -183,8 +152,23 @@
 				</div>
 			</div>
 		{/if}
+		{#if banner}
+			<button class="btn" onclick={() => (choosing = true)}>
+				<Icon name="move" size={15} /> Choose what shows
+			</button>
+		{/if}
 	</div>
 </div>
+
+{#if choosing && banner}
+	<BannerFocus
+		src={banner}
+		{shape}
+		position={focus}
+		onsave={saveFocus}
+		onclose={() => (choosing = false)}
+	/>
+{/if}
 
 <style>
 	.colours,
@@ -340,34 +324,6 @@
 		align-items: center;
 		gap: 10px;
 		flex-wrap: wrap;
-	}
-
-	.column {
-		display: flex;
-		align-items: center;
-		gap: 14px;
-	}
-
-	.portrait {
-		flex: none;
-		width: 96px;
-		aspect-ratio: 3 / 4;
-		border-radius: 10px;
-		overflow: hidden;
-		background: var(--bg-elev-2);
-	}
-
-	.portrait img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		cursor: grab;
-		touch-action: none;
-		user-select: none;
-	}
-
-	.portrait img:active {
-		cursor: grabbing;
 	}
 
 	.small {

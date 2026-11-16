@@ -69,6 +69,45 @@ pub async fn read(
     ))
 }
 
+/// Off the page: one notification.
+pub async fn remove(
+    auth: Auth,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<Value>> {
+    let ids = inbox::remove(&state.pool, auth.user_id(), Some(id)).await?;
+    Ok(Json(json!({
+        "ids": ids,
+        "unread": inbox::unread(&state.pool, auth.user_id()).await?,
+    })))
+}
+
+/// Off the page: every notification, Clear all.
+pub async fn clear(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
+    let ids = inbox::remove(&state.pool, auth.user_id(), None).await?;
+    Ok(Json(json!({
+        "ids": ids,
+        "unread": inbox::unread(&state.pool, auth.user_id()).await?,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct RestoreBody {
+    pub ids: Vec<i64>,
+}
+
+/// Undo of a removal.
+pub async fn restore(
+    auth: Auth,
+    State(state): State<AppState>,
+    Json(body): Json<RestoreBody>,
+) -> AppResult<Json<Value>> {
+    inbox::restore(&state.pool, auth.user_id(), &body.ids).await?;
+    Ok(Json(
+        json!({ "unread": inbox::unread(&state.pool, auth.user_id()).await? }),
+    ))
+}
+
 pub async fn get_wants(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
     Ok(Json(json!(
         inbox::wants(&state.pool, auth.user_id()).await?

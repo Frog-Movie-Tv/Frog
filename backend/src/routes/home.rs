@@ -20,6 +20,12 @@ pub async fn because(auth: Auth, State(state): State<AppState>) -> AppResult<Jso
     home::because(&state, auth.user_id()).await.map(Json)
 }
 
+/// Trending titles for the hero. Separate from `/home` for the same reason
+/// as `because`: it may need TMDB.
+pub async fn featured(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
+    home::featured(&state, auth.user_id()).await.map(Json)
+}
+
 /// What other people here have been watching. Separate from `/home`, so a row
 /// that reads other accounts is only asked for by those who show it.
 pub async fn activity(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {

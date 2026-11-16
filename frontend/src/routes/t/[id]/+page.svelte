@@ -269,17 +269,19 @@
 	 */
 	let ambient = $state<string | null>(null);
 	let ambientFrame: HTMLIFrameElement | undefined = $state();
-	/** The player says it is playing: until then nothing of it shows. */
+	/** The video is really playing: until then nothing of it shows. */
 	let ambientPlaying = $state(false);
 	/** Trailers open on studio logos and credits; this is where the film starts. */
 	const AMBIENT_FROM = 12;
 	/**
-	 * YouTube draws its title over a player that has just started, for a
-	 * moment: the trailer shows only once it has played this long. The title
-	 * along the top is cut off by the player's size anyway, so a short wait is
-	 * enough.
+	 * How many seconds of the trailer must have played, by the player's own
+	 * clock, before the picture lifts. YouTube says "playing" before it has
+	 * drawn a frame, while it is still seeking to the start with its play
+	 * button up, and says it too when the browser then refuses to autoplay;
+	 * only its time moving shows the video is really on screen. The title it
+	 * draws along the top for a moment is cut off by the player's size.
 	 */
-	const AMBIENT_SETTLE = 1200;
+	const AMBIENT_SETTLE = 1;
 	/** How long after the page has drawn the trailer starts loading. */
 	const AMBIENT_AFTER = 800;
 	/**
@@ -288,8 +290,12 @@
 	 * whole seconds, so a narrower margin can fall between two reports.
 	 */
 	const AMBIENT_LOOP = 3;
-	let settling: ReturnType<typeof setTimeout> | undefined;
 	let looping = false;
+	/** YouTube's state for the trailer behind the page, -1 to 5. */
+	let ambientNow = -1;
+	/** Where its time was when it was first seen moving past AMBIENT_FROM. */
+	let movingFrom: number | null = null;
+	let lastTime: number | null = null;
 
 	/** Tell the trailer behind the page to do something, as YouTube's script would. */
 	function command(func: string, args: unknown[] = []) {
@@ -299,17 +305,21 @@
 		);
 	}
 
+	/** The picture covers the trailer again, and its time is watched afresh. */
+	function ambientCover() {
+		ambientPlaying = false;
+		movingFrom = null;
+	}
+
 	/** The trailer behind the page changed state: -1 to 5, YouTube's numbers. */
 	function ambientState(state: number) {
-		clearTimeout(settling);
-		if (state === 1) {
-			// Playing: shown once YouTube has put its controls away.
-			settling = setTimeout(() => (ambientPlaying = true), AMBIENT_SETTLE);
-			return;
-		}
-		// Anything else (buffering, paused, ended) and the picture covers it at
-		// once, so nothing of the player itself is ever seen.
-		ambientPlaying = false;
+		ambientNow = state;
+		// Playing is only a promise: the picture lifts once the time moves
+		// (ambientTime).
+		if (state === 1) return;
+		// Anything else (buffering, paused, ended, refused) and the picture
+		// covers it at once, so nothing of the player itself is ever seen.
+		ambientCover();
 		looping = false;
 		if (state === 0) {
 			// At the end: round again from past the credits.
@@ -319,9 +329,10 @@
 	}
 	$effect(() => {
 		ambient = null;
-		ambientPlaying = false;
+		ambientCover();
+		ambientNow = -1;
+		lastTime = null;
 		ambientLength = 0;
-		clearTimeout(settling);
 		const key = trailers[0]?.key;
 		if (!key || !settings.current.trailerAutoplay || settings.current.dataSaver) return;
 		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -332,21 +343,37 @@
 	/** The trailer's length: YouTube says it once, and the time on its own after. */
 	let ambientLength = 0;
 
-	/** Where the trailer behind the page is: loop it before YouTube's end screen. */
-	function ambientTime(info: { currentTime?: number; duration?: number }) {
+	/**
+	 * Where the trailer behind the page is. The picture lifts once the time
+	 * has moved AMBIENT_SETTLE seconds past AMBIENT_FROM while playing, and the
+	 * trailer loops before YouTube's end screen.
+	 */
+	function ambientTime(info: { currentTime?: number; duration?: number; playerState?: number }) {
+		if (typeof info.playerState === 'number') ambientState(info.playerState);
 		if (typeof info.duration === 'number' && info.duration > 0) ambientLength = info.duration;
 		const at = info.currentTime;
+		if (typeof at !== 'number') return;
+		const before = lastTime;
+		lastTime = at;
 		const duration = ambientLength;
-		if (typeof at !== 'number' || !duration) return;
-		if (at < duration - AMBIENT_LOOP) {
-			// Back from the end, buffered or not: the next end loops again.
-			looping = false;
+		if (duration && at >= duration - AMBIENT_LOOP) {
+			if (looping || duration < AMBIENT_FROM + 10) return;
+			looping = true;
+			ambientCover();
+			command('seekTo', [AMBIENT_FROM, true]);
 			return;
 		}
-		if (looping || duration < AMBIENT_FROM + 10) return;
-		looping = true;
-		ambientPlaying = false;
-		command('seekTo', [AMBIENT_FROM, true]);
+		// Back from the end, buffered or not: the next end loops again.
+		looping = false;
+		const moving = ambientNow === 1 && before !== null && at > before && at > AMBIENT_FROM;
+		if (!moving) {
+			// Jumped back (a seek) or not playing: watched afresh. The same time
+			// said twice is only a report with nothing new.
+			if (ambientNow !== 1 || before === null || at < before) movingFrom = null;
+			return;
+		}
+		movingFrom ??= before;
+		if (at - movingFrom >= AMBIENT_SETTLE && !document.hidden) ambientPlaying = true;
 	}
 
 	// A tab in the background pauses the video, and YouTube shows its button
@@ -354,8 +381,7 @@
 	$effect(() => {
 		const onHide = () => {
 			if (!document.hidden) return;
-			clearTimeout(settling);
-			ambientPlaying = false;
+			ambientCover();
 		};
 		document.addEventListener('visibilitychange', onHide);
 		return () => document.removeEventListener('visibilitychange', onHide);
@@ -1127,8 +1153,8 @@
 		z-index: -3;
 	}
 
-	/* The picture lifts off once the trailer has played a moment, so the
-	   player's own buttons and its loading screen are never seen. It only
+	/* The picture lifts off once the trailer's time has moved past its start,
+	   so the player's own buttons and its loading screen are never seen. It only
 	   fades on the way out: when the player stops, it is back at once, before
 	   YouTube can draw a button. */
 	.backdrop.under {

@@ -484,8 +484,27 @@ export interface ActivityItem {
 	at: string;
 }
 
+/** A recommendation to you not answered yet, as Home's hero shows it. */
+export interface HomeRecommendation {
+	id: number;
+	note: string | null;
+	created_at: string;
+	from: Actor;
+	item: LibraryItem;
+}
+
+/** A trending title for Home's hero, with its place on TMDB's list this week. */
+export interface FeaturedTitle {
+	item: LibraryItem;
+	rank: number;
+}
+
 export interface HomeData {
 	hero: UpNextEntry | null;
+	/** The row the hero's title was taken out of, so it can go back when the hero rotates. */
+	hero_row?: 'continue' | 'waiting' | 'recent' | null;
+	/** Recommendations to you not answered yet, newest first, for the hero. */
+	recommended?: HomeRecommendation[];
 	/** Part-way through, with an episode already out. */
 	continue: UpNextEntry[];
 	/** Caught up: the next episode has not aired yet. */
@@ -546,6 +565,8 @@ export interface Account {
 	banner_backdrop: string | null;
 	/** Which part of the banner shows, as "x% y%". */
 	banner_position: string | null;
+	/** Which band shows across the top; null follows `banner_position`. */
+	banner_top_position?: string | null;
 	/** The colour the profile wears, from `PROFILE_COLOURS`, or null for the theme's. */
 	profile_color: string | null;
 	profile_shade: string | null;
@@ -567,6 +588,7 @@ export interface ProfileEdit {
 	bio?: string;
 	banner_backdrop?: string;
 	banner_position?: string;
+	banner_top_position?: string;
 	pins?: { title_id: number }[];
 	/** Empty for the theme's own colour. */
 	profile_color?: string;
@@ -666,6 +688,8 @@ export interface DeviceSession {
 	created_at: string;
 	expires_at: string;
 	device: string | null;
+	/** What kind of device it is on. */
+	form: 'phone' | 'tablet' | 'computer';
 	current: boolean;
 }
 
@@ -842,6 +866,8 @@ export interface Profile {
 	banner: string | null;
 	banner_backdrop: string | null;
 	banner_position: string | null;
+	/** Which band shows across the top; null follows `banner_position`. */
+	banner_top_position?: string | null;
 	profile_color: string | null;
 	profile_shade: string | null;
 	/** "vertical", or null for the banner across the top. */

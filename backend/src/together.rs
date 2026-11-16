@@ -2,9 +2,11 @@
 //!
 //! It is always optional and only ever written on your own watches
 //! (`watch_with`). The people named are told on their Notifications page,
-//! one line per show per day however many episodes it was, and choose for
-//! themselves: Add to my diary copies those watches into their own account as
-//! their own rows, and Not me takes their name off. Nothing is written into
+//! one line per show while they have not answered it, however many episodes
+//! and evenings it grows to, and choose for themselves: Add to my diary
+//! copies those watches into their own account as their own rows, each on
+//! its own day, and Not me takes their name off all of them. An answered
+//! line stays, and the next watch starts a new one. Nothing is written into
 //! another account without them, which is the rule every personal row keeps.
 //!
 //! A show can be watched with someone over weeks (`watching_with`): every
@@ -163,15 +165,27 @@ pub async fn tag(
     Ok(())
 }
 
-/// One line for `person` per show (or film) per day, gathering every watch
-/// named that day: six episodes in an evening are one line, not six.
+/// What a "watched with you" line says: a film or one episode by the title,
+/// a whole season by its number, anything more by how many episodes.
+pub fn line_text(who: &str, name: &str, episodes: usize, whole_season: Option<i64>) -> String {
+    match (episodes, whole_season) {
+        (0 | 1, _) => format!("{who} watched {name} with you"),
+        (_, Some(season)) => format!("{who} watched season {season} of {name} with you"),
+        (n, None) => format!("{who} watched {n} episodes of {name} with you"),
+    }
+}
+
+/// (watch id, its day, episode id, season number)
+type LineWatch = (i64, String, Option<i64>, Option<i64>);
+
+/// One line for `person` per show (or film) while they have not answered it:
+/// every watch named after joins it, over as many evenings as it takes. Once
+/// answered or removed, the next watch starts a new line.
 async fn tell(state: &AppState, owner: i64, person: i64, watch_ids: &[i64]) -> AppResult<()> {
     let pool = &state.pool;
-    // Grouped by the title and the day each watch is on.
-    let rows: Vec<(i64, i64, String, String, bool)> = sqlx::query_as(
-        "SELECT w.id, w.title_id, substr(w.watched_at, 1, 10), t.name, w.episode_id IS NULL
-           FROM watch_event w JOIN title t ON t.id = w.title_id
-          WHERE w.user_id = ? AND w.id IN (SELECT value FROM json_each(?))",
+    let rows: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT id, title_id FROM watch_event
+          WHERE user_id = ? AND id IN (SELECT value FROM json_each(?)) ORDER BY id",
     )
     .bind(owner)
     .bind(json!(watch_ids).to_string())
@@ -183,45 +197,73 @@ async fn tell(state: &AppState, owner: i64, person: i64, watch_ids: &[i64]) -> A
     .bind(owner)
     .fetch_one(pool)
     .await?;
-    let mut groups: Vec<(i64, String, String, bool, Vec<i64>)> = Vec::new();
-    for (id, title_id, day, name, film) in rows {
-        match groups
-            .iter_mut()
-            .find(|g| g.0 == title_id && g.1 == day && g.3 == film)
-        {
-            Some(g) => g.4.push(id),
-            None => groups.push((title_id, day, name, film, vec![id])),
+    let mut groups: Vec<(i64, Vec<i64>)> = Vec::new();
+    for (id, title_id) in rows {
+        match groups.iter_mut().find(|g| g.0 == title_id) {
+            Some(g) => g.1.push(id),
+            None => groups.push((title_id, vec![id])),
         }
     }
-    for (title_id, day, name, film, ids) in groups {
-        let key = format!("together:{owner}:{title_id}:{day}");
-        // Already told about some of that day: the same line, grown.
-        let kept: Option<(i64, String)> = sqlx::query_as(
-            "SELECT id, payload FROM notification WHERE user_id = ? AND ref_key = ?",
-        )
-        .bind(person)
-        .bind(&key)
-        .fetch_optional(pool)
-        .await?;
-        let mut all: Vec<i64> = kept
+    for (title_id, ids) in groups {
+        let open = open_line(pool, person, owner, title_id).await?;
+        let mut all: Vec<i64> = open
             .as_ref()
-            .and_then(|(_, p)| serde_json::from_str::<Value>(p).ok())
-            .and_then(|p| serde_json::from_value(p["watch_ids"].clone()).ok())
+            .map(|(_, p)| watch_ids_of(p))
             .unwrap_or_default();
-        for id in ids {
+        for &id in &ids {
             if !all.contains(&id) {
                 all.push(id);
             }
         }
-        let text = if film {
-            format!("{who} watched {name} with you")
-        } else if all.len() == 1 {
-            format!("{who} watched an episode of {name} with you")
-        } else {
-            format!("{who} watched {} episodes of {name} with you", all.len())
+        let watches: Vec<LineWatch> = sqlx::query_as(
+            "SELECT w.id, substr(w.watched_at, 1, 10), w.episode_id, e.season_number
+               FROM watch_event w LEFT JOIN episode e ON e.id = w.episode_id
+              WHERE w.user_id = ? AND w.id IN (SELECT value FROM json_each(?))
+              ORDER BY w.watched_at",
+        )
+        .bind(owner)
+        .bind(json!(all).to_string())
+        .fetch_all(pool)
+        .await?;
+        let mut days: Vec<String> = Vec::new();
+        let mut episodes: Vec<i64> = Vec::new();
+        let mut seasons: Vec<i64> = Vec::new();
+        for (_, day, episode, season) in &watches {
+            if !days.contains(day) {
+                days.push(day.clone());
+            }
+            if let Some(e) = episode {
+                if !episodes.contains(e) {
+                    episodes.push(*e);
+                }
+            }
+            if let Some(s) = season {
+                if !seasons.contains(s) {
+                    seasons.push(*s);
+                }
+            }
+        }
+        let whole_season = match seasons.as_slice() {
+            [season] if *season > 0 => {
+                let (size,): (i64,) = sqlx::query_as(
+                    "SELECT COUNT(*) FROM episode WHERE title_id = ? AND season_number = ?",
+                )
+                .bind(title_id)
+                .bind(season)
+                .fetch_one(pool)
+                .await?;
+                (size as usize == episodes.len()).then_some(*season)
+            }
+            _ => None,
         };
-        let payload = json!({ "text": text, "watch_ids": all, "owner": owner, "day": day });
-        match kept {
+        let (name, backdrop, poster): (String, Option<String>, Option<String>) =
+            sqlx::query_as("SELECT name, backdrop_path, poster_path FROM title WHERE id = ?")
+                .bind(title_id)
+                .fetch_one(pool)
+                .await?;
+        let text = line_text(&who, &name, episodes.len(), whole_season);
+        let payload = json!({ "text": text, "watch_ids": all, "owner": owner, "days": days });
+        match open {
             Some((id, _)) => {
                 sqlx::query(
                     "UPDATE notification SET payload = ?, read_at = NULL, created_at = ?
@@ -235,6 +277,7 @@ async fn tell(state: &AppState, owner: i64, person: i64, watch_ids: &[i64]) -> A
                 .await?;
             }
             None => {
+                let first = ids.iter().min().copied().unwrap_or(0);
                 inbox::tell(
                     state,
                     person,
@@ -243,14 +286,9 @@ async fn tell(state: &AppState, owner: i64, person: i64, watch_ids: &[i64]) -> A
                         title_id: Some(title_id),
                         actor_id: Some(owner),
                         payload,
-                        ref_key: Some(key),
+                        ref_key: Some(format!("together:{owner}:{title_id}:{first}")),
                     },
-                    Some(json!({
-                        "title": name,
-                        "body": text,
-                        "url": "/notifications",
-                        "tag": format!("frog-together-{owner}-{title_id}"),
-                    })),
+                    Some(push(owner, title_id, &name, &text, backdrop, poster)),
                 )
                 .await?;
             }
@@ -259,9 +297,56 @@ async fn tell(state: &AppState, owner: i64, person: i64, watch_ids: &[i64]) -> A
     Ok(())
 }
 
+/// The push for a "watched with you" line. One tag per show and person, so a
+/// new line replaces the last on the lock screen rather than stacking.
+pub fn push(
+    owner: i64,
+    title_id: i64,
+    name: &str,
+    text: &str,
+    backdrop: Option<String>,
+    poster: Option<String>,
+) -> Value {
+    json!({
+        "title": name,
+        "body": text,
+        "url": "/notifications",
+        "tag": format!("frog-together-{owner}-{title_id}"),
+        "image": inbox::picture(backdrop.as_deref(), poster.as_deref()),
+    })
+}
+
+/// The line `person` has not answered yet about `owner`'s watches of a title.
+async fn open_line(
+    pool: &SqlitePool,
+    person: i64,
+    owner: i64,
+    title_id: i64,
+) -> AppResult<Option<(i64, String)>> {
+    Ok(sqlx::query_as(
+        "SELECT id, payload FROM notification
+          WHERE user_id = ? AND kind = 'together' AND actor_id = ? AND title_id = ?
+            AND removed_at IS NULL AND json_extract(payload, '$.answered') IS NULL
+          ORDER BY id DESC LIMIT 1",
+    )
+    .bind(person)
+    .bind(owner)
+    .bind(title_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
+fn watch_ids_of(payload: &str) -> Vec<i64> {
+    serde_json::from_str::<Value>(payload)
+        .ok()
+        .and_then(|p| serde_json::from_value(p["watch_ids"].clone()).ok())
+        .unwrap_or_default()
+}
+
 /// The watches a "watched with you" line is about, still naming `me`: the
-/// owner's watches of that title on that day. Found by what the line is
-/// about rather than by row, since an undo puts a watch back as a new row.
+/// owner's watches of that title on the line's days. Found by what the line
+/// is about rather than by row, since an undo puts a watch back as a new
+/// row; a watch another line of the same show is about stays with that one.
 async fn named(pool: &SqlitePool, me: i64, notification: i64) -> AppResult<(i64, Vec<i64>)> {
     let row: Option<(String, Option<i64>)> = sqlx::query_as(
         "SELECT payload, title_id FROM notification
@@ -271,26 +356,50 @@ async fn named(pool: &SqlitePool, me: i64, notification: i64) -> AppResult<(i64,
     .bind(me)
     .fetch_optional(pool)
     .await?;
-    let Some((payload, Some(title_id))) = row else {
+    let Some((raw, Some(title_id))) = row else {
         return Err(AppError::NotFound("no such notification".into()));
     };
-    let payload: Value = serde_json::from_str(&payload).unwrap_or(Value::Null);
+    let payload: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
     let owner = payload["owner"].as_i64().unwrap_or(0);
-    let day = payload["day"].as_str().unwrap_or("").to_string();
+    // A line from before lines grew across evenings names one day.
+    let days: Vec<String> = serde_json::from_value(payload["days"].clone())
+        .ok()
+        .or_else(|| payload["day"].as_str().map(|d| vec![d.to_string()]))
+        .unwrap_or_default();
     let still: Vec<(i64,)> = sqlx::query_as(
         "SELECT x.watch_event_id FROM watch_with x
            JOIN watch_event w ON w.id = x.watch_event_id
           WHERE x.with_user_id = ?1 AND x.user_id = ?2 AND w.user_id = ?2
-            AND w.title_id = ?3 AND substr(w.watched_at, 1, 10) = ?4
+            AND w.title_id = ?3
+            AND substr(w.watched_at, 1, 10) IN (SELECT value FROM json_each(?4))
           ORDER BY w.id",
     )
     .bind(me)
     .bind(owner)
     .bind(title_id)
-    .bind(&day)
+    .bind(json!(days).to_string())
     .fetch_all(pool)
     .await?;
-    Ok((owner, still.into_iter().map(|r| r.0).collect()))
+    let others: Vec<(String,)> = sqlx::query_as(
+        "SELECT payload FROM notification
+          WHERE user_id = ? AND kind = 'together' AND actor_id = ? AND title_id = ? AND id != ?",
+    )
+    .bind(me)
+    .bind(owner)
+    .bind(title_id)
+    .bind(notification)
+    .fetch_all(pool)
+    .await?;
+    let theirs: Vec<i64> = others.iter().flat_map(|(p,)| watch_ids_of(p)).collect();
+    let mine = watch_ids_of(&raw);
+    Ok((
+        owner,
+        still
+            .into_iter()
+            .map(|r| r.0)
+            .filter(|id| mine.contains(id) || !theirs.contains(id))
+            .collect(),
+    ))
 }
 
 /// (title, episode, watched_at, undated, logged_at) of a watch being copied.
@@ -483,4 +592,39 @@ pub async fn names(pool: &SqlitePool, ids: &[i64]) -> AppResult<Vec<Value>> {
             json!({ "id": id, "username": username, "display_name": display_name, "avatar": avatar })
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_line_says_the_title_a_season_or_how_many() {
+        assert_eq!(
+            line_text("Sam", "Arrival", 0, None),
+            "Sam watched Arrival with you"
+        );
+        assert_eq!(
+            line_text("Sam", "Breaking Bad", 1, Some(1)),
+            "Sam watched Breaking Bad with you"
+        );
+        assert_eq!(
+            line_text("Sam", "Breaking Bad", 7, Some(2)),
+            "Sam watched season 2 of Breaking Bad with you"
+        );
+        assert_eq!(
+            line_text("Sam", "Breaking Bad", 3, None),
+            "Sam watched 3 episodes of Breaking Bad with you"
+        );
+    }
+
+    #[test]
+    fn its_push_shows_the_picture_and_keeps_one_tag_per_show() {
+        let p = push(4, 9, "Breaking Bad", "x", None, Some("/p.jpg".into()));
+        assert_eq!(p["image"], json!("/img/w780/p.jpg"));
+        assert_eq!(p["tag"], json!("frog-together-4-9"));
+        let wide = push(4, 9, "Breaking Bad", "y", Some("/b.jpg".into()), None);
+        assert_eq!(wide["image"], json!("/img/w780/b.jpg"));
+        assert_eq!(wide["tag"], p["tag"]);
+    }
 }

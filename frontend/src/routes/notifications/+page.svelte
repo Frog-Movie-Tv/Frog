@@ -138,6 +138,88 @@
 		}
 	}
 
+	/**
+	 * Off the page, with Undo. A recommendation's line goes, the
+	 * recommendation stays in For you to answer.
+	 */
+	async function remove(n: Notice) {
+		const before = items;
+		items = items.filter((i) => i.id !== n.id);
+		try {
+			const r = await api.removeNotice(n.id);
+			inbox.set(r.unread);
+			toasts.undoable('Notification removed', async () => {
+				inbox.set((await api.restoreNotices(r.ids)).unread);
+				await load();
+			});
+		} catch (e) {
+			items = before;
+			toasts.error(e);
+		}
+	}
+
+	async function clearAll() {
+		const before = { items, next };
+		items = [];
+		next = null;
+		try {
+			const r = await api.clearNotices();
+			inbox.set(r.unread);
+			toasts.undoable('Notifications cleared', async () => {
+				inbox.set((await api.restoreNotices(r.ids)).unread);
+				await load();
+			});
+		} catch (e) {
+			({ items, next } = before);
+			toasts.error(e);
+		}
+	}
+
+	// A line swiped sideways on a touch screen follows the finger, and goes
+	// once it has travelled far enough.
+	let swiping = $state<{ id: number; x: number; y: number; dx: number; sideways: boolean } | null>(
+		null
+	);
+	const SWIPE_AWAY = 0.35;
+
+	function swipeStart(e: PointerEvent, n: Notice) {
+		if (e.pointerType !== 'touch') return;
+		swiping = { id: n.id, x: e.clientX, y: e.clientY, dx: 0, sideways: false };
+	}
+
+	function swipeMove(e: PointerEvent) {
+		if (!swiping) return;
+		const dx = e.clientX - swiping.x;
+		const dy = e.clientY - swiping.y;
+		if (!swiping.sideways) {
+			// Up and down is a scroll, and leaves the line alone.
+			if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) {
+				swiping = null;
+				return;
+			}
+			if (Math.abs(dx) < 10) return;
+			swiping.sideways = true;
+			try {
+				(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+			} catch {
+				// A pointer the browser no longer knows: the line follows it anyway.
+			}
+		}
+		swiping.dx = dx;
+	}
+
+	function swipeEnd(e: PointerEvent, n: Notice) {
+		if (!swiping) return;
+		const { dx, sideways } = swiping;
+		swiping = null;
+		if (!sideways) return;
+		const width = (e.currentTarget as HTMLElement).offsetWidth || 1;
+		if (Math.abs(dx) / width >= SWIPE_AWAY) void remove(n);
+	}
+
+	/** A swipe ends in a click on the link under the finger: not one to follow. */
+	let swiped = false;
+
 	/** Today, This week, Earlier: by the day here. */
 	function bucket(iso: string): 'Today' | 'This week' | 'Earlier' {
 		const then = new Date(iso);
@@ -236,9 +318,14 @@
 <div class="page">
 	<div class="page-head">
 		<h1>Notifications</h1>
-		{#if !loading && unread}
+		{#if !loading && (unread || (tab === 'all' && items.length))}
 			<div class="actions">
-				<button class="btn ghost small" onclick={markAll}>Mark all read</button>
+				{#if unread}
+					<button class="btn ghost small" onclick={markAll}>Mark all read</button>
+				{/if}
+				{#if tab === 'all' && items.length}
+					<button class="btn ghost small" onclick={clearAll}>Clear all</button>
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -310,7 +397,27 @@
 					<ul class="list-pane notices">
 						{#each group.items as n (n.id)}
 							{@const said = line(n)}
-							<li class:unread={!n.read}>
+							<li
+								class:unread={!n.read}
+								class:moving={swiping?.id === n.id && swiping.sideways}
+								style:translate={swiping?.id === n.id && swiping.sideways
+									? `${swiping.dx}px 0`
+									: undefined}
+								onpointerdown={(e) => swipeStart(e, n)}
+								onpointermove={swipeMove}
+								onpointerup={(e) => {
+									swiped = !!swiping?.sideways;
+									swipeEnd(e, n);
+								}}
+								onpointercancel={() => (swiping = null)}
+								onclickcapture={(e) => {
+									if (swiped) {
+										e.preventDefault();
+										e.stopPropagation();
+									}
+									swiped = false;
+								}}
+							>
 								<svelte:element this={said.href ? 'a' : 'div'} class="notice" href={said.href}>
 									<span class="art">
 										{#if n.title?.poster_path}
@@ -327,6 +434,14 @@
 									</span>
 									<time class="faint" datetime={n.created_at}>{relativeDate(n.created_at)}</time>
 								</svelte:element>
+								<button
+									class="remove hit"
+									aria-label="Remove notification: {said.text}"
+									title="Remove"
+									onclick={() => remove(n)}
+								>
+									<Icon name="x" size={15} />
+								</button>
 								{#if n.kind === 'together' && n.payload?.answered !== 'added'}
 									<div class="together">
 										<button
@@ -391,6 +506,62 @@
 
 	.notices li + li {
 		border-top: 1px solid var(--line);
+	}
+
+	.notices li {
+		position: relative;
+		touch-action: pan-y;
+		background: var(--bg-elev);
+	}
+
+	.notices li.moving {
+		z-index: 1;
+		opacity: 0.85;
+	}
+
+	.notices li:not(.moving) {
+		transition: translate 180ms var(--ease);
+	}
+
+	/* The ×: on hover or focus on a computer, out of the way of the time. A
+	   phone swipes the line away instead. */
+	.remove {
+		position: absolute;
+		top: 50%;
+		right: 8px;
+		translate: 0 -50%;
+		display: grid;
+		place-items: center;
+		width: 30px;
+		height: 30px;
+		border: 0;
+		border-radius: 50%;
+		background: var(--bg-float);
+		color: var(--text-dim);
+		cursor: pointer;
+		opacity: 0;
+		transition: opacity var(--fast) var(--ease);
+	}
+
+	.notices li:has(.together) .remove {
+		top: 22px;
+		translate: none;
+	}
+
+	.notices li:hover .remove,
+	.notices li:focus-within .remove {
+		opacity: 1;
+	}
+
+	.remove:hover {
+		color: var(--text);
+		background: var(--bg-hover);
+	}
+
+	@media (hover: none) {
+		.remove {
+			display: none;
+		}
 	}
 
 	.art {

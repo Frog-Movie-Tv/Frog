@@ -585,6 +585,58 @@ async fn a_banner_takes_only_the_layouts_and_heights_offered() {
 }
 
 #[tokio::test]
+async fn each_banner_layout_keeps_its_own_focus() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&member),
+    )
+    .await;
+
+    let (code, me) = h
+        .put(
+            "/api/account/profile",
+            json!({ "banner_position": "30% 50%", "banner_top_position": "50% 12.5%" }),
+            Some(&member),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{me:?}");
+    assert_eq!(me["banner_position"], "30% 50%", "the column's strip");
+    assert_eq!(
+        me["banner_top_position"], "50% 12.5%",
+        "the band across the top"
+    );
+
+    let (_, profile) = h.get("/api/profiles/zjef", Some(&owner)).await;
+    assert_eq!(profile["banner_top_position"], "50% 12.5%");
+    assert_eq!(profile["banner_position"], "30% 50%");
+
+    for bad in ["50%", "50% 120%", "top", "50% 50% 50%"] {
+        let (code, _) = h
+            .put(
+                "/api/account/profile",
+                json!({ "banner_top_position": bad }),
+                Some(&member),
+            )
+            .await;
+        assert_eq!(code, StatusCode::BAD_REQUEST, "{bad}");
+    }
+
+    // Empty goes back to following the column's.
+    let (_, me) = h
+        .put(
+            "/api/account/profile",
+            json!({ "banner_top_position": "" }),
+            Some(&member),
+        )
+        .await;
+    assert_eq!(me["banner_top_position"], Value::Null);
+    assert_eq!(me["banner_position"], "30% 50%");
+}
+
+#[tokio::test]
 async fn every_pin_comes_back_wherever_it_sits_in_the_library() {
     let h = Harness::new().await;
     let (_, member) = two_accounts(&h).await;

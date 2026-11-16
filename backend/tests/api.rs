@@ -2237,6 +2237,106 @@ async fn because_you_watched_skips_your_library_and_never_repeats() {
     assert_eq!(body["rows"], json!([]), "no key, no rows, no error");
 }
 
+#[tokio::test]
+async fn featured_is_trending_with_a_picture_and_not_in_your_library() {
+    let h = Harness::with_tmdb_key("test-key").await;
+    let (_, _, cookie) = h
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let cookie = cookie.unwrap();
+
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (1, 'movie', 301, 'Mine')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, 1, 'planned', 'x', 'x')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let film = |id: i64, backdrop: Option<&str>| {
+        json!({ "id": id, "media_type": "movie", "title": format!("Seed {id}"),
+                "poster_path": "/p.jpg", "backdrop_path": backdrop, "release_date": "2026-01-01" })
+    };
+    let trending = json!({ "results": [
+        film(301, Some("/b.jpg")),
+        film(302, None),
+        { "id": 900, "media_type": "person", "name": "Someone" },
+        film(303, Some("/b.jpg")),
+        film(304, Some("/b.jpg")),
+        film(305, Some("/b.jpg")),
+        film(306, Some("/b.jpg")),
+        film(307, Some("/b.jpg")),
+    ]});
+    sqlx::query(
+        "INSERT INTO tmdb_cache (cache_key, body, fetched_at, expires_at)
+         VALUES ('/trending/all/week?lang=en-US', ?, '2026-01-01T00:00:00Z', '2099-01-01T00:00:00Z')",
+    )
+    .bind(trending.to_string())
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    for id in 303..=307 {
+        cache_recommending(&h, id, &[]).await;
+    }
+
+    let names = |body: &serde_json::Value| -> Vec<String> {
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["item"]["name"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let (status, body) = h.get("/api/home/featured", Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        names(&body),
+        ["Seed 303", "Seed 304", "Seed 305", "Seed 306"],
+        "not yours, not without a picture, not a person, four at most"
+    );
+    assert!(
+        body["items"][0]["item"]["id"].as_i64().is_some(),
+        "a Frog title: {body}"
+    );
+    let ranks: Vec<i64> = body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["rank"].as_i64().unwrap())
+        .collect();
+    assert_eq!(ranks, [3, 4, 5, 6], "TMDB's own places, people not counted");
+    let (_, again) = h.get("/api/home/featured", Some(&cookie)).await;
+    assert_eq!(names(&again), names(&body), "read back from the catalog");
+
+    let (status, _) = h.get("/api/home/featured", None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let plain = Harness::new().await;
+    let (_, _, c) = plain
+        .post(
+            "/api/auth/setup",
+            json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+            None,
+        )
+        .await;
+    let (_, body) = plain.get("/api/home/featured", c.as_deref()).await;
+    assert_eq!(
+        body["items"],
+        json!([]),
+        "no key, nothing featured, no error"
+    );
+}
+
 /// A database migrated from a checkout with other line endings still starts;
 /// a migration whose SQL really changed is still refused.
 #[tokio::test]
@@ -4332,6 +4432,37 @@ async fn your_devices_are_listed_and_can_be_signed_out() {
         .as_str()
         .unwrap()
         .to_string();
+
+    // A device can say what it is (an iPad's Safari calls itself a Mac), and
+    // it says so only for itself.
+    let (code, _, _) = h
+        .put(
+            "/api/account/device",
+            json!({ "form": "tablet" }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK);
+    let (code, _, _) = h
+        .put(
+            "/api/account/device",
+            json!({ "form": "toaster" }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    let (_, body) = h.get("/api/account/sessions", Some(&guest)).await;
+    let form = |current: bool| {
+        body["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["current"] == json!(current))
+            .unwrap()["form"]
+            .clone()
+    };
+    assert_eq!(form(true), json!("tablet"));
+    assert_eq!(form(false), json!("computer"));
 
     // Another account cannot end my session, even knowing its id.
     let (code, _, _) = h
@@ -7335,4 +7466,236 @@ async fn watching_with_someone_tells_them_and_never_writes_for_them() {
         .await
         .unwrap();
     assert_eq!(left, 0);
+}
+
+#[tokio::test]
+async fn a_notification_removed_stays_gone_and_undo_brings_it_back() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    let zjef = account_id(&h, "zjef").await;
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES
+            (1, 'tv', 11, 'Severance'), (2, 'movie', 12, 'Arrival')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    h.send(
+        "PUT",
+        "/api/account/profile",
+        json!({ "public": true }),
+        &guest,
+    )
+    .await;
+    for t in [1, 2] {
+        let (code, body, _) = h
+            .post(
+                &format!("/api/t/{t}/recommend"),
+                json!({ "to": [zjef] }),
+                Some(&owner),
+            )
+            .await;
+        assert_eq!(code, StatusCode::OK, "{body}");
+    }
+    let (_, feed) = h.get("/api/notifications", Some(&guest)).await;
+    let ids: Vec<i64> = feed["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["id"].as_i64().unwrap())
+        .collect();
+    assert_eq!(ids.len(), 2, "{feed}");
+    assert_eq!(feed["unread"], json!(2));
+
+    // Only its owner can remove it.
+    let (code, theirs, _) = h
+        .delete(&format!("/api/notifications/{}", ids[0]), Some(&owner))
+        .await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(theirs["ids"], json!([]));
+
+    let (code, gone, _) = h
+        .delete(&format!("/api/notifications/{}", ids[0]), Some(&guest))
+        .await;
+    assert_eq!(code, StatusCode::OK, "{gone}");
+    assert_eq!(gone["ids"], json!([ids[0]]));
+    assert_eq!(gone["unread"], json!(1));
+    let (_, feed) = h.get("/api/notifications", Some(&guest)).await;
+    assert_eq!(feed["items"].as_array().unwrap().len(), 1);
+    // The recommendation itself is still there to answer.
+    assert_eq!(feed["for_you"].as_array().unwrap().len(), 2, "{feed}");
+    let rec = feed["for_you"][0]["id"].as_i64().unwrap();
+    let (code, _, _) = h
+        .post(
+            &format!("/api/recommendations/{rec}/answer"),
+            json!({ "answer": "dismissed" }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK);
+
+    // The same event is never written to the page again.
+    let (key,): (String,) =
+        sqlx::query_as("SELECT ref_key FROM notification WHERE id = ? AND user_id = ?")
+            .bind(ids[0])
+            .bind(zjef)
+            .fetch_one(&h.state.pool)
+            .await
+            .unwrap();
+    let again = frog::inbox::record(
+        &h.state.pool,
+        zjef,
+        &frog::inbox::Event {
+            kind: frog::inbox::RECOMMENDATION,
+            title_id: Some(1),
+            actor_id: None,
+            payload: json!({}),
+            ref_key: Some(key),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!again);
+
+    // Clear all, then Undo, puts both back.
+    let (_, cleared, _) = h.delete("/api/notifications", Some(&guest)).await;
+    assert_eq!(cleared["ids"], json!([ids[1]]), "only what was still there");
+    let (_, feed) = h.get("/api/notifications", Some(&guest)).await;
+    assert_eq!(feed["items"], json!([]));
+    assert_eq!(feed["unread"], json!(0));
+    let (code, back, _) = h
+        .post(
+            "/api/notifications/restore",
+            json!({ "ids": [ids[0], ids[1]] }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{back}");
+    assert_eq!(back["unread"], json!(2));
+    let (_, feed) = h.get("/api/notifications", Some(&guest)).await;
+    assert_eq!(feed["items"].as_array().unwrap().len(), 2);
+    // Nobody else's are touched by an Undo either.
+    let (_, mine) = h.get("/api/notifications", Some(&owner)).await;
+    assert_eq!(mine["items"], json!([]));
+}
+
+#[tokio::test]
+async fn watched_together_is_one_line_per_show_until_it_is_answered() {
+    let h = Harness::new().await;
+    let (owner, guest) = two_accounts(&h).await;
+    let mihai = account_id(&h, "mihai").await;
+    let zjef = account_id(&h, "zjef").await;
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name, release_date)
+         VALUES (2, 'tv', 12, 'Breaking Bad', '2008-01-20')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    for (season, n) in [(1, 1), (1, 2), (2, 1), (2, 2), (2, 3)] {
+        sqlx::query(
+            "INSERT INTO episode (title_id, season_number, episode_number, name, air_date)
+             VALUES (2, ?, ?, 'Aired', '2008-01-20')",
+        )
+        .bind(season)
+        .bind(n)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    }
+    h.send(
+        "PUT",
+        "/api/account/profile",
+        json!({ "public": true }),
+        &guest,
+    )
+    .await;
+    h.send(
+        "PUT",
+        "/api/t/2/together",
+        json!({ "with": [zjef] }),
+        &owner,
+    )
+    .await;
+    let tick = |season: i64, n: i64, day: &str| {
+        let path = format!("/api/t/2/episodes/{season}/{n}/watch");
+        let body = json!({ "watched_at": format!("{day}T20:00:00Z") });
+        (path, body)
+    };
+
+    // Three evenings, one line: first one episode, then the season it
+    // completes, then more than a season.
+    let (p, b) = tick(2, 1, "2026-11-10");
+    h.post(&p, b, Some(&owner)).await;
+    let lines = together_lines(&h, &guest).await;
+    assert_eq!(lines.len(), 1);
+    assert_eq!(
+        lines[0]["payload"]["text"],
+        json!("mihai watched Breaking Bad with you")
+    );
+    for (n, day) in [(2, "2026-11-11"), (3, "2026-11-12")] {
+        let (p, b) = tick(2, n, day);
+        h.post(&p, b, Some(&owner)).await;
+    }
+    let lines = together_lines(&h, &guest).await;
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(
+        lines[0]["payload"]["text"],
+        json!("mihai watched season 2 of Breaking Bad with you")
+    );
+    let (p, b) = tick(1, 1, "2026-11-13");
+    h.post(&p, b, Some(&owner)).await;
+    let lines = together_lines(&h, &guest).await;
+    assert_eq!(lines.len(), 1);
+    assert_eq!(
+        lines[0]["payload"]["text"],
+        json!("mihai watched 4 episodes of Breaking Bad with you")
+    );
+
+    // Add to my diary: every watch, each on its own day.
+    let first = lines[0]["id"].as_i64().unwrap();
+    let path = format!("/api/notifications/{first}/together");
+    let (_, added, _) = h
+        .post(
+            &path,
+            json!({ "action": "add", "status": "watching" }),
+            Some(&guest),
+        )
+        .await;
+    assert_eq!(added["copied"], json!(4), "{added}");
+    let days: Vec<(String,)> = sqlx::query_as(
+        "SELECT substr(watched_at, 1, 10) FROM watch_event
+          WHERE user_id = ? AND title_id = 2 ORDER BY watched_at",
+    )
+    .bind(zjef)
+    .fetch_all(&h.state.pool)
+    .await
+    .unwrap();
+    let days: Vec<&str> = days.iter().map(|d| d.0.as_str()).collect();
+    assert_eq!(
+        days,
+        ["2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"]
+    );
+
+    // Answered, it stays as it is; the next watch starts a new line.
+    let (p, b) = tick(1, 2, "2026-11-14");
+    h.post(&p, b, Some(&owner)).await;
+    let lines = together_lines(&h, &guest).await;
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    let old = lines.iter().find(|l| l["id"] == json!(first)).unwrap();
+    assert_eq!(
+        old["payload"]["text"],
+        json!("mihai watched 4 episodes of Breaking Bad with you")
+    );
+    let new = lines.iter().find(|l| l["id"] != json!(first)).unwrap();
+    assert_eq!(
+        new["payload"]["text"],
+        json!("mihai watched Breaking Bad with you")
+    );
+
+    // Not me on the new line takes the name off its watches only.
+    let path = format!("/api/notifications/{}/together", new["id"]);
+    h.post(&path, json!({ "action": "not_me" }), Some(&guest))
+        .await;
+    assert_eq!(named_on(&h, mihai, 2).await, 4);
 }

@@ -170,6 +170,12 @@ pub async fn tell(
     Ok(written)
 }
 
+/// A push's picture, as the service worker fetches it: the wide one, else
+/// the poster.
+pub fn picture(wide: Option<&str>, poster: Option<&str>) -> Option<String> {
+    wide.or(poster).map(|p| format!("/img/w780{p}"))
+}
+
 /// Take one event back off an account's page, by its key: a recommendation
 /// sent again is told afresh, at the top, rather than twice.
 pub async fn forget(pool: &SqlitePool, user_id: i64, ref_key: &str) -> AppResult<()> {
@@ -220,7 +226,7 @@ pub async fn list(
            FROM notification n
            LEFT JOIN title t ON t.id = n.title_id
            LEFT JOIN app_user u ON u.id = n.actor_id AND u.disabled = 0
-          WHERE n.user_id = ?1 AND (?2 IS NULL OR n.id < ?2)
+          WHERE n.user_id = ?1 AND n.removed_at IS NULL AND (?2 IS NULL OR n.id < ?2)
           ORDER BY n.id DESC
           LIMIT ?3",
     )
@@ -270,11 +276,13 @@ pub async fn list(
 
 /// How many of an account's notifications it has not seen.
 pub async fn unread(pool: &SqlitePool, user_id: i64) -> AppResult<i64> {
-    let (n,): (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM notification WHERE user_id = ? AND read_at IS NULL")
-            .bind(user_id)
-            .fetch_one(pool)
-            .await?;
+    let (n,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM notification
+              WHERE user_id = ? AND read_at IS NULL AND removed_at IS NULL",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
     Ok(n)
 }
 
@@ -300,6 +308,39 @@ pub async fn mark_read(pool: &SqlitePool, user_id: i64, ids: &[i64]) -> AppResul
         .execute(pool)
         .await?;
     }
+    Ok(())
+}
+
+/// Take notifications off an account's page: one by id, or every one when
+/// `id` is `None`. Says which went, for Undo. The rows stay, hidden, so the
+/// same event is never written there again; a recommendation stays
+/// answerable, since that lives on the recommendation itself.
+pub async fn remove(pool: &SqlitePool, user_id: i64, id: Option<i64>) -> AppResult<Vec<i64>> {
+    let rows: Vec<(i64,)> = sqlx::query_as(
+        "UPDATE notification SET removed_at = ?1
+          WHERE user_id = ?2 AND removed_at IS NULL AND (?3 IS NULL OR id = ?3)
+          RETURNING id",
+    )
+    .bind(Utc::now().to_rfc3339())
+    .bind(user_id)
+    .bind(id)
+    .fetch_all(pool)
+    .await?;
+    let mut ids: Vec<i64> = rows.into_iter().map(|r| r.0).collect();
+    ids.sort_unstable();
+    Ok(ids)
+}
+
+/// Undo of `remove`: these are back on the page as they were.
+pub async fn restore(pool: &SqlitePool, user_id: i64, ids: &[i64]) -> AppResult<()> {
+    sqlx::query(
+        "UPDATE notification SET removed_at = NULL
+          WHERE user_id = ? AND id IN (SELECT value FROM json_each(?))",
+    )
+    .bind(user_id)
+    .bind(json!(ids).to_string())
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

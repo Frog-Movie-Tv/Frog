@@ -39,6 +39,7 @@ import type {
 	ResetLink,
 	MatchResult,
 	Kind,
+	FeaturedTitle,
 	LibraryItem,
 	SharedLibrary,
 	PersonDetail,
@@ -298,6 +299,9 @@ export const api = {
 	/** Titles whose data was moved onto another, newest first. */
 	merges: () => get<{ merges: TitleMerge[] }>('/api/account/merges'),
 	undoMerge: (id: number) => send<{ ok: true }>('POST', `/api/account/merges/${id}/undo`),
+	/** This device says what it is, when its user agent cannot (an iPad's Safari). */
+	setDeviceForm: (form: DeviceSession['form']) =>
+		send<{ form: string }>('PUT', '/api/account/device', { form }),
 	endSession: (id: string) => send<{ ok: true }>('DELETE', `/api/account/sessions/${id}`),
 	endOtherSessions: () => send<{ signed_out: number }>('DELETE', '/api/account/sessions/others'),
 	tokens: () => get<{ tokens: ApiToken[] }>('/api/account/tokens'),
@@ -414,6 +418,8 @@ export const api = {
 
 	home: () => get<HomeData>('/api/home').then(localHome),
 	because: () => get<{ rows: BecauseRow[] }>('/api/home/because'),
+	/** Trending this week and not in your library, for the hero. */
+	featured: () => get<{ items: FeaturedTitle[] }>('/api/home/featured'),
 	/** More like a title, a page at a time: what "View more" lists. */
 	moreLike: (titleId: number, page: number) =>
 		get<{ seed: { id: number; name: string }; items: SearchItem[]; next_page: number | null }>(
@@ -475,6 +481,12 @@ export const api = {
 			unread: number;
 		}>(`/api/notifications${before ? `?before=${before}` : ''}`),
 	unread: () => get<{ unread: number }>('/api/notifications/unread'),
+	/** Off the page: one, or every one. Undo puts them back by id. */
+	removeNotice: (id: number) =>
+		send<{ ids: number[]; unread: number }>('DELETE', `/api/notifications/${id}`),
+	clearNotices: () => send<{ ids: number[]; unread: number }>('DELETE', '/api/notifications'),
+	restoreNotices: (ids: number[]) =>
+		send<{ unread: number }>('POST', '/api/notifications/restore', { ids }),
 	markRead: (ids: number[] = []) =>
 		send<{ unread: number }>('POST', '/api/notifications/read', { ids }),
 	noticeWants: () => get<NoticeWants>('/api/notifications/settings'),

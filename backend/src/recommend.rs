@@ -153,17 +153,23 @@ pub async fn send(
                 payload: json!({ "recommendation_id": id, "note": note }),
                 ref_key: Some(key),
             },
-            Some(json!({
-                "title": title.name,
-                "body": body,
-                "url": "/notifications",
-                "tag": format!("frog-rec-{id}"),
-            })),
+            Some(push(id, &title, &body)),
         )
         .await?;
         told += 1;
     }
     Ok(told)
+}
+
+/// The push for recommendation `id`: the title, who sent it, its picture.
+pub fn push(id: i64, title: &crate::catalog::TitleRow, body: &str) -> Value {
+    json!({
+        "title": title.name,
+        "body": body,
+        "url": "/notifications",
+        "tag": format!("frog-rec-{id}"),
+        "image": inbox::picture(title.backdrop_path.as_deref(), title.poster_path.as_deref()),
+    })
 }
 
 /// (id, created_at, note, answered, title id, name, kind, poster, year,
@@ -231,6 +237,58 @@ pub async fn for_me(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Value>> {
                     "from": { "username": username, "display_name": display_name,
                               "avatar": avatar },
                 })
+            },
+        )
+        .collect())
+}
+
+/// A recommendation not answered yet, for Home's hero: who sent it, their
+/// note, and the title.
+pub struct Waiting {
+    pub id: i64,
+    pub note: Option<String>,
+    pub created_at: String,
+    pub title_id: i64,
+    pub from: Value,
+}
+
+/// (id, note, created_at, title id, from username, from display name, has a picture)
+type WaitingRow = (
+    i64,
+    Option<String>,
+    String,
+    i64,
+    String,
+    Option<String>,
+    bool,
+);
+
+/// Recommendations to one account it has not answered, newest first.
+pub async fn waiting(pool: &SqlitePool, user_id: i64, limit: i64) -> AppResult<Vec<Waiting>> {
+    let rows: Vec<WaitingRow> = sqlx::query_as(
+        "SELECT r.id, r.note, r.created_at, r.title_id, u.username, u.display_name,
+                EXISTS (SELECT 1 FROM user_image i WHERE i.user_id = u.id AND i.kind = 'avatar')
+           FROM recommendation r
+           JOIN title t ON t.id = r.title_id AND t.merged_into IS NULL
+           JOIN app_user u ON u.id = r.from_user_id AND u.disabled = 0
+          WHERE r.to_user_id = ? AND r.answered IS NULL
+          ORDER BY r.created_at DESC, r.id DESC
+          LIMIT ?",
+    )
+    .bind(user_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(id, note, created_at, title_id, username, display_name, avatar)| Waiting {
+                id,
+                note,
+                created_at,
+                title_id,
+                from: json!({ "username": username, "display_name": display_name,
+                              "avatar": avatar }),
             },
         )
         .collect())
@@ -317,5 +375,37 @@ mod tests {
             "characters, not bytes"
         );
         assert!(clean_note(Some(&"a".repeat(NOTE_MAX + 1))).is_err());
+    }
+
+    #[test]
+    fn a_recommendations_push_shows_the_titles_picture() {
+        let mut title = crate::catalog::TitleRow {
+            id: 7,
+            kind: "tv".into(),
+            name: "Severance".into(),
+            overview: None,
+            poster_path: Some("/poster.jpg".into()),
+            backdrop_path: Some("/wide.jpg".into()),
+            logo_path: None,
+            release_date: None,
+            last_air_date: None,
+            tmdb_status: None,
+            runtime: None,
+            episode_count: None,
+            season_count: None,
+            genres_json: "[]".into(),
+            tmdb_vote: None,
+            collection_id: None,
+            accent_json: None,
+            refreshed_at: None,
+        };
+        let p = push(3, &title, "Sam recommends it");
+        assert_eq!(p["image"], json!("/img/w780/wide.jpg"));
+        assert_eq!(p["tag"], json!("frog-rec-3"));
+        assert_eq!(p["body"], json!("Sam recommends it"));
+        title.backdrop_path = None;
+        assert_eq!(push(3, &title, "")["image"], json!("/img/w780/poster.jpg"));
+        title.poster_path = None;
+        assert_eq!(push(3, &title, "")["image"], Value::Null);
     }
 }

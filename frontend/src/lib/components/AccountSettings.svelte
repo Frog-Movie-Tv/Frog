@@ -30,9 +30,12 @@
 		user: 'Member'
 	};
 
-	/** A phone or a computer, from the name the browser gave itself. */
-	const onPhone = (device: DeviceSession) =>
-		/android|iphone|ipad|mobile/i.test(device.device ?? '');
+	const FORM_ICON = { phone: 'phone', tablet: 'tablet', computer: 'desktop' } as const;
+
+	// This device first, the rest folded away until asked for.
+	const here = $derived(devices.filter((d) => d.current));
+	const others = $derived(devices.filter((d) => !d.current));
+	let showOthers = $state(false);
 
 	async function load() {
 		try {
@@ -134,6 +137,27 @@
 		}
 	}
 </script>
+
+{#snippet deviceRow(device: DeviceSession)}
+	<li class:current={device.current}>
+		<span class="device-icon" aria-hidden="true"
+			><Icon name={FORM_ICON[device.form] ?? 'desktop'} size={18} /></span
+		>
+		<span class="label">
+			<strong>{device.device ?? 'A browser'}</strong>
+			<span class="faint">
+				{device.current ? 'This device' : `Signed in ${relativeDate(device.created_at)}`}
+			</span>
+		</span>
+		{#if !device.current}
+			<button
+				class="btn ghost small"
+				aria-label="Sign out {device.device ?? 'that browser'}"
+				onclick={() => endSession(device)}>Sign out</button
+			>
+		{/if}
+	</li>
+{/snippet}
 
 <div class="identity card">
 	<Avatar
@@ -264,27 +288,28 @@
 			{/if}
 		</div>
 		<ul class="devices">
-			{#each devices as device (device.id)}
-				<li class:current={device.current}>
-					<span class="device-icon" aria-hidden="true"
-						><Icon name={onPhone(device) ? 'phone' : 'desktop'} size={18} /></span
-					>
-					<span class="label">
-						<strong>{device.device ?? 'A browser'}</strong>
-						<span class="faint">
-							{device.current ? 'This device' : `Signed in ${relativeDate(device.created_at)}`}
-						</span>
-					</span>
-					{#if !device.current}
-						<button
-							class="btn ghost small"
-							aria-label="Sign out {device.device ?? 'that browser'}"
-							onclick={() => endSession(device)}>Sign out</button
-						>
-					{/if}
-				</li>
+			{#each here as device (device.id)}
+				{@render deviceRow(device)}
 			{/each}
 		</ul>
+		{#if others.length}
+			<button
+				class="fold"
+				aria-expanded={showOthers}
+				aria-controls="other-devices"
+				onclick={() => (showOthers = !showOthers)}
+			>
+				<Icon name={showOthers ? 'chevron-up' : 'chevron-down'} size={15} />
+				{others.length === 1 ? '1 other device' : `${others.length} other devices`}
+			</button>
+			{#if showOthers}
+				<ul class="devices" id="other-devices">
+					{#each others as device (device.id)}
+						{@render deviceRow(device)}
+					{/each}
+				</ul>
+			{/if}
+		{/if}
 	</div>
 
 	{#if account && account.role !== 'owner'}
@@ -474,8 +499,31 @@
 		color: var(--text-dim);
 	}
 
+	/* The other devices, behind one line under this one. */
+	.fold {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		margin: 10px 0 0 48px;
+		padding: 6px 10px;
+		border: 0;
+		border-radius: var(--radius-sm);
+		background: none;
+		color: var(--text-dim);
+		font: inherit;
+		font-size: 0.86rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.fold:hover {
+		background: var(--bg-hover);
+		color: var(--text);
+	}
+
 	@media (max-width: 600px) {
-		.devices {
+		.devices,
+		.fold {
 			margin-left: 0;
 		}
 	}

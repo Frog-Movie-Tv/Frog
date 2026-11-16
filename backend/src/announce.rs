@@ -230,7 +230,7 @@ impl Announcement {
             "url": format!("/t/{}", self.title_id),
             // One notification per title: a later one replaces it, never stacks.
             "tag": format!("frog-title-{}", self.title_id),
-            "image": self.picture.as_ref().map(|p| format!("/img/w780{p}")),
+            "image": crate::inbox::picture(self.picture.as_deref(), None),
         })
     }
 }

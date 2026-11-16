@@ -63,6 +63,7 @@ pub fn router(state: AppState) -> Router {
         .route("/studios/{id}", get(browse::studio))
         .route("/home", get(home::home))
         .route("/home/because", get(home::because))
+        .route("/home/featured", get(home::featured))
         .route("/home/activity", get(home::activity))
         .route("/activity", get(home::all_activity))
         .route("/calendar", get(timeline::calendar))
@@ -93,7 +94,12 @@ pub fn router(state: AppState) -> Router {
             "/shelves/{id}/items/{title_id}",
             delete(shelves::remove_item),
         )
-        .route("/notifications", get(notifications::feed))
+        .route(
+            "/notifications",
+            get(notifications::feed).delete(notifications::clear),
+        )
+        .route("/notifications/{id}", delete(notifications::remove))
+        .route("/notifications/restore", post(notifications::restore))
         .route("/notifications/unread", get(notifications::unread))
         .route("/notifications/read", post(notifications::read))
         .route(
@@ -130,6 +136,7 @@ pub fn router(state: AppState) -> Router {
         .route("/account/merges", get(account::merges))
         .route("/account/merges/{id}/undo", post(account::undo_merge))
         .route("/account/sessions", get(account::sessions))
+        .route("/account/device", put(account::set_device))
         .route(
             "/account/sessions/others",
             delete(account::end_other_sessions),

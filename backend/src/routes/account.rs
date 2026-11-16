@@ -44,6 +44,7 @@ pub async fn get(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Va
         "bio": row.6,
         "banner_backdrop": row.7,
         "banner_position": look.banner_position,
+        "banner_top_position": look.banner_top_position,
         "profile_color": look.profile_color,
         "profile_shade": look.profile_shade,
         "banner_layout": look.banner_layout,
@@ -116,12 +117,14 @@ pub async fn sessions(auth: Auth, State(state): State<AppState>) -> AppResult<Js
     let rows = account::sessions(&state.pool, auth.user_id()).await?;
     let sessions: Vec<Value> = rows
         .into_iter()
-        .map(|(hash, created_at, expires_at, agent)| {
+        .map(|(hash, created_at, expires_at, agent, told)| {
+            let form = device_form(agent.as_deref().unwrap_or(""), told.as_deref());
             json!({
                 "id": &hash[..SESSION_ID_LEN.min(hash.len())],
                 "created_at": created_at,
                 "expires_at": expires_at,
-                "device": agent.as_deref().map(describe_agent),
+                "device": agent.as_deref().map(|a| device_label(a, form)),
+                "form": form,
                 "current": hash == current,
             })
         })
@@ -162,6 +165,56 @@ pub fn describe_agent(agent: &str) -> String {
     format!("{browser} on {system}")
 }
 
+/// The kinds of device a session can be on.
+const FORMS: [&str; 3] = ["phone", "tablet", "computer"];
+
+/// What kind of device: what the browser said of itself, else its user agent.
+/// An Android phone says Mobile; an Android tablet does not.
+pub fn device_form(agent: &str, told: Option<&str>) -> &'static str {
+    if let Some(told) = told.and_then(|t| FORMS.into_iter().find(|f| *f == t)) {
+        return told;
+    }
+    let a = agent.to_ascii_lowercase();
+    if a.contains("ipad") || (a.contains("android") && !a.contains("mobile")) {
+        "tablet"
+    } else if a.contains("iphone") || a.contains("android") || a.contains("mobile") {
+        "phone"
+    } else {
+        "computer"
+    }
+}
+
+/// The label, put right where the browser said more than its user agent:
+/// an iPad's Safari asks for the Mac's pages.
+fn device_label(agent: &str, form: &str) -> String {
+    let label = describe_agent(agent);
+    match (form, label.strip_suffix(" on macOS")) {
+        ("tablet", Some(browser)) => format!("{browser} on iPadOS"),
+        _ => label,
+    }
+}
+
+#[derive(Deserialize)]
+pub struct DeviceBody {
+    pub form: String,
+}
+
+/// This device says what it is, which its user agent cannot always.
+pub async fn set_device(
+    auth: Auth,
+    State(state): State<AppState>,
+    Json(body): Json<DeviceBody>,
+) -> AppResult<Json<Value>> {
+    let Some(form) = FORMS.into_iter().find(|f| *f == body.form) else {
+        return Err(AppError::BadRequest(
+            "That kind of device is not one Frog knows.".into(),
+        ));
+    };
+    let hash = auth::token_fingerprint(&auth.token);
+    account::set_device_form(&state.pool, auth.user_id(), &hash, form).await?;
+    Ok(Json(json!({ "form": form })))
+}
+
 /// Sign one of your own devices out.
 pub async fn end_session(
     auth: Auth,
@@ -197,6 +250,8 @@ pub struct ProfileBody {
     pub banner_backdrop: Option<String>,
     /// "x% y%", which part of the banner shows. Empty resets it.
     pub banner_position: Option<String>,
+    /// "x% y%", which band shows across the top. Empty follows the column's.
+    pub banner_top_position: Option<String>,
     pub pins: Option<Vec<Pin>>,
     /// A colour from the list, or empty for the theme's own.
     pub profile_color: Option<String>,
@@ -225,6 +280,17 @@ fn is_position(value: &str) -> bool {
                 .is_some_and(|n| (0.0..=100.0).contains(&n))
         })
 }
+/// A position as sent: `None` for empty, refused when it is not one.
+fn position_of(value: &str) -> AppResult<Option<&str>> {
+    let value = value.trim();
+    if !value.is_empty() && !is_position(value) {
+        return Err(AppError::BadRequest(
+            "That banner position cannot be used.".into(),
+        ));
+    }
+    Ok((!value.is_empty()).then_some(value))
+}
+
 const BIO_MAX: usize = 600;
 const PINS_MAX: usize = 4;
 
@@ -258,14 +324,12 @@ pub async fn set_profile(
         account::set_profile_field(pool, me, ProfileField::Bio(bio.as_deref())).await?;
     }
     if let Some(position) = &body.banner_position {
-        let position = position.trim();
-        if !position.is_empty() && !is_position(position) {
-            return Err(AppError::BadRequest(
-                "That banner position cannot be used.".into(),
-            ));
-        }
-        let position = (!position.is_empty()).then_some(position);
+        let position = position_of(position)?;
         account::set_profile_field(pool, me, ProfileField::BannerPosition(position)).await?;
+    }
+    if let Some(position) = &body.banner_top_position {
+        let position = position_of(position)?;
+        account::set_profile_field(pool, me, ProfileField::BannerTopPosition(position)).await?;
     }
     if let Some(path) = &body.banner_backdrop {
         // Only a TMDB image path: it is drawn through Frog's own image proxy.
@@ -462,5 +526,28 @@ mod tests {
             "Safari on iOS"
         );
         assert_eq!(describe_agent("curl/8.0"), "A browser");
+    }
+
+    #[test]
+    fn phones_and_tablets_are_told_apart_from_computers() {
+        use super::{device_form, device_label};
+        let pixel = "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 Chrome/155.0 Mobile Safari/537.36";
+        let tab = "Mozilla/5.0 (Linux; Android 14; SM-X810) AppleWebKit/537.36 Chrome/155.0 Safari/537.36";
+        let iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 Version/19.0 Mobile/15E148 Safari/604.1";
+        let old_ipad = "Mozilla/5.0 (iPad; CPU OS 12_0 like Mac OS X) AppleWebKit/605.1.15 Version/12.0 Mobile/15E148 Safari/604.1";
+        let mac = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/19.0 Safari/605.1.15";
+        let windows =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0";
+        assert_eq!(device_form(pixel, None), "phone");
+        assert_eq!(device_form(tab, None), "tablet");
+        assert_eq!(device_form(iphone, None), "phone");
+        assert_eq!(device_form(old_ipad, None), "tablet");
+        assert_eq!(device_form(mac, None), "computer");
+        assert_eq!(device_form(windows, None), "computer");
+        // iPadOS asks for the Mac's pages; the page says what it is.
+        assert_eq!(device_form(mac, Some("tablet")), "tablet");
+        assert_eq!(device_label(mac, "tablet"), "Safari on iPadOS");
+        assert_eq!(device_label(mac, "computer"), "Safari on macOS");
+        assert_eq!(device_form(mac, Some("toaster")), "computer");
     }
 }
