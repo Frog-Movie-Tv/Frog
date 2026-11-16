@@ -17,6 +17,75 @@ pub struct OpsEvent {
     pub kind: String,
     pub ok: bool,
     pub reason: String,
+    /// The fingerprint of the deploy scripts that wrote it
+    /// (`scripts_fingerprint`); none from scripts older than the fingerprint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scripts: Option<String>,
+}
+
+/// Where the image keeps its own release's deploy scripts.
+const DEPLOY_DIR: &str = "/app/deploy";
+
+/// The fingerprint `deploy/ops-log.sh` writes as `scripts`: the first twelve
+/// hex characters of the SHA-256 of every `*.sh` and `systemd/*` file, in byte
+/// order of their paths, each as its path, a newline and its contents without
+/// carriage returns. None when there is no such folder (a build run from a
+/// checkout).
+pub fn scripts_fingerprint(dir: &std::path::Path) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let mut files: Vec<String> = Vec::new();
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".sh") && entry.path().is_file() {
+            files.push(name);
+        }
+    }
+    if let Ok(units) = std::fs::read_dir(dir.join("systemd")) {
+        for entry in units.flatten() {
+            if entry.path().is_file() {
+                files.push(format!("systemd/{}", entry.file_name().to_string_lossy()));
+            }
+        }
+    }
+    if files.is_empty() {
+        return None;
+    }
+    files.sort();
+    let mut hash = Sha256::new();
+    for f in &files {
+        let text = std::fs::read(dir.join(f)).ok()?;
+        hash.update(f.as_bytes());
+        hash.update(b"\n");
+        hash.update(
+            text.iter()
+                .copied()
+                .filter(|b| *b != b'\r')
+                .collect::<Vec<u8>>(),
+        );
+    }
+    let hex: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    Some(hex[..12].to_string())
+}
+
+/// This release's own fingerprint, read once.
+pub fn release_scripts() -> Option<&'static str> {
+    static RELEASE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    RELEASE
+        .get_or_init(|| {
+            let dir = std::env::var("FROG_DEPLOY_DIR").unwrap_or_else(|_| DEPLOY_DIR.into());
+            scripts_fingerprint(std::path::Path::new(&dir))
+        })
+        .as_deref()
+}
+
+/// Whether the server's deploy scripts are this release's: true or false
+/// from the newest outcome they recorded, none when either side is unknown
+/// (no image fingerprint, or nothing recorded yet). Scripts from before the
+/// fingerprint record none, and are older by that alone.
+pub fn scripts_current(events: &[OpsEvent], release: Option<&str>) -> Option<bool> {
+    let release = release?;
+    let newest = events.last()?;
+    Some(newest.scripts.as_deref() == Some(release))
 }
 
 /// The log beside the database, or nothing for an in-memory database.
@@ -107,12 +176,44 @@ pub fn payload(e: &OpsEvent) -> Value {
 mod tests {
     use super::*;
 
+    #[test]
+    fn scripts_are_current_only_when_the_newest_outcome_names_this_release() {
+        let mut old = ev("2026-11-15T03:40:00.000Z", "backup", true, "ok");
+        assert_eq!(scripts_current(&[old.clone()], Some("abc")), Some(false));
+        old.scripts = Some("abc".into());
+        assert_eq!(scripts_current(&[old.clone()], Some("abc")), Some(true));
+        assert_eq!(scripts_current(&[old.clone()], None), None);
+        assert_eq!(scripts_current(&[], Some("abc")), None);
+        // A line without the field still reads.
+        let line = r#"{"at":"2026-11-15T03:40:00.000Z","kind":"backup","ok":true,"reason":"ok"}"#;
+        let read: OpsEvent = serde_json::from_str(line).unwrap();
+        assert_eq!(read.scripts, None);
+    }
+
+    /// `ops_scripts` from deploy/ops-log.sh, run over the files below.
+    const SHELL_SAID: &str = "e5072fcc79c1";
+
+    #[test]
+    fn the_fingerprint_is_the_one_the_shell_script_writes() {
+        // `bash -c '. deploy/ops-log.sh; ops_scripts'` over these files.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("systemd")).unwrap();
+        std::fs::write(dir.path().join("b.sh"), "echo b\r\n").unwrap();
+        std::fs::write(dir.path().join("a-x.sh"), "echo a\n").unwrap();
+        std::fs::write(dir.path().join("notes.md"), "not counted").unwrap();
+        std::fs::write(dir.path().join("systemd/u@.service"), "[Unit]\n").unwrap();
+        // What the script printed for these same files.
+        assert_eq!(scripts_fingerprint(dir.path()).as_deref(), Some(SHELL_SAID));
+        assert_eq!(scripts_fingerprint(&dir.path().join("nowhere")), None);
+    }
+
     fn ev(at: &str, kind: &str, ok: bool, reason: &str) -> OpsEvent {
         OpsEvent {
             at: at.into(),
             kind: kind.into(),
             ok,
             reason: reason.into(),
+            scripts: None,
         }
     }
 

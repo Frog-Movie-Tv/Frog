@@ -192,7 +192,11 @@ which names exist, and it counts towards the same throttle for the same reason.
 ### The TMDB cache is the offline story
 
 Every TMDB request is keyed by path plus query and stored in `tmdb_cache` with
-a TTL that matches how fast that data actually changes:
+a TTL that matches how fast that data actually changes. The body is gzipped
+JSON (`tmdb::pack`), four to five times smaller than the text it replaced;
+rows written as text before still read, and the worker packs them a batch
+per tick (`tmdb::pack_older`). AniList's cached answers share the table and
+the packing.
 
 | Endpoint            | Fresh for |
 | ------------------- | --------- |

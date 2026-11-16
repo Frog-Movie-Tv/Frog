@@ -379,6 +379,26 @@ impl Run<'_> {
         let p = match place::place(a.state, a.api, a.token, remote).await {
             Ok(p) => p,
             Err(e) if is_outage(&e) => return Err(e),
+            // AniList no longer answers for this one title, though it is
+            // still on the person's list. Asking every sync found the same
+            // nothing and told nobody: it is kept as it stands, shown as
+            // not found, and looked at again on the usual widening wait.
+            Err(AppError::NotFound(_)) => {
+                let gone = Placement {
+                    target: None,
+                    outcome: Outcome::NoCandidate,
+                    method: None,
+                    confidence: 0,
+                    note: Some(
+                        "AniList no longer shares this title's details, so Frog can't match it. It stays in your library as AniList has it.".into(),
+                    ),
+                    show: None,
+                    candidates: Vec::new(),
+                    evidence: Vec::new(),
+                };
+                self.leave_unplaced(remote, prior, gone).await?;
+                return Ok(None);
+            }
             Err(e) => {
                 // One entry Frog cannot look up does not hold up the rest; it
                 // is looked at again next time.

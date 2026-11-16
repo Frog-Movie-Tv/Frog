@@ -45,8 +45,10 @@ use crate::tvmaze;
 /// How long a show's worked-out times stand before they are worked out again.
 pub const TIMES_HOURS: i64 = 6;
 
-/// A show TVmaze did not have is asked about again after this long.
-const LOOKUP_RETRY_DAYS: i64 = 7;
+/// A show TVmaze did not have is asked about again after this long. TVmaze
+/// adds shows as people ask for them, often in a show's first weeks, and a
+/// week's wait left a new season untimed for most of its run.
+const LOOKUP_RETRY_DAYS: i64 = 3;
 
 /// An AniList search by name stands this long before it runs again, for a
 /// show whose newest season the anime map does not cover yet.
@@ -903,27 +905,38 @@ fn show_names(show: &Show) -> Vec<String> {
 /// The one show in a TVmaze search answer that has one of this show's names
 /// and first aired the year TMDB says. Two such shows, or a show with no year
 /// to check, is no answer: a wrong show would give every episode a wrong time.
+/// Only when no show has that year does a year either side count, still only
+/// as the one show: a pilot or a premiere abroad can put the two a year
+/// apart.
 fn tvmaze_search_hit(results: &Value, names: &[String], first_year: Option<i32>) -> Option<i64> {
     let first = first_year?;
     let names: Vec<String> = names.iter().map(|n| squash(n)).collect();
-    let hits: Vec<i64> = results
+    let named: Vec<(i32, i64)> = results
         .as_array()?
         .iter()
         .map(|r| &r["show"])
-        .filter(|s| {
-            s["premiered"]
-                .as_str()
-                .and_then(|p| p.get(..4))
-                .and_then(|y| y.parse::<i32>().ok())
-                == Some(first)
-        })
         .filter(|s| {
             s["name"]
                 .as_str()
                 .is_some_and(|n| names.contains(&squash(n)))
         })
-        .filter_map(|s| s["id"].as_i64())
+        .filter_map(|s| {
+            let year = s["premiered"]
+                .as_str()
+                .and_then(|p| p.get(..4))
+                .and_then(|y| y.parse::<i32>().ok())?;
+            Some((year, s["id"].as_i64()?))
+        })
         .collect();
+    let within = |apart: i32| -> Vec<i64> {
+        named
+            .iter()
+            .filter(|(year, _)| (year - first).abs() <= apart)
+            .map(|(_, id)| *id)
+            .collect()
+    };
+    let exact = within(0);
+    let hits = if exact.is_empty() { within(1) } else { exact };
     match hits.as_slice() {
         [one] => Some(*one),
         _ => None,
@@ -1621,6 +1634,32 @@ mod tests {
         ]);
         let names = vec!["Big Brother".to_string()];
         assert_eq!(tvmaze_search_hit(&twins, &names, Some(2001)), None);
+    }
+
+    #[test]
+    fn a_year_apart_counts_only_when_no_show_has_the_year_and_one_is_left() {
+        // TMDB dates the first season 2024; TVmaze the pilot, a year before.
+        let pilot = json!([
+            { "show": { "id": 5, "name": "Night Shift", "premiered": "2023-12-31" } },
+            { "show": { "id": 6, "name": "Night Shift", "premiered": "2014-05-27" } }
+        ]);
+        let names = vec!["Night Shift".to_string()];
+        assert_eq!(tvmaze_search_hit(&pilot, &names, Some(2024)), Some(5));
+
+        // A show of that very year wins over one a year off.
+        let both = json!([
+            { "show": { "id": 7, "name": "Ghosts", "premiered": "2021-10-07" } },
+            { "show": { "id": 8, "name": "Ghosts", "premiered": "2020-04-15" } }
+        ]);
+        let names = vec!["Ghosts".to_string()];
+        assert_eq!(tvmaze_search_hit(&both, &names, Some(2021)), Some(7));
+
+        // One a year before and one after is a guess.
+        let around = json!([
+            { "show": { "id": 9, "name": "Ghosts", "premiered": "2020-04-15" } },
+            { "show": { "id": 10, "name": "Ghosts", "premiered": "2022-01-01" } }
+        ]);
+        assert_eq!(tvmaze_search_hit(&around, &names, Some(2021)), None);
     }
 
     #[test]

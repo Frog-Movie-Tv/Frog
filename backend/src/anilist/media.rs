@@ -353,13 +353,13 @@ pub async fn search_item(state: &AppState, media_id: i64) -> AppResult<SearchIte
 pub async fn fetch(state: &AppState, media_id: i64) -> AppResult<Value> {
     // 2: the answer names its type and its links' colours and languages.
     let key = format!("anilist:media:2:{media_id}");
-    let cached: Option<(String,)> =
+    let cached: Option<(Vec<u8>,)> =
         sqlx::query_as("SELECT body FROM tmdb_cache WHERE cache_key = ? AND expires_at > ?")
             .bind(&key)
             .bind(Utc::now().to_rfc3339())
             .fetch_optional(&state.pool)
             .await?;
-    if let Some(body) = cached.and_then(|(b,)| serde_json::from_str::<Value>(&b).ok()) {
+    if let Some(body) = cached.and_then(|(b,)| crate::tmdb::unpack(&b)) {
         return Ok(body);
     }
 
@@ -409,7 +409,7 @@ pub async fn fetch(state: &AppState, media_id: i64) -> AppResult<Value> {
             expires_at = excluded.expires_at",
     )
     .bind(&key)
-    .bind(media.to_string())
+    .bind(crate::tmdb::pack(&media))
     .bind(now.to_rfc3339())
     .bind((now + keep).to_rfc3339())
     .execute(&state.pool)
@@ -690,13 +690,13 @@ const WORK: &str = "id type format title { english romaji } coverImage { extraLa
 
 /// One AniList answer, kept for a day like a TMDB one.
 async fn cached(state: &AppState, key: &str, query: &str, vars: Value) -> AppResult<Value> {
-    let cached: Option<(String,)> =
+    let cached: Option<(Vec<u8>,)> =
         sqlx::query_as("SELECT body FROM tmdb_cache WHERE cache_key = ? AND expires_at > ?")
             .bind(key)
             .bind(Utc::now().to_rfc3339())
             .fetch_optional(&state.pool)
             .await?;
-    if let Some(body) = cached.and_then(|(b,)| serde_json::from_str::<Value>(&b).ok()) {
+    if let Some(body) = cached.and_then(|(b,)| crate::tmdb::unpack(&b)) {
         return Ok(body);
     }
     let data = Api::new(state)?.graphql("", query, vars).await?;
@@ -708,7 +708,7 @@ async fn cached(state: &AppState, key: &str, query: &str, vars: Value) -> AppRes
             expires_at = excluded.expires_at",
     )
     .bind(key)
-    .bind(data.to_string())
+    .bind(crate::tmdb::pack(&data))
     .bind(now.to_rfc3339())
     .bind((now + chrono::Duration::days(1)).to_rfc3339())
     .execute(&state.pool)

@@ -81,6 +81,10 @@ pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
     })
 }
 
+/// Plain-text TMDB answers packed per tick: the 10,000 on the live server
+/// take about half a day at this pace, each tick a short write.
+const PACK_BATCH: i64 = 500;
+
 /// How long a TMDB answer past its time is kept for when TMDB cannot be reached.
 const STALE_TMDB_DAYS: i64 = 7;
 
@@ -106,6 +110,12 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
         .rows_affected();
     if dropped > 0 {
         tracing::debug!(dropped, "pruned stale TMDB cache rows");
+    }
+    // Answers kept as plain text before they were packed, a batch a tick.
+    match crate::tmdb::pack_older(&state.pool, PACK_BATCH).await {
+        Ok(packed) if packed > 0 => tracing::info!(packed, "packed cached TMDB answers"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, "cached TMDB answers could not be packed"),
     }
 
     // The picture cache to its budget. A failure leaves it as it was until
@@ -445,8 +455,16 @@ pub async fn backfill_credits_once(state: &AppState) -> usize {
 
     let mut done = 0;
     for (title_id,) in rows {
-        match catalog::load(state, title_id).await {
-            Ok(_) => done += 1,
+        // `load` opens a title already stored from the cached detail without
+        // storing anything, so the credits are written here from what it
+        // returns; that also marks the title, which a title that answered
+        // with nobody would otherwise never be.
+        let stored = match catalog::load(state, title_id).await {
+            Ok((_, detail)) => catalog::store_credits(&state.pool, title_id, &detail).await,
+            Err(e) => Err(e),
+        };
+        match stored {
+            Ok(()) => done += 1,
             Err(e) => {
                 // Most likely offline; the rest of the batch would fail too.
                 tracing::debug!(title_id, error = %e, "credits backfill paused");

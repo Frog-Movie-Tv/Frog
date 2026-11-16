@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Set up a fresh Oracle Cloud Ubuntu machine to run Frog.
 #
-#   sudo ./install.sh
+#   sudo ./install.sh                  production only
+#   sudo ./install.sh --with-staging   and a staging instance beside it
 #
 # Safe to run again: everything it does is idempotent. It does not start
 # anything that needs secrets — fill in the .env files it creates, then
@@ -11,6 +12,10 @@ set -euo pipefail
 [ "$(id -u)" = "0" ] || { echo "run this with sudo"; exit 1; }
 
 ROOT=/opt/frog
+# Production alone unless asked: a micro instance cannot carry two Frogs,
+# and an enabled staging timer with an unfilled .env starts at the next boot.
+INSTANCES="production"
+[ "${1:-}" = "--with-staging" ] && INSTANCES="production staging"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 step() { echo; echo "==> $*"; }
 
@@ -60,16 +65,18 @@ netfilter-persistent save > /dev/null
 echo "    saved; check /etc/iptables/rules.v4 for duplicates"
 
 step "directories"
-mkdir -p "$ROOT"/{deploy,production,staging,backups/production,backups/staging,caddy}
+mkdir -p "$ROOT"/{deploy,caddy}
+for instance in $INSTANCES; do
+	mkdir -p "$ROOT/$instance" "$ROOT/backups/$instance"
+	cp "$HERE/compose.yml" "$ROOT/$instance/compose.yml"
+done
 cp -r "$HERE"/*.sh "$ROOT/deploy/"
 cp -r "$HERE"/systemd "$ROOT/deploy/"
-cp "$HERE/compose.yml" "$ROOT/production/compose.yml"
-cp "$HERE/compose.yml" "$ROOT/staging/compose.yml"
 cp "$HERE/caddy/compose.yml" "$ROOT/caddy/compose.yml"
 cp "$HERE/caddy/Caddyfile" "$ROOT/caddy/Caddyfile"
 chmod +x "$ROOT"/deploy/*.sh
 
-for instance in production staging; do
+for instance in $INSTANCES; do
 	env_file="$ROOT/$instance/.env"
 	if [ ! -f "$env_file" ]; then
 		cp "$HERE/instance.env.example" "$env_file"
@@ -115,7 +122,7 @@ systemctl daemon-reload
 # same install works on an A1 and on a micro.
 systemctl enable --now frog-keepalive.service
 systemctl enable --now frog-keepalive-tick.timer
-for instance in production staging; do
+for instance in $INSTANCES; do
 	systemctl enable "frog-update@$instance.timer" "frog-backup@$instance.timer"
 done
 echo "    timers enabled but not started; start them once the .env files are filled in"
@@ -145,16 +152,15 @@ cat <<EOF
 
 Done. Next, by hand:
 
-  1. Fill in $ROOT/production/.env and $ROOT/staging/.env
+  1. Fill in $ROOT/<instance>/.env for each of: $INSTANCES
      (TMDB_API_KEY, TZ)
-  2. Fill in $ROOT/caddy/.env (the two DuckDNS names and an email)
+  2. Fill in $ROOT/caddy/.env (the DuckDNS names and an email; without
+     staging, STAGING_DOMAIN=http://unused.invalid asks for no certificate)
   3. Fill in $ROOT/backup.env (AGE_RECIPIENT, BACKUP_REPO_DIR)
   4. docker login ghcr.io       (only if the repository is private)
   5. cd $ROOT/caddy && docker compose up -d
-  6. $ROOT/deploy/update.sh production
-     $ROOT/deploy/update.sh staging
-  7. systemctl start frog-update@production.timer frog-update@staging.timer
-     systemctl start frog-backup@production.timer frog-backup@staging.timer
+  6. $ROOT/deploy/update.sh <instance>, for each
+  7. systemctl start frog-update@<instance>.timer frog-backup@<instance>.timer
 
 docs/DEPLOY-ORACLE.md has the click-by-click for the parts only you can do.
 EOF

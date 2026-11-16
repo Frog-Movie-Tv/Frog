@@ -121,8 +121,11 @@ test('every page names itself in the browser tab', async ({ page }) => {
 		['/search', /^Search · Frog$/],
 		['/calendar', /^Calendar · Frog$/],
 		['/airing', /^Airing · Frog$/],
+		['/calendar?view=airing', /^Airing · Frog$/],
+		['/activity', /^Activity · Frog$/],
 		['/diary', /^Diary · Frog$/],
 		['/calendar?view=diary', /^Diary · Frog$/],
+		['/activity?view=diary', /^Diary · Frog$/],
 		['/stats', /^Stats · Frog$/],
 		['/settings', /^Settings · Frog$/],
 		['/about', /^About · Frog$/],
@@ -290,10 +293,31 @@ test('calendar and diary load and explain themselves when empty', async ({ page 
 	await expect(page.getByRole('heading', { name: 'Calendar', level: 1 })).toBeVisible();
 	await expect(page.getByText('Nothing scheduled')).toBeVisible();
 
-	await page.goto('/diary');
-	await expect(page).toHaveURL(/\/calendar\?view=diary$/);
-	await expect(page.getByRole('button', { name: 'Diary', pressed: true })).toBeVisible();
-	await expect(page.getByText('Nothing watched yet')).toBeVisible();
+	// The diary is a view of Activity; its old addresses open it there.
+	for (const old of ['/diary', '/calendar?view=diary']) {
+		await page.goto(old);
+		await expect(page).toHaveURL(/\/activity\?view=diary$/);
+		await expect(page.getByRole('heading', { name: 'Activity', level: 1 })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Diary', pressed: true })).toBeVisible();
+		await expect(page.getByText('Nothing watched yet')).toBeVisible();
+	}
+});
+
+test('airing is a view of the calendar, and its old address opens it', async ({ page }) => {
+	await signIn(page);
+	await page.goto('/airing');
+	await expect(page).toHaveURL(/\/calendar\?view=airing$/);
+	await expect(page.getByRole('heading', { name: 'Calendar', level: 1 })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Airing', pressed: true })).toBeVisible();
+
+	// Switching views keeps one page; each view names the tab.
+	await page.getByRole('button', { name: 'Month', pressed: false }).click();
+	await expect(page).toHaveURL(/\/calendar$/);
+	await expect(page).toHaveTitle(/^Calendar · Frog$/);
+	await page.goto('/activity');
+	await page.getByRole('button', { name: 'Diary', pressed: false }).click();
+	await expect(page).toHaveURL(/\/activity\?view=diary$/);
+	await expect(page).toHaveTitle(/^Diary · Frog$/);
 });
 
 test('the about page credits its sources', async ({ page }) => {
@@ -301,7 +325,14 @@ test('the about page credits its sources', async ({ page }) => {
 	await page.goto('/about');
 
 	await expect(page.getByRole('heading', { name: 'Frog', level: 1 })).toBeVisible();
-	await expect(page.getByText('Chorus Frog')).toBeVisible();
+	// The name of the release that is running, from its release notes.
+	const { version } = await (await page.request.get('/healthz')).json();
+	const releases: { version: string; codename: string }[] = await (
+		await page.request.get('/changelog.json')
+	).json();
+	const codename = releases.find((r) => r.version === version)?.codename;
+	expect(codename).toBeTruthy();
+	await expect(page.getByText(`Version ${version} · ${codename}`)).toBeVisible();
 	await expect(page.getByRole('link', { name: /TMDB/ }).first()).toBeVisible();
 	await expect(page.getByRole('link', { name: /Phosphor/ })).toBeVisible();
 });
@@ -2152,9 +2183,10 @@ test('a very long name never widens a page on a phone', async ({
 		`/search?q=${LONG.title}`,
 		`/search?q=${LONG.username}`,
 		'/stats',
-		'/calendar?view=diary',
+		'/activity?view=diary',
+		'/activity',
 		'/calendar',
-		'/airing',
+		'/calendar?view=airing',
 		'/import',
 		'/whats-new'
 	];

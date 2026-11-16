@@ -25,11 +25,31 @@ const WAITING = 'In progress.';
 /** A sentence for a release whose notes do not open with one of their own. */
 const PLAIN_INTRO = 'A few improvements and fixes.';
 
-/**
- * A codename belongs to a big release, chosen by hand with `Release-As`. Small
- * releases carry the newest one, as 0.4.1 to 0.4.5 did.
- */
 const newestCodename = (notes) => notes.match(/^## \[[\d.]+\] — ([^—]+) —/m)?.[1]?.trim() ?? 'Frog';
+
+/** The name waiting on the Upcoming heading (`## Upcoming — Reed Frog —`). */
+const upcomingCodename = (notes) => notes.match(/^## Upcoming — ([^—]+) —/m)?.[1]?.trim() ?? '';
+
+/**
+ * Every minor and major release has a name of its own: the one written on the
+ * Upcoming heading, unless a release already took it. A patch carries its
+ * release's name, as 0.4.1 to 0.4.5 did. 1.8.0 went out as 1.7's Chorus Frog
+ * because this used to carry the newest name onto every release.
+ */
+export function codenameFor(text, version) {
+	const notes = text.replace(/\r\n/g, '\n');
+	const newest = newestCodename(notes);
+	if (!/^\d+\.\d+\.0$/.test(version)) return newest;
+	const taken = new Set(
+		[...notes.matchAll(/^## \[[\d.]+\] — ([^—]+) —/gm)].map((m) => m[1].trim())
+	);
+	const next = upcomingCodename(notes);
+	if (next && !taken.has(next)) return next;
+	console.warn(
+		`${version} has no name of its own: put a new one on the Upcoming heading, then edit the ${version} heading.`
+	);
+	return newest;
+}
 
 const release = (version) =>
 	`[${version}]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v${version}`;
@@ -54,7 +74,7 @@ export function promoteUpcoming(text, version, date) {
 	const first = body.search(/^### /m);
 	const intro = body.slice(0, first).trim() || PLAIN_INTRO;
 	const section = [
-		`## [${version}] — ${newestCodename(notes)} — ${date}`,
+		`## [${version}] — ${codenameFor(notes, version)} — ${date}`,
 		'',
 		intro,
 		'',
@@ -98,7 +118,7 @@ function bulletsFromChangelog(version) {
 function draftFromCommits(notes, version, date) {
 	const bullets = bulletsFromChangelog(version);
 	const section = [
-		`## [${version}] — ${newestCodename(notes)} — ${date}`,
+		`## [${version}] — ${codenameFor(notes, version)} — ${date}`,
 		'',
 		'<!-- Drafted from the commit messages so the release is not blocked.',
 		"     Rewrite it in Frog's voice before merging: say what a person can now",

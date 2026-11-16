@@ -139,9 +139,9 @@ whole seasons once they have finished, and leave a note on any episode.
 
 **Know what is next.** Home opens on whatever you are in the middle of and
 names the exact next episode, then everything else you are following, your
-shelves and the week's new episodes. The calendar shows the month ahead,
-Airing shows everything on air this week, yours or not, and the diary reads
-back everything you have watched, day by day.
+shelves and the week's new episodes. The calendar shows the month ahead and
+everything on air this week, yours or not. Activity reads back what everyone
+here has watched, and your diary everything you have, day by day.
 
 **Hear about it the minute it lands.** Notifications keeps everything Frog
 has to tell you in one place: episodes and films out, recommendations, badges

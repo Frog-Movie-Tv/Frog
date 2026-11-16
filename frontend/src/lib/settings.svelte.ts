@@ -159,7 +159,16 @@ export const DEFAULTS: Settings = {
 	clock24: true,
 
 	dataSaver: false,
-	navOrder: ['/', '/library', '/shelves', '/search', '/calendar', '/airing', '/stats', '/settings'],
+	navOrder: [
+		'/',
+		'/library',
+		'/shelves',
+		'/search',
+		'/calendar',
+		'/activity',
+		'/stats',
+		'/settings'
+	],
 	navHidden: [],
 	navTabs: ['/', '/library', '/search', '/calendar'],
 	lastSeenVersion: ''
@@ -171,7 +180,7 @@ export const NAV_PAGES: { href: string; label: string; icon: string; fixed?: boo
 	{ href: '/shelves', label: 'Shelves', icon: 'layers' },
 	{ href: '/search', label: 'Search', icon: 'search' },
 	{ href: '/calendar', label: 'Calendar', icon: 'calendar' },
-	{ href: '/airing', label: 'Airing', icon: 'tv' },
+	{ href: '/activity', label: 'Activity', icon: 'users' },
 	{ href: '/stats', label: 'Stats', icon: 'chart' },
 	{ href: '/settings', label: 'Settings', icon: 'settings', fixed: true }
 ];
@@ -238,17 +247,24 @@ export function current(saved: unknown): Partial<Settings> {
 	// Adding used to go straight to "Default status". Anyone who chose a
 	// status other than the Watchlist meant it and keeps one tap; the
 	// Watchlist was everyone's default, so those accounts are asked instead.
-	// The diary is the Calendar's Diary view: a menu or a landing page that
-	// held it holds the Calendar.
-	for (const key of ['navOrder', 'navHidden', 'navTabs'] as const) {
+	// Airing is the Calendar's Airing view, and the Diary the Activity
+	// page's. The menu's place that held either is Activity's; a tab or a
+	// landing page goes where the page went; hiding either hid nothing else.
+	const moved: Record<string, Record<string, string | null>> = {
+		navOrder: { '/airing': '/activity', '/diary': '/activity' },
+		navHidden: { '/airing': null, '/diary': null },
+		navTabs: { '/airing': '/calendar', '/diary': '/activity' }
+	};
+	for (const [key, to] of Object.entries(moved)) {
 		const list = kept[key];
-		if (Array.isArray(list) && list.includes('/diary')) {
+		if (Array.isArray(list) && list.some((href) => href in to)) {
 			kept[key] = list
-				.map((href) => (href === '/diary' ? '/calendar' : href))
-				.filter((href, i, all) => all.indexOf(href) === i);
+				.map((href) => (href in to ? to[href] : href))
+				.filter((href, i, all): href is string => !!href && all.indexOf(href) === i);
 		}
 	}
-	if (kept.landingPage === '/diary') kept.landingPage = '/calendar';
+	if (kept.landingPage === '/airing') kept.landingPage = '/calendar';
+	if (kept.landingPage === '/diary') kept.landingPage = '/activity';
 	if ('defaultStatus' in kept) {
 		const was = kept.defaultStatus;
 		if (!('addStatus' in kept)) kept.addStatus = was && was !== 'planned' ? was : 'ask';

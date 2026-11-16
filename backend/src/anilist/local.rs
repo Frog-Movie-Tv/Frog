@@ -109,11 +109,19 @@ pub(super) async fn sync_local(
         records::set_title(&state.pool, user_id, remote.media_id, title_id).await?;
     }
     // The full picture from AniList, once; the worker keeps it fresh after.
-    let (fresh,): (Option<String>,) = sqlx::query_as("SELECT refreshed_at FROM title WHERE id = ?")
-        .bind(title_id)
-        .fetch_one(&state.pool)
-        .await?;
-    if fresh.is_none() {
+    // Not when AniList has already said it has none (`gone_at`): asking on
+    // every sync found the same nothing each time.
+    let (fresh, gone): (Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT t.refreshed_at,
+                (SELECT x.gone_at FROM title_external x
+                  WHERE x.title_id = t.id AND x.provider = 'anilist' AND x.external_id = ?)
+           FROM title t WHERE t.id = ?",
+    )
+    .bind(remote.media_id.to_string())
+    .bind(title_id)
+    .fetch_one(&state.pool)
+    .await?;
+    if fresh.is_none() && gone.is_none() {
         if let Err(e) = catalog::ensure(state, &ExternalId::AniList(remote.media_id)).await {
             tracing::debug!(media_id = remote.media_id, error = %e, "AniList detail not read yet");
         }

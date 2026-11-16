@@ -306,7 +306,8 @@ part you are about to touch; change it when the code changes.
   the day, so TMDB moving the episode clears it. Nothing when TVmaze already
   lists that day or later (it is saying none airs), or the episodes disagree.
   A show TMDB's ids do not find on TVmaze is searched by name and first year,
-  and taken only when exactly one show answers. Once a day the rest get a
+  and taken only when exactly one show answers; a year either side counts
+  only when no show has that year. Once a day the rest get a
   second chance from TVmaze's day schedules (`airtime::schedules_if_due`):
   `/schedule?country=…` for each country the untimed shows come from
   (`airing_show.countries`, TMDB's `origin_country`) and `/schedule/web`,
@@ -328,7 +329,7 @@ part you are about to touch; change it when the code changes.
   a release that changes how times are found reaches Airing only as each
   show comes round again, up to six hours after the update;
   `airtime_show` keeps how a show is found, for good (a TVmaze miss is asked
-  again after a week). `released!()` uses `air_at` when there is one.
+  again after three days). `released!()` uses `air_at` when there is one.
   Notifications are checked every minute: an episode at its `air_at`, an
   episode or film with a day alone at midnight in the account's zone
   (`app_setting` `time_zone`: Settings → Watching's zone when chosen, else
@@ -420,7 +421,7 @@ part you are about to touch; change it when the code changes.
   an undo puts a watch back as a new row; `WatchRecord.with` carries the
   names through undo. Off in Settings (`Wants::together`) takes an account
   out of everyone's picker.
-- **The Airing page** (`airing.rs`, `routes/airing.rs`). Once a day the
+- **Airing** (`airing.rs`, `routes/airing.rs`, the Calendar's Airing view). Once a day the
   worker reads TMDB's `/discover/movie` for films released in `FROG_REGION`
   in the window (last week to four weeks ahead; 25 pages, in cinemas or
   digital), then `/discover/tv`, every page, then each show and its running
@@ -468,7 +469,11 @@ part you are about to touch; change it when the code changes.
   previous one of its kind (the timer retrying a broken release) stays quiet.
   Each administrator's mark is `app_setting` key `ops_seen`. The scripts
   reach the server only by re-running `install.sh` from a checkout, never
-  with an image update.
+  with an image update, so each line also carries the scripts' fingerprint
+  (`ops_scripts`), the image carries its own release's under `/app/deploy`,
+  and Administration → Server says when they differ
+  (`ops::scripts_current`). The two hash the same bytes; the Rust test pins
+  what the shell prints.
 
 - **Migrations are never edited once applied** — sqlx compares checksums and
   refuses to start, which takes a running instance down on its next deploy.
@@ -527,10 +532,14 @@ part you are about to touch; change it when the code changes.
   answers items, status counts and genres from one request; a status counts every
   filter but itself, so its number is what choosing it shows. The page keeps its
   last answer in the module, so Back draws at once and the scroll lands.
-- **The diary is a view of the Calendar** (`/calendar?view=diary`, drawn by
-  `DiaryView.svelte`). `/diary` only sends people there, so old links and
-  bookmarks still work, and saved settings that name `/diary` (tab bar,
-  menu order, landing page) read it as `/calendar` as they load.
+- **Two pages hold four.** Calendar looks ahead: Month, Agenda and Airing
+  (`/calendar?view=airing`, drawn by `AiringView.svelte`). Activity looks
+  back: Everyone and Diary (`/activity?view=diary`, `DiaryView.svelte`).
+  `/airing`, `/diary` and `/calendar?view=diary` only send people there, so
+  old links and bookmarks still work. Saved settings move as they load
+  (`current()` in `lib/settings.svelte.ts`): the menu's place that held
+  Airing or the Diary becomes Activity's, a tab or landing page goes where
+  its page went, and hiding either hides nothing.
 - **Shelves have one place on Home**, the Your shelves row. A shelf used to be
   able to add a row of its own, which showed it twice; saved layouts lose those
   rows as they load (`introduceRows`).

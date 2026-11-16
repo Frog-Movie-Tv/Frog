@@ -9,7 +9,7 @@ people working on Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Chorus Frog —
+## Upcoming — Reed Frog —
 
 In progress.
 
@@ -37,14 +37,25 @@ In progress.
 - Shelves come to life: each one deals out its posters as the page opens,
   fans them wider under the pointer, and carries its name into the shelf as
   you open it.
-- Calendar and Diary are one page: switch between Month, Agenda and Diary
-  at the top. Links and bookmarks to the Diary still open it.
+- Fewer pages, everything still there. Calendar is what is coming: Month,
+  Agenda and Airing at the top. Activity is what was watched: everyone's,
+  or your own Diary. Links, bookmarks, your tab bar and your menu follow
+  along.
 
 ### Fixes
 
 - Each picture at the top of Home gives way cleanly to the next.
+- Today and yesterday mean the days on your calendar: something watched
+  late last night says yesterday, not today.
+- An anime AniList no longer shares the details of shows under Not found in
+  Settings → Connections, saying why, instead of being skipped on every sync.
+- More shows on Airing find their air time, and a new show is looked for
+  again sooner.
+- Activity counts what was watched on the day it shows: “2 episodes today”
+  means two today, on Home and on the Activity page alike, and a day is
+  yours, not the server’s.
 
-## [1.8.0] — Chorus Frog — 2026-11-16
+## [1.8.0] — Dart Frog — 2026-11-16
 
 Badges you earn by watching, and a Home that shows what is trending.
 

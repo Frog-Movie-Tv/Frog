@@ -1454,6 +1454,79 @@ async fn the_worker_backfills_credits_for_older_titles() {
     assert_eq!(n, 1);
 }
 
+/// TMDB's answers are kept gzipped. Ones kept as plain text before still
+/// read, and the worker packs them a batch at a time.
+#[tokio::test]
+async fn cached_answers_are_packed_and_older_ones_still_read() {
+    let h = Harness::with_tmdb_key("test-key").await;
+    cache_film(&h, 23, "Plain Text", "2010", &[(7, "Someone")]).await;
+    let film = h.state.tmdb.movie(23).await.unwrap();
+    assert_eq!(film["title"], json!("Plain Text"));
+
+    assert_eq!(frog::tmdb::pack_older(&h.state.pool, 100).await.unwrap(), 1);
+    assert_eq!(frog::tmdb::pack_older(&h.state.pool, 100).await.unwrap(), 0);
+    let (kind,): (String,) = sqlx::query_as("SELECT typeof(body) FROM tmdb_cache")
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(kind, "blob");
+    assert_eq!(
+        h.state.tmdb.movie(23).await.unwrap(),
+        film,
+        "the same answer"
+    );
+
+    let big = json!({ "cast": vec![json!({ "name": "A name that repeats", "order": 1 }); 200] });
+    let packed = frog::tmdb::pack(&big);
+    assert!(
+        packed.len() * 10 < big.to_string().len(),
+        "{} bytes",
+        packed.len()
+    );
+    assert_eq!(frog::tmdb::unpack(&packed), Some(big));
+    assert_eq!(frog::tmdb::unpack(b"{\"a\":1}"), Some(json!({ "a": 1 })));
+    assert_eq!(frog::tmdb::unpack(b"not json"), None);
+}
+
+/// A title already stored opens from the cached detail without storing it
+/// again; the backfill still writes its credits, and asks only once.
+#[tokio::test]
+async fn the_credits_backfill_finishes_a_title_that_was_already_stored() {
+    let h = Harness::with_tmdb_key("test-key").await;
+    an_owner(&h).await;
+    cache_film(&h, 22, "Stored Before", "2007", &[(6, "Someone Else")]).await;
+    sqlx::query(
+        "INSERT INTO title_seed (kind, tmdb_id, name) VALUES ('movie', 22, 'Stored Before')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE title SET refreshed_at = '2026-11-16T00:00:00Z', people_synced_at = NULL")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, 1, 'completed', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    assert_eq!(frog::jobs::backfill_credits_once(&h.state).await, 1);
+    assert_eq!(
+        frog::jobs::backfill_credits_once(&h.state).await,
+        0,
+        "not asked again"
+    );
+    let (n,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM title_person WHERE name = 'Someone Else'")
+            .fetch_one(&h.state.pool)
+            .await
+            .unwrap();
+    assert_eq!(n, 1);
+}
+
 /// Each account's browser says which zone it is in, which decides when
 /// midnight is for an episode with no time. A zone nobody knows is ignored.
 #[tokio::test]
@@ -4011,6 +4084,70 @@ async fn the_activity_row_shows_someone_with_their_profile_on() {
     assert_eq!(items[0]["who"]["username"], json!("zjef"));
     assert_eq!(items[0]["title"]["name"], json!("Film 9301"));
     assert_eq!(items[0]["did"], json!("watched"));
+}
+
+/// A show watched today and a week ago: Home's row says what today was, and
+/// the Activity page has each day as its own card, page by page.
+#[tokio::test]
+async fn the_activity_row_counts_one_day_and_the_page_has_each_day() {
+    let h = Harness::new().await;
+    let (_, member) = two_accounts(&h).await;
+    let id = user_id(&h, "zjef").await;
+    track(&h, id, 9302, None).await;
+    let now = chrono::Utc::now();
+    for (n, ago) in [(1, 7 * 24), (2, 3), (3, 2)] {
+        sqlx::query(
+            "INSERT INTO episode (id, title_id, season_number, episode_number) VALUES (?, 9302, 1, ?)",
+        )
+        .bind(93020 + n)
+        .bind(n)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, undated)
+             VALUES (?, 9302, ?, ?, 0)",
+        )
+        .bind(id)
+        .bind(93020 + n)
+        .bind((now - chrono::Duration::hours(ago)).to_rfc3339())
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    }
+    sqlx::query("UPDATE title SET kind = 'tv' WHERE id = 9302")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+
+    let items = activity(&h, &member).await;
+    assert_eq!(items.len(), 1, "{items:?}");
+    // Two hours and three hours ago fall on one day only if it is past 03:00
+    // UTC; either way the week-old episode is not counted in.
+    let today = items[0]["episodes"].as_u64().unwrap();
+    assert!(today == 1 || today == 2, "{items:?}");
+
+    let (_, first) = h.get("/api/activity?limit=1", Some(&member)).await;
+    assert_eq!(first["items"].as_array().unwrap().len(), 1, "{first}");
+    let next = first["next"].as_str().expect("there is more").to_string();
+    let mut seen = first["items"][0]["episodes"].as_u64().unwrap();
+    let mut cursor = Some(next);
+    while let Some(before) = cursor {
+        let (_, page) = h
+            .get(
+                &format!(
+                    "/api/activity?limit=1&before={}",
+                    urlencoding::encode(&before)
+                ),
+                Some(&member),
+            )
+            .await;
+        for item in page["items"].as_array().unwrap() {
+            seen += item["episodes"].as_u64().unwrap();
+        }
+        cursor = page["next"].as_str().map(str::to_string);
+    }
+    assert_eq!(seen, 3, "every episode once, over the pages");
 }
 
 #[tokio::test]

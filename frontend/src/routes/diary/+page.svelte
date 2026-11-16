@@ -2,9 +2,9 @@
 	import { goto } from '$app/navigation';
 	import Spinner from '#lib/components/Spinner.svelte';
 
-	// The diary is the Calendar's Diary view now; old links and bookmarks land there.
+	// The diary is the Activity page's Diary view now; old links and bookmarks land there.
 	$effect(() => {
-		void goto('/calendar?view=diary', { replace: true });
+		void goto('/activity?view=diary', { replace: true });
 	});
 </script>
 

@@ -4,6 +4,19 @@
 	import { offline } from '#lib/offline.svelte';
 	import { session } from '#lib/session.svelte';
 
+	// The running release's name comes from the release notes, as What's new
+	// reads them, so it is never one release behind.
+	let codenames = $state<Record<string, string>>({});
+	$effect(() => {
+		void fetch('/changelog.json')
+			.then((r) => (r.ok ? r.json() : []))
+			.then((releases: { version: string; codename: string }[]) => {
+				codenames = Object.fromEntries(releases.map((r) => [r.version, r.codename]));
+			})
+			.catch(() => {});
+	});
+	const codename = $derived(codenames[session.status?.version ?? ''] ?? '');
+
 	const authors = [
 		{
 			name: 'Mihai Constantin',
@@ -76,7 +89,9 @@
 		</button>
 		<div>
 			<h1>Frog</h1>
-			<p class="muted">Version {session.status?.version ?? '—'} · Chorus Frog</p>
+			<p class="muted">
+				Version {session.status?.version ?? '—'}{codename ? ` · ${codename}` : ''}
+			</p>
 		</div>
 	</header>
 
