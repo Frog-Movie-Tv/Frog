@@ -28,6 +28,7 @@
 //! for the past week. A show found there keeps its TVmaze id and is worked
 //! out as any other.
 
+use crate::clock::Stamp;
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
@@ -691,7 +692,7 @@ async fn searched_media(state: &AppState, show: &Show) -> AppResult<Vec<i64>> {
     )
     .bind(show.tmdb_id)
     .bind(serde_json::to_string(&found)?)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(&state.pool)
     .await?;
     Ok(found)
@@ -886,7 +887,7 @@ async fn tvmaze_show(state: &AppState, show: &Show) -> AppResult<Option<i64>> {
     )
     .bind(show.tmdb_id)
     .bind(found)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(&state.pool)
     .await?;
     Ok(found)
@@ -1160,7 +1161,7 @@ async fn write(
          ON CONFLICT (tmdb_id) DO UPDATE SET times_at = excluded.times_at",
     )
     .bind(tmdb_id)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -1187,7 +1188,7 @@ pub async fn refresh_show(state: &AppState, tmdb_id: i64) -> AppResult<usize> {
 /// it since its times were last worked out. Frog's own first, then by
 /// popularity.
 pub async fn refresh_due(state: &AppState) -> usize {
-    let stale = (Utc::now() - Duration::hours(TIMES_HOURS)).to_rfc3339();
+    let stale = (Utc::now() - Duration::hours(TIMES_HOURS)).stamp();
     let due: Vec<(i64,)> = match sqlx::query_as(
         "SELECT d.tmdb_id FROM (
              SELECT s.tmdb_id AS tmdb_id, s.popularity AS rank, NULL AS since FROM airing_show s
@@ -1308,7 +1309,7 @@ pub async fn schedules_if_due(state: &AppState) {
         return;
     }
     let _ = sqlx::query("UPDATE airing_state SET schedules_at = ? WHERE id = 1")
-        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().stamp())
         .execute(&state.pool)
         .await;
     match find_by_schedule(state, Utc::now().date_naive()).await {
@@ -1387,7 +1388,7 @@ pub async fn find_by_schedule(state: &AppState, today: NaiveDate) -> AppResult<u
             )
             .bind(tmdb_id)
             .bind(id)
-            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().stamp())
             .execute(&state.pool)
             .await?;
             mark_due(&state.pool, tmdb_id).await?;

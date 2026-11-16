@@ -2,6 +2,7 @@
 //! it, and writing AniList's side into the library. The decisions come from
 //! `reconcile`; this module only reads and writes.
 
+use crate::clock::Stamp;
 use std::collections::HashSet;
 
 use chrono::Utc;
@@ -137,7 +138,7 @@ pub async fn set_part_rating(
             .bind(season)
             .bind(first_episode)
             .bind(crate::store::whole_rating(r))
-            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().stamp())
             .execute(pool)
             .await?;
         }
@@ -330,7 +331,7 @@ pub(super) async fn apply(
                     "AniList progress is past the episodes TMDB lists"
                 );
             }
-            let now = Utc::now().to_rfc3339();
+            let now = Utc::now().stamp();
             for (id, undated) in &tick {
                 sqlx::query(
                     "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
@@ -399,7 +400,7 @@ pub(super) async fn film_watch(
     )
     .bind(user_id)
     .bind(title_id)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(undated)
     .bind(user_id)
     .bind(title_id)

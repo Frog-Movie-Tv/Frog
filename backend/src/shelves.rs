@@ -6,6 +6,7 @@
 //! it as a kind of its own. Every statement on `shelf` and `shelf_item` is
 //! here, and every one names the account; `routes::shelves` is HTTP only.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -297,7 +298,7 @@ pub async fn create(
     .bind(kind)
     .bind(serde_json::to_string(rules).unwrap_or_else(|_| "{}".into()))
     .bind(next)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(watchlist)
     .execute(&mut *tx)
     .await?

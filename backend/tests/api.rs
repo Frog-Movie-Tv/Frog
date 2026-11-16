@@ -3,6 +3,7 @@
 
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
+use frog::clock::Stamp;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use tower::ServiceExt;
@@ -180,6 +181,85 @@ async fn health_is_public_and_reports_the_database() {
     assert_eq!(body["ok"], json!(true));
     assert_eq!(body["tmdb_configured"], json!(false));
     assert_eq!(body["region"], json!("BE"));
+}
+
+#[tokio::test]
+async fn an_unknown_api_address_is_a_json_404_and_hashed_files_are_kept() {
+    let h = Harness::new().await;
+    let (status, body) = h.get("/api/no/such/thing", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(
+        body["error"].is_string(),
+        "a JSON answer, not the app: {body}"
+    );
+
+    let built = h._dir.path().join("static");
+    std::fs::create_dir_all(built.join("_app/immutable")).unwrap();
+    std::fs::write(built.join("index.html"), "<!doctype html>").unwrap();
+    std::fs::write(built.join("_app/immutable/app.abc123.js"), "x").unwrap();
+    async fn cache(h: &Harness, path: &str) -> (StatusCode, Option<String>) {
+        let req = Request::builder().uri(path).body(Body::empty()).unwrap();
+        let res = h.router().oneshot(req).await.unwrap();
+        (
+            res.status(),
+            res.headers()
+                .get(header::CACHE_CONTROL)
+                .map(|v| v.to_str().unwrap().to_string()),
+        )
+    }
+    let (status, kept) = cache(&h, "/_app/immutable/app.abc123.js").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(kept.as_deref(), Some("public, max-age=31536000, immutable"));
+    let (_, page) = cache(&h, "/library").await;
+    assert_eq!(page, None, "the page itself is asked for again");
+}
+
+#[tokio::test]
+async fn an_entry_is_never_finished_before_it_was_started() {
+    let h = Harness::new().await;
+    h.post(
+        "/api/auth/setup",
+        json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+        None,
+    )
+    .await;
+    sqlx::query("INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (1, 'tv', 5, 'A Show')")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    let dates = || async {
+        sqlx::query_as::<_, (Option<String>, Option<String>)>(
+            "SELECT started_at, finished_at FROM library_entry WHERE user_id = 1 AND title_id = 1",
+        )
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap()
+    };
+    // Written that way by any path, the start moves back to the finish.
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, started_at, finished_at,
+                                    added_at, updated_at)
+         VALUES (1, 1, 'completed', '2026-03-10T20:00:00Z', '2026-02-01T20:00:00Z',
+                 '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(dates().await.0.as_deref(), Some("2026-02-01T20:00:00Z"));
+    sqlx::query("UPDATE library_entry SET finished_at = '2026-01-15T20:00:00Z' WHERE user_id = 1")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(dates().await.0.as_deref(), Some("2026-01-15T20:00:00Z"));
+    // The same day either way round is left alone.
+    sqlx::query(
+        "UPDATE library_entry SET started_at = '2026-01-15T21:00:00Z',
+                                  finished_at = '2026-01-15T20:00:00Z' WHERE user_id = 1",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(dates().await.0.as_deref(), Some("2026-01-15T21:00:00Z"));
 }
 
 #[tokio::test]
@@ -473,6 +553,8 @@ async fn library_filters_combine_and_each_status_says_what_it_would_show() {
     .await
     .unwrap();
     frog::db::fill_search_names(&h.state.pool).await.unwrap();
+    // Stored before one vocabulary: Arcane's show genre reads as the film's.
+    frog::db::unify_genres(&h.state.pool).await.unwrap();
     sqlx::query(
         "INSERT INTO library_entry (user_id, title_id, status, favourite, added_at, updated_at)
          SELECT u.id, t.id,
@@ -511,7 +593,8 @@ async fn library_filters_combine_and_each_status_says_what_it_would_show() {
     assert_eq!(
         genres,
         json!([
-            "Action & Adventure",
+            "Action",
+            "Adventure",
             "Animation",
             "Crime",
             "Drama",
@@ -544,11 +627,7 @@ async fn library_filters_combine_and_each_status_says_what_it_would_show() {
             vec!["Dark", "Heat", "Severance"],
             json!({ "completed": 2, "planned": 1 }),
         ),
-        (
-            "genre=Action%20%26%20Adventure",
-            vec!["Arcane"],
-            json!({ "watching": 1 }),
-        ),
+        ("genre=Adventure", vec!["Arcane"], json!({ "watching": 1 })),
         (
             "favourite=true",
             vec!["Dark", "Heat"],
@@ -569,14 +648,14 @@ async fn library_filters_combine_and_each_status_says_what_it_would_show() {
         let (names, counts, genres) = ask(query).await;
         assert_eq!(names, expected, "{query}");
         assert_eq!(counts, status_counts, "{query}");
-        assert_eq!(genres.as_array().unwrap().len(), 7, "{query}: genres stay");
+        assert_eq!(genres.as_array().unwrap().len(), 8, "{query}: genres stay");
     }
 
     let (_, body) = h.get("/api/library", Some(&other)).await;
     assert_eq!(body["counts"], json!({ "watching": 1 }), "only your own");
     assert_eq!(
         body["genres"],
-        json!(["Action & Adventure", "Animation"]),
+        json!(["Action", "Adventure", "Animation"]),
         "only your own"
     );
 }
@@ -1323,8 +1402,26 @@ async fn stats_cover_all_time_and_a_single_year() {
     assert_eq!(all["years"], json!([2026, 2025]));
     assert_eq!(
         all["totals"]["films"],
-        json!(4),
-        "undated watches count all time"
+        json!(2),
+        "a film once however often it was watched, undated watches included"
+    );
+    // A profile says what Stats says: one definition of each figure.
+    let (_, me) = h.get("/api/account", Some(&cookie)).await;
+    let (_, profile) = h
+        .get(
+            &format!("/api/profiles/{}", me["username"].as_str().unwrap()),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(profile["stats"]["films"], all["totals"]["films"]);
+    assert_eq!(profile["stats"]["minutes"], all["totals"]["minutes"]);
+    assert_eq!(
+        profile["stats"]["mean_rating"],
+        all["totals"]["mean_rating"]
+    );
+    assert_eq!(
+        profile["genres"][0],
+        json!({ "name": "Drama", "titles": 2 })
     );
     assert_eq!(all["totals"]["minutes"], json!(400));
     assert_eq!(all["totals"]["days"], json!(3));
@@ -1354,9 +1451,13 @@ async fn stats_cover_all_time_and_a_single_year() {
 
     let (status, y) = h.get("/api/stats?year=2025", Some(&cookie)).await;
     assert_eq!(status, StatusCode::OK, "{y}");
-    assert_eq!(y["totals"]["films"], json!(2));
+    assert_eq!(y["totals"]["films"], json!(1), "one film, watched twice");
     assert_eq!(y["timeline"].as_array().unwrap().len(), 12);
-    assert_eq!(y["timeline"][11]["films"], json!(2));
+    assert_eq!(
+        y["timeline"][11]["films"],
+        json!(2),
+        "a month shows each watch"
+    );
     assert_eq!(y["people"]["actors"][0]["titles"], json!(1));
     assert_eq!(y["ratings"][6], json!(0), "only titles watched that year");
     assert_eq!(y["decades"], json!([{ "decade": 1990, "titles": 1 }]));
@@ -4046,7 +4147,7 @@ async fn watch(h: &Harness, user: i64, title: i64, undated: bool) {
     )
     .bind(user)
     .bind(title)
-    .bind((chrono::Utc::now() - chrono::Duration::hours(2)).to_rfc3339())
+    .bind((chrono::Utc::now() - chrono::Duration::hours(2)).stamp())
     .bind(undated)
     .execute(&h.state.pool)
     .await
@@ -4110,7 +4211,7 @@ async fn the_activity_row_counts_one_day_and_the_page_has_each_day() {
         )
         .bind(id)
         .bind(93020 + n)
-        .bind((now - chrono::Duration::hours(ago)).to_rfc3339())
+        .bind((now - chrono::Duration::hours(ago)).stamp())
         .execute(&h.state.pool)
         .await
         .unwrap();
@@ -4857,6 +4958,12 @@ async fn administrators_manage_accounts_within_their_rank() {
     assert_eq!(code, StatusCode::OK, "{body}");
     assert_eq!(body["accounts"], json!(3));
     assert!(body["database_bytes"].as_i64().unwrap() > 0);
+    // Each byte of the file in one part, and the parts add up to it.
+    let parts: i64 = ["yours", "catalogue", "caches", "pictures", "free"]
+        .iter()
+        .map(|k| body["storage"][k].as_i64().unwrap())
+        .sum();
+    assert_eq!(parts, body["database_bytes"].as_i64().unwrap(), "{body}");
     assert_eq!(body["last_backup"], Value::Null, "no backup script here");
 }
 

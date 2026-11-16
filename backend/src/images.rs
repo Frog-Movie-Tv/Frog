@@ -13,6 +13,7 @@
 //! else can go. SQLite reuses the freed pages for new pictures; the file
 //! itself does not shrink.
 
+use crate::clock::Stamp;
 use axum::http::header;
 use chrono::{DateTime, Duration, Utc};
 use sqlx::SqlitePool;
@@ -201,9 +202,9 @@ async fn hit(pool: &SqlitePool, key: &str) -> AppResult<Option<(String, Vec<u8>)
         let now = Utc::now();
         if let Err(e) =
             sqlx::query("UPDATE image_cache SET served_at = ? WHERE path = ? AND served_at < ?")
-                .bind(now.to_rfc3339())
+                .bind(now.stamp())
                 .bind(key)
-                .bind((now - Duration::hours(TOUCH_HOURS)).to_rfc3339())
+                .bind((now - Duration::hours(TOUCH_HOURS)).stamp())
                 .execute(pool)
                 .await
         {
@@ -216,7 +217,7 @@ async fn hit(pool: &SqlitePool, key: &str) -> AppResult<Option<(String, Vec<u8>)
 /// Keep a picture just fetched. A failure only means it is fetched again
 /// next time, so it is logged, not raised.
 async fn keep(pool: &SqlitePool, key: &str, content_type: &str, bytes: &[u8]) {
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     if let Err(e) = sqlx::query(
         "INSERT INTO image_cache (path, content_type, bytes, fetched_at, served_at, size)
          VALUES (?, ?, ?, ?, ?, ?)

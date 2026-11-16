@@ -1,6 +1,7 @@
 //! Which TMDB, TVDB and IMDb entry an AniList id is, from two community id
 //! lists kept in `anime_map`, and what Frog remembers of each AniList id.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::Value;
@@ -145,7 +146,7 @@ pub async fn ensure_map(state: &AppState, client: &AniListClient) -> AppResult<(
         "INSERT INTO anime_map_state (id, fetched_at) VALUES (1, ?)
          ON CONFLICT (id) DO UPDATE SET fetched_at = excluded.fetched_at",
     )
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -171,7 +172,7 @@ pub(super) async fn remember_media(
     .bind(episodes)
     .bind(format)
     .bind(name)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(pool)
     .await?;
     Ok(())

@@ -101,6 +101,8 @@ interface PushMessage {
 	url?: string;
 	tag?: string;
 	image?: string | null;
+	/** A picture of its own in place of Frog's icon: a badge's, say. */
+	icon?: string | null;
 }
 
 /**
@@ -162,12 +164,19 @@ sw.addEventListener('push', (event) => {
 			data: { url: message.url ?? '/' }
 		};
 		const title = message.title ?? 'Frog';
-		if (message.image) options.image = await inlined(message.image);
+		// Both fetched at once, so the wait stays one PICTURE_WAIT_MS.
+		const [image, icon] = await Promise.all([
+			message.image ? inlined(message.image) : null,
+			message.icon ? inlined(message.icon) : null
+		]);
+		if (image) options.image = image;
+		if (icon) options.icon = icon;
 		try {
 			await sw.registration.showNotification(title, options);
 		} catch {
 			// A picture the browser will not take still leaves the words.
 			delete options.image;
+			options.icon = '/icon-192.png';
 			await sw.registration.showNotification(title, options);
 		}
 	};

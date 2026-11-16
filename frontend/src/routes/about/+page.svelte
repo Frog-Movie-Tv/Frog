@@ -166,6 +166,12 @@
 			>, and from
 			<a href="https://anilist.co" target="_blank" rel="noreferrer noopener">AniList</a> for anime.
 		</p>
+		<p class="muted">
+			Scores from other sites come from
+			<a href="https://mdblist.com" target="_blank" rel="noreferrer noopener">MDBList</a>, and title
+			logos TMDB lacks from
+			<a href="https://fanart.tv" target="_blank" rel="noreferrer noopener">fanart.tv</a>.
+		</p>
 		<a class="tmdb" href="https://www.themoviedb.org" target="_blank" rel="noreferrer noopener">
 			<Icon name="external" size={14} />
 			themoviedb.org

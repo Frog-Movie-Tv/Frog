@@ -14,6 +14,7 @@
 //! paths under `/anilist/` (AniList's CDN) or `/crunchyroll/` (episode
 //! thumbnails AniList links to), which the image route fetches and keeps.
 
+use crate::clock::Stamp;
 use chrono::{DateTime, FixedOffset, Utc};
 use serde_json::{json, Value};
 
@@ -226,9 +227,9 @@ fn unmark(text: &str) -> String {
     lines.join("\n")
 }
 
-/// TMDB's genre names, where AniList's differ, so filters and Stats group
-/// AniList titles with everything else. Every anime is Animation on TMDB; a
-/// manga keeps AniList's own words.
+/// Frog's genre names (`crate::genres`, TMDB's film words), where AniList's
+/// differ, so filters and Stats group AniList titles with everything else.
+/// Every anime is Animation on TMDB; a manga keeps AniList's own words.
 fn genres(kind: &str, list: &Value) -> Vec<Value> {
     let mut names: Vec<String> = if kind == "manga" {
         Vec::new()
@@ -242,9 +243,7 @@ fn genres(kind: &str, list: &Value) -> Vec<Value> {
         .filter_map(Value::as_str)
     {
         let mapped = match (kind, g) {
-            ("tv", "Action" | "Adventure") => "Action & Adventure",
-            ("tv", "Sci-Fi" | "Fantasy") => "Sci-Fi & Fantasy",
-            ("movie", "Sci-Fi") => "Science Fiction",
+            ("tv" | "movie", "Sci-Fi") => "Science Fiction",
             (_, other) => other,
         };
         if !names.iter().any(|n| n == mapped) {
@@ -356,7 +355,7 @@ pub async fn fetch(state: &AppState, media_id: i64) -> AppResult<Value> {
     let cached: Option<(Vec<u8>,)> =
         sqlx::query_as("SELECT body FROM tmdb_cache WHERE cache_key = ? AND expires_at > ?")
             .bind(&key)
-            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().stamp())
             .fetch_optional(&state.pool)
             .await?;
     if let Some(body) = cached.and_then(|(b,)| crate::tmdb::unpack(&b)) {
@@ -410,8 +409,8 @@ pub async fn fetch(state: &AppState, media_id: i64) -> AppResult<Value> {
     )
     .bind(&key)
     .bind(crate::tmdb::pack(&media))
-    .bind(now.to_rfc3339())
-    .bind((now + keep).to_rfc3339())
+    .bind(now.stamp())
+    .bind((now + keep).stamp())
     .execute(&state.pool)
     .await?;
     Ok(media)
@@ -693,7 +692,7 @@ async fn cached(state: &AppState, key: &str, query: &str, vars: Value) -> AppRes
     let cached: Option<(Vec<u8>,)> =
         sqlx::query_as("SELECT body FROM tmdb_cache WHERE cache_key = ? AND expires_at > ?")
             .bind(key)
-            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().stamp())
             .fetch_optional(&state.pool)
             .await?;
     if let Some(body) = cached.and_then(|(b,)| crate::tmdb::unpack(&b)) {
@@ -709,8 +708,8 @@ async fn cached(state: &AppState, key: &str, query: &str, vars: Value) -> AppRes
     )
     .bind(key)
     .bind(crate::tmdb::pack(&data))
-    .bind(now.to_rfc3339())
-    .bind((now + chrono::Duration::days(1)).to_rfc3339())
+    .bind(now.stamp())
+    .bind((now + chrono::Duration::days(1)).stamp())
     .execute(&state.pool)
     .await?;
     Ok(data)
@@ -1134,9 +1133,10 @@ mod tests {
             names,
             vec![
                 "Animation",
-                "Action & Adventure",
+                "Action",
+                "Adventure",
                 "Drama",
-                "Sci-Fi & Fantasy"
+                "Science Fiction"
             ]
         );
     }

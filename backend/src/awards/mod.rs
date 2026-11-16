@@ -25,6 +25,7 @@ pub mod facts;
 pub mod give;
 pub mod rules;
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
@@ -34,6 +35,28 @@ use crate::state::AppState;
 
 /// Where an account's last run is marked: what it counted, and the day.
 const SEEN_KEY: &str = "badges_seen";
+
+/// How far each account is along every badge, as the worker last worked it
+/// out, under the fingerprint it was worked out for. Reading the Badges tab
+/// then costs a fingerprint, not the whole history (about 2 s on a long
+/// one). Kept in memory: after a restart the worker's next pass fills it.
+type Progress = HashMap<String, (f64, f64)>;
+static PROGRESS: std::sync::Mutex<Option<HashMap<i64, (String, Progress)>>> =
+    std::sync::Mutex::new(None);
+
+fn cached(user_id: i64, mark: &str) -> Option<Progress> {
+    let guard = PROGRESS.lock().ok()?;
+    let (seen, map) = guard.as_ref()?.get(&user_id)?;
+    (seen == mark).then(|| map.clone())
+}
+
+fn keep(user_id: i64, mark: String, map: Progress) {
+    if let Ok(mut guard) = PROGRESS.lock() {
+        guard
+            .get_or_insert_with(HashMap::new)
+            .insert(user_id, (mark, map));
+    }
+}
 
 /// Everything a badge counts, cheaply, plus the day in the account's zone and
 /// the catalogue: when this is what the last run saw, nothing can have
@@ -80,12 +103,19 @@ pub async fn run(state: &AppState, user_id: i64, force: bool) -> AppResult<give:
             .bind(SEEN_KEY)
             .fetch_optional(pool)
             .await?;
-    if !force && seen.is_some_and(|(s,)| s == mark) {
+    let unchanged = seen.is_some_and(|(s,)| s == mark);
+    if !force && unchanged && cached(user_id, &mark).is_some() {
         return Ok(give::Settled::default());
     }
     let facts = facts::read(pool, user_id, tz, now).await?;
     let ok = eligible::eligible(&facts.logged(), tz, now);
-    let tally = rules::all(&facts, &ok);
+    let mut tally = rules::all(&facts, &ok);
+    if !force && unchanged {
+        // Nothing to give: only the progress was missing (a restart).
+        let map = progress_of(pool, user_id, &tally).await?;
+        keep(user_id, mark, map);
+        return Ok(give::Settled::default());
+    }
     let made_here: Vec<(crate::badges::Conditional, rules::Earned)> =
         crate::badges::conditional(pool)
             .await?
@@ -95,10 +125,13 @@ pub async fn run(state: &AppState, user_id: i64, force: bool) -> AppResult<give:
                 earned.map(|e| (b, e))
             })
             .collect();
-    let settled = give::settle(state, user_id, tally.earned, today, now).await?;
+    let earned = std::mem::take(&mut tally.earned);
+    let settled = give::settle(state, user_id, earned, today, now).await?;
     give::settle_custom(state, user_id, made_here, now).await?;
     // Awards change the count it was taken from; mark what is there now.
     let mark = fingerprint(pool, user_id, &today.to_string()).await?;
+    let map = progress_of(pool, user_id, &tally).await?;
+    keep(user_id, mark.clone(), map);
     sqlx::query(
         "INSERT INTO app_setting (user_id, key, value, updated_at) VALUES (?, ?, ?, ?)
          ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value,
@@ -107,7 +140,7 @@ pub async fn run(state: &AppState, user_id: i64, force: bool) -> AppResult<give:
     .bind(user_id)
     .bind(SEEN_KEY)
     .bind(&mark)
-    .bind(now.to_rfc3339())
+    .bind(now.stamp())
     .execute(pool)
     .await?;
     Ok(settled)
@@ -115,16 +148,27 @@ pub async fn run(state: &AppState, user_id: i64, force: bool) -> AppResult<give:
 
 /// How far one account is along each badge counted in steps, as
 /// (have, need) by catalogue key, for the list of badges still to come.
-/// Worked out the way a run is, without giving anything.
-pub async fn progress(pool: &SqlitePool, user_id: i64) -> AppResult<HashMap<String, (f64, f64)>> {
+/// What the worker's last run worked out, while nothing has changed since;
+/// otherwise worked out now, the way a run is, without giving anything.
+pub async fn progress(pool: &SqlitePool, user_id: i64) -> AppResult<Progress> {
     let tz = crate::announce::time_zone(pool, user_id).await;
     let now = Utc::now();
+    let mark = fingerprint(pool, user_id, &eligible::day(now, tz).to_string()).await?;
+    if let Some(map) = cached(user_id, &mark) {
+        return Ok(map);
+    }
     let facts = facts::read(pool, user_id, tz, now).await?;
     let ok = eligible::eligible(&facts.logged(), tz, now);
     let tally = rules::all(&facts, &ok);
+    let map = progress_of(pool, user_id, &tally).await?;
+    keep(user_id, mark, map.clone());
+    Ok(map)
+}
+
+async fn progress_of(pool: &SqlitePool, user_id: i64, tally: &rules::Tally) -> AppResult<Progress> {
     let mut progress = tally.progress.clone();
     for b in crate::badges::conditional(pool).await? {
-        let (have, _) = custom::reach(&tally, b.id, &b.condition);
+        let (have, _) = custom::reach(tally, b.id, &b.condition);
         let need = b.condition.at as f64;
         progress.insert(custom::Condition::key(b.id), (have.min(need), need));
     }

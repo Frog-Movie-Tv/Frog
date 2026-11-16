@@ -1,3 +1,4 @@
+use crate::clock::Stamp;
 use axum::extract::{Path, State};
 use axum::Json;
 use chrono::Utc;
@@ -75,7 +76,7 @@ pub async fn set_watched(
             store::restore_watch(&state.pool, auth.user_id(), title_id, ep_id, w, source).await?;
         }
     } else if body.watched {
-        let when = body.watched_at.unwrap_or_else(|| Utc::now().to_rfc3339());
+        let when = body.watched_at.unwrap_or_else(|| Utc::now().stamp());
         let since = crate::together::newest_watch(&state.pool, auth.user_id()).await?;
         store::add_episode_watch(
             &state.pool,

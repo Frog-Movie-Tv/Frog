@@ -12,6 +12,7 @@
 //! An episode belongs to the day its moment falls on where the viewer is, or
 //! to TMDB's day when no moment is known (`day`).
 
+use crate::clock::Stamp;
 use std::collections::{HashMap, HashSet};
 use std::time::Duration as Pause;
 
@@ -207,7 +208,7 @@ pub async fn refresh_if_due(state: &AppState) {
         "INSERT INTO airing_state (id, started_at) VALUES (1, ?)
          ON CONFLICT (id) DO UPDATE SET started_at = excluded.started_at",
     )
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(&state.pool)
     .await;
     match refresh_list(state).await {
@@ -219,7 +220,7 @@ pub async fn refresh_if_due(state: &AppState) {
 /// Read every show TMDB says airs in the window, and keep its episodes there.
 /// Returns how many shows are listed.
 pub async fn refresh_list(state: &AppState) -> AppResult<usize> {
-    let started = Utc::now().to_rfc3339();
+    let started = Utc::now().stamp();
     let (first, last) = window(Utc::now().date_naive());
     let (from, to) = (
         first - Duration::days(MARGIN_DAYS),
@@ -297,11 +298,10 @@ pub async fn refresh_list(state: &AppState) -> AppResult<usize> {
         .execute(&mut *tx)
         .await?;
     sqlx::query(
-        "INSERT INTO airing_state (id, listed_at, shows) VALUES (1, ?, ?)
-         ON CONFLICT (id) DO UPDATE SET listed_at = excluded.listed_at, shows = excluded.shows",
+        "INSERT INTO airing_state (id, listed_at) VALUES (1, ?)
+         ON CONFLICT (id) DO UPDATE SET listed_at = excluded.listed_at",
     )
-    .bind(Utc::now().to_rfc3339())
-    .bind((listed + films) as i64)
+    .bind(Utc::now().stamp())
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -861,20 +861,20 @@ pub async fn genres(pool: &SqlitePool) -> AppResult<Vec<String>> {
     Ok(all)
 }
 
-/// When the list was last built, and how many shows it holds.
+/// When the list was last built, and how many shows and films it holds,
+/// counted as they are: a first build still running shows what it has.
 pub async fn status(pool: &SqlitePool) -> AppResult<(Option<String>, i64)> {
-    let row: Option<(Option<String>, i64)> =
-        sqlx::query_as("SELECT listed_at, shows FROM airing_state WHERE id = 1")
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT listed_at FROM airing_state WHERE id = 1")
             .fetch_optional(pool)
             .await?;
-    let (listed, shows) = row.unwrap_or((None, 0));
-    // A first build still running already shows what it has.
+    let listed = row.and_then(|(l,)| l);
     let (kept,): (i64,) = sqlx::query_as(
         "SELECT (SELECT COUNT(*) FROM airing_show) + (SELECT COUNT(*) FROM airing_film)",
     )
     .fetch_one(pool)
     .await?;
-    Ok((listed, shows.max(kept)))
+    Ok((listed, kept))
 }
 
 #[cfg(test)]

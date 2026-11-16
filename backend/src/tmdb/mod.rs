@@ -1,5 +1,6 @@
 pub mod models;
 
+use crate::clock::Stamp;
 use chrono::{Duration, Utc};
 use serde_json::Value;
 use sqlx::SqlitePool;
@@ -174,8 +175,8 @@ impl Tmdb {
         )
         .bind(key)
         .bind(pack(body))
-        .bind(now.to_rfc3339())
-        .bind((now + ttl).to_rfc3339())
+        .bind(now.stamp())
+        .bind((now + ttl).stamp())
         .execute(&self.inner.pool)
         .await;
     }

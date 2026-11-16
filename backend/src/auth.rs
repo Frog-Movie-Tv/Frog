@@ -1,3 +1,4 @@
+use crate::clock::Stamp;
 use argon2::password_hash::rand_core::OsRng as ArgonRng;
 use argon2::password_hash::{PasswordHasher, PasswordVerifier, SaltString};
 use argon2::{Argon2, PasswordHash};
@@ -178,15 +179,15 @@ pub async fn create_session(
     )
     .bind(hash_token(&token))
     .bind(user_id)
-    .bind(now.to_rfc3339())
-    .bind(expires.to_rfc3339())
+    .bind(now.stamp())
+    .bind(expires.stamp())
     .bind(user_agent)
     .execute(pool)
     .await?;
 
     // Every session starts with a sign-in, and this outlives the session.
     sqlx::query("UPDATE app_user SET last_sign_in_at = ? WHERE id = ?")
-        .bind(now.to_rfc3339())
+        .bind(now.stamp())
         .bind(user_id)
         .execute(pool)
         .await?;
@@ -235,7 +236,7 @@ pub async fn destroy_session(pool: &SqlitePool, token: &str) -> AppResult<()> {
 
 pub async fn purge_expired_sessions(pool: &SqlitePool) -> AppResult<u64> {
     let res = sqlx::query("DELETE FROM session WHERE expires_at < ?")
-        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().stamp())
         .execute(pool)
         .await?;
     Ok(res.rows_affected())
@@ -252,7 +253,7 @@ pub async fn session_user(pool: &SqlitePool, token: &str) -> Option<Identity> {
           WHERE s.token_hash = ? AND s.expires_at > ?",
     )
     .bind(hash_token(token))
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .fetch_optional(pool)
     .await
     .ok()
@@ -490,7 +491,7 @@ pub async fn insert_user(pool: &SqlitePool, name: &str, hash: &str, role: Role) 
     .bind(name)
     .bind(hash)
     .bind(role.as_db())
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .fetch_one(pool)
     .await?;
     Ok(row.0)

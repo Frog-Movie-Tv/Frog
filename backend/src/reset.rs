@@ -6,6 +6,7 @@
 //! as it is: a second factor exists to survive a lost password, and a link
 //! handed around on a chat app is not a reason to drop it.
 
+use crate::clock::Stamp;
 use chrono::{DateTime, Duration, Utc};
 use sqlx::SqlitePool;
 
@@ -35,8 +36,8 @@ pub async fn issue(
     .bind(auth::hash_code(&code))
     .bind(user_id)
     .bind(created_by)
-    .bind(now.to_rfc3339())
-    .bind(expires.to_rfc3339())
+    .bind(now.stamp())
+    .bind(expires.stamp())
     .execute(pool)
     .await?;
     Ok((code, expires))
@@ -81,7 +82,7 @@ pub async fn redeem(
 ) -> AppResult<Option<String>> {
     let password_hash = auth::hash_password(new_password)?;
     let code_hash = auth::hash_code(code);
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
 
     let mut tx = pool.begin().await?;
     let claimed = sqlx::query(
@@ -123,7 +124,7 @@ pub async fn redeem(
 /// Links past their expiry, used or not, are of no use to anyone.
 pub async fn purge_expired(pool: &SqlitePool) -> AppResult<u64> {
     let gone = sqlx::query("DELETE FROM password_reset WHERE expires_at < ?")
-        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().stamp())
         .execute(pool)
         .await?;
     Ok(gone.rows_affected())

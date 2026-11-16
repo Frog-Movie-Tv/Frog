@@ -2,6 +2,7 @@
 //! account's data from one title to another. The titles themselves, shared
 //! by everyone, are `crate::catalog`.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, QueryBuilder, Sqlite, SqlitePool};
@@ -443,7 +444,7 @@ pub async fn move_title_data(
     });
 
     if let Some(o) = &old {
-        let now = Utc::now().to_rfc3339();
+        let now = Utc::now().stamp();
         let merged = match &have {
             None => o.clone(),
             Some(h) => {
@@ -581,7 +582,7 @@ pub async fn move_title_data(
     .bind(to)
     .bind(reason)
     .bind(before.to_string())
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(&mut *tx)
     .await?;
 
@@ -715,7 +716,7 @@ pub async fn undo_merge(pool: &SqlitePool, user_id: i64, id: i64) -> AppResult<(
             .fetch_one(pool)
             .await?;
     let before: serde_json::Value = serde_json::from_str(&raw)?;
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
 
     let mut tx = pool.begin().await?;
     for (title, side) in [(from, &before["from"]), (to, &before["to"])] {
@@ -921,7 +922,7 @@ pub async fn apply_patch(
         }
     }
 
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     let existing = get_entry(pool, user_id, title_id).await?;
 
     let status = patch
@@ -1088,8 +1089,8 @@ pub async fn held_watches(
         }
     }
     let notes = sqlx::query_as::<_, EpisodeNoteRecord>(
-        "SELECT e.season_number AS season, e.episode_number AS episode, s.rating, s.notes,
-                s.updated_at
+        "SELECT e.season_number AS season, e.episode_number AS episode,
+                CAST(NULL AS REAL) AS rating, s.notes, s.updated_at
            FROM episode_state s
            JOIN episode e ON e.id = s.episode_id
           WHERE s.user_id = ? AND e.title_id = ?",
@@ -1337,7 +1338,7 @@ pub async fn restore_entries(
                 .bind(w.season)
                 .bind(&w.watched_at)
                 .bind(person)
-                .bind(Utc::now().to_rfc3339())
+                .bind(Utc::now().stamp())
                 .bind(w.episode)
                 .execute(&mut *tx)
                 .await?;
@@ -1367,15 +1368,13 @@ pub async fn restore_entries(
         }
         for n in &e.episode_notes {
             sqlx::query(
-                "INSERT INTO episode_state (user_id, episode_id, rating, notes, updated_at)
-                 SELECT ?, e.id, ?, ?, ? FROM episode e
+                "INSERT INTO episode_state (user_id, episode_id, notes, updated_at)
+                 SELECT ?, e.id, ?, ? FROM episode e
                   WHERE e.title_id = ? AND e.season_number = ? AND e.episode_number = ?
                  ON CONFLICT (user_id, episode_id) DO UPDATE SET
-                    rating = excluded.rating, notes = excluded.notes,
-                    updated_at = excluded.updated_at",
+                    notes = excluded.notes, updated_at = excluded.updated_at",
             )
             .bind(user_id)
-            .bind(n.rating.filter(|r| (0.0..=100.0).contains(r)))
             .bind(&n.notes)
             .bind(&n.updated_at)
             .bind(e.title_id)
@@ -1409,7 +1408,7 @@ pub async fn add_first_film_watch(
     .bind(title_id)
     .bind(watched_at)
     .bind(undated)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(how)
     .execute(pool)
     .await?;
@@ -1630,7 +1629,7 @@ pub async fn add_rewatch(
     .bind(if kind == "movie" { 0 } else { 1 })
     .bind(undated)
     .bind(watched_at)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(user_id)
     .bind(title_id)
     .execute(pool)
@@ -2416,7 +2415,7 @@ pub async fn season_states(
     Ok(sqlx::query_as(
         "SELECT e.season_number,
                 e.episode_number,
-                s.rating,
+                CAST(NULL AS REAL),
                 s.notes,
                 (SELECT COUNT(*) FROM watch_event w
                   WHERE w.user_id = ?1 AND w.episode_id = e.id),
@@ -2780,8 +2779,8 @@ pub async fn set_episode_notes(
     notes: Option<&str>,
 ) -> AppResult<()> {
     sqlx::query(
-        "INSERT INTO episode_state (user_id, episode_id, rating, notes, updated_at)
-         VALUES (?, ?, NULL, ?, ?)
+        "INSERT INTO episode_state (user_id, episode_id, notes, updated_at)
+         VALUES (?, ?, ?, ?)
          ON CONFLICT (user_id, episode_id) DO UPDATE SET
             notes = excluded.notes,
             updated_at = excluded.updated_at",
@@ -2789,7 +2788,7 @@ pub async fn set_episode_notes(
     .bind(user_id)
     .bind(episode_id)
     .bind(notes)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(pool)
     .await?;
     Ok(())

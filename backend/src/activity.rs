@@ -16,6 +16,7 @@
 //! Deciding what a run of watches adds up to is `summarise`, on plain values, so
 //! it is tested without a database.
 
+use crate::clock::Stamp;
 use std::collections::HashSet;
 
 use chrono::{DateTime, Duration, NaiveTime, TimeZone, Utc};
@@ -100,7 +101,7 @@ fn end_of_day(at: &str, zone: Tz) -> Option<String> {
     let midnight = zone
         .from_local_datetime(&day.and_time(NaiveTime::MIN))
         .earliest()?;
-    Some(midnight.with_timezone(&Utc).to_rfc3339())
+    Some(midnight.with_timezone(&Utc).stamp())
 }
 
 /// Add up one person's watches, newest first, into a card per title per day
@@ -271,8 +272,8 @@ async fn people(pool: &SqlitePool, viewer: i64) -> AppResult<Vec<store::ShownAcc
 pub async fn feed(pool: &SqlitePool, viewer: i64) -> AppResult<Vec<Card>> {
     let zone = crate::announce::time_zone(pool, viewer).await;
     let now = Utc::now();
-    let from = (now - Duration::days(WINDOW_DAYS)).to_rfc3339();
-    let to = (now + Duration::seconds(1)).to_rfc3339();
+    let from = (now - Duration::days(WINDOW_DAYS)).stamp();
+    let to = (now + Duration::seconds(1)).stamp();
     let mut cards = Vec::new();
     for person in people(pool, viewer).await? {
         let watches = watches(pool, person.id, Some(&from), &to, i64::MAX).await?;
@@ -483,7 +484,7 @@ mod tests {
         assert_eq!(day_of("2026-11-15T23:30:00Z", brussels), "2026-11-16");
         assert_eq!(
             end_of_day("2026-11-15T22:30:00Z", brussels).as_deref(),
-            Some("2026-11-15T23:00:00+00:00"),
+            Some("2026-11-15T23:00:00Z"),
             "Sunday ends at midnight in Brussels"
         );
     }

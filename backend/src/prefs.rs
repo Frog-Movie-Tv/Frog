@@ -2,6 +2,7 @@
 //! (`app_setting` key `preferences`). The server stores it and never reads
 //! inside it.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -34,7 +35,7 @@ pub async fn put(pool: &SqlitePool, user_id: i64, encoded: &str) -> AppResult<()
     .bind(user_id)
     .bind(KEY)
     .bind(encoded)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(pool)
     .await?;
     Ok(())

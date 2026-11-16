@@ -3,6 +3,7 @@
 //! entry with where it was placed and both sides as of the last sync
 //! (`anilist_entry`). Every statement names the account it is about.
 
+use crate::clock::Stamp;
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
@@ -31,7 +32,7 @@ pub(super) async fn mark_gone(
     known: &HashMap<i64, Known>,
 ) -> AppResult<Vec<i64>> {
     let present: HashSet<i64> = remotes.iter().map(|r| r.media_id).collect();
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     for (media_id, k) in known {
         if k.gone && present.contains(media_id) {
             sqlx::query(
@@ -284,7 +285,7 @@ pub(super) async fn save_entry(
     let next_airing_at = remote
         .next_airing
         .and_then(|(_, at)| chrono::DateTime::from_timestamp(at, 0))
-        .map(|t| t.to_rfc3339());
+        .map(|t| t.stamp());
     sqlx::query(
         "INSERT INTO anilist_entry (user_id, media_id, name, format, episodes, state, title_id,
                                     season, episode_offset, candidates_json, updated_at,
@@ -317,7 +318,7 @@ pub(super) async fn save_entry(
     .bind(season)
     .bind(offset)
     .bind(serde_json::to_string(&candidates.unwrap_or(&[]))?)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(verdict.outcome)
     .bind(verdict.method)
     .bind(verdict.confidence)
@@ -353,7 +354,7 @@ pub(super) async fn save_snapshots(
     .bind(frog.map(|f| f.status.clone()))
     .bind(frog.map(|f| f.progress))
     .bind(frog.map(|f| f.score))
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(user_id)
     .bind(media_id)
     .execute(pool)
@@ -366,9 +367,9 @@ pub(super) async fn save_snapshots(
 /// database, so a restart picks up where the last run left off. Expired or
 /// refused tokens are skipped; Settings asks for a reconnect instead.
 pub(super) async fn due(pool: &SqlitePool, idle_minutes: i64) -> AppResult<Vec<i64>> {
-    let idle = (Utc::now() - chrono::Duration::minutes(idle_minutes)).to_rfc3339();
-    let settle = (Utc::now() - chrono::Duration::seconds(45)).to_rfc3339();
-    let now = Utc::now().to_rfc3339();
+    let idle = (Utc::now() - chrono::Duration::minutes(idle_minutes)).stamp();
+    let settle = (Utc::now() - chrono::Duration::seconds(45)).stamp();
+    let now = Utc::now().stamp();
     let rows: Vec<(i64,)> = sqlx::query_as(
         "SELECT user_id FROM anilist_link
           WHERE expires_at > ?1 AND needs_reconnect = 0
@@ -478,7 +479,7 @@ pub async fn link_status(pool: &SqlitePool, user_id: i64) -> AppResult<Option<Li
 
 /// A sign-in has fifteen minutes to come back.
 fn sign_in_cutoff() -> String {
-    (Utc::now() - chrono::Duration::minutes(15)).to_rfc3339()
+    (Utc::now() - chrono::Duration::minutes(15)).stamp()
 }
 
 /// Remember a sign-in just started, dropping this account's earlier ones and
@@ -492,7 +493,7 @@ pub async fn start_sign_in(pool: &SqlitePool, user_id: i64, nonce: &str) -> AppR
     sqlx::query("INSERT INTO anilist_oauth (state, user_id, created_at) VALUES (?, ?, ?)")
         .bind(nonce)
         .bind(user_id)
-        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().stamp())
         .execute(pool)
         .await?;
     Ok(())
@@ -547,7 +548,7 @@ pub async fn save_link(
     .bind(name)
     .bind(token)
     .bind(expires_at)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(pool)
     .await?;
     Ok(())
@@ -690,7 +691,7 @@ pub(super) async fn refresh_kept(
     .bind(&remote.media_status)
     .bind(&remote.start)
     .bind(remote.episodes)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(user_id)
     .bind(remote.media_id)
     .execute(pool)
@@ -816,7 +817,7 @@ pub async fn ignore(pool: &SqlitePool, user_id: i64, media_id: i64) -> AppResult
         "UPDATE anilist_entry SET state = 'ignored', manual = 1, updated_at = ?
           WHERE user_id = ? AND media_id = ?",
     )
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(user_id)
     .bind(media_id)
     .execute(pool)
@@ -843,7 +844,7 @@ pub async fn keep_apart(
           WHERE user_id = ? AND media_id = ?",
     )
     .bind(title_id)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(user_id)
     .bind(media_id)
     .execute(pool)
@@ -873,7 +874,7 @@ pub async fn place_by_hand(
     .bind(title_id)
     .bind(season)
     .bind(offset)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(user_id)
     .bind(media_id)
     .execute(pool)

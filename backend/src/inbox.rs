@@ -7,6 +7,7 @@
 //! account wants is one small setting (`app_setting` key `notify_kinds`),
 //! and a kind switched off is neither written here nor pushed.
 
+use crate::clock::Stamp;
 use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -107,7 +108,7 @@ pub async fn set_wants(pool: &SqlitePool, user_id: i64, wants: &Wants) -> AppRes
     .bind(user_id)
     .bind(KINDS_KEY)
     .bind(serde_json::to_string(wants).unwrap_or_default())
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(pool)
     .await?;
     Ok(())
@@ -142,7 +143,7 @@ pub async fn record(pool: &SqlitePool, user_id: i64, event: &Event<'_>) -> AppRe
     .bind(event.actor_id)
     .bind(event.payload.to_string())
     .bind(&event.ref_key)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(pool)
     .await?
     .rows_affected();
@@ -288,7 +289,7 @@ pub async fn unread(pool: &SqlitePool, user_id: i64) -> AppResult<i64> {
 
 /// Mark these as read, or every one when `ids` is empty.
 pub async fn mark_read(pool: &SqlitePool, user_id: i64, ids: &[i64]) -> AppResult<()> {
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     if ids.is_empty() {
         sqlx::query("UPDATE notification SET read_at = ? WHERE user_id = ? AND read_at IS NULL")
             .bind(&now)
@@ -321,7 +322,7 @@ pub async fn remove(pool: &SqlitePool, user_id: i64, id: Option<i64>) -> AppResu
           WHERE user_id = ?2 AND removed_at IS NULL AND (?3 IS NULL OR id = ?3)
           RETURNING id",
     )
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(user_id)
     .bind(id)
     .fetch_all(pool)
@@ -346,7 +347,7 @@ pub async fn restore(pool: &SqlitePool, user_id: i64, ids: &[i64]) -> AppResult<
 
 /// Housekeeping: notifications older than `KEEP_DAYS` go, whoever's they are.
 pub async fn trim(pool: &SqlitePool) -> AppResult<u64> {
-    let cutoff = (Utc::now() - Duration::days(KEEP_DAYS)).to_rfc3339();
+    let cutoff = (Utc::now() - Duration::days(KEEP_DAYS)).stamp();
     Ok(sqlx::query("DELETE FROM notification WHERE created_at < ?")
         .bind(cutoff)
         .execute(pool)
@@ -357,7 +358,7 @@ pub async fn trim(pool: &SqlitePool) -> AppResult<u64> {
 /// Tell every account that was here before it that Frog is now `version`,
 /// once per version. An account made today learns about the next one.
 pub async fn note_update(pool: &SqlitePool, version: &str) -> AppResult<()> {
-    let since = (Utc::now() - Duration::days(1)).to_rfc3339();
+    let since = (Utc::now() - Duration::days(1)).stamp();
     let accounts: Vec<(i64,)> =
         sqlx::query_as("SELECT id FROM app_user WHERE disabled = 0 AND created_at < ?")
             .bind(since)

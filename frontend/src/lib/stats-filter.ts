@@ -105,7 +105,8 @@ export function view(facts: StatsFact[], filter: StatsFilter, units: string[]): 
 	for (const f of watched) {
 		const u = counted(f, filter);
 		minutes += sum(u, 1);
-		films += sum(u, 2);
+		// A film once, however often it was watched: the rest are rewatches.
+		if (sum(u, 2) > 0) films++;
 		episodes += sum(u, 3);
 		rewatches += sum(u, 4);
 		if (sum(u, 3) > 0) shows++;

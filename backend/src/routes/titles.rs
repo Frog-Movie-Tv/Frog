@@ -1,3 +1,4 @@
+use crate::clock::Stamp;
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use chrono::Duration;
@@ -42,10 +43,12 @@ pub fn provider_address(kind: &str, id: i64) -> AppResult<ExternalId> {
 /// An AniList address for something TMDB has (reached from a person, a
 /// studio or a related work) is that TMDB title: no second copy is made. One
 /// a sync already keeps, because its place is not certain, stays what it is.
-pub async fn by_address(state: &AppState, kind: &str, id: i64) -> AppResult<i64> {
+/// A title new to Frog comes back with the detail just read for it, so the
+/// page does not read it a second time.
+pub async fn by_address(state: &AppState, kind: &str, id: i64) -> AppResult<(i64, Option<Value>)> {
     let address = provider_address(kind, id)?;
     if let Some(title_id) = catalog::find(&state.pool, &address).await? {
-        return Ok(title_id);
+        return Ok((title_id, None));
     }
     let address = match address {
         ExternalId::AniList(media_id) => {
@@ -57,7 +60,8 @@ pub async fn by_address(state: &AppState, kind: &str, id: i64) -> AppResult<i64>
         }
         other => other,
     };
-    Ok(catalog::ensure(state, &address).await?.0)
+    let (title_id, detail) = catalog::ensure(state, &address).await?;
+    Ok((title_id, Some(detail)))
 }
 
 /// A title page reached by a provider's address. The answer carries Frog's
@@ -67,8 +71,8 @@ pub async fn detail(
     State(state): State<AppState>,
     Path((kind, id)): Path<(String, i64)>,
 ) -> AppResult<Json<Value>> {
-    let title_id = by_address(&state, &kind, id).await?;
-    detail_of(&state, auth.user_id(), title_id).await
+    let (title_id, read) = by_address(&state, &kind, id).await?;
+    detail_of(&state, auth.user_id(), title_id, read).await
 }
 
 /// One request per title page. Everything the page draws above the fold comes
@@ -78,7 +82,7 @@ pub async fn detail_by_id(
     State(state): State<AppState>,
     Path(title_id): Path<i64>,
 ) -> AppResult<Json<Value>> {
-    detail_of(&state, auth.user_id(), title_id).await
+    detail_of(&state, auth.user_id(), title_id, None).await
 }
 
 /// What other sites score a title, and its age rating. Apart from the page
@@ -92,8 +96,16 @@ pub async fn scores(
     Ok(Json(crate::ratings::for_page(&state, title_id).await?))
 }
 
-async fn detail_of(state: &AppState, user_id: i64, title_id: i64) -> AppResult<Json<Value>> {
-    let (mut row, raw) = catalog::load(state, title_id).await?;
+async fn detail_of(
+    state: &AppState,
+    user_id: i64,
+    title_id: i64,
+    read: Option<Value>,
+) -> AppResult<Json<Value>> {
+    let (mut row, raw) = match read {
+        Some(raw) => (catalog::get_title(&state.pool, title_id).await?, raw),
+        None => catalog::load(state, title_id).await?,
+    };
     if row.logo_path.is_none() {
         row.logo_path = crate::fanart::first_look(state, title_id).await;
     }
@@ -485,7 +497,7 @@ pub async fn rewatch(
     }
     let at = body
         .watched_at
-        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+        .unwrap_or_else(|| chrono::Utc::now().stamp());
     store::add_rewatch(
         &state.pool,
         auth.user_id(),

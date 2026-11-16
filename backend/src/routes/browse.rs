@@ -71,9 +71,18 @@ async fn by_name(state: &AppState, term: &str) -> Option<Value> {
     if term.chars().count() < 2 || state.config.anilist.is_none() {
         return None;
     }
-    match timeout(ANILIST_WAIT, anilist::media::search_by_name(state, term)).await {
-        Ok(Ok(data)) => Some(data),
+    // The answer is kept a day, so a search past the wait still finishes
+    // behind the page: the same name typed again answers at once rather than
+    // running out of time the same way every time.
+    let (owned, typed) = (state.clone(), term.to_string());
+    let asked = tokio::spawn(async move { anilist::media::search_by_name(&owned, &typed).await });
+    match timeout(ANILIST_WAIT, asked).await {
+        Ok(Ok(Ok(data))) => Some(data),
         Ok(Err(e)) => {
+            tracing::warn!(error = %e, "AniList name search stopped");
+            None
+        }
+        Ok(Ok(Err(e))) => {
             tracing::warn!(error = %e, "AniList name search failed");
             None
         }

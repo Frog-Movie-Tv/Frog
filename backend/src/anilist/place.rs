@@ -15,6 +15,7 @@
 //! The id lists are checked against the air dates too, so a list that has
 //! drifted from TMDB is caught rather than trusted.
 
+use crate::clock::Stamp;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::{NaiveDate, Utc};
@@ -889,7 +890,7 @@ pub(super) async fn chain_link(
     .bind(link.format.as_deref())
     .bind(link.year)
     .bind(serde_json::to_string(&link.titles)?)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(link.start.as_deref())
     .bind(link.media_status.as_deref())
     .bind(serde_json::to_string(&link.related)?)

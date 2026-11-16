@@ -8,6 +8,7 @@
 //! null for an anime TMDB lacks. A Frog id is only ever a label: an import,
 //! here or on another Frog, goes by provider ids and names, never by it.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use serde_json::{json, Value};
 
@@ -74,7 +75,7 @@ pub async fn library_json(state: &AppState, user_id: i64) -> AppResult<Value> {
     {
         let ids = catalog::externals(&state.pool, title_id).await?;
         let episodes: Vec<EpisodeExportRow> = sqlx::query_as(
-            "SELECT e.season_number, e.episode_number, s.rating, s.notes,
+            "SELECT e.season_number, e.episode_number, CAST(NULL AS REAL), s.notes,
                     (SELECT COUNT(*) FROM watch_event w
                       WHERE w.user_id = ?1 AND w.episode_id = e.id),
                     (SELECT MAX(w.watched_at) FROM watch_event w
@@ -82,7 +83,7 @@ pub async fn library_json(state: &AppState, user_id: i64) -> AppResult<Value> {
                FROM episode e
                LEFT JOIN episode_state s ON s.episode_id = e.id AND s.user_id = ?1
               WHERE e.title_id = ?2
-                AND (s.rating IS NOT NULL OR s.notes IS NOT NULL
+                AND (s.notes IS NOT NULL
                      OR EXISTS (SELECT 1 FROM watch_event w
                                  WHERE w.user_id = ?1 AND w.episode_id = e.id))
               ORDER BY e.season_number, e.episode_number",
@@ -188,7 +189,7 @@ pub async fn library_json(state: &AppState, user_id: i64) -> AppResult<Value> {
     Ok(json!({
         "format": "frog-library",
         "version": 2,
-        "exported_at": Utc::now().to_rfc3339(),
+        "exported_at": Utc::now().stamp(),
         "app_version": env!("CARGO_PKG_VERSION"),
         "settings": settings
             .and_then(|(v,)| serde_json::from_str::<Value>(&v).ok())

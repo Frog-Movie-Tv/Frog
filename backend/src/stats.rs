@@ -100,6 +100,144 @@ const MINUTES: &str = "COALESCE(e.runtime, t.runtime, 0)";
 /// (films, episodes, shows, titles, rewatches, minutes, active days)
 type TotalsRow = (i64, i64, i64, i64, i64, f64, i64);
 
+/// The totals at the top of the page. A film is counted once however often
+/// it was watched; its other watches are rewatches, as an episode's are.
+async fn totals(scope: &Scope, pool: &SqlitePool) -> AppResult<TotalsRow> {
+    scope
+        .one(
+            pool,
+            &format!(
+                "SELECT COUNT(DISTINCT CASE WHEN s.episode_id IS NULL THEN s.title_id END),
+                        COALESCE(SUM(s.episode_id IS NOT NULL), 0),
+                        COUNT(DISTINCT CASE WHEN s.episode_id IS NOT NULL THEN s.title_id END),
+                        COUNT(DISTINCT s.title_id),
+                        COALESCE(SUM(s.is_rewatch), 0),
+                        CAST(COALESCE(SUM({MINUTES}), 0) AS REAL),
+                        COUNT(DISTINCT CASE WHEN s.undated = 0 THEN substr(s.watched_at, 1, 10) END)
+                   FROM scoped s
+                   JOIN title t ON t.id = s.title_id
+                   LEFT JOIN episode e ON e.id = s.episode_id"
+            ),
+        )
+        .await
+}
+
+/// Genres by how many titles watched in the scope carry them, and the time
+/// spent on them. The one vocabulary (`crate::genres`) keeps a show's and a
+/// film's words together.
+async fn genre_rows(
+    scope: &Scope,
+    pool: &SqlitePool,
+    limit: i64,
+) -> AppResult<Vec<(String, i64, f64)>> {
+    scope
+        .all(
+            pool,
+            &format!(
+                "SELECT g.value, COUNT(DISTINCT t.id), CAST(COALESCE(SUM({MINUTES}), 0) AS REAL)
+                   FROM scoped s
+                   JOIN title t ON t.id = s.title_id
+                   LEFT JOIN episode e ON e.id = s.episode_id,
+                   json_each(t.genres_json) g
+                  GROUP BY g.value
+                  ORDER BY 2 DESC, 3 DESC
+                  LIMIT {limit}"
+            ),
+        )
+        .await
+}
+
+/// Which library entries the ratings count. All time covers every rating,
+/// including titles rated without a recorded watch; a year covers what was
+/// watched in it. Manga have their own half.
+fn rated_filter(scope: &Scope) -> String {
+    if scope.year.is_some() {
+        format!(
+            "{} AND l.rating IS NOT NULL AND l.title_id IN (SELECT title_id FROM scoped)",
+            scope.mine()
+        )
+    } else {
+        format!(
+            "{} AND l.rating IS NOT NULL
+             AND l.title_id IN (SELECT id FROM title WHERE kind != 'manga')",
+            scope.mine()
+        )
+    }
+}
+
+async fn mean_rating(scope: &Scope, pool: &SqlitePool) -> AppResult<Option<f64>> {
+    let rated = rated_filter(scope);
+    let (mean,): (Option<f64>,) = scope
+        .one(
+            pool,
+            &format!("SELECT AVG(l.rating) FROM library_entry l WHERE {rated}"),
+        )
+        .await?;
+    Ok(mean)
+}
+
+/// The library as it stands, films and shows, by status: what the bar at
+/// the end of the page shows. A manga is counted in the reading half.
+async fn library_by_status(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<(String, i64)>> {
+    Ok(sqlx::query_as(
+        "SELECT l.status, COUNT(*) FROM library_entry l JOIN title t ON t.id = l.title_id
+          WHERE l.user_id = ? AND t.kind != 'manga'
+          GROUP BY l.status",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// The all-time figures a profile shows, by the very definitions the stats
+/// page uses, so the two always say the same: films and shows still in the
+/// library (a manga's chapters are counted on their own), a film once
+/// however often it was watched, genres by titles watched.
+pub struct Figures {
+    pub films: i64,
+    pub episodes: i64,
+    pub shows: i64,
+    pub minutes: f64,
+    /// Films and shows in the library, and how many of them are completed.
+    pub library: i64,
+    pub completed: i64,
+    pub mean_rating: Option<f64>,
+    /// The top five genres: (name, titles).
+    pub genres: Vec<(String, i64)>,
+    /// (longest, current)
+    pub streaks: (Streak, Streak),
+}
+
+pub async fn figures(pool: &SqlitePool, user_id: i64) -> AppResult<Figures> {
+    let scope = Scope {
+        user_id,
+        year: None,
+        titles: None,
+        unit: None,
+    };
+    let (films, episodes, shows, _, _, minutes, _) = totals(&scope, pool).await?;
+    let library = library_by_status(pool, user_id).await?;
+    Ok(Figures {
+        films,
+        episodes,
+        shows,
+        minutes,
+        library: library.iter().map(|(_, n)| n).sum(),
+        completed: library
+            .iter()
+            .find(|(s, _)| s == "completed")
+            .map(|(_, n)| *n)
+            .unwrap_or(0),
+        mean_rating: mean_rating(&scope, pool).await?,
+        genres: genre_rows(&scope, pool, 5)
+            .await?
+            .into_iter()
+            .map(|(name, titles, _)| (name, titles))
+            .collect(),
+        streaks: scope_streaks(&scope, pool).await?,
+    })
+}
+
 /// (kind, title id, name, poster, watches, minutes, rating)
 type TopRow = (String, i64, String, Option<String>, i64, f64, Option<f64>);
 
@@ -211,23 +349,7 @@ pub async fn stats(state: &AppState, user_id: i64, q: &StatsQuery) -> AppResult<
         .filter_map(|(y,)| y.parse().ok())
         .collect();
 
-    let (films, episodes, shows, titles, rewatches, minutes, days): TotalsRow = scope
-        .one(
-            pool,
-            &format!(
-                "SELECT COALESCE(SUM(s.episode_id IS NULL), 0),
-                        COALESCE(SUM(s.episode_id IS NOT NULL), 0),
-                        COUNT(DISTINCT CASE WHEN s.episode_id IS NOT NULL THEN s.title_id END),
-                        COUNT(DISTINCT s.title_id),
-                        COALESCE(SUM(s.is_rewatch), 0),
-                        CAST(COALESCE(SUM({MINUTES}), 0) AS REAL),
-                        COUNT(DISTINCT CASE WHEN s.undated = 0 THEN substr(s.watched_at, 1, 10) END)
-                   FROM scoped s
-                   JOIN title t ON t.id = s.title_id
-                   LEFT JOIN episode e ON e.id = s.episode_id"
-            ),
-        )
-        .await?;
+    let (films, episodes, shows, titles, rewatches, minutes, days) = totals(&scope, pool).await?;
 
     // A year is drawn month by month; all time, year by year.
     let unit_len = if scope.year.is_some() { 7 } else { 4 };
@@ -249,21 +371,7 @@ pub async fn stats(state: &AppState, user_id: i64, q: &StatsQuery) -> AppResult<
         .await?;
     let timeline = fill_timeline(scope.year.as_deref(), timeline);
 
-    let genres: Vec<(String, i64, f64)> = scope
-        .all(
-            pool,
-            &format!(
-                "SELECT g.value, COUNT(DISTINCT t.id), CAST(COALESCE(SUM({MINUTES}), 0) AS REAL)
-                   FROM scoped s
-                   JOIN title t ON t.id = s.title_id
-                   LEFT JOIN episode e ON e.id = s.episode_id,
-                   json_each(t.genres_json) g
-                  GROUP BY g.value
-                  ORDER BY 2 DESC, 3 DESC
-                  LIMIT 12"
-            ),
-        )
-        .await?;
+    let genres = genre_rows(&scope, pool, 12).await?;
 
     let decades: Vec<(i64, i64)> = scope
         .all(
@@ -276,21 +384,7 @@ pub async fn stats(state: &AppState, user_id: i64, q: &StatsQuery) -> AppResult<
         )
         .await?;
 
-    // All time covers every rating, including titles rated without a
-    // recorded watch; a year covers what was watched in it. Manga have their
-    // own half.
-    let rated = if scope.year.is_some() {
-        format!(
-            "{} AND l.rating IS NOT NULL AND l.title_id IN (SELECT title_id FROM scoped)",
-            scope.mine()
-        )
-    } else {
-        format!(
-            "{} AND l.rating IS NOT NULL
-             AND l.title_id IN (SELECT id FROM title WHERE kind != 'manga')",
-            scope.mine()
-        )
-    };
+    let rated = rated_filter(&scope);
     let buckets: Vec<(i64, i64)> = scope
         .all(
             pool,
@@ -309,12 +403,7 @@ pub async fn stats(state: &AppState, user_id: i64, q: &StatsQuery) -> AppResult<
             *slot += n;
         }
     }
-    let (mean_rating,): (Option<f64>,) = scope
-        .one(
-            pool,
-            &format!("SELECT AVG(l.rating) FROM library_entry l WHERE {rated}"),
-        )
-        .await?;
+    let mean_rating = mean_rating(&scope, pool).await?;
 
     let (longest, current) = scope_streaks(&scope, pool).await?;
 
@@ -399,15 +488,7 @@ pub async fn stats(state: &AppState, user_id: i64, q: &StatsQuery) -> AppResult<
         )
         .await?;
 
-    // The library as it stands, films and shows: what the bar at the end shows.
-    let library: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT l.status, COUNT(*) FROM library_entry l JOIN title t ON t.id = l.title_id
-          WHERE l.user_id = ? AND t.kind != 'manga'
-          GROUP BY l.status",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
+    let library = library_by_status(pool, user_id).await?;
     let (manga,): (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM library_entry l JOIN title t ON t.id = l.title_id
           WHERE l.user_id = ? AND t.kind = 'manga'",

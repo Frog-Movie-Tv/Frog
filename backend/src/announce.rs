@@ -12,6 +12,7 @@
 //! The worker asks every minute (`crate::jobs`); `due` decides and
 //! `Announcement::payload` is what the notification says.
 
+use crate::clock::Stamp;
 use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::Tz;
 use serde_json::{json, Value};
@@ -69,7 +70,7 @@ pub async fn set_time_zone(pool: &SqlitePool, user_id: i64, zone: &str) -> AppRe
     .bind(user_id)
     .bind(TIME_ZONE_KEY)
     .bind(zone)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(pool)
     .await?;
     Ok(true)
@@ -272,7 +273,7 @@ pub async fn run(state: &AppState, now: DateTime<Utc>) -> AppResult<()> {
                     }
                 }
             }
-            let sent_at = Utc::now().to_rfc3339();
+            let sent_at = Utc::now().stamp();
             if a.film {
                 sqlx::query(
                     "INSERT OR IGNORE INTO push_sent_title (user_id, title_id, sent_at)

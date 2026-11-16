@@ -18,6 +18,7 @@
 //!
 //! `docs/CATALOG-IDENTITY.md` has the reasoning.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -246,7 +247,7 @@ async fn link(
             .bind(id.provider())
             .bind(id.key())
             .bind(primary)
-            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().stamp())
             .execute(&mut *conn)
             .await?;
         }
@@ -260,7 +261,7 @@ pub async fn mark_gone(pool: &SqlitePool, id: &ExternalId) -> AppResult<()> {
         "UPDATE title_external SET gone_at = COALESCE(gone_at, ?)
           WHERE provider = ? AND external_id = ?",
     )
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(id.provider())
     .bind(id.key())
     .execute(pool)
@@ -594,7 +595,7 @@ async fn insert_title(pool: &SqlitePool, id: &ExternalId, core: &TitleCore) -> A
     .bind(&core.genres_json)
     .bind(core.tmdb_vote)
     .bind(core.collection_id)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(text::search_name(&core.name, core.original_name.as_deref()))
     .execute(&mut *tx)
     .await?
@@ -607,7 +608,7 @@ async fn insert_title(pool: &SqlitePool, id: &ExternalId, core: &TitleCore) -> A
     .bind(title_id)
     .bind(id.provider())
     .bind(id.key())
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(&mut *tx)
     .await?
     .rows_affected();
@@ -647,7 +648,7 @@ async fn update_title(pool: &SqlitePool, title_id: i64, core: &TitleCore) -> App
     .bind(&core.genres_json)
     .bind(core.tmdb_vote)
     .bind(core.collection_id)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(title_id)
     .execute(pool)
     .await?;
@@ -710,7 +711,7 @@ pub async fn ensure_local_title(pool: &SqlitePool, t: &LocalTitle<'_>) -> AppRes
     // Not read from AniList yet (`ensure` does that when it is opened), and
     // its credits come with that detail rather than the TMDB backfill.
     sqlx::query("UPDATE title SET refreshed_at = NULL, people_synced_at = ? WHERE id = ?")
-        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().stamp())
         .bind(title_id)
         .execute(pool)
         .await?;
@@ -759,7 +760,7 @@ pub async fn store_credits(pool: &SqlitePool, title_id: i64, detail: &Value) -> 
         .await?;
     }
     sqlx::query("UPDATE title SET people_synced_at = ? WHERE id = ?")
-        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().stamp())
         .bind(title_id)
         .execute(&mut *tx)
         .await?;

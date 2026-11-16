@@ -6,6 +6,7 @@
 //! that is about one entry is counted and the rest go on; an outage (TMDB or
 //! AniList out of reach) stops the sync, which is tried again later.
 
+use crate::clock::Stamp;
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
@@ -154,7 +155,7 @@ pub async fn sync_user(state: &AppState, user_id: i64) -> AppResult<Summary> {
         return Ok(Summary::default());
     };
     let result = sync_inner(state, user_id).await;
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     match &result {
         // Only a sync that finished moves synced_at: it is the checkpoint
         // Settings shows and the worker counts from.
@@ -202,7 +203,7 @@ fn retry_after(failures: i64) -> String {
         rand::thread_rng().gen_range(0.8..1.2)
     };
     let seconds = (minutes * 60.0 * jitter) as i64;
-    (Utc::now() + chrono::Duration::seconds(seconds)).to_rfc3339()
+    (Utc::now() + chrono::Duration::seconds(seconds)).stamp()
 }
 
 /// TMDB out of reach, as opposed to something wrong with one entry: the
@@ -243,7 +244,7 @@ async fn sync_inner(state: &AppState, user_id: i64) -> AppResult<Summary> {
             token: &token,
             user_id,
         },
-        started: Utc::now().to_rfc3339(),
+        started: Utc::now().stamp(),
         summary: Summary {
             entries: remotes.len() as i64,
             ..Default::default()

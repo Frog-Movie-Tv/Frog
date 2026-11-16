@@ -9,6 +9,7 @@
 //! pictures are drawn from the catalogue's art until an administrator redraws
 //! one, so their rows hold none.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -318,7 +319,7 @@ pub async fn create(
     if name_taken(pool, name, None).await? {
         return Err(taken());
     }
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     let (id,): (i64,) = sqlx::query_as(
         "INSERT INTO badge (name, description, large, small, original, original_mime,
                             settings_json, created_at, updated_at)
@@ -350,7 +351,7 @@ pub async fn update(
     if name_taken(pool, name, Some(id)).await? {
         return Err(taken());
     }
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     // An automatic badge renamed or reworded keeps its words from then on.
     let found = sqlx::query(
         "UPDATE badge
@@ -569,7 +570,7 @@ pub async fn restore(pool: &SqlitePool, removed: &Removed) -> AppResult<i64> {
     .bind(mime)
     .bind(&settings)
     .bind(&removed.created_at)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .fetch_one(&mut *tx)
     .await?;
     for a in &removed.awards {
@@ -604,7 +605,7 @@ pub async fn award(pool: &SqlitePool, badge_id: i64, user_id: i64, by: i64) -> A
     )
     .bind(user_id)
     .bind(badge_id)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(by)
     .bind(user_id)
     .execute(pool)
@@ -726,6 +727,21 @@ pub async fn held(pool: &SqlitePool, user_id: i64, with_hidden: bool) -> AppResu
         .collect())
 }
 
+/// The large picture of a badge someone holds, at its address, for a
+/// notification: what the page and the push show instead of a crown.
+pub async fn held_picture(
+    pool: &SqlitePool,
+    user_id: i64,
+    username: &str,
+    badge_id: i64,
+) -> AppResult<Option<String>> {
+    Ok(held(pool, user_id, true)
+        .await?
+        .iter()
+        .find(|h| h.id == badge_id)
+        .map(|h| address(username, h, Size::Large)))
+}
+
 /// Where a held badge's picture is served: through the holder's profile, so
 /// only someone who may see that profile can load it. The version changes
 /// with the picture, which lets the answer be cached for good.
@@ -817,7 +833,7 @@ pub async fn set_condition(
     let done =
         sqlx::query("UPDATE badge SET condition = ?, updated_at = ? WHERE id = ? AND rule IS NULL")
             .bind(text)
-            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().stamp())
             .bind(id)
             .execute(pool)
             .await?;

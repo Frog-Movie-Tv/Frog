@@ -5,6 +5,7 @@
 //! not been released is ever watchable, and a finished season stays finished
 //! when a sequel is announced.
 
+use crate::clock::Stamp;
 use serde::Serialize;
 use sqlx::SqlitePool;
 
@@ -483,7 +484,7 @@ pub async fn set_count(
             .await?;
     if kind == "manga" {
         if count > before {
-            let now = chrono::Utc::now().to_rfc3339();
+            let now = chrono::Utc::now().stamp();
             store::record_reads(pool, user_id, title_id, (before, count), &now, "manual").await?;
         } else {
             store::take_back_reads(pool, user_id, title_id, count, None).await?;

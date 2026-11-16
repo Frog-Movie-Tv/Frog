@@ -49,6 +49,25 @@ test('nothing picked adds up everything', () => {
 	);
 });
 
+test('a film watched twice is one film and one rewatch', () => {
+	const twice = [
+		fact(9, {
+			units: [
+				['2026-01', 100, 1, 0, 0],
+				['2026-03', 100, 1, 0, 1]
+			]
+		})
+	];
+	const v = view(twice, {}, units);
+	assert.equal(v.totals.films, 1);
+	assert.equal(v.totals.rewatches, 1);
+	assert.deepEqual(
+		v.timeline.map((t) => t.films),
+		[1, 0, 1],
+		'each month still shows the watch it had'
+	);
+});
+
 test('a genre narrows every other chart, and keeps its own bars', () => {
 	const v = view(facts, { genre: 'Comedy' }, units);
 	assert.equal(v.totals.titles, 2);

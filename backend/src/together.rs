@@ -13,6 +13,7 @@
 //! episode ticked from then on names them, from the page, a whole season or
 //! the browser extension alike.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -81,7 +82,7 @@ pub async fn set_default(
         .bind(title_id)
         .execute(&mut *tx)
         .await?;
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     for id in &with {
         sqlx::query(
             "INSERT INTO watching_with (user_id, title_id, with_user_id, created_at)
@@ -144,7 +145,7 @@ pub async fn tag(
     if watch_ids.is_empty() || people.is_empty() {
         return Ok(());
     }
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     for &watch in watch_ids {
         for &person in people {
             sqlx::query(
@@ -270,7 +271,7 @@ async fn tell(state: &AppState, owner: i64, person: i64, watch_ids: &[i64]) -> A
                       WHERE id = ? AND user_id = ?",
                 )
                 .bind(payload.to_string())
-                .bind(Utc::now().to_rfc3339())
+                .bind(Utc::now().stamp())
                 .bind(id)
                 .bind(person)
                 .execute(pool)
@@ -424,7 +425,7 @@ pub async fn add_to_mine(
     .bind(json!(watches).to_string())
     .fetch_all(pool)
     .await?;
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     let mut copied = 0;
     let mut titles = Vec::new();
     for (title_id, episode_id, watched_at, undated, logged_at) in rows {

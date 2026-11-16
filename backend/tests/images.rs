@@ -3,6 +3,7 @@
 //! harmless, and a cache it cannot read is reported rather than half-done.
 
 use chrono::{DateTime, Duration, Utc};
+use frog::clock::Stamp;
 use sqlx::SqlitePool;
 
 use frog::images::{evict, Evicted, MAX_IDLE_DAYS};
@@ -21,7 +22,7 @@ async fn database() -> (SqlitePool, tempfile::TempDir) {
 
 /// A picture of `size` bytes last served `days_ago`.
 async fn picture(pool: &SqlitePool, key: &str, size: usize, days_ago: i64, now: DateTime<Utc>) {
-    let at = (now - Duration::days(days_ago)).to_rfc3339();
+    let at = (now - Duration::days(days_ago)).stamp();
     sqlx::query(
         "INSERT INTO image_cache (path, content_type, bytes, fetched_at, served_at, size)
          VALUES (?, 'image/jpeg', ?, ?, ?, ?)",

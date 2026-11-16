@@ -1,6 +1,7 @@
 //! The calendar and the diary: the same watch data read forwards and back,
 //! for one account. `routes::timeline` is HTTP only.
 
+use crate::clock::Stamp;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -291,7 +292,7 @@ pub async fn diary(
             Vec::new()
         } else {
             sqlx::query_as(
-                "SELECT e.season_number, e.episode_number, e.name, s.rating, w.is_rewatch
+                "SELECT e.season_number, e.episode_number, e.name, CAST(NULL AS REAL), w.is_rewatch
                    FROM watch_event w
                    JOIN episode e ON e.id = w.episode_id
                    LEFT JOIN episode_state s ON s.episode_id = e.id AND s.user_id = ?
@@ -435,7 +436,7 @@ pub async fn redate(
                 .bind(title_id)
                 .bind(day)
                 .bind(user_id)
-                .bind(chrono::Utc::now().to_rfc3339())
+                .bind(chrono::Utc::now().stamp())
                 .execute(pool)
                 .await?
         }
@@ -454,7 +455,7 @@ pub async fn redate(
         ),
         When::Today => (
             Some(format!("UPDATE chapter_read SET read_at = ?4 {day_reads}")),
-            Some(chrono::Utc::now().to_rfc3339()),
+            Some(chrono::Utc::now().stamp()),
         ),
     };
     let read = match sql {

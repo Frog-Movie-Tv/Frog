@@ -3,6 +3,7 @@
 //! tracked; watches are only ever added, never moved or removed, though an
 //! undated one from an earlier import takes the day a later import gives.
 
+use crate::clock::Stamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -400,7 +401,7 @@ async fn film_watches(
         )
         .bind(user_id)
         .bind(title_id)
-        .bind(chrono::Utc::now().to_rfc3339())
+        .bind(chrono::Utc::now().stamp())
         .execute(&state.pool)
         .await?;
     }
@@ -485,7 +486,7 @@ async fn tick_season(
     ))
     .bind(user_id)
     .bind(title_id)
-    .bind(chrono::Utc::now().to_rfc3339())
+    .bind(chrono::Utc::now().stamp())
     .bind(season)
     .bind(after)
     .bind(upto)
@@ -526,7 +527,7 @@ async fn tick_episodes(
     for e in episodes {
         let (at, undated) = match e.watched_at.as_deref() {
             Some(at) => (at.to_string(), 0),
-            None => (chrono::Utc::now().to_rfc3339(), 1),
+            None => (chrono::Utc::now().stamp(), 1),
         };
         if undated == 0 {
             sqlx::query(

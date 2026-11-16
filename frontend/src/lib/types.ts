@@ -754,7 +754,14 @@ export interface AdminUser {
 export interface InstanceInfo {
 	version: string;
 	database_bytes: number;
-	image_cache_bytes: number;
+	/** Where the database's bytes go, each once; they add up to it. */
+	storage: {
+		yours: number;
+		catalogue: number;
+		caches: number;
+		pictures: number;
+		free: number;
+	};
 	accounts: number;
 	/** Every title this Frog has come to know. */
 	titles?: { all: number; films: number; shows: number; manga: number };

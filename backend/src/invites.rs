@@ -2,6 +2,7 @@
 //! expiry. Only the SHA-256 of a code is stored, as with sessions and
 //! recovery codes, so the database never holds a working invitation.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use sqlx::SqlitePool;
 
@@ -73,7 +74,7 @@ pub async fn revoke(pool: &SqlitePool, id: &str) -> AppResult<bool> {
 /// account then fails to be created, `release` puts it back.
 pub async fn claim(pool: &SqlitePool, code: &str) -> AppResult<Role> {
     let hash = hash_code(code);
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
 
     let taken = sqlx::query(
         "UPDATE invite SET used_at = ?

@@ -23,6 +23,15 @@ In progress.
 - Genres read the same for films and shows everywhere: Science Fiction,
   Fantasy, Action and Adventure, once each, in Stats, profiles, filters and
   shelves.
+- Airing lists each part of the day in the order things come out.
+- The Calendar's key shows the chips it explains, and today's date.
+- On a phone, a title's status and rating sit together, with its other
+  actions on the row below.
+- Administration's Storage card shows what is libraries, titles, kept
+  pictures and free space, each once.
+- A badge's notification shows the badge itself.
+- About credits MDBList for scores and fanart.tv for logos.
+- Searching a name you searched before answers at once.
 
 ### Fixes
 
@@ -30,6 +39,13 @@ In progress.
   out, even when you watched it early.
 - A title you take off AniList leaves Frog too, and Connections no longer
   asks you to look at it.
+- Your profile and Stats show the same figures, and a film watched twice
+  counts as one film.
+- A profile's Badges tab opens faster.
+- The credits at the foot of a short page sit at the bottom.
+- A setting that could not be saved says so.
+- A title that was finished before it was started now starts on the day it
+  was finished.
 
 ## [1.9.0] — Reed Frog — 2026-11-16
 

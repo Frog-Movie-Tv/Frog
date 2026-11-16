@@ -1,3 +1,4 @@
+use crate::clock::Stamp;
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::Deserialize;
@@ -125,7 +126,7 @@ pub async fn upsert(
     let finished_now = body.patch.status.as_deref() == Some("completed")
         && before.as_ref().map(|e| e.status.as_str()) != Some("completed");
     if kind == "movie" && finished_now {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = chrono::Utc::now().stamp();
         store::add_first_film_watch(&state.pool, auth.user_id(), title_id, &now, false, "tick")
             .await?;
     }

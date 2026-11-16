@@ -7,6 +7,7 @@
 //! every few hours, sync AniList, report server failures, send
 //! notifications the minute something comes out, and give badges.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use std::time::Duration;
 
@@ -104,7 +105,7 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
     // Stale answers stand in while TMDB is down, which a week covers; kept a
     // month they were half the cache on a small server (120 MB of 250).
     let dropped = sqlx::query("DELETE FROM tmdb_cache WHERE expires_at < ?")
-        .bind((Utc::now() - chrono::Duration::days(STALE_TMDB_DAYS)).to_rfc3339())
+        .bind((Utc::now() - chrono::Duration::days(STALE_TMDB_DAYS)).stamp())
         .execute(&state.pool)
         .await?
         .rows_affected();
@@ -343,7 +344,7 @@ pub async fn report_ops_failures(state: &AppState) -> anyhow::Result<Vec<(i64, u
             )
             .bind(user_id)
             .bind(&mark)
-            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().stamp())
             .execute(&state.pool)
             .await?;
         }
@@ -486,7 +487,7 @@ async fn refresh_airing_shows(state: &AppState) {
         return;
     }
 
-    let cutoff = (Utc::now() - chrono::Duration::hours(6)).to_rfc3339();
+    let cutoff = (Utc::now() - chrono::Duration::hours(6)).stamp();
     let rows: Vec<(i64,)> = sqlx::query_as(
         "SELECT DISTINCT t.id
            FROM library_entry l

@@ -214,7 +214,9 @@ impl TitleCore {
             }),
             episode_count: i64_at(v, "number_of_episodes"),
             season_count: i64_at(v, "number_of_seasons"),
-            genres_json: serde_json::to_string(&genres).unwrap_or_else(|_| "[]".into()),
+            // One vocabulary for films and shows (`crate::genres`).
+            genres_json: serde_json::to_string(&crate::genres::unify(&genres))
+                .unwrap_or_else(|_| "[]".into()),
             tmdb_vote: f64_at(v, "vote_average").filter(|n| *n > 0.0),
             imdb_id,
             collection_id: v.get("belongs_to_collection").and_then(|c| i64_at(c, "id")),

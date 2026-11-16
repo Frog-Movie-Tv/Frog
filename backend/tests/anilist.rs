@@ -1,6 +1,7 @@
 //! AniList sync against a stand-in AniList: sign-in, placing seasons by id,
 //! and changes travelling in both directions.
 
+use frog::clock::Stamp;
 use std::sync::{Arc, Mutex};
 
 use axum::body::Body;
@@ -1914,7 +1915,7 @@ async fn a_list_is_read_whole_and_a_failed_read_changes_nothing() {
     assert_eq!(after.0, good.0, "a failure is not a sync");
     assert!(after.1.is_some());
     assert_eq!(after.2, 1);
-    assert!(after.3.unwrap() > chrono::Utc::now().to_rfc3339());
+    assert!(after.3.unwrap() > chrono::Utc::now().stamp());
     assert_eq!(h.watched(95479).await.len(), 7, "nothing taken away");
     assert_eq!(
         count(

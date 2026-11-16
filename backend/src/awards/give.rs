@@ -8,6 +8,7 @@
 //! loses it again, and its notification goes when nothing it announced is
 //! left. After that it stays for good, whatever happens to the library.
 
+use crate::clock::Stamp;
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde_json::json;
 use sqlx::SqlitePool;
@@ -27,7 +28,7 @@ pub const GRACE_HOURS: i64 = 24;
 /// hand-made badge already has is never taken from it: that automatic badge
 /// waits (`waiting`) until an administrator renames one of the two.
 pub async fn seed(pool: &SqlitePool) -> AppResult<()> {
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     for e in catalogue::all() {
         let sig = catalogue::signature(e);
         let row: Option<(i64, Option<String>, bool)> =
@@ -195,7 +196,7 @@ pub async fn settle(
 
     let had: HashSet<i64> = held.iter().map(|r| r.0).collect();
     let run = now.timestamp_millis();
-    let stamp = now.to_rfc3339();
+    let stamp = now.stamp();
     let mut given: Vec<&Earned> = earned
         .iter()
         .filter(|e| id_of.get(&e.key).is_some_and(|id| !had.contains(id)))
@@ -228,7 +229,8 @@ pub async fn settle(
             .iter()
             .filter_map(|e| catalogue::get(&e.key).map(|c| (c.name.clone(), c.about.clone())))
             .collect();
-        tell(state, user_id, run, &told).await?;
+        let first = given.first().and_then(|e| id_of.get(&e.key)).copied();
+        tell(state, user_id, run, &told, first).await?;
     }
     Ok(out)
 }
@@ -255,8 +257,9 @@ pub async fn settle_custom(
             .collect();
     // A millisecond past the run's own, so its notification stays apart.
     let run = now.timestamp_millis() + 1;
-    let stamp = now.to_rfc3339();
+    let stamp = now.stamp();
     let mut told = Vec::new();
+    let mut first = None;
     for (badge, e) in reached.into_iter().filter(|(b, _)| !held.contains(&b.id)) {
         let mut evidence = serde_json::to_value(&e.evidence).unwrap_or_else(|_| json!({}));
         evidence["run"] = json!(run);
@@ -276,10 +279,11 @@ pub async fn settle_custom(
         .bind(RULE_VERSION)
         .execute(pool)
         .await?;
+        first.get_or_insert(badge.id);
         told.push((badge.name, badge.description.unwrap_or_default()));
     }
     if !told.is_empty() {
-        tell(state, user_id, run, &told).await?;
+        tell(state, user_id, run, &told, first).await?;
     }
     Ok(())
 }
@@ -288,12 +292,14 @@ pub fn ref_key(user_id: i64, run: i64) -> String {
     format!("badges:{user_id}:{run}")
 }
 
-/// One notification for a run, however many it gave, as (name, about).
+/// One notification for a run, however many it gave, as (name, about),
+/// drawn with the first badge's own picture.
 async fn tell(
     state: &AppState,
     user_id: i64,
     run: i64,
     given: &[(String, String)],
+    first: Option<i64>,
 ) -> AppResult<()> {
     let names: Vec<&str> = given.iter().map(|(name, _)| name.as_str()).collect();
     let username = crate::badges::holder_name(&state.pool, user_id)
@@ -303,11 +309,16 @@ async fn tell(
         [one] => (format!("You earned {one}"), given[0].1.clone()),
         many => (format!("You earned {} badges", many.len()), many.join(", ")),
     };
+    let picture = match first {
+        Some(id) => crate::badges::held_picture(&state.pool, user_id, &username, id).await?,
+        None => None,
+    };
     let push = json!({
         "title": title,
         "body": body,
         "url": format!("/people/{}/badges", urlencoding::encode(&username)),
         "tag": format!("frog-badges-{run}"),
+        "icon": picture,
     });
     crate::inbox::tell(
         state,
@@ -321,6 +332,7 @@ async fn tell(
                 "name": names.first(),
                 "names": names,
                 "username": username,
+                "picture": picture,
             }),
             ref_key: Some(ref_key(user_id, run)),
             ..Default::default()

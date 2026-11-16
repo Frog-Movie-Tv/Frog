@@ -37,6 +37,7 @@ pub async fn connect(database_url: &str) -> anyhow::Result<SqlitePool> {
     mark_generation(&pool).await?;
 
     fill_search_names(&pool).await?;
+    unify_genres(&pool).await?;
     Ok(pool)
 }
 
@@ -269,6 +270,35 @@ pub async fn fill_search_names(pool: &SqlitePool) -> anyhow::Result<()> {
     }
     tx.commit().await?;
     tracing::info!(titles = rows.len(), "search names filled");
+    Ok(())
+}
+
+/// Titles stored before Frog used one genre vocabulary still hold TMDB's show
+/// words ("Sci-Fi & Fantasy"). Rewritten once here, at start, the way
+/// `fill_search_names` fills names: only rows that need it, so a start after
+/// that touches nothing. A refresh from TMDB writes the new words anyway.
+pub async fn unify_genres(pool: &SqlitePool) -> anyhow::Result<()> {
+    let rows: Vec<(i64, String)> =
+        sqlx::query_as("SELECT id, genres_json FROM title WHERE genres_json LIKE '%&%' OR genres_json LIKE '%\"Kids\"%'")
+            .fetch_all(pool)
+            .await?;
+    let rows: Vec<(i64, String)> = rows
+        .into_iter()
+        .filter(|(_, raw)| crate::genres::needs_unifying(raw))
+        .collect();
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let mut tx = pool.begin().await?;
+    for (id, raw) in &rows {
+        sqlx::query("UPDATE title SET genres_json = ? WHERE id = ?")
+            .bind(crate::genres::unify_json(raw))
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    tracing::info!(titles = rows.len(), "genres unified");
     Ok(())
 }
 

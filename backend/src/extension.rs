@@ -12,6 +12,7 @@
 //! a show and the diary behave the same. `extension_log` remembers each one,
 //! which is what makes logging idempotent and undo exact.
 
+use crate::clock::Stamp;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -809,7 +810,7 @@ pub struct Logged {
 /// The moment a watch is dated, from what the extension sent.
 pub fn watched_at(sent: Option<&str>, now: DateTime<Utc>) -> AppResult<String> {
     let Some(raw) = sent else {
-        return Ok(now.to_rfc3339());
+        return Ok(now.stamp());
     };
     let at = DateTime::parse_from_rfc3339(raw)
         .map_err(|_| AppError::BadRequest("a watch needs a valid time".into()))?
@@ -820,7 +821,7 @@ pub fn watched_at(sent: Option<&str>, now: DateTime<Utc>) -> AppResult<String> {
             "a watch cannot be in the future".into(),
         ));
     }
-    Ok(at.to_rfc3339())
+    Ok(at.stamp())
 }
 
 /// Log a film or an episode, as the title page would tick it.
@@ -868,7 +869,7 @@ pub async fn log(
         }
     };
 
-    let since = (now - Duration::hours(SAME_WATCH_HOURS)).to_rfc3339();
+    let since = (now - Duration::hours(SAME_WATCH_HOURS)).stamp();
     let earlier: Option<(i64,)> = sqlx::query_as(
         "SELECT id FROM extension_log
           WHERE user_id = ? AND token_id = ? AND title_id = ? AND episode_id IS ?
@@ -960,7 +961,7 @@ pub async fn log(
     .bind(episode_id)
     .bind(watch_id)
     .bind(&before)
-    .bind(now.to_rfc3339())
+    .bind(now.stamp())
     .fetch_one(&state.pool)
     .await?;
 
@@ -1247,9 +1248,9 @@ mod tests {
     fn a_watch_is_never_dated_ahead() {
         let now = Utc::now();
         assert!(watched_at(None, now).is_ok());
-        let later = (now + Duration::hours(2)).to_rfc3339();
+        let later = (now + Duration::hours(2)).stamp();
         assert!(watched_at(Some(&later), now).is_err());
-        let earlier = (now - Duration::hours(2)).to_rfc3339();
+        let earlier = (now - Duration::hours(2)).stamp();
         assert!(watched_at(Some(&earlier), now).is_ok());
         assert!(watched_at(Some("yesterday"), now).is_err());
     }

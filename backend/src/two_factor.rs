@@ -2,6 +2,7 @@
 //! recovery codes, stored as hashes. Turning it on and off is
 //! `routes::two_factor`; checking a code at sign-in is `second_factor_ok`.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use rand::Rng;
 use sha2::{Digest, Sha256};
@@ -182,7 +183,7 @@ pub async fn second_factor_ok(
         "UPDATE recovery_code SET used_at = ?
           WHERE user_id = ? AND code_hash = ? AND used_at IS NULL",
     )
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(user_id)
     .bind(hash_recovery(code))
     .execute(pool)

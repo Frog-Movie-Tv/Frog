@@ -634,8 +634,12 @@ part you are about to touch; change it when the code changes.
   showed nothing. Removing the heatmap outright reached only 1,250 ms, and
   deferring just moves the work to the middle of a scroll, so it was not
   shipped. Compare against an untouched show before trusting any number here.
-- **Stats count only titles in the library.** Watches of removed titles stay
-  in the database (the diary keeps them) but leave every total.
+- **Removing a title takes its watches** (`store::remove_entries`): the
+  entry, every watch and every episode's notes go together, and Undo puts
+  them back from `EntryRecord`. Decided for 1.9.1 so the library, the diary
+  and Stats never disagree about what was watched. Watches with no entry
+  left from older versions (246 on the live instance) stay in the diary and
+  out of every total: **Stats count only titles in the library.**
 - **Stats credits** live in `title_person`, filled by `store::ensure_title`
   and backfilled by the worker, 25 titles every 2 minutes.
 - **Pictures are made ready in the browser** (`lib/picture.ts`): avatars at 512

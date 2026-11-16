@@ -15,6 +15,7 @@
 //! `catalog` writes `COALESCE(new, old)`. `title_logo_check` (shared) says when
 //! a title may be asked again.
 
+use crate::clock::Stamp;
 use chrono::{Duration, Utc};
 use serde_json::{json, Value};
 
@@ -240,8 +241,8 @@ async fn fill(state: &AppState, title_id: i64) -> Option<String> {
             checked_at = excluded.checked_at, next_at = excluded.next_at",
     )
     .bind(title_id)
-    .bind(now.to_rfc3339())
-    .bind(next.to_rfc3339())
+    .bind(now.stamp())
+    .bind(next.stamp())
     .execute(&state.pool)
     .await;
     if let Err(e) = noted {
@@ -260,7 +261,7 @@ pub async fn first_look(state: &AppState, title_id: i64) -> Option<String> {
             .await
             .ok()
             .flatten();
-    if checked.is_some_and(|(next,)| next > Utc::now().to_rfc3339()) {
+    if checked.is_some_and(|(next,)| next > Utc::now().stamp()) {
         return None;
     }
     let state = state.clone();
@@ -282,7 +283,7 @@ pub async fn fill_due(state: &AppState) {
           ORDER BY c.next_at IS NOT NULL, c.next_at
           LIMIT ?",
     )
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(BATCH)
     .fetch_all(&state.pool)
     .await
