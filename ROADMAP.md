@@ -4,28 +4,18 @@ What is still to build, and what is known to be broken. Nothing else lives
 here: how things work is in [CLAUDE.md](CLAUDE.md), and what shipped is in
 [RELEASE-NOTES.md](RELEASE-NOTES.md). Take an item off when it ships.
 
-**Release:** 1.8.0 Chorus Frog. **Next codename:** not chosen yet. **Live at** a DuckDNS hostname on Oracle Cloud Always
+**Release:** 1.8.0 Dart Frog. **Next codename:** Reed Frog (1.9.0). **Live at** a DuckDNS hostname on Oracle Cloud Always
 Free, updating itself from each release (`docs/DEPLOY-ORACLE.md`).
 
 ## On the server
 
 Owner steps; nothing in a release does them.
 
-- **Run `install.sh` again from a current checkout.** The server's
-  `update.sh` and its systemd timeouts (900 s and 600 s, the repository's are
-  3600 s) are a fix behind: a run killed between pull and start leaves the
-  old image running and every later run saying it is up to date.
-  Administration → Server now says when the scripts are older than the
-  release.
 - **Give the space back to pictures.** Once the release that packs TMDB's
   cached answers has run a day, stop the instance, `VACUUM`, and raise
   `FROG_IMAGE_CACHE_MB` from 128 to 384 (`docs/DEPLOY-ORACLE.md`). Today the
   picture cache turns over within a day and 14% of `/img` requests take over
-  250 ms.
-- **Tidy `.env` and the machine.** Remove `FROG_ADMIN_PASSWORD` (the owner
-  reset link covers recovery) and `TVDB_API_KEY`; reboot for the waiting
-  kernel; `PermitRootLogin no` and `X11Forwarding no` in sshd; switch off
-  rpcbind.
+  250 ms. A `VACUUM` before then gives back only about 48 MB.
 
 ## To build
 
