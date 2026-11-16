@@ -1,9 +1,13 @@
-//! Badges: made by hand in Administration, given to people one at a time.
+//! Badges, and holding them.
 //!
 //! A badge is shared (`badge`), like a title; holding one is personal
-//! (`badge_award`), and the holder decides whether it shows and where. The
-//! pictures are finished in the browser, round and lossless, and only checked
-//! here: a PNG, square, the two sizes exactly. Nothing is awarded on its own.
+//! (`badge_award`), and the holder decides whether it shows and where. Most
+//! are made by hand in Administration and given one at a time; their pictures
+//! are finished in the browser, round and lossless, and only checked here: a
+//! PNG, square, the two sizes exactly. The rest Frog gives on its own
+//! (`crate::awards`): those carry their catalogue key in `rule`, and their
+//! pictures are drawn from the catalogue's art until an administrator redraws
+//! one, so their rows hold none.
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -194,15 +198,17 @@ pub struct Badge {
     pub updated_at: String,
     /// Everyone holding it, by account id.
     pub holders: Vec<i64>,
+    /// Set for one Frog gives on its own: its catalogue key.
+    pub rule: Option<String>,
 }
 
-type BadgeRow = (i64, String, Option<String>, String, String);
+type BadgeRow = (i64, String, Option<String>, String, String, Option<String>);
 
 /// Every badge, by name, with who holds each.
 pub async fn all(pool: &SqlitePool) -> AppResult<Vec<Badge>> {
     let rows: Vec<BadgeRow> = sqlx::query_as(
-        "SELECT id, name, description, created_at, updated_at FROM badge
-          ORDER BY name COLLATE NOCASE",
+        "SELECT id, name, description, created_at, updated_at, rule FROM badge
+          ORDER BY rule IS NOT NULL, name COLLATE NOCASE",
     )
     .fetch_all(pool)
     .await?;
@@ -213,31 +219,43 @@ pub async fn all(pool: &SqlitePool) -> AppResult<Vec<Badge>> {
     .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, name, description, created_at, updated_at)| Badge {
-            holders: held
-                .iter()
-                .filter(|(b, _)| *b == id)
-                .map(|(_, u)| *u)
-                .collect(),
-            id,
-            name,
-            description,
-            created_at,
-            updated_at,
-        })
+        .map(
+            |(id, name, description, created_at, updated_at, rule)| Badge {
+                holders: held
+                    .iter()
+                    .filter(|(b, _)| *b == id)
+                    .map(|(_, u)| *u)
+                    .collect(),
+                id,
+                name,
+                description,
+                created_at,
+                updated_at,
+                rule,
+            },
+        )
         .collect())
 }
 
 /// One badge, with the editor's settings, for editing it.
 pub async fn one(pool: &SqlitePool, id: i64) -> AppResult<Option<(Badge, String)>> {
-    let row: Option<(i64, String, Option<String>, String, String, String)> = sqlx::query_as(
-        "SELECT id, name, description, created_at, updated_at, settings_json FROM badge
+    type OneRow = (
+        i64,
+        String,
+        Option<String>,
+        String,
+        String,
+        String,
+        Option<String>,
+    );
+    let row: Option<OneRow> = sqlx::query_as(
+        "SELECT id, name, description, created_at, updated_at, settings_json, rule FROM badge
           WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(pool)
     .await?;
-    let Some((id, name, description, created_at, updated_at, settings)) = row else {
+    let Some((id, name, description, created_at, updated_at, settings, rule)) = row else {
         return Ok(None);
     };
     let holders: Vec<(i64,)> =
@@ -253,6 +271,7 @@ pub async fn one(pool: &SqlitePool, id: i64) -> AppResult<Option<(Badge, String)
             created_at,
             updated_at,
             holders: holders.into_iter().map(|(u,)| u).collect(),
+            rule,
         },
         settings,
     )))
@@ -316,10 +335,15 @@ pub async fn update(
         return Err(taken());
     }
     let now = Utc::now().to_rfc3339();
+    // An automatic badge renamed or reworded keeps its words from then on.
     let found = sqlx::query(
-        "UPDATE badge SET name = ?, description = ?,
-                settings_json = COALESCE(?, settings_json), updated_at = ?
-          WHERE id = ?",
+        "UPDATE badge
+            SET rule_kept = CASE WHEN rule IS NOT NULL
+                                      AND (name IS NOT ?1 OR description IS NOT ?2)
+                                 THEN 1 ELSE rule_kept END,
+                name = ?1, description = ?2,
+                settings_json = COALESCE(?3, settings_json), updated_at = ?4
+          WHERE id = ?5",
     )
     .bind(name)
     .bind(description)
@@ -362,27 +386,47 @@ impl Size {
     }
 }
 
-/// A finished picture: (bytes, updated_at).
+/// A finished picture: (bytes, updated_at). An automatic badge nobody has
+/// redrawn is drawn from its art.
 pub async fn picture(
     pool: &SqlitePool,
     id: i64,
     size: Size,
 ) -> AppResult<Option<(Vec<u8>, String)>> {
     let sql = match size {
-        Size::Large => "SELECT large, updated_at FROM badge WHERE id = ?",
-        Size::Small => "SELECT small, updated_at FROM badge WHERE id = ?",
+        Size::Large => "SELECT large, updated_at, rule FROM badge WHERE id = ?",
+        Size::Small => "SELECT small, updated_at, rule FROM badge WHERE id = ?",
     };
-    Ok(sqlx::query_as(sql).bind(id).fetch_optional(pool).await?)
+    let row: Option<(Vec<u8>, String, Option<String>)> =
+        sqlx::query_as(sql).bind(id).fetch_optional(pool).await?;
+    Ok(match row {
+        Some((bytes, version, Some(rule))) if bytes.is_empty() => {
+            crate::awards::art::picture(rule, size)
+                .await
+                .map(|b| (b, version))
+        }
+        Some((bytes, version, _)) => Some((bytes, version)),
+        None => None,
+    })
 }
 
-/// What was uploaded: (bytes, mime).
+/// What was uploaded: (bytes, mime). For an automatic badge nobody has
+/// redrawn, its large picture, which is where the editor starts from.
 pub async fn original(pool: &SqlitePool, id: i64) -> AppResult<Option<(Vec<u8>, String)>> {
-    Ok(
-        sqlx::query_as("SELECT original, original_mime FROM badge WHERE id = ?")
+    let row: Option<(Vec<u8>, String, Option<String>)> =
+        sqlx::query_as("SELECT original, original_mime, rule FROM badge WHERE id = ?")
             .bind(id)
             .fetch_optional(pool)
-            .await?,
-    )
+            .await?;
+    Ok(match row {
+        Some((bytes, _, Some(rule))) if bytes.is_empty() => {
+            crate::awards::art::picture(rule, Size::Large)
+                .await
+                .map(|b| (b, "image/png".to_string()))
+        }
+        Some((bytes, mime, _)) => Some((bytes, mime)),
+        None => None,
+    })
 }
 
 /// One holder of a removed badge, as they had it.
@@ -418,8 +462,18 @@ type RemovedRow = (
 );
 
 /// Remove a badge; its awards go with it (the key cascades). Answers what
-/// it was, or nothing when there was no such badge.
+/// it was, or nothing when there was no such badge. One Frog gives on its own
+/// stays: it would only come back at the next start, and be earned again.
 pub async fn remove(pool: &SqlitePool, id: i64) -> AppResult<Option<Removed>> {
+    let rule: Option<(Option<String>,)> = sqlx::query_as("SELECT rule FROM badge WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
+    if matches!(rule, Some((Some(_),))) {
+        return Err(AppError::Conflict(
+            "Frog gives this badge on its own. Rename or redraw it instead.".into(),
+        ));
+    }
     let mut tx = pool.begin().await?;
     // (name, description, settings, created_at, large, small, original, mime)
     let row: Option<RemovedRow> = sqlx::query_as(
@@ -566,13 +620,35 @@ pub struct Held {
     pub shown: bool,
     /// When its pictures last changed, for their addresses.
     pub version: String,
+    /// For one Frog gave on its own: its catalogue key, the day it was
+    /// earned, and the title it was earned with, when there is one.
+    pub rule: Option<String>,
+    pub earned_on: Option<String>,
+    pub earned_with: Option<String>,
 }
+
+/// (id, name, description, awarded_at, shown, version, rule, earned_on,
+///  earned with)
+type HeldRow = (
+    i64,
+    String,
+    Option<String>,
+    String,
+    bool,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
 
 /// The badges one account holds, in its order: every one for the holder
 /// themselves, only the shown ones for anybody else.
 pub async fn held(pool: &SqlitePool, user_id: i64, with_hidden: bool) -> AppResult<Vec<Held>> {
-    let rows: Vec<(i64, String, Option<String>, String, bool, String)> = sqlx::query_as(
-        "SELECT b.id, b.name, b.description, a.awarded_at, a.shown, b.updated_at
+    let rows: Vec<HeldRow> = sqlx::query_as(
+        "SELECT b.id, b.name, b.description, a.awarded_at, a.shown, b.updated_at, b.rule,
+                a.earned_on,
+                (SELECT t.name FROM title t
+                  WHERE t.id = json_extract(a.evidence, '$.title'))
            FROM badge_award a JOIN badge b ON b.id = a.badge_id
           WHERE a.user_id = ? AND (a.shown = 1 OR ?)
           ORDER BY a.position, a.awarded_at",
@@ -583,14 +659,21 @@ pub async fn held(pool: &SqlitePool, user_id: i64, with_hidden: bool) -> AppResu
     .await?;
     Ok(rows
         .into_iter()
-        .map(|(id, name, description, awarded_at, shown, version)| Held {
-            id,
-            name,
-            description,
-            awarded_at,
-            shown,
-            version,
-        })
+        .map(
+            |(id, name, description, awarded_at, shown, version, rule, earned_on, earned_with)| {
+                Held {
+                    id,
+                    name,
+                    description,
+                    awarded_at,
+                    shown,
+                    version,
+                    rule,
+                    earned_on,
+                    earned_with,
+                }
+            },
+        )
         .collect())
 }
 
@@ -608,6 +691,47 @@ pub fn address(username: &str, held: &Held, size: Size) -> String {
         },
         urlencoding::encode(&held.version)
     )
+}
+
+/// A badge Frog gives on its own, as the list of everything there is to earn
+/// shows it.
+pub struct Automatic {
+    pub id: i64,
+    pub rule: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub version: String,
+}
+
+/// Every badge Frog gives on its own that has its row, so not one waiting
+/// for a name.
+pub async fn automatic(pool: &SqlitePool) -> AppResult<Vec<Automatic>> {
+    let rows: Vec<(i64, String, String, Option<String>, String)> = sqlx::query_as(
+        "SELECT id, rule, name, description, updated_at FROM badge WHERE rule IS NOT NULL",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(id, rule, name, description, version)| Automatic {
+            id,
+            rule,
+            name,
+            description,
+            version,
+        })
+        .collect())
+}
+
+/// Whether a badge is one Frog gives on its own: anyone signed in may see
+/// those, earned or not.
+pub async fn is_automatic(pool: &SqlitePool, id: i64) -> AppResult<bool> {
+    let (yes,): (bool,) =
+        sqlx::query_as("SELECT EXISTS (SELECT 1 FROM badge WHERE id = ? AND rule IS NOT NULL)")
+            .bind(id)
+            .fetch_one(pool)
+            .await?;
+    Ok(yes)
 }
 
 /// The holder's name, for the address a notification opens.

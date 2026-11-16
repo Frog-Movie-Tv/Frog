@@ -2,7 +2,7 @@
 	import { api } from '#lib/api';
 	import { backCloses } from '#lib/layers.svelte';
 	import { toasts } from '#lib/toast.svelte';
-	import type { AdminBadge, AdminUser } from '#lib/types';
+	import type { AdminBadge, AdminUser, WaitingBadge } from '#lib/types';
 	import BadgeEditor from './BadgeEditor.svelte';
 	import Icon from './Icon.svelte';
 
@@ -13,6 +13,10 @@
 	let { users }: Props = $props();
 
 	let badges = $state<AdminBadge[]>([]);
+	/** Frog's own badges whose name a badge made here already has. */
+	let waiting = $state<WaitingBadge[]>([]);
+	const made = $derived(badges.filter((b) => !b.rule));
+	const automatic = $derived(badges.filter((b) => b.rule));
 	let loaded = $state(false);
 	/** The editor: open on a badge, on a new one (null), or shut (undefined). */
 	let editing = $state<AdminBadge | null | undefined>(undefined);
@@ -30,7 +34,7 @@
 
 	async function load() {
 		try {
-			badges = (await api.badges()).badges;
+			({ badges, waiting } = await api.badges());
 		} catch (e) {
 			toasts.error(e);
 		} finally {
@@ -89,44 +93,65 @@
 			<Icon name="plus" size={15} /> New badge
 		</button>
 	</div>
-	{#if loaded && !badges.length}
+	{#snippet row(badge: AdminBadge)}
+		<li>
+			<img
+				src={api.badgeImage(badge.id, 'small', badge.updated_at)}
+				alt=""
+				width="40"
+				height="40"
+			/>
+			<span class="label">
+				<strong>{badge.name}</strong>
+				<span class="faint">
+					{badge.description ? `${badge.description} · ` : ''}{count(badge.holders.length)}
+				</span>
+			</span>
+			<span class="controls">
+				<button class="btn ghost" onclick={() => (giving = badge)}>Give</button>
+				<button class="btn ghost" aria-label="Edit {badge.name}" onclick={() => (editing = badge)}>
+					<Icon name="pencil" size={15} /> Edit
+				</button>
+				{#if !badge.rule}
+					<button
+						class="btn ghost danger"
+						aria-label="Delete {badge.name}"
+						onclick={() => remove(badge)}
+					>
+						<Icon name="trash" size={15} />
+					</button>
+				{/if}
+			</span>
+		</li>
+	{/snippet}
+	{#if loaded && !made.length}
 		<p class="faint empty">Make a badge, then give it to the people who earned it.</p>
 	{:else}
 		<ul class="list list-pane">
-			{#each badges as badge (badge.id)}
-				<li>
-					<img
-						src={api.badgeImage(badge.id, 'small', badge.updated_at)}
-						alt=""
-						width="40"
-						height="40"
-					/>
-					<span class="label">
-						<strong>{badge.name}</strong>
-						<span class="faint">
-							{badge.description ? `${badge.description} · ` : ''}{count(badge.holders.length)}
-						</span>
-					</span>
-					<span class="controls">
-						<button class="btn ghost" onclick={() => (giving = badge)}>Give</button>
-						<button
-							class="btn ghost"
-							aria-label="Edit {badge.name}"
-							onclick={() => (editing = badge)}
-						>
-							<Icon name="pencil" size={15} /> Edit
-						</button>
-						<button
-							class="btn ghost danger"
-							aria-label="Delete {badge.name}"
-							onclick={() => remove(badge)}
-						>
-							<Icon name="trash" size={15} />
-						</button>
-					</span>
-				</li>
+			{#each made as badge (badge.id)}
+				{@render row(badge)}
 			{/each}
 		</ul>
+	{/if}
+	{#if waiting.length}
+		<p class="waiting small">
+			{waiting.length === 1 ? 'One of Frog’s badges is' : `${waiting.length} of Frog’s badges are`}
+			waiting for a name a badge here already has: {waiting.map((w) => w.name).join(', ')}. Rename
+			yours to let {waiting.length === 1 ? 'it' : 'them'} in.
+		</p>
+	{/if}
+	{#if automatic.length}
+		<details class="automatic">
+			<summary>Given by Frog <span class="faint">{automatic.length}</span></summary>
+			<p class="faint small">
+				Earned on their own, for milestones and moments. Rename or redraw any of them here.
+			</p>
+			<ul class="list list-pane">
+				{#each automatic as badge (badge.id)}
+					{@render row(badge)}
+				{/each}
+			</ul>
+		</details>
 	{/if}
 </section>
 
@@ -261,6 +286,25 @@
 
 	.label .faint {
 		font-size: 0.82rem;
+	}
+
+	.automatic {
+		margin-top: 16px;
+	}
+
+	.automatic summary {
+		cursor: pointer;
+		font-weight: 650;
+		padding: 6px 0;
+	}
+
+	.automatic > p {
+		margin: 0 0 8px;
+	}
+
+	.waiting {
+		margin: 12px 0 0;
+		color: var(--text-dim);
 	}
 
 	.controls {

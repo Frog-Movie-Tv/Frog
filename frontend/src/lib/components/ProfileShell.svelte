@@ -80,6 +80,7 @@
 		overview: '',
 		library: ' · Library',
 		ratings: ' · Ratings',
+		badges: ' · Badges',
 		compare: ' · Compare'
 	};
 </script>

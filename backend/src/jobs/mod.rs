@@ -4,8 +4,8 @@
 //! rows, and re-pull episodes for shows that are still airing so new episodes
 //! appear without anyone opening the page. Shorter loops beside it fill
 //! credits and logos, build the Airing list once a day, work out air times
-//! every few hours, sync AniList, report server failures, and send
-//! notifications the minute something comes out.
+//! every few hours, sync AniList, report server failures, send
+//! notifications the minute something comes out, and give badges.
 
 use chrono::Utc;
 use std::time::Duration;
@@ -41,6 +41,10 @@ const RESTORE_BATCH: i64 = 10;
 /// Notifications go out at the minute something airs.
 const ANNOUNCE_TICK: Duration = Duration::from_secs(60);
 
+/// Automatic badges: each account is looked at every minute, and worked out
+/// again only when something it counts changed or its day turned over.
+const BADGES_TICK: Duration = Duration::from_secs(60);
+
 pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         // Give the HTTP server a moment before the first sweep.
@@ -59,6 +63,8 @@ pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
         let _airing_guard = AbortOnDrop(airing);
         let announce = tokio::spawn(announce(state.clone()));
         let _announce_guard = AbortOnDrop(announce);
+        let badges = tokio::spawn(give_badges(state.clone()));
+        let _badges_guard = AbortOnDrop(badges);
         let twins = tokio::spawn({
             let state = state.clone();
             async move {
@@ -210,6 +216,21 @@ async fn announce(state: AppState) {
             tracing::warn!(error = %e, "notifications failed");
         }
         tokio::time::sleep(ANNOUNCE_TICK).await;
+    }
+}
+
+/// Badges Frog gives on its own (`crate::awards`). The catalogue is brought
+/// into the `badge` table once, then accounts are worked out on their loop.
+async fn give_badges(state: AppState) {
+    if let Err(e) = crate::awards::give::seed(&state.pool).await {
+        tracing::warn!(error = %e, "the automatic badges could not be set up");
+        return;
+    }
+    loop {
+        if let Err(e) = crate::awards::tick(&state).await {
+            tracing::warn!(error = %e, "badges failed");
+        }
+        tokio::time::sleep(BADGES_TICK).await;
     }
 }
 

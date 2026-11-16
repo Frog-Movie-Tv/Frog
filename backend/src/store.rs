@@ -248,6 +248,12 @@ pub struct WatchRecord {
     #[sqlx(skip)]
     #[serde(default)]
     pub with: Vec<i64>,
+    /// When and how it reached Frog, so undo puts back a watch that still
+    /// counts for the badges it counted for (`crate::awards::eligible`).
+    #[serde(default)]
+    pub logged_at: Option<String>,
+    #[serde(default)]
+    pub logged_how: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -1000,7 +1006,7 @@ pub async fn held_watches(
 ) -> AppResult<(Vec<WatchRecord>, Vec<EpisodeNoteRecord>)> {
     let mut watches = sqlx::query_as::<_, WatchRecord>(
         "SELECT e.season_number AS season, e.episode_number AS episode, w.watched_at,
-                w.is_rewatch, w.source, w.undated
+                w.is_rewatch, w.source, w.undated, w.logged_at, w.logged_how
            FROM watch_event w
            LEFT JOIN episode e ON e.id = w.episode_id
           WHERE w.user_id = ? AND w.title_id = ?",
@@ -1232,14 +1238,16 @@ pub async fn restore_entries(
             } else {
                 "manual"
             };
+            let (logged_at, logged_how) =
+                crate::awards::eligible::carried(w.logged_at.as_deref(), w.logged_how.as_deref());
             sqlx::query(
                 "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
-                                          source, undated)
+                                          source, undated, logged_at, logged_how)
                  SELECT ?1, t.id,
                         (SELECT e.id FROM episode e
                           WHERE e.title_id = t.id AND e.season_number = ?3
                             AND e.episode_number = ?4),
-                        ?5, ?6, ?7, ?8
+                        ?5, ?6, ?7, ?8, ?9, ?10
                    FROM title t
                   WHERE t.id = ?2
                     AND (?3 IS NULL OR EXISTS (SELECT 1 FROM episode e
@@ -1259,6 +1267,8 @@ pub async fn restore_entries(
             .bind(w.is_rewatch)
             .bind(source)
             .bind(w.undated)
+            .bind(logged_at)
+            .bind(logged_how)
             .execute(&mut *tx)
             .await?;
             for person in &w.with {
@@ -1330,23 +1340,27 @@ pub async fn restore_entries(
 }
 
 /// A film's first watch, unless it has one: finishing it again adds nothing.
+/// `how` is `tick` for one film finished, `bulk` for many marked at once.
 pub async fn add_first_film_watch(
     pool: &SqlitePool,
     user_id: i64,
     title_id: i64,
     watched_at: &str,
     undated: bool,
+    how: &str,
 ) -> AppResult<()> {
     sqlx::query(
         "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
-                                  source, undated)
-         SELECT ?1, ?2, NULL, ?3, 0, 'manual', ?4
+                                  source, undated, logged_at, logged_how)
+         SELECT ?1, ?2, NULL, ?3, 0, 'manual', ?4, ?5, ?6
           WHERE NOT EXISTS (SELECT 1 FROM watch_event WHERE user_id = ?1 AND title_id = ?2)",
     )
     .bind(user_id)
     .bind(title_id)
     .bind(watched_at)
     .bind(undated)
+    .bind(Utc::now().to_rfc3339())
+    .bind(how)
     .execute(pool)
     .await?;
     Ok(())
@@ -2513,6 +2527,10 @@ pub struct KeptWatch {
     pub undated: bool,
     pub is_rewatch: bool,
     pub source: String,
+    #[serde(default)]
+    pub logged_at: Option<String>,
+    #[serde(default)]
+    pub logged_how: Option<String>,
 }
 
 /// An episode of a title by its numbers.
@@ -2543,10 +2561,12 @@ pub async fn restore_watch(
     w: &KeptWatch,
     source: &str,
 ) -> AppResult<()> {
+    let (logged_at, logged_how) =
+        crate::awards::eligible::carried(w.logged_at.as_deref(), w.logged_how.as_deref());
     sqlx::query(
         "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
-                                  source, undated)
-         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+                                  source, undated, logged_at, logged_how)
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9
           WHERE NOT EXISTS (SELECT 1 FROM watch_event
                              WHERE user_id = ?1 AND episode_id = ?3 AND watched_at = ?4)",
     )
@@ -2557,6 +2577,8 @@ pub async fn restore_watch(
     .bind(w.is_rewatch)
     .bind(source)
     .bind(w.undated)
+    .bind(logged_at)
+    .bind(logged_how)
     .execute(pool)
     .await?;
     Ok(())
@@ -2652,7 +2674,7 @@ pub async fn clear_episode_watches(
     episode_id: i64,
 ) -> AppResult<Vec<KeptWatch>> {
     let cleared = sqlx::query_as(
-        "SELECT watched_at, undated, is_rewatch, source FROM watch_event
+        "SELECT watched_at, undated, is_rewatch, source, logged_at, logged_how FROM watch_event
           WHERE user_id = ? AND episode_id = ? ORDER BY watched_at",
     )
     .bind(user_id)

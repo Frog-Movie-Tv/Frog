@@ -13,6 +13,18 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### New
+
+- Badges now arrive on their own: 151 of them, for milestones and for
+  moments. A triple bill, a 30-day streak, a premiere on its first night, a
+  whole season in one sitting, 1,000 films. Only what you watch as it happens
+  counts toward the moments; everything already in your library counts
+  toward the milestones.
+- A badge shows the day you earned it and what you were watching. Beside
+  your name, only the highest step of each kind shows.
+- Every profile has a Badges tab: what has been earned, and every badge
+  still to come, in grey. On your own, each one shows how close you are.
+
 ### Fixes
 
 - Frog keeps you signed in while it restarts for an update.
