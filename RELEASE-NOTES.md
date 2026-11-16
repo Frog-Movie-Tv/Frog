@@ -13,6 +13,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+## [1.8.0] — Chorus Frog — 2026-11-16
+
+A few improvements and fixes.
+
 ### New
 
 - Badges now arrive on their own: 151 of them, for milestones and for
@@ -1142,6 +1146,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.8.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.8.0
 [1.7.2]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.7.2
 [1.7.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.7.1
 [1.7.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.7.0
