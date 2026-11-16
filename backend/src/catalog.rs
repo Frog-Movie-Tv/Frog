@@ -591,6 +591,7 @@ async fn keep(
     .execute(pool)
     .await?;
 
+    store_origin(pool, title_id, detail).await?;
     ensure_palette(state, title_id, core.poster_path.as_deref()).await;
     // Stats are a nice-to-have on top of the title; never fail the page for them.
     if let Err(e) = store_credits(pool, title_id, detail).await {
@@ -748,6 +749,49 @@ pub async fn ensure_local_title(pool: &SqlitePool, t: &LocalTitle<'_>) -> AppRes
         .execute(pool)
         .await?;
     Ok(title_id)
+}
+
+/// A title's origin countries and original language from a TMDB detail:
+/// `origin_country`, else the production countries, for both kinds.
+pub fn origin(detail: &Value) -> (Vec<String>, String) {
+    let codes = |list: &Value, key: Option<&str>| -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for c in list.as_array().into_iter().flatten() {
+            let code = match key {
+                Some(k) => c[k].as_str(),
+                None => c.as_str(),
+            };
+            if let Some(code) = code.filter(|c| c.len() == 2) {
+                let code = code.to_ascii_uppercase();
+                if !out.contains(&code) {
+                    out.push(code);
+                }
+            }
+        }
+        out
+    };
+    let mut countries = codes(&detail["origin_country"], None);
+    if countries.is_empty() {
+        countries = codes(&detail["production_countries"], Some("iso_3166_1"));
+    }
+    let language = detail["original_language"]
+        .as_str()
+        .filter(|l| l.len() == 2)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    (countries, language)
+}
+
+/// Write `origin` onto the title. Empty values mark it as asked.
+pub async fn store_origin(pool: &SqlitePool, title_id: i64, detail: &Value) -> AppResult<()> {
+    let (countries, language) = origin(detail);
+    sqlx::query("UPDATE title SET countries_json = ?, original_language = ? WHERE id = ?")
+        .bind(serde_json::to_string(&countries).unwrap_or_else(|_| "[]".into()))
+        .bind(language)
+        .bind(title_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// Replace the credits stats rank by. Marks the title as synced even when the

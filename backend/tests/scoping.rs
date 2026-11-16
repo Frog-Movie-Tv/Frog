@@ -57,7 +57,7 @@ const SCOPED_FRAGMENTS: [&str; 7] = [
 ];
 
 /// Statements that are global on purpose, each with its reason.
-const ALLOWED: [(&str, &str); 13] = [
+const ALLOWED: [(&str, &str); 14] = [
     (
         "SELECT t.id, x.external_id, t.kind FROM title t JOIN title_external x",
         "decides which shared AniList copies are TMDB's titles at start; reads          title_merge only to leave alone a copy somebody took apart again",
@@ -91,6 +91,10 @@ const ALLOWED: [(&str, &str); 13] = [
         "WHERE t.people_synced_at IS NULL",
         "decides which shared titles need credits; reads library_entry only to \
          see whether anybody tracks them, and writes nothing personal",
+    ),
+    (
+        "WHERE t.original_language IS NULL",
+        "decides which shared titles need their origin; reads library_entry only          to see whether anybody tracks them, and writes nothing personal",
     ),
     (
         "SELECT DISTINCT t.id FROM library_entry l JOIN title t",

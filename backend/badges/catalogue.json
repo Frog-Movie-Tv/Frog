@@ -260,6 +260,8 @@
     { "key": "hot-take", "kind": "total", "group": "taste", "ring": "lily", "name": "Hot Take", "about": "A title rated three points below TMDB." },
     { "key": "hidden-gem", "kind": "total", "group": "taste", "ring": "sapphire", "name": "Hidden Gem", "about": "An 8 or more for a title TMDB rates under 6." },
     { "key": "genre-hopper", "kind": "total", "group": "taste", "ring": "sapphire", "name": "Genre Hopper", "about": "Titles in 15 genres." },
+    { "key": "world-tour", "kind": "total", "group": "taste", "ring": "sapphire", "name": "World Tour", "about": "Titles from 15 countries." },
+    { "key": "subtitles-on", "kind": "total", "group": "taste", "ring": "lily", "name": "Subtitles On", "about": "25 titles not made in English." },
     { "key": "brave-frog", "kind": "total", "group": "taste", "ring": "lily", "name": "Brave Frog", "about": "25 horror titles." },
     { "key": "laugh-track", "kind": "total", "group": "taste", "ring": "lily", "name": "Laugh Track", "about": "50 comedies." },
     { "key": "documentarian", "kind": "total", "group": "taste", "ring": "lily", "name": "Documentarian", "about": "25 documentaries." },

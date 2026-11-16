@@ -576,6 +576,29 @@ pub fn totals(f: &Facts) -> Tally {
             }
         }
     }
+    // Where titles come from, and those not made in English.
+    let mut country_seen: BTreeMap<(NaiveDate, i64), &Entry> = BTreeMap::new();
+    for e in &watched_entries {
+        if let Some(i) = item_of(e) {
+            country_seen.insert((i.on, e.title_id), e);
+        }
+    }
+    let mut countries = HashSet::new();
+    for ((on, title), e) in &country_seen {
+        for c in &e.countries {
+            if countries.insert(c) && countries.len() == 15 {
+                once(&mut out, "world-tour", Some(Item::on(*on, Some(*title))));
+            }
+        }
+    }
+    out.count("world-tour", countries.len() as f64, 15.0);
+    let subtitled: Vec<Item> = watched_entries
+        .iter()
+        .filter(|e| !e.language.is_empty() && e.language != "en")
+        .filter_map(|e| item_of(e))
+        .collect();
+    out.count("subtitles-on", subtitled.len() as f64, 25.0);
+    once(&mut out, "subtitles-on", nth(subtitled, 25));
     let mut by_day: Vec<(NaiveDate, i64, i32)> = watched_entries
         .iter()
         .filter_map(|e| Some((item_of(e)?.on, e.title_id, e.release?.year() / 10)))

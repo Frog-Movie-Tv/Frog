@@ -404,7 +404,44 @@ pub async fn report_ops_failures(state: &AppState) -> anyhow::Result<Vec<(i64, u
 
 async fn credits(state: &AppState) -> Next {
     backfill_credits_once(state).await;
+    backfill_origins_once(state).await;
     Some(CREDITS_TICK)
+}
+
+/// Fill in where a title comes from and its language for titles stored
+/// before Frog kept them, from the cached detail as the credits are.
+pub async fn backfill_origins_once(state: &AppState) -> usize {
+    if !state.tmdb.is_configured() {
+        return 0;
+    }
+    let rows: Vec<(i64,)> = sqlx::query_as(
+        "SELECT t.id
+           FROM title t
+           JOIN title_external x ON x.title_id = t.id AND x.provider = 'tmdb' AND x.is_primary = 1
+          WHERE t.original_language IS NULL AND t.merged_into IS NULL
+            AND EXISTS (SELECT 1 FROM library_entry l WHERE l.title_id = t.id)
+          LIMIT ?",
+    )
+    .bind(CREDITS_BATCH)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+    let mut done = 0;
+    for (title_id,) in rows {
+        let stored = match catalog::load_answered(state, title_id).await {
+            Ok((_, detail)) => catalog::store_origin(&state.pool, title_id, &detail).await,
+            Err(e) => Err(e),
+        };
+        if let Err(e) = stored {
+            tracing::debug!(title_id, error = %e, "origin backfill paused");
+            break;
+        }
+        done += 1;
+    }
+    if done > 0 {
+        tracing::info!(done, "stored origins for older titles");
+    }
+    done
 }
 
 /// AniList-only films, and series' first seasons, that TMDB has too, from

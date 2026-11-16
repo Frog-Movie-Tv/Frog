@@ -71,14 +71,17 @@ const TITLE_TABLE: &str = "CREATE TABLE title_rebuilt (
     next_air_date    TEXT,
     next_air_season  INTEGER,
     next_air_episode INTEGER,
-    merged_into      INTEGER REFERENCES title (id) ON DELETE SET NULL
+    merged_into      INTEGER REFERENCES title (id) ON DELETE SET NULL,
+    countries_json   TEXT,
+    original_language TEXT
 )";
 
 /// The columns copied across, which are every column `TITLE_TABLE` has.
 const TITLE_COLUMNS: &str = "id, kind, name, original_name, overview, poster_path, backdrop_path,
     logo_path, release_date, last_air_date, tmdb_status, runtime, episode_count, season_count,
     genres_json, tmdb_vote, collection_id, accent_json, refreshed_at, people_synced_at,
-    search_name, next_air_date, next_air_season, next_air_episode, merged_into";
+    search_name, next_air_date, next_air_season, next_air_episode, merged_into, countries_json,
+    original_language";
 
 /// Bring `title` to `TITLE_TABLE`: drop the provider ids it used to carry
 /// (`tmdb_id`, `anilist_id`, `imdb_id`) once `202610301000_catalog_identity`

@@ -7702,6 +7702,45 @@ async fn watching_with_someone_tells_them_and_never_writes_for_them() {
             .await
             .unwrap();
     assert_eq!(mine, 3);
+    // A copy is judged for badges on when the owner recorded the watch, not
+    // on when it was copied: added three days late, it still counts.
+    let copies: Vec<(String, String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT c.watched_at, o.logged_at, c.logged_at, c.logged_how
+           FROM watch_event c
+           JOIN watch_event o ON o.user_id = ? AND o.title_id = c.title_id
+                             AND o.episode_id IS c.episode_id AND o.watched_at = c.watched_at
+          WHERE c.user_id = ? AND c.title_id = 2",
+    )
+    .bind(mihai)
+    .bind(zjef)
+    .fetch_all(&h.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(copies.len(), 3);
+    let parse = |at: &str| frog::awards::eligible::parse(at).unwrap();
+    for (watched, original, logged, how) in copies {
+        assert_eq!(logged.as_deref(), Some(original.as_str()));
+        assert_eq!(how.as_deref(), Some(frog::awards::eligible::TOGETHER));
+        let copy = |logged_at: chrono::DateTime<chrono::Utc>| frog::awards::eligible::Logged {
+            id: 0,
+            title_id: 2,
+            watched_at: parse(&watched),
+            logged_at: Some(logged_at),
+            how: how.clone(),
+            undated: false,
+            minutes: 24.0,
+        };
+        let late = parse(&original) + chrono::Duration::days(3);
+        assert!(frog::awards::eligible::recorded_as_it_happened(
+            &copy(parse(&original)),
+            late
+        ));
+        // Stamped with the moment it was copied, it would not have.
+        assert!(!frog::awards::eligible::recorded_as_it_happened(
+            &copy(late),
+            late
+        ));
+    }
     // The owner cannot answer for them.
     let (code, _, _) = h
         .post(&path, json!({ "action": "not_me" }), Some(&owner))

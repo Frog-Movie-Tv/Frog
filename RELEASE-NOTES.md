@@ -41,6 +41,10 @@ In progress.
 - Watching with… from a show's page, before you tick an episode.
 - Select on a person's page adds several of their titles at once, as a
   studio's page does.
+- Airing shows when a streamer usually puts its episodes out, for shows
+  with no set time.
+- Two new badges: World Tour, for titles from 15 countries, and Subtitles
+  On, for 25 titles not made in English.
 
 ### Fixes
 

@@ -45,6 +45,10 @@ pub struct Entry {
     pub tmdb_status: Option<String>,
     pub episode_count: Option<i64>,
     pub anime: bool,
+    /// TMDB's origin countries, and the language it was made in ("" when
+    /// not known yet).
+    pub countries: Vec<String>,
+    pub language: String,
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +150,8 @@ struct EntryRow {
     episode_count: Option<i64>,
     original_name: Option<String>,
     linked: bool,
+    countries_json: Option<String>,
+    original_language: Option<String>,
 }
 
 #[derive(FromRow)]
@@ -227,6 +233,7 @@ pub async fn read(pool: &SqlitePool, user_id: i64, tz: Tz, now: DateTime<Utc>) -
                 l.favourite, COALESCE(TRIM(l.notes) <> '', 0) AS has_notes, l.added_at,
                 l.finished_at, l.rewatch_count, l.progress, t.release_date, t.genres_json,
                 t.tmdb_vote, t.tmdb_status, t.episode_count, t.original_name,
+                t.countries_json, t.original_language,
                 EXISTS (SELECT 1 FROM title_external x
                          WHERE x.title_id = t.id AND x.provider = 'anilist')
                   OR (t.genres_json LIKE '%\"Animation\"%'
@@ -267,6 +274,12 @@ pub async fn read(pool: &SqlitePool, user_id: i64, tz: Tz, now: DateTime<Utc>) -
                 tmdb_vote: r.tmdb_vote,
                 tmdb_status: r.tmdb_status,
                 episode_count: r.episode_count,
+                countries: r
+                    .countries_json
+                    .as_deref()
+                    .and_then(|c| serde_json::from_str(c).ok())
+                    .unwrap_or_default(),
+                language: r.original_language.unwrap_or_default(),
             }
         })
         .collect();

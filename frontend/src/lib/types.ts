@@ -1106,6 +1106,8 @@ export interface AiringItem {
 	air_date: string;
 	/** The moment, UTC, when it is known. */
 	air_at: string | null;
+	/** When its streamer usually puts episodes out, when `air_at` is unknown. */
+	usual_at?: string;
 	/** More episodes of the show that day. */
 	more: number;
 	/** A film's TMDB release type: 2 or 3 in cinemas, 4 digital. */

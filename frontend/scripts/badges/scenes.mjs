@@ -2044,6 +2044,56 @@ export const SCENES = {
 		out += putFrog(640, 400, 3.2, { pose: 'leap', eyes: 'happy', mouth: 'open' }, -10);
 		return out;
 	},
+	'world-tour': () => {
+		let out = glow(512, 540, 340, '#8ff0ff', 0.26);
+		out += shadow(512, 838, 210, 18);
+		const ocean = radial('globe', [
+			[0, '#5fc3e8'],
+			[0.75, '#2c8ec9'],
+			[1, '#1d6a99']
+		]);
+		out += circle(512, 590, 236, ocean);
+		out +=
+			'<clipPath id="globe-clip"><circle cx="512" cy="590" r="236"/></clipPath>' +
+			'<g clip-path="url(#globe-clip)">' +
+			path(
+				'M318 470 Q380 404 462 436 Q506 488 452 530 Q424 610 360 600 Q296 548 318 470 Z',
+				C.pad
+			) +
+			path(
+				'M566 420 Q656 402 712 474 Q728 548 664 566 Q604 528 572 566 Q520 502 566 420 Z',
+				C.pad
+			) +
+			path('M520 648 Q604 626 646 696 Q606 790 540 780 Q498 708 520 648 Z', C.pad) +
+			ellipse(512, 590, 112, 236, 'none', { stroke: '#ffffff', sw: 6, opacity: 0.28 }) +
+			line('M276 590 L748 590 M296 486 L728 486 M296 694 L728 694', '#ffffff', 6, {
+				opacity: 0.28
+			}) +
+			'</g>';
+		out += circle(512, 590, 236, 'none', { stroke: '#1d5a80', sw: 10 });
+		out += line('M196 520 Q170 300 420 250 Q640 210 800 330', '#ffffff', 7, {
+			dash: '4 20',
+			opacity: 0.7
+		});
+		out += at(816, 352, 0.9, 30, plane());
+		out += at(300, 690, 1, -12, flag(170, { color: C.red }));
+		out += at(744, 700, 1, 10, flag(150, { color: C.yellow }));
+		out += putFrog(512, 350, 2.8, { eyes: 'happy', mouth: 'open' });
+		return out;
+	},
+	'subtitles-on': () => {
+		let out = glow(512, 500, 340, '#8ff0ff', 0.24);
+		out += shadow(512, 812, 250, 18);
+		const screen =
+			at(0, 0, 2.1, 0, peek({ eyes: 'focus', look: [0, 2] })) +
+			rect(-118, 42, 236, 70, 14, '#000000', { opacity: 0.62 }) +
+			line('M-92 64 L92 64 M-62 92 L62 92', '#ffffff', 11);
+		out += at(512, 560, 1.32, 0, tv(400, 300, { screen }));
+		out += at(270, 330, 1, -10, rect(-58, -34, 116, 68, 20, C.paper));
+		out += at(270, 330, 1, -10, line('M-30 -6 L30 -6 M-30 14 L10 14', '#b9b2a0', 9));
+		out += path('M246 360 L232 400 L282 366 Z', C.paper);
+		return out;
+	},
 	'brave-frog': () => {
 		let out = glow(512, 480, 330, '#8f5bd6', 0.24);
 		out += at(512, 452, 2.6, 0, peek({ eyes: 'wide', look: [2, 0] }));

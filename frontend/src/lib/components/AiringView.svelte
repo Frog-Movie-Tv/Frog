@@ -15,7 +15,7 @@
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { viewerZone } from '#lib/day';
 	import { failure, type Failure } from '#lib/failure';
-	import { airTime, episodeCode, plural } from '#lib/format';
+	import { airTime, clockTime, episodeCode, plural } from '#lib/format';
 	import { session } from '#lib/session.svelte';
 	import { titleHref } from '#lib/titles';
 	import type { AiringDay, AiringFilters, AiringItem } from '#lib/types';
@@ -200,9 +200,12 @@
 		return Number(hour);
 	}
 
+	/** Its moment, or when its streamer usually puts episodes out. */
+	const placedAt = (item: AiringItem) => item.air_at ?? item.usual_at;
+
 	/** The day's shows by part of the day, each timed part in time order (the
 	 *  most watched first at the same minute), time TBA and films most
-	 *  watched first. */
+	 *  watched first. A streamer's usual hour places a show without a time. */
 	const parts = $derived.by(() => {
 		const out = PARTS.map((name) => ({ name, items: [] as AiringItem[] }));
 		for (const item of shownItems) {
@@ -210,16 +213,17 @@
 				out[5].items.push(item);
 				continue;
 			}
-			if (!item.air_at) {
+			const at = placedAt(item);
+			if (!at) {
 				out[4].items.push(item);
 				continue;
 			}
-			const hour = hourHere(item.air_at);
+			const hour = hourHere(at);
 			out[hour < 6 ? 0 : hour < 12 ? 1 : hour < 18 ? 2 : 3].items.push(item);
 		}
 		// Stable, so a tie keeps the popularity order the list came in.
 		for (const part of out.slice(0, 4)) {
-			part.items.sort((a, b) => Date.parse(a.air_at!) - Date.parse(b.air_at!));
+			part.items.sort((a, b) => Date.parse(placedAt(a)!) - Date.parse(placedAt(b)!));
 		}
 		return out.filter((p) => p.items.length);
 	});
@@ -381,7 +385,11 @@
 													{/if}
 												</span>
 												<span class="line faint">
-													<span class="time" class:tba={!item.air_at}>{airTime(item.air_at)}</span>
+													<span class="time" class:tba={!item.air_at}
+														>{!item.air_at && item.usual_at
+															? `Usually ${clockTime(item.usual_at)}`
+															: airTime(item.air_at)}</span
+													>
 													{#if item.air_at}· <span class="rel">{fromNow(item.air_at)}</span>{/if}
 													{#if item.network}· {item.network}{/if}
 												</span>
