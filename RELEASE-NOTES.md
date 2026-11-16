@@ -47,6 +47,8 @@ In progress.
   late last night says yesterday, not today.
 - An anime AniList no longer shares the details of shows under Not found in
   Settings → Connections, saying why, instead of being skipped on every sync.
+- More shows on Airing find their air time, and a new show is looked for
+  again sooner.
 
 ## [1.8.0] — Chorus Frog — 2026-11-16
 

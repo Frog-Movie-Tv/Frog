@@ -306,7 +306,8 @@ part you are about to touch; change it when the code changes.
   the day, so TMDB moving the episode clears it. Nothing when TVmaze already
   lists that day or later (it is saying none airs), or the episodes disagree.
   A show TMDB's ids do not find on TVmaze is searched by name and first year,
-  and taken only when exactly one show answers. Once a day the rest get a
+  and taken only when exactly one show answers; a year either side counts
+  only when no show has that year. Once a day the rest get a
   second chance from TVmaze's day schedules (`airtime::schedules_if_due`):
   `/schedule?country=…` for each country the untimed shows come from
   (`airing_show.countries`, TMDB's `origin_country`) and `/schedule/web`,
@@ -328,7 +329,7 @@ part you are about to touch; change it when the code changes.
   a release that changes how times are found reaches Airing only as each
   show comes round again, up to six hours after the update;
   `airtime_show` keeps how a show is found, for good (a TVmaze miss is asked
-  again after a week). `released!()` uses `air_at` when there is one.
+  again after three days). `released!()` uses `air_at` when there is one.
   Notifications are checked every minute: an episode at its `air_at`, an
   episode or film with a day alone at midnight in the account's zone
   (`app_setting` `time_zone`: Settings → Watching's zone when chosen, else
