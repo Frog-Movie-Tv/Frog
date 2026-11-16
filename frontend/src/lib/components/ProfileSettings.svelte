@@ -4,6 +4,7 @@
 	import Avatar from '#lib/components/Avatar.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import BadgeSettings from '#lib/components/settings/BadgeSettings.svelte';
+	import BannerPicker from '#lib/components/settings/BannerPicker.svelte';
 	import ProfileLook from '#lib/components/settings/ProfileLook.svelte';
 	import { AVATAR_PIXELS, BANNER_PIXELS, decode, encode, shrink, staysAsItIs } from '#lib/picture';
 	import { session } from '#lib/session.svelte';
@@ -21,10 +22,6 @@
 	/** Bumped after an upload so the previews load the new picture. */
 	let version = $state(Date.now());
 	let choosingBanner = $state(false);
-	backCloses(
-		() => choosingBanner,
-		() => (choosingBanner = false)
-	);
 
 	// --- framing a new profile picture ------------------------------------
 	const FRAME = 200;
@@ -158,7 +155,6 @@
 		};
 	});
 	const pinChoices = $derived(pinTerm.trim() ? pinFound : titles.slice(0, 24));
-	const backdrops = $derived(titles.filter((t) => t.backdrop_path).slice(0, 18));
 
 	async function load() {
 		try {
@@ -269,159 +265,149 @@
 
 <!-- What others see first: the banner, the picture, the name and a few
      lines, laid out as the profile lays them out. -->
-<section class="public card" aria-label="Your public profile">
-	<div class="cover">
-		<div
-			class="banner"
-			class:tall={layout !== 'vertical' && height === 'tall'}
-			class:full={layout !== 'vertical' && height === 'full'}
-		>
-			<span class="frame">
-				{#if bannerSrc}
-					<img src={bannerSrc} alt="" style:object-position={bannerPosition} />
+<section
+	class="public card"
+	class:vertical={layout === 'vertical'}
+	aria-label="Your public profile"
+>
+	<div class="shape">
+		<div class="cover">
+			<div
+				class="banner"
+				class:tall={layout !== 'vertical' && height === 'tall'}
+				class:full={layout !== 'vertical' && height === 'full'}
+			>
+				<span class="frame">
+					{#if bannerSrc}
+						<img src={bannerSrc} alt="" style:object-position={bannerPosition} />
+					{/if}
+				</span>
+			</div>
+
+			<div class="cover-actions">
+				<button
+					class="btn small on-picture"
+					aria-haspopup="menu"
+					aria-expanded={bannerMenu}
+					onclick={() => (bannerMenu = !bannerMenu)}
+				>
+					<Icon name="image" size={15} /> Edit banner
+				</button>
+				{#if bannerMenu}
+					<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+					<div class="menu-scrim" onclick={() => (bannerMenu = false)}></div>
+					<div class="menu card" role="menu" aria-label="Banner">
+						<label class="item file">
+							<Icon name="upload" size={16} /> Upload a picture
+							<input
+								type="file"
+								accept="image/jpeg,image/png,image/webp,image/gif"
+								disabled={busy}
+								onchange={(e) => {
+									bannerMenu = false;
+									void upload('banner', e.currentTarget.files?.[0]);
+									e.currentTarget.value = '';
+								}}
+							/>
+						</label>
+						<button
+							class="item"
+							role="menuitem"
+							onclick={() => {
+								bannerMenu = false;
+								choosingBanner = true;
+							}}
+						>
+							<Icon name="film" size={16} /> Choose from a title
+						</button>
+						{#if bannerSrc}
+							<button
+								class="item danger"
+								role="menuitem"
+								onclick={() => {
+									bannerMenu = false;
+									void (account?.banner ? removeImage('banner') : removeBackdrop());
+								}}
+							>
+								<Icon name="trash" size={16} /> Remove banner
+							</button>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</div>
+
+		<div class="me">
+			<span class="picture">
+				<Avatar
+					src={account?.avatar ? imageUrl('avatar') : null}
+					name={username || '?'}
+					size={88}
+				/>
+				<label class="camera file" title="Change picture">
+					<Icon name="camera" size={16} />
+					<span class="sr">Change picture</span>
+					<input
+						type="file"
+						accept="image/jpeg,image/png,image/webp,image/gif"
+						disabled={busy}
+						onchange={(e) => {
+							void frame(e.currentTarget.files?.[0]);
+							e.currentTarget.value = '';
+						}}
+					/>
+				</label>
+			</span>
+			<span class="who">
+				<strong>{name.trim() || username}</strong>
+				<span class="faint">@{username}</span>
+				{#if account?.avatar}
+					<button class="link" onclick={() => removeImage('avatar')}>Remove picture</button>
 				{/if}
 			</span>
 		</div>
 
-		<div class="cover-actions">
-			<button
-				class="btn small on-picture"
-				aria-haspopup="menu"
-				aria-expanded={bannerMenu}
-				onclick={() => (bannerMenu = !bannerMenu)}
-			>
-				<Icon name="image" size={15} /> Edit banner
-			</button>
-			{#if bannerMenu}
-				<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-				<div class="menu-scrim" onclick={() => (bannerMenu = false)}></div>
-				<div class="menu card" role="menu" aria-label="Banner">
-					<label class="item file">
-						<Icon name="upload" size={16} /> Upload a picture
-						<input
-							type="file"
-							accept="image/jpeg,image/png,image/webp,image/gif"
-							disabled={busy}
-							onchange={(e) => {
-								bannerMenu = false;
-								void upload('banner', e.currentTarget.files?.[0]);
-								e.currentTarget.value = '';
-							}}
-						/>
-					</label>
-					<button
-						class="item"
-						role="menuitem"
-						onclick={() => {
-							bannerMenu = false;
-							choosingBanner = true;
-						}}
-					>
-						<Icon name="film" size={16} /> Choose from your titles
-					</button>
-					{#if bannerSrc}
-						<button
-							class="item danger"
-							role="menuitem"
-							onclick={() => {
-								bannerMenu = false;
-								void (account?.banner ? removeImage('banner') : removeBackdrop());
-							}}
-						>
-							<Icon name="trash" size={16} /> Remove banner
-						</button>
-					{/if}
-				</div>
-			{/if}
-		</div>
-	</div>
-
-	<div class="me">
-		<span class="picture">
-			<Avatar src={account?.avatar ? imageUrl('avatar') : null} name={username || '?'} size={88} />
-			<label class="camera file" title="Change picture">
-				<Icon name="camera" size={16} />
-				<span class="sr">Change picture</span>
-				<input
-					type="file"
-					accept="image/jpeg,image/png,image/webp,image/gif"
-					disabled={busy}
-					onchange={(e) => {
-						void frame(e.currentTarget.files?.[0]);
-						e.currentTarget.value = '';
-					}}
-				/>
+		<div class="fields">
+			<label class="field">
+				<span>Name</span>
+				<input class="input" bind:value={name} maxlength="40" placeholder={username} />
+				<small class="faint">Shown on your profile in place of @{username}.</small>
 			</label>
-		</span>
-		<span class="who">
-			<strong>{name.trim() || username}</strong>
-			<span class="faint">@{username}</span>
-			{#if account?.avatar}
-				<button class="link" onclick={() => removeImage('avatar')}>Remove picture</button>
+			<label class="field">
+				<span>About you <em class="faint">{bio.length}/{BIO_MAX}</em></span>
+				<textarea
+					class="input"
+					rows="4"
+					maxlength={BIO_MAX}
+					bind:value={bio}
+					placeholder="What you watch, what you love, what you are looking for."></textarea>
+			</label>
+		</div>
+
+		<div class="foot">
+			{#if username}
+				<a class="view" href="/people/{encodeURIComponent(username)}">
+					View your profile <Icon name="chevron-right" size={14} />
+				</a>
 			{/if}
-		</span>
-	</div>
-
-	<div class="fields">
-		<label class="field">
-			<span>Name</span>
-			<input class="input" bind:value={name} maxlength="40" placeholder={username} />
-			<small class="faint">Shown on your profile in place of @{username}.</small>
-		</label>
-		<label class="field">
-			<span>About you <em class="faint">{bio.length}/{BIO_MAX}</em></span>
-			<textarea
-				class="input"
-				rows="4"
-				maxlength={BIO_MAX}
-				bind:value={bio}
-				placeholder="What you watch, what you love, what you are looking for."></textarea>
-		</label>
-	</div>
-
-	<div class="foot">
-		{#if username}
-			<a class="view" href="/people/{encodeURIComponent(username)}">
-				View your profile <Icon name="chevron-right" size={14} />
-			</a>
-		{/if}
-		<span class="spacer"></span>
-		{#if dirty}
-			<button class="btn ghost" onclick={resetDetails}>Cancel</button>
-		{/if}
-		<button class="btn primary" disabled={busy || !dirty} onclick={saveDetails}>Save changes</button
-		>
+			<span class="spacer"></span>
+			{#if dirty}
+				<button class="btn ghost" onclick={resetDetails}>Cancel</button>
+			{/if}
+			<button class="btn primary" disabled={busy || !dirty} onclick={saveDetails}
+				>Save changes</button
+			>
+		</div>
 	</div>
 </section>
 
 {#if choosingBanner}
-	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-	<div class="picker-scrim" onclick={() => (choosingBanner = false)}></div>
-	<div class="picker card" role="dialog" aria-modal="true" aria-labelledby="picker-title">
-		<div class="picker-head">
-			<h3 id="picker-title">Choose a backdrop</h3>
-			<button class="btn ghost small" aria-label="Close" onclick={() => (choosingBanner = false)}>
-				<Icon name="x" size={16} />
-			</button>
-		</div>
-		{#if backdrops.length}
-			<p class="faint small">From the titles you rated highest.</p>
-			<div class="backdrops">
-				{#each backdrops as t (t.id)}
-					<button
-						class="backdrop"
-						aria-label="Use {t.name}"
-						onclick={() => chooseBackdrop(t.backdrop_path ?? '')}
-					>
-						<img src={img(t.backdrop_path, 'w300')} alt="" loading="lazy" />
-						<span>{t.name}</span>
-					</button>
-				{/each}
-			</div>
-		{:else}
-			<p class="faint small">Add a few titles to your library to choose from their artwork.</p>
-		{/if}
-	</div>
+	<BannerPicker
+		current={account?.banner ? null : (account?.banner_backdrop ?? null)}
+		library={titles}
+		onpick={(path) => void chooseBackdrop(path)}
+		onclose={() => (choosingBanner = false)}
+	/>
 {/if}
 
 <div class="settings list-pane">
@@ -580,6 +566,52 @@
 	/* The public profile, drawn as the profile draws it. */
 	.public {
 		margin-bottom: 16px;
+		container-type: inline-size;
+	}
+
+	/* A column beside it: as the profile stands on a wide screen, the
+	   picture a portrait on the left and everything else beside it. */
+	@container (min-width: 620px) {
+		.public.vertical .shape {
+			display: grid;
+			grid-template-columns: 210px minmax(0, 1fr);
+			grid-template-rows: auto auto 1fr;
+		}
+
+		.public.vertical .cover {
+			grid-row: 1 / -1;
+			padding: 12px 0 12px 12px;
+		}
+
+		.public.vertical .banner {
+			height: 100%;
+			min-height: 360px;
+			border-radius: 14px;
+		}
+
+		.public.vertical .cover-actions {
+			top: 22px;
+			left: 22px;
+			right: auto;
+		}
+
+		.public.vertical .me {
+			margin-top: 0;
+			padding-top: 20px;
+			align-items: center;
+		}
+
+		.public.vertical .who {
+			align-self: center;
+			padding-top: 0;
+		}
+	}
+
+	/* On a phone it is a tall banner across the top, as the profile has it. */
+	@container (max-width: 619px) {
+		.public.vertical .banner {
+			height: min(110cqw, 420px);
+		}
 	}
 
 	.cover {
@@ -898,117 +930,6 @@
 		inset: 0;
 		opacity: 0;
 		cursor: pointer;
-	}
-
-	.picker-scrim {
-		position: fixed;
-		inset: 0;
-		z-index: 199;
-		background: rgb(0 0 0 / 0.5);
-		animation: fade 160ms ease backwards;
-	}
-
-	.picker {
-		position: fixed;
-		z-index: 200;
-		top: 50%;
-		left: 50%;
-		width: min(720px, calc(100vw - 32px));
-		max-height: min(80dvh, 640px);
-		overflow-y: auto;
-		padding: 18px;
-		transform: translate(-50%, -50%);
-		box-shadow: var(--shadow-3);
-		animation: pop 220ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
-	}
-
-	.picker-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 4px;
-	}
-
-	.picker-head h3 {
-		margin: 0;
-		font-size: 1.05rem;
-	}
-
-	.picker .small {
-		margin-bottom: 12px;
-	}
-
-	@keyframes fade {
-		from {
-			opacity: 0;
-		}
-	}
-
-	@keyframes pop {
-		from {
-			opacity: 0;
-			transform: translate(-50%, -46%) scale(0.98);
-		}
-	}
-
-	/* A phone: a sheet from the bottom, in reach of a thumb. */
-	@media (max-width: 600px) {
-		.picker {
-			top: auto;
-			left: 10px;
-			right: 10px;
-			bottom: calc(10px + env(safe-area-inset-bottom));
-			width: auto;
-			transform: none;
-			border-radius: 18px;
-			animation-name: sheet;
-		}
-
-		.backdrops {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-	}
-
-	@keyframes sheet {
-		from {
-			opacity: 0;
-			transform: translateY(24px);
-		}
-	}
-
-	.backdrops {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-		gap: 8px;
-	}
-
-	.backdrop {
-		position: relative;
-		border: 1px solid var(--line);
-		border-radius: var(--radius-sm);
-		overflow: hidden;
-		padding: 0;
-		cursor: pointer;
-		aspect-ratio: 16 / 9;
-		background: var(--bg-elev-2);
-	}
-
-	.backdrop img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-	}
-
-	.backdrop span {
-		position: absolute;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		padding: 4px 6px;
-		font-size: 0.72rem;
-		text-align: left;
-		color: #fff;
-		background: linear-gradient(transparent, rgb(0 0 0 / 0.7));
 	}
 
 	.pinned {

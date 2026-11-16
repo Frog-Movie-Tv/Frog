@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -694,6 +694,26 @@ pub async fn annotate_library(
         }
     }
     Ok(())
+}
+
+/// The most pictures one title offers as a banner.
+const BACKDROPS_MOST: usize = 24;
+
+/// Any film's or show's wide pictures, to choose a profile banner from. Read
+/// through the TMDB client's cache, like a title page.
+pub async fn backdrops(
+    _auth: Auth,
+    State(state): State<AppState>,
+    Path((kind, tmdb_id)): Path<(String, i64)>,
+) -> AppResult<Json<Value>> {
+    let detail = match kind.as_str() {
+        "movie" => state.tmdb.movie(tmdb_id).await?,
+        "tv" => state.tmdb.tv(tmdb_id).await?,
+        _ => return Err(AppError::BadRequest("Pick a film or a show.".into())),
+    };
+    Ok(Json(
+        json!({ "backdrops": models::backdrops(&detail, BACKDROPS_MOST) }),
+    ))
 }
 
 #[cfg(test)]

@@ -24,6 +24,7 @@
 	import { page } from '$app/state';
 	import { address } from '#lib/address';
 	import { titleHref } from '#lib/titles';
+	import { withLine } from '#lib/together';
 	import { SvelteSet } from 'svelte/reactivity';
 	import Icon from '#lib/components/Icon.svelte';
 	import { api, ApiError, img, type LibraryQuery, SEARCH_PAUSE } from '#lib/api';
@@ -646,6 +647,7 @@
 					watched={item.watched_episodes}
 					total={item.total_episodes}
 					rewatches={item.rewatches}
+					together={item.watched_with}
 				/>
 			{/each}
 		</Grid>
@@ -677,6 +679,7 @@
 						<span class="faint">
 							{year(item.release_date)}
 							{#if item.entry?.status}· {statusLabel(item.entry.status, item.kind)}{/if}
+							{#if item.watched_with?.length}· {withLine(item.watched_with)}{/if}
 						</span>
 					</div>
 				</a>
@@ -701,6 +704,7 @@
 							<span class="faint">
 								{year(item.release_date)} · {KIND_LABEL[item.kind]}
 								{#if item.genres.length}· {item.genres.slice(0, 2).join(', ')}{/if}
+								{#if item.watched_with?.length}· {withLine(item.watched_with)}{/if}
 							</span>
 						</span>
 						{#if item.total_episodes > 0}

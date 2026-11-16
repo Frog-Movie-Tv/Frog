@@ -665,3 +665,92 @@ async fn a_badge_is_given_once_however_far_past_it_a_library_goes() {
     keys.dedup();
     assert_eq!(keys.len(), settled.given.len(), "{:?}", settled.given);
 }
+
+/// A badge made here with a condition is earned like Frog's own, on the day
+/// the count was reached, and says how far along anyone is until then.
+#[tokio::test]
+async fn a_badge_made_here_is_earned_by_its_condition() {
+    let h = Harness::new().await;
+    let me = h.user("zjef").await;
+    let (badge,): (i64,) = sqlx::query_as(
+        "INSERT INTO badge (name, description, large, small, original, original_mime,
+                            settings_json, created_at, updated_at)
+         VALUES ('Popcorn Club', 'Two films.', x'00', x'00', x'00', 'image/png', '{}',
+                 '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z') RETURNING id",
+    )
+    .fetch_one(&h.state.pool)
+    .await
+    .unwrap();
+    let two = awards::custom::Condition {
+        count: "films".into(),
+        at: 2,
+    };
+    assert!(
+        frog::badges::set_condition(&h.state.pool, badge, Some(&two))
+            .await
+            .unwrap()
+    );
+    let holds = |state: &AppState| {
+        let pool = state.pool.clone();
+        async move {
+            let (n,): (i64,) = sqlx::query_as(
+                "SELECT COUNT(*) FROM badge_award WHERE user_id = ? AND badge_id = ?",
+            )
+            .bind(me)
+            .bind(badge)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            n == 1
+        }
+    };
+
+    let first = h.film(me, "One").await;
+    h.watch(
+        me,
+        first,
+        None,
+        &yesterday("20:00"),
+        &yesterday("20:00"),
+        "tick",
+    )
+    .await;
+    h.run(me).await;
+    assert!(!holds(&h.state).await);
+    let progress = awards::progress(&h.state.pool, me).await.unwrap();
+    assert_eq!(progress[&format!("custom:{badge}")], (1.0, 2.0));
+
+    let second = h.film(me, "Two").await;
+    h.watch(
+        me,
+        second,
+        None,
+        &yesterday("22:00"),
+        &yesterday("22:00"),
+        "tick",
+    )
+    .await;
+    h.run(me).await;
+    assert!(holds(&h.state).await, "two films reach it");
+    let (on,): (String,) =
+        sqlx::query_as("SELECT earned_on FROM badge_award WHERE user_id = ? AND badge_id = ?")
+            .bind(me)
+            .bind(badge)
+            .fetch_one(&h.state.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        on,
+        (Utc::now().date_naive() - Duration::days(1)).to_string()
+    );
+    assert!(h.badge_notices(me).await >= 1);
+
+    // Frog's own badges keep their rules.
+    let (own,): (i64,) = sqlx::query_as("SELECT id FROM badge WHERE rule IS NOT NULL LIMIT 1")
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    assert!(!frog::badges::set_condition(&h.state.pool, own, Some(&two))
+        .await
+        .unwrap());
+}

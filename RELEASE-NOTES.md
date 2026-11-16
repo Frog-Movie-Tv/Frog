@@ -13,6 +13,37 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Improvements
+
+- A profile's Badges tab shows every badge as a card: what it asks, how
+  hard it is, how close you are and how many people here hold it. Search,
+  filter by kind, and sort by difficulty, rarity or what is nearest.
+- Choose the badges beside your name from your Badges tab, and drag them
+  into order. Everyone who opens your profile sees every badge you hold.
+- Administration has a Badges page of its own: every badge in one place,
+  searchable and sortable, to make, redraw and give out. A badge made here
+  can now earn itself, at a number of films, episodes, hours or any other
+  count Frog keeps.
+- Settings → Profile shows your profile as others will see it, in the banner
+  layout you chose, and each layout is drawn with your own banner so the one
+  in use is plain to see.
+- Choose a banner from any film or show: search for it and pick from all of
+  its pictures.
+- Cards in your library, on your shelves and in Continue watching say who
+  you watched a title with.
+- Four themes, Glass, Glass Light, Dark and Light, and a glow behind the page
+  in any of nine colours, or none. Pond and Pond Light become Glass and Glass
+  Light, and AMOLED becomes Dark with no glow.
+- Shelves come to life: each one deals out its posters as the page opens,
+  fans them wider under the pointer, and carries its name into the shelf as
+  you open it.
+- Calendar and Diary are one page: switch between Month, Agenda and Diary
+  at the top. Links and bookmarks to the Diary still open it.
+
+### Fixes
+
+- Each picture at the top of Home gives way cleanly to the next.
+
 ## [1.8.0] — Chorus Frog — 2026-11-16
 
 Badges you earn by watching, and a Home that shows what is trending.

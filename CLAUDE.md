@@ -370,11 +370,23 @@ part you are about to touch; change it when the code changes.
   every nightly backup is a whole copy in git. An administrator may rename
   or redraw one (`rule_kept`, uploaded pictures win) but not delete it. A
   hand-made badge that already has a catalogue name keeps it; that
-  automatic badge waits, listed in Administration. A profile's Badges tab
-  lists what is held and every automatic badge still to come, greyed;
+  automatic badge waits, listed in Administration → Badges. A profile's
+  Badges tab (`routes/people/[username]/badges`, sorted and filtered in
+  `lib/badge-board.ts`) lists every badge held and every automatic one still
+  to come, with how hard it is (`catalogue::Entry.difficulty`, 1 to 5 from
+  a ladder's step or a single's ring) and how many accounts hold it;
   progress (`awards::progress`, worked out on request, not stored) shows
-  to the holder only, and a badge held out of sight is neither, so it
-  never reads as still to come. Pioneer and taste
+  to the holder only. `badge_award.shown` means beside the name and nothing
+  else: a badge switched off there still shows on the Badges tab to anyone
+  who may see the profile.
+- **Badges made here can earn themselves** (`awards/custom.rs`,
+  `badge.condition`). An administrator picks one of the ladders' counts
+  (`custom::COUNTS`) and a number, kept as JSON (`{"count":"films","at":25}`);
+  without one a badge is given by hand only. The run reads the same
+  per-ladder steps `rules::climb` keeps (`Tally.reached`), so the day and the
+  watch that reached the number are exact, and `give::settle_custom` adds
+  awards and never takes one back. One taken back by hand is given again on
+  the next run while the count still holds, which the give picker says. Pioneer and taste
   badges read only accounts `store::shown_to` gives with Recommendations
   on. Undo carries `logged_*` for a watch recorded in the last week
   (`eligible::carried`); older comes back `unknown`. Anime is AniList's
@@ -515,6 +527,10 @@ part you are about to touch; change it when the code changes.
   answers items, status counts and genres from one request; a status counts every
   filter but itself, so its number is what choosing it shows. The page keeps its
   last answer in the module, so Back draws at once and the scroll lands.
+- **The diary is a view of the Calendar** (`/calendar?view=diary`, drawn by
+  `DiaryView.svelte`). `/diary` only sends people there, so old links and
+  bookmarks still work, and saved settings that name `/diary` (tab bar,
+  menu order, landing page) read it as `/calendar` as they load.
 - **Shelves have one place on Home**, the Your shelves row. A shelf used to be
   able to add a row of its own, which showed it twice; saved layouts lose those
   rows as they load (`introduceRows`).
@@ -590,8 +606,10 @@ part you are about to touch; change it when the code changes.
   with nothing to tick, a title page does behind the page, and the worker fills
   any left (`fill_missing_episodes`, 25 a tick). Without them a show has no next
   episode, and its total is only TMDB's count.
-- **Lists of titles are built from one reading** (`store::ItemFacts`): five
-  queries for the whole account, then `item` per title. Library and shelves go
+- **Lists of titles are built from one reading** (`store::ItemFacts`): six
+  queries for the whole account, then `item` per title. One of them is who
+  each title was watched with (`watch_with` and `watching_with`), which only
+  the owner's `LibraryItem` carries; `SharedItem` leaves it out. Library and shelves go
   through `build_items`; Home loads it once and shares it across its rows. On
   the 611-title library a 399-title shelf went from about 640 ms to 96 ms and
   Home from 145 ms to 86 ms, field for field the same JSON. A six-title shelf

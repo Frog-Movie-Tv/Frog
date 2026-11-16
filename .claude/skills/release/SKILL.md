@@ -48,7 +48,7 @@ codename, and fold its entries into the sections below:
 
 One line saying what this release gives the user.
 
-![Short description](docs/screenshots/home-desktop-pond.png)
+![Short description](docs/screenshots/home-desktop-glass.png)
 
 ### Highlights
 - **Bold lead-in.** One or two short, complete sentences.
@@ -98,7 +98,7 @@ cd frontend && npm run screenshots
 ```
 
 Takes about eight minutes; run it in the background. Look at
-`docs/screenshots/home-desktop-pond.png` and any page this release changed
+`docs/screenshots/home-desktop-glass.png` and any page this release changed
 before committing — an empty or broken screenshot is worse than an old one.
 If a new page deserves a place in the README gallery, add it.
 

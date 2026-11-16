@@ -1,7 +1,7 @@
 import { api } from './api';
 import { namesOf, peoplePicker } from './people.svelte';
 import { toasts } from './toast.svelte';
-import type { Companion } from './types';
+import type { Companion, Mate } from './types';
 
 /*
  * Who you watched something with, naming other accounts: a show's "watching
@@ -35,6 +35,6 @@ export async function watchShowWith(
 }
 
 /** "With Sam", "With Sam and Alex". */
-export function withLine(people: Companion[]): string {
+export function withLine(people: Pick<Mate, 'username' | 'display_name'>[]): string {
 	return people.length ? `With ${namesOf(people)}` : '';
 }

@@ -4,6 +4,7 @@
 	import { img } from '#lib/api';
 	import { airTime, episodeCode, prettyDate } from '#lib/format';
 	import { contextMenu, type MenuSource } from '#lib/menu.svelte';
+	import { withLine } from '#lib/together';
 	import type { UpNextEntry } from '#lib/types';
 
 	interface Props {
@@ -73,6 +74,10 @@
 			<span class="next muted">Finished</span>
 		{:else}
 			<span class="next muted">Caught up</span>
+		{/if}
+
+		{#if item.watched_with?.length}
+			<span class="with"><Icon name="users" size={12} />{withLine(item.watched_with)}</span>
 		{/if}
 
 		{#if item.total_episodes > 0}
@@ -199,6 +204,18 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--accent);
 		flex: none;
+	}
+
+	.with {
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		font-size: 0.78rem;
+		color: var(--text-dim);
 	}
 
 	.ep {

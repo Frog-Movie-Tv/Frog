@@ -35,6 +35,15 @@
 	const layout = $derived(account?.banner_layout ?? 'classic');
 	const height = $derived(account?.banner_height ?? 'short');
 
+	const LAYOUTS = [
+		{ id: 'classic', label: 'Across the top', about: 'A wide banner over your profile.' },
+		{
+			id: 'vertical',
+			label: 'A column beside it',
+			about: 'A portrait beside your profile, across the top on a phone.'
+		}
+	] as const;
+
 	// Each layout keeps its own part of the picture: the column a strip,
 	// across the top a band. Across the top follows the column's until it is
 	// chosen, as both shared one before.
@@ -115,48 +124,69 @@
 	<div class="setting-top">
 		<span class="setting-tile" aria-hidden="true"><Icon name="layers" size={18} /></span>
 		<span class="setting-label">
-			<strong>Banner</strong>
+			<strong>Banner layout</strong>
 			<span class="faint">How your banner sits on your profile. A tap on it opens it whole.</span>
 		</span>
 	</div>
 	<div class="setting-body banner-choices">
 		<div class="layouts" role="radiogroup" aria-label="Banner layout">
-			{#each [['classic', 'Across the top'], ['vertical', 'A column beside it']] as [id, label] (id)}
+			{#each LAYOUTS as l (l.id)}
+				{@const on = layout === l.id}
 				<button
 					class="layout"
-					class:on={layout === id}
+					class:on
 					role="radio"
-					aria-checked={layout === id}
-					onclick={() => save({ banner_layout: id === 'classic' ? '' : id })}
+					aria-checked={on}
+					onclick={() => save({ banner_layout: l.id === 'classic' ? '' : l.id })}
 				>
-					<span class="sketch {id}" aria-hidden="true">
-						<i class="pic"></i><i class="line"></i><i class="line short"></i><i class="tiles"></i>
+					<span
+						class="sketch {l.id}"
+						class:tall={l.id === 'classic' && height !== 'short'}
+						aria-hidden="true"
+					>
+						<i
+							class="pic"
+							class:empty={!banner}
+							style:background-image={banner ? `url("${banner}")` : undefined}
+							style:background-position={(l.id === 'vertical'
+								? account?.banner_position
+								: (account?.banner_top_position ?? account?.banner_position)) ?? 'center'}
+						></i>
+						<i class="dot"></i><i class="line"></i><i class="line short"></i><i class="tiles"></i>
 					</span>
-					<span>{label}</span>
+					<span class="caption">
+						<span class="name">
+							{l.label}
+							{#if on}<span class="chosen"><Icon name="check" size={12} /> In use</span>{/if}
+						</span>
+						<span class="about">{l.about}</span>
+					</span>
 				</button>
 			{/each}
 		</div>
 
-		{#if layout !== 'vertical'}
-			<div class="height">
-				<span class="small">Height</span>
-				<div class="segmented" role="radiogroup" aria-label="Banner height">
-					{#each [['short', 'Short'], ['tall', 'Tall'], ['full', 'Full']] as [id, label] (id)}
-						<button
-							class:on={height === id}
-							role="radio"
-							aria-checked={height === id}
-							onclick={() => save({ banner_height: id === 'short' ? '' : id })}>{label}</button
-						>
-					{/each}
+		<div class="extras">
+			{#if layout !== 'vertical'}
+				<div class="height">
+					<span class="small">Height</span>
+					<div class="segmented" role="radiogroup" aria-label="Banner height">
+						{#each [['short', 'Short'], ['tall', 'Tall'], ['full', 'Full']] as [id, label] (id)}
+							<button
+								class:on={height === id}
+								role="radio"
+								aria-checked={height === id}
+								onclick={() => save({ banner_height: id === 'short' ? '' : id })}>{label}</button
+							>
+						{/each}
+					</div>
 				</div>
-			</div>
-		{/if}
-		{#if banner}
-			<button class="btn" onclick={() => (choosing = true)}>
-				<Icon name="move" size={15} /> Choose what shows
-			</button>
-		{/if}
+			{/if}
+			{#if banner}
+				<button class="btn" onclick={() => (choosing = true)}>
+					<Icon name="move" size={15} /> Choose what shows
+				</button>
+			{/if}
+		</div>
 	</div>
 </div>
 
@@ -218,27 +248,36 @@
 		outline-offset: 2px;
 	}
 
-	/* Each layout as a little sketch of the page it makes. */
+	/* Each layout as a small picture of the page it makes, drawn with your
+	   own banner, so the one in use is plain to see. */
 	.layouts {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 10px;
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 240px));
+		gap: 12px;
+		width: 100%;
 	}
 
 	.layout {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 8px;
-		padding: 10px 10px 8px;
-		border-radius: var(--radius-sm);
+		position: relative;
+		display: grid;
+		gap: 10px;
+		padding: 8px 8px 12px;
+		border-radius: var(--radius);
 		border: 1.5px solid var(--line);
 		background: var(--bg-elev-2);
 		color: var(--text-dim);
 		font: inherit;
-		font-size: 0.82rem;
-		font-weight: 600;
+		text-align: left;
 		cursor: pointer;
+		transition:
+			border-color var(--fast) var(--ease),
+			box-shadow var(--fast) var(--ease),
+			transform var(--fast) var(--ease);
+	}
+
+	.layout:hover {
+		border-color: var(--line-strong);
+		transform: translateY(-1px);
 	}
 
 	.layout.on {
@@ -247,76 +286,160 @@
 		box-shadow: 0 0 0 3px var(--accent-soft);
 	}
 
+	.caption {
+		display: grid;
+		gap: 2px;
+		padding: 0 4px;
+	}
+
+	.name {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 6px 8px;
+		color: var(--text);
+		font-size: 0.9rem;
+		font-weight: 600;
+	}
+
+	.chosen {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		padding: 1px 8px 1px 6px;
+		border-radius: 999px;
+		background: var(--accent);
+		color: var(--accent-ink);
+		font-size: 0.72rem;
+		font-weight: 700;
+	}
+
+	.about {
+		font-size: 0.8rem;
+		line-height: 1.35;
+	}
+
 	.sketch {
 		position: relative;
 		display: block;
-		width: 112px;
-		height: 72px;
-		border-radius: 6px;
+		aspect-ratio: 16 / 10;
+		border-radius: calc(var(--radius) - 4px);
 		background: var(--bg);
 		overflow: hidden;
+	}
+
+	.layout:not(.on) .sketch {
+		opacity: 0.75;
 	}
 
 	.sketch i {
 		position: absolute;
 		display: block;
-		border-radius: 2px;
+		border-radius: 3px;
 		background: var(--line-strong);
 	}
 
 	.sketch .pic {
-		background: color-mix(in srgb, var(--accent) 55%, var(--bg-elev-2));
+		background: var(--bg-elev-2) center / cover no-repeat;
+	}
+
+	.sketch .pic.empty {
+		background-image: linear-gradient(135deg, var(--accent-soft), var(--bg-elev-2));
+	}
+
+	.sketch .dot {
+		width: 14%;
+		aspect-ratio: 1;
+		border-radius: 50%;
+		background: var(--text-faint);
+		border: 2px solid var(--bg);
 	}
 
 	.sketch.classic .pic {
 		inset: 0 0 auto 0;
-		height: 26px;
+		height: 38%;
 		border-radius: 0;
+		transition: height var(--fast) var(--ease);
+	}
+
+	.sketch.classic.tall .pic {
+		height: 50%;
+	}
+
+	.sketch.classic .dot {
+		left: 7%;
+		top: 28%;
+	}
+
+	.sketch.classic.tall .dot {
+		top: 40%;
 	}
 
 	.sketch.classic .line {
-		left: 8px;
-		top: 32px;
-		width: 50px;
-		height: 5px;
+		left: 25%;
+		top: 44%;
+		width: 36%;
+		height: 6%;
+	}
+
+	.sketch.classic.tall .line {
+		top: 55%;
 	}
 
 	.sketch.classic .line.short {
-		top: 41px;
-		width: 32px;
+		top: 54%;
+		width: 22%;
+	}
+
+	.sketch.classic.tall .line.short {
+		top: 64%;
 	}
 
 	.sketch.classic .tiles {
-		left: 8px;
-		right: 8px;
-		bottom: 8px;
-		height: 12px;
+		left: 7%;
+		right: 7%;
+		bottom: 8%;
+		height: 18%;
 	}
 
 	.sketch.vertical .pic {
-		left: 6px;
-		top: 6px;
-		bottom: 6px;
-		width: 34px;
+		left: 5%;
+		top: 7%;
+		bottom: 7%;
+		width: 30%;
+		border-radius: 6px;
+	}
+
+	.sketch.vertical .dot {
+		left: 9%;
+		bottom: 12%;
+		width: 10%;
 	}
 
 	.sketch.vertical .line {
-		left: 48px;
-		top: 10px;
-		width: 44px;
-		height: 5px;
+		left: 41%;
+		top: 12%;
+		width: 34%;
+		height: 6%;
 	}
 
 	.sketch.vertical .line.short {
-		top: 19px;
-		width: 30px;
+		top: 22%;
+		width: 22%;
 	}
 
 	.sketch.vertical .tiles {
-		left: 48px;
-		right: 8px;
-		top: 32px;
-		bottom: 8px;
+		left: 41%;
+		right: 6%;
+		top: 36%;
+		bottom: 9%;
+	}
+
+	.extras {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 10px 16px;
 	}
 
 	.height {

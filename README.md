@@ -18,7 +18,7 @@ their own. It costs nothing at all.
 
 <br>
 
-<img src="docs/screenshots/home-desktop-pond.png" alt="Frog's home screen: a full-width still from Arcane with its logo, the next episode named, and a row of shows to continue" width="920">
+<img src="docs/screenshots/home-desktop-glass.png" alt="Frog's home screen: a full-width still from Arcane with its logo, the next episode named, and a row of shows to continue" width="920">
 
 </div>
 
@@ -29,51 +29,51 @@ their own. It costs nothing at all.
 <table>
 <tr>
 <td width="50%">
-<img src="docs/screenshots/library-desktop-pond.png" alt="A wall of posters with status filters along the top">
+<img src="docs/screenshots/library-desktop-glass.png" alt="A wall of posters with status filters along the top">
 <p align="center"><b>Your library</b><br><sub>Every poster, filtered and sorted however you like</sub></p>
 </td>
 <td width="50%">
-<img src="docs/screenshots/title-desktop-pond.png" alt="A show page tinted with colours taken from its own poster">
+<img src="docs/screenshots/title-desktop-glass.png" alt="A show page tinted with colours taken from its own poster">
 <p align="center"><b>A title page</b><br><sub>Its logo, the scores that matter, and every episode at a glance</sub></p>
 </td>
 </tr>
 <tr>
 <td>
-<img src="docs/screenshots/diary-desktop-pond.png" alt="A diary of watched episodes, one column, grouped by month and day">
+<img src="docs/screenshots/diary-desktop-glass.png" alt="A diary of watched episodes, one column, grouped by month and day">
 <p align="center"><b>Your diary</b><br><sub>Everything you have watched, day by day</sub></p>
 </td>
 <td>
-<img src="docs/screenshots/stats-desktop-pond.png" alt="Time watched, streaks, genres and the people you watch most">
+<img src="docs/screenshots/stats-desktop-glass.png" alt="Time watched, streaks, genres and the people you watch most">
 <p align="center"><b>Your numbers</b><br><sub>Years, genres, streaks, and a card to share</sub></p>
 </td>
 </tr>
 <tr>
 <td>
-<img src="docs/screenshots/settings-desktop-pond.png" alt="Settings, grouped, open on your profile">
+<img src="docs/screenshots/settings-desktop-glass.png" alt="Settings, grouped, open on your profile">
 <p align="center"><b>Make it yours</b><br><sub>Your profile, themes, cards and rows — all live</sub></p>
 </td>
 <td>
-<img src="docs/screenshots/import-desktop-pond.png" alt="The import page offering Letterboxd, IMDb, Trakt, TV Time, MyAnimeList and Frog backups">
+<img src="docs/screenshots/import-desktop-glass.png" alt="The import page offering Letterboxd, IMDb, Trakt, TV Time, MyAnimeList and Frog backups">
 <p align="center"><b>Bring your history</b><br><sub>Letterboxd, Trakt, IMDb, TV Time, MyAnimeList and Netflix, with AniList kept in step</sub></p>
 </td>
 </tr>
 <tr>
 <td>
-<img src="docs/screenshots/search-desktop-pond.png" alt="Search results for a name, with a tab for each kind of result and a row of filters">
+<img src="docs/screenshots/search-desktop-glass.png" alt="Search results for a name, with a tab for each kind of result and a row of filters">
 <p align="center"><b>Search everything</b><br><sub>Films, shows, manga, people, characters and studios, with filters to browse by</sub></p>
 </td>
 <td>
-<img src="docs/screenshots/calendar-desktop-pond.png" alt="The calendar of upcoming episodes">
+<img src="docs/screenshots/calendar-desktop-glass.png" alt="The calendar of upcoming episodes">
 <p align="center"><b>What airs next</b><br><sub>The month ahead for every show you follow</sub></p>
 </td>
 </tr>
 <tr>
 <td>
-<img src="docs/screenshots/manga-desktop-pond.png" alt="A manga page with its chapters and volumes, the chapter you are on, and where to read it">
+<img src="docs/screenshots/manga-desktop-glass.png" alt="A manga page with its chapters and volumes, the chapter you are on, and where to read it">
 <p align="center"><b>Manga too</b><br><sub>Count chapters as you read; your AniList manga come in by themselves</sub></p>
 </td>
 <td>
-<img src="docs/screenshots/shelves-desktop-pond.png" alt="Shelves, each shown by the posters on it">
+<img src="docs/screenshots/shelves-desktop-glass.png" alt="Shelves, each shown by the posters on it">
 <p align="center"><b>Shelves</b><br><sub>Your library grouped your way, by hand or by rules</sub></p>
 </td>
 </tr>
@@ -83,11 +83,11 @@ their own. It costs nothing at all.
 
 ### On a phone
 
-<img src="docs/screenshots/home-phone-pond.png" alt="Frog's home screen on a phone" width="230">
+<img src="docs/screenshots/home-phone-glass.png" alt="Frog's home screen on a phone" width="230">
 &nbsp;&nbsp;
-<img src="docs/screenshots/library-phone-pond.png" alt="The library on a phone" width="230">
+<img src="docs/screenshots/library-phone-glass.png" alt="The library on a phone" width="230">
 &nbsp;&nbsp;
-<img src="docs/screenshots/title-phone-pond.png" alt="A title page on a phone" width="230">
+<img src="docs/screenshots/title-phone-glass.png" alt="A title page on a phone" width="230">
 
 <sub>Add it to your home screen and it behaves like any other app.</sub>
 
@@ -97,9 +97,9 @@ their own. It costs nothing at all.
 
 <img src="docs/screenshots/home-desktop-dark.png" alt="Frog in the dark theme" width="420">
 &nbsp;
-<img src="docs/screenshots/library-desktop-light.png" alt="Frog in the light Pond theme" width="420">
+<img src="docs/screenshots/library-desktop-light.png" alt="Frog in the Glass Light theme" width="420">
 
-<sub>Glass, Glass Light, Pond, Pond Light, Dark, AMOLED and Light: the same frosted glass in each one's own colours, or pick every colour yourself.</sub>
+<sub>Glass, Glass Light, Dark and Light: the same frosted glass in each one's own colours, with a glow of any colour behind it.</sub>
 
 </div>
 

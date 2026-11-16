@@ -4,7 +4,7 @@ What is still to build, and what is known to be broken. Nothing else lives
 here: how things work is in [CLAUDE.md](CLAUDE.md), and what shipped is in
 [RELEASE-NOTES.md](RELEASE-NOTES.md). Take an item off when it ships.
 
-**Release:** 1.7.0 Chorus Frog. **Next codename:** not chosen yet. **Live at** a DuckDNS hostname on Oracle Cloud Always
+**Release:** 1.8.0 Chorus Frog. **Next codename:** not chosen yet. **Live at** a DuckDNS hostname on Oracle Cloud Always
 Free, updating itself from each release (`docs/DEPLOY-ORACLE.md`).
 
 ## To build
@@ -85,6 +85,11 @@ off, or turns it into a fix above.
   time TBA rows. What is left should be streaming drops, shows TVmaze lists
   without a time, and shows TVmaze does not have.
 - **The colour picker's sheet and the Stats bars by finger** on the phone.
+- **The 1.9 batch on a real phone:** the Badges tab's cards and sorting,
+  choosing a banner from any title in its sheet, each glow on Glass and
+  Glass Light, the shelves dealing in, and Calendar's Month, Agenda and
+  Diary switch. And a badge made in Administration → Badges with a
+  condition reaching someone by itself once they pass it.
 - **The November batch on a real phone:** swiping Home's hero and a
   notification away, the banner's Choose what shows sheet by finger, the
   shelves sheet, and Signed-in devices showing the phone and an iPad as

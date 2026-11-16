@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import DiaryView from '#lib/components/DiaryView.svelte';
 	import { titleHref } from '#lib/titles';
 	import { ApiError, img } from '#lib/api';
 	import Empty from '#lib/components/Empty.svelte';
@@ -28,7 +31,22 @@
 
 	let entries = $state<Entry[]>([]);
 	let loading = $state(true);
-	let view = $state<'month' | 'agenda'>('month');
+
+	// Month and Agenda look ahead, Diary looks back: one page, the view in
+	// the address so Back, a link and a reload keep it.
+	const VIEWS = ['month', 'agenda', 'diary'] as const;
+	type View = (typeof VIEWS)[number];
+	const view = $derived.by((): View => {
+		const asked = page.url.searchParams.get('view');
+		return VIEWS.find((v) => v === asked) ?? 'month';
+	});
+
+	function show(next: View) {
+		void goto(next === 'month' ? '/calendar' : `/calendar?view=${next}`, {
+			replace: true,
+			reset: false
+		});
+	}
 	let cursor = $state(new Date());
 
 	const today = localDay();
@@ -132,19 +150,34 @@
 </script>
 
 <svelte:head>
-	<title>Calendar · Frog</title>
+	<title>{view === 'diary' ? 'Diary' : 'Calendar'} · Frog</title>
 </svelte:head>
 
 <div class="page">
 	<div class="page-head">
 		<h1>Calendar</h1>
 		<div class="segmented" role="group" aria-label="View">
-			<button class:on={view === 'month'} onclick={() => (view = 'month')}>Month</button>
-			<button class:on={view === 'agenda'} onclick={() => (view = 'agenda')}>Agenda</button>
+			<button
+				class:on={view === 'month'}
+				aria-pressed={view === 'month'}
+				onclick={() => show('month')}>Month</button
+			>
+			<button
+				class:on={view === 'agenda'}
+				aria-pressed={view === 'agenda'}
+				onclick={() => show('agenda')}>Agenda</button
+			>
+			<button
+				class:on={view === 'diary'}
+				aria-pressed={view === 'diary'}
+				onclick={() => show('diary')}>Diary</button
+			>
 		</div>
 	</div>
 
-	{#if loading}
+	{#if view === 'diary'}
+		<DiaryView />
+	{:else if loading}
 		<Spinner label="Loading the calendar" />
 	{:else if failed}
 		<LoadFailed {failed} onretry={load} />

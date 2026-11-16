@@ -5,6 +5,7 @@ import type { WhenAnswer } from './when.svelte';
 import type {
 	TitleMerge,
 	AdminBadge,
+	BadgeCondition,
 	BadgeUpload,
 	HeldBadge,
 	BadgeBoard,
@@ -346,6 +347,8 @@ export const api = {
 	badgeImage: (id: number, size: 'large' | 'small', version: string) =>
 		`/api/admin/badges/${id}/images/${size}?v=${encodeURIComponent(version)}`,
 	badgeOriginal: (id: number) => `/api/admin/badges/${id}/original`,
+	setBadgeCondition: (id: number, condition: BadgeCondition | null) =>
+		send<{ id: number }>('PUT', `/api/admin/badges/${id}/condition`, { condition }),
 	giveBadge: (id: number, userId: number) =>
 		send<{ ok: true }>('PUT', `/api/admin/badges/${id}/holders/${userId}`, {}),
 	takeBadge: (id: number, userId: number) =>
@@ -404,6 +407,9 @@ export const api = {
 			signal
 		),
 	searchGenres: () => get<{ genres: string[] }>('/api/search/genres'),
+	/** Any film's or show's wide pictures, for a profile banner. */
+	titleBackdrops: (kind: Kind, tmdbId: number) =>
+		get<{ backdrops: string[] }>(`/api/search/backdrops/${kind}/${tmdbId}`),
 	scores: (id: number) => get<TitleScores>(`/api/t/${id}/scores`),
 	trending: (list: 'trending' | 'top' = 'trending', page = 1) =>
 		get<{ results: SearchItem[]; next_page?: number | null }>(

@@ -151,7 +151,7 @@ check(
 );
 
 // Visit the pages once online so their data is cached, as a person would.
-for (const path of ['/library', '/settings', '/diary', '/stats', '/shelves', '/']) {
+for (const path of ['/library', '/settings', '/calendar?view=diary', '/stats', '/shelves', '/']) {
 	await page.goto(BASE + path);
 	await page.waitForTimeout(900);
 }
@@ -171,7 +171,7 @@ for (const [path, heading] of [
 	['/', null],
 	['/library', 'Library'],
 	['/settings', 'Settings'],
-	['/diary', 'Diary'],
+	['/calendar?view=diary', 'Calendar'],
 	['/stats', 'Stats'],
 	['/shelves', 'Shelves']
 ]) {

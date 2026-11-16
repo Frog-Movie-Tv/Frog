@@ -90,6 +90,15 @@ export interface LibraryItem {
 	last_watched_at: string | null;
 	/** Watched again this many times. */
 	rewatches: number;
+	/** Who it was watched with, most recent first. Only on your own library. */
+	watched_with?: Mate[];
+}
+
+/** Someone a title was watched with. */
+export interface Mate {
+	id: number;
+	username: string;
+	display_name: string | null;
 }
 
 /** What someone else's profile shows of a library entry: never their notes. */
@@ -627,6 +636,28 @@ export interface HeldBadge {
 	/** Its ladder and step, so only the highest step shows beside a name. */
 	ladder?: string | null;
 	step?: number | null;
+	/** Which part of the badges page it sits in; `given` for one made by hand. */
+	group?: BadgeGroup;
+	/** Earned only by watches recorded as they happen. */
+	moment?: boolean;
+	/** 1 (easy) to 5 (legendary); none for a badge given by hand. */
+	difficulty?: number | null;
+	/** How many steps its ladder has, when it is on one. */
+	steps?: number | null;
+	/** How many people on this Frog hold it (the badges page only). */
+	holders?: number;
+	/** For one made here: what earns it on its own. */
+	condition?: BadgeCondition | null;
+}
+
+/** The parts of the badges page. */
+export type BadgeGroup =
+	'watching' | 'moments' | 'taste' | 'anime' | 'frog' | 'collector' | 'custom' | 'given';
+
+/** What earns a badge made here on its own: a count reaching a number. */
+export interface BadgeCondition {
+	count: string;
+	at: number;
 }
 
 /** A badge Frog gives on its own that someone has still to earn. */
@@ -642,6 +673,11 @@ export interface LockedBadge {
 	step: number | null;
 	/** How far along, for the holder only and only where it counts in steps. */
 	progress: { have: number; need: number } | null;
+	group?: BadgeGroup;
+	difficulty?: number | null;
+	steps?: number | null;
+	holders?: number;
+	condition?: BadgeCondition | null;
 }
 
 /** Everything there is to earn on one profile. */
@@ -650,6 +686,8 @@ export interface BadgeBoard {
 	locked: LockedBadge[];
 	/** Every badge there is for this account: Frog's own and those given by hand. */
 	total: number;
+	/** How many people can sign in to this Frog, for "held by 2 of 5". */
+	accounts?: number;
 }
 
 /** A badge as Administration lists it. */
@@ -663,6 +701,8 @@ export interface AdminBadge {
 	holders: number[];
 	/** Set for a badge Frog gives on its own. */
 	rule?: string | null;
+	/** For one made here: what earns it on its own, or nothing for by hand only. */
+	condition?: BadgeCondition | null;
 }
 
 /** A badge Frog would give on its own, held back because its name is taken. */

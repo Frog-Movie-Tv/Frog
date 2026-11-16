@@ -114,6 +114,56 @@ pub struct LibraryItem {
     pub last_watched_at: Option<String>,
     /// Watched again this many times: a show's count, or a film's repeat watches.
     pub rewatches: i64,
+    /// Who it was watched with, most recent first: anyone named on one of its
+    /// watches, or the people a show is being watched with now. Only for the
+    /// owner; `SharedItem` leaves it out.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub watched_with: Vec<Mate>,
+}
+
+/// Someone a title was watched with, as a card names them.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Mate {
+    pub id: i64,
+    pub username: String,
+    pub display_name: Option<String>,
+}
+
+/// Everyone each title was watched with, for one account, or for one of its
+/// titles. Accounts switched off are left out, as everywhere people are named.
+async fn mates(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: Option<i64>,
+) -> AppResult<std::collections::HashMap<i64, Vec<Mate>>> {
+    // (title, account, username, display name, latest)
+    type MateRow = (i64, i64, String, Option<String>, String);
+    let rows: Vec<MateRow> = sqlx::query_as(
+        "SELECT x.title_id, u.id, u.username, u.display_name, MAX(x.at) AS latest
+           FROM (SELECT w.title_id, ww.with_user_id AS who, w.watched_at AS at
+                   FROM watch_with ww
+                   JOIN watch_event w ON w.id = ww.watch_event_id AND w.user_id = ?1
+                  WHERE ww.user_id = ?1 AND (?2 IS NULL OR w.title_id = ?2)
+                 UNION ALL
+                 SELECT title_id, with_user_id, created_at FROM watching_with
+                  WHERE user_id = ?1 AND (?2 IS NULL OR title_id = ?2)) x
+           JOIN app_user u ON u.id = x.who AND u.disabled = 0
+          GROUP BY x.title_id, u.id
+          ORDER BY latest DESC, u.username",
+    )
+    .bind(user_id)
+    .bind(title_id)
+    .fetch_all(pool)
+    .await?;
+    let mut out: std::collections::HashMap<i64, Vec<Mate>> = std::collections::HashMap::new();
+    for (title, id, username, display_name, _) in rows {
+        out.entry(title).or_default().push(Mate {
+            id,
+            username,
+            display_name,
+        });
+    }
+    Ok(out)
 }
 
 /// What another account may see of a library entry. Named field by field on
@@ -1822,6 +1872,10 @@ pub async fn build_item(
     .fetch_one(pool)
     .await?;
     let rewatches = entry.as_ref().map_or(0, |e| e.rewatch_count) + film_again;
+    let watched_with = mates(pool, user_id, Some(title.id))
+        .await?
+        .remove(&title.id)
+        .unwrap_or_default();
     let total = if p.total > 0 {
         p.total
     } else {
@@ -1836,6 +1890,7 @@ pub async fn build_item(
         total_episodes: total,
         last_watched_at: last,
         rewatches,
+        watched_with,
         title,
     })
 }
@@ -2092,6 +2147,7 @@ pub struct ItemFacts {
     counted: std::collections::HashMap<i64, i64>,
     /// A film's repeat watches; a show's rewatches are counted on its entry.
     film_again: std::collections::HashMap<i64, i64>,
+    with: std::collections::HashMap<i64, Vec<Mate>>,
 }
 
 impl ItemFacts {
@@ -2168,6 +2224,8 @@ impl ItemFacts {
         .into_iter()
         .collect();
 
+        let with = mates(pool, user_id, None).await?;
+
         Ok(ItemFacts {
             entries,
             watched,
@@ -2175,6 +2233,7 @@ impl ItemFacts {
             last,
             counted,
             film_again,
+            with,
         })
     }
 
@@ -2199,6 +2258,7 @@ impl ItemFacts {
                 title.episode_count.unwrap_or(0)
             },
             last_watched_at: self.last.get(&title.id).cloned().flatten(),
+            watched_with: self.with.get(&title.id).cloned().unwrap_or_default(),
             title,
         }
     }

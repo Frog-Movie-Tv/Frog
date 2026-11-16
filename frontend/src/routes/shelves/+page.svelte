@@ -93,9 +93,9 @@
 				onend: saveOrder
 			}}
 		>
-			{#each shelves as shelf (shelf.id)}
+			{#each shelves as shelf, i (shelf.id)}
 				<li data-sort-item>
-					<ShelfCard {shelf} link={!arranging} menu={shelfMenu(shelf, load)}>
+					<ShelfCard {shelf} index={i} link={!arranging} menu={shelfMenu(shelf, load)}>
 						{#if arranging}
 							<button class="handle hit" data-sort-handle aria-label="Move {shelf.name}">
 								<Icon name="grip" size={18} />

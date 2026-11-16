@@ -122,6 +122,7 @@ test('every page names itself in the browser tab', async ({ page }) => {
 		['/calendar', /^Calendar · Frog$/],
 		['/airing', /^Airing · Frog$/],
 		['/diary', /^Diary · Frog$/],
+		['/calendar?view=diary', /^Diary · Frog$/],
 		['/stats', /^Stats · Frog$/],
 		['/settings', /^Settings · Frog$/],
 		['/about', /^About · Frog$/],
@@ -290,7 +291,8 @@ test('calendar and diary load and explain themselves when empty', async ({ page 
 	await expect(page.getByText('Nothing scheduled')).toBeVisible();
 
 	await page.goto('/diary');
-	await expect(page.getByRole('heading', { name: 'Diary', level: 1 })).toBeVisible();
+	await expect(page).toHaveURL(/\/calendar\?view=diary$/);
+	await expect(page.getByRole('button', { name: 'Diary', pressed: true })).toBeVisible();
 	await expect(page.getByText('Nothing watched yet')).toBeVisible();
 });
 
@@ -338,15 +340,21 @@ test('settings shows the instance facts and switches theme', async ({ page }) =>
 	// Glass is the default.
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'glass');
 
-	await page.getByRole('button', { name: /AMOLED/ }).click();
-	await expect(page.locator('html')).toHaveAttribute('data-theme', 'amoled');
+	await page.getByRole('button', { name: 'Dark', exact: true }).click();
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
 	// The choice must survive a reload, or it is not a setting.
 	await page.reload();
-	await expect(page.locator('html')).toHaveAttribute('data-theme', 'amoled');
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
-	await page.getByRole('button', { name: /^Pond$/ }).click();
-	await expect(page.locator('html')).toHaveAttribute('data-theme', 'pond');
+	await page.getByRole('button', { name: 'Glass Light', exact: true }).click();
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'glass-light');
+
+	// A glow of its own lights the page on any theme, and goes with the theme's own.
+	await page.getByRole('radio', { name: 'Green' }).click();
+	await expect(page.locator('html')).toHaveAttribute('style', /--room-1: rgba\(80, 210, 110/);
+	await page.getByRole('radio', { name: 'The theme’s own' }).click();
+	await expect(page.locator('html')).not.toHaveAttribute('style', /--room-1/);
 });
 
 test('preferences are kept on the server, not just in this browser', async ({ page, context }) => {
@@ -407,8 +415,8 @@ test('settings saved with a custom theme still load, and drop it on the next sav
 		data: { ...saved, theme: 'pond', customTheme: custom, savedThemes: [custom] }
 	});
 	await page.goto('/settings#appearance');
-	// The theme it was built on, none of its colours.
-	await expect(page.getByRole('button', { name: 'Pond', exact: true })).toHaveAttribute(
+	// The theme it was built on, none of its colours. Pond is Glass now.
+	await expect(page.getByRole('button', { name: 'Glass', exact: true })).toHaveAttribute(
 		'aria-pressed',
 		'true'
 	);
@@ -418,13 +426,13 @@ test('settings saved with a custom theme still load, and drop it on the next sav
 	expect(inline).toBe('');
 	await expect(page.getByText('Colour editor')).toHaveCount(0);
 
-	await page.getByRole('button', { name: 'Glass', exact: true }).click();
+	await page.getByRole('button', { name: 'Dark', exact: true }).click();
 	await expect
 		.poll(async () => Object.keys(await (await page.request.get('/api/settings')).json()))
 		.not.toContain('customTheme');
 	const after = await (await page.request.get('/api/settings')).json();
 	expect(after.savedThemes).toBeUndefined();
-	expect(after.theme).toBe('glass');
+	expect(after.theme).toBe('dark');
 	await page.request.put('/api/settings', { data: saved });
 });
 
@@ -1551,6 +1559,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/invites',
 		'/api/search/more?q=frog',
 		'/api/search/genres',
+		'/api/search/backdrops/movie/550',
 		'/api/t/1/scores',
 		'/api/studios/1',
 		'/api/notifications',
@@ -1603,6 +1612,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/anilist/entries/1',
 		'/api/admin/badges/1',
 		'/api/admin/badges/1/holders/1',
+		'/api/admin/badges/1/condition',
 		'/api/account/badges',
 		'/api/account/device'
 	]) {
@@ -2142,7 +2152,7 @@ test('a very long name never widens a page on a phone', async ({
 		`/search?q=${LONG.title}`,
 		`/search?q=${LONG.username}`,
 		'/stats',
-		'/diary',
+		'/calendar?view=diary',
 		'/calendar',
 		'/airing',
 		'/import',

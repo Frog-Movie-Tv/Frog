@@ -199,6 +199,11 @@ async fn badge_routes_refuse_anyone_below_administrator() {
         ),
         ("DELETE", format!("/api/admin/badges/{id}"), None),
         ("GET", format!("/api/admin/badges/{id}/original"), None),
+        (
+            "PUT",
+            format!("/api/admin/badges/{id}/condition"),
+            Some(json!({ "condition": { "count": "films", "at": 5 } })),
+        ),
         ("GET", format!("/api/admin/badges/{id}/images/large"), None),
         (
             "PUT",
@@ -274,7 +279,7 @@ async fn only_finished_round_pngs_are_kept() {
 }
 
 #[tokio::test]
-async fn a_hidden_badge_is_seen_only_by_whoever_holds_it() {
+async fn a_badge_kept_from_beside_the_name_stays_on_the_badges_tab() {
     let h = Harness::new().await;
     let (owner, member) = two_accounts(&h).await;
     let member_id = id_of(&h, "zjef").await;
@@ -336,10 +341,11 @@ async fn a_hidden_badge_is_seen_only_by_whoever_holds_it() {
         .clone();
     assert_eq!(card["badges"].as_array().unwrap().len(), 1);
 
-    // The hidden one's picture is there for its holder and nobody else.
+    // One kept from beside the name is still on the profile's Badges tab,
+    // picture and all, for anyone who may see the profile.
     let hidden = mine["badges"][1]["large"].as_str().unwrap().to_string();
     let (code, _, _, _) = h.send("GET", &hidden, None, Some(&owner)).await;
-    assert_eq!(code, StatusCode::NOT_FOUND);
+    assert_eq!(code, StatusCode::OK);
     let (code, _, _, _) = h.send("GET", &hidden, None, Some(&member)).await;
     assert_eq!(code, StatusCode::OK);
 
@@ -752,10 +758,14 @@ async fn the_badge_list_shows_what_is_still_to_come() {
     assert_eq!(counted["progress"]["have"], 0.0);
     assert!(counted["progress"]["need"].as_f64().unwrap() >= 1.0);
 
-    // Someone else sees neither the hidden badge nor how far along anything is.
+    // Someone else sees every badge held, the one kept from beside the name
+    // too, but not how far along anything is.
     let (code, theirs) = h.get("/api/profiles/zjef/badges", Some(&owner)).await;
     assert_eq!(code, StatusCode::OK);
-    assert_eq!(ids(&theirs["earned"]), [hand_made]);
+    assert_eq!(ids(&theirs["earned"]), [automatic, hand_made]);
+    assert!(theirs["earned"][0]["holders"].as_i64().unwrap() >= 1);
+    assert!(theirs["accounts"].as_i64().unwrap() >= 2);
+    assert!(theirs["earned"][0]["group"].is_string());
     assert!(!ids(&theirs["locked"]).contains(&automatic));
     assert!(theirs["locked"]
         .as_array()

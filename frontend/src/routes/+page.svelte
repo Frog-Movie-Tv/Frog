@@ -217,8 +217,8 @@
 				{#if row === 'shelves'}
 					{#snippet allShelves()}<a class="see-all hit" href="/shelves">All shelves</a>{/snippet}
 					<Rail title="Your shelves" action={allShelves} width="216px">
-						{#each data.shelves as shelf (shelf.id)}
-							<ShelfCard {shelf} menu={shelfMenu(shelf, load)} />
+						{#each data.shelves as shelf, i (shelf.id)}
+							<ShelfCard {shelf} index={i} menu={shelfMenu(shelf, load)} />
 						{/each}
 						<a class="new-shelf" href="/shelves?new=1">
 							<span class="plus"><Icon name="plus" size={22} /></span>

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { api, ApiError } from '#lib/api';
-	import AdminBadges from '#lib/components/AdminBadges.svelte';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import Select from '#lib/components/Select.svelte';
@@ -33,7 +32,6 @@
 	const owner = $derived(session.status?.role === 'owner');
 
 	let users = $state<AdminUser[]>([]);
-	let badgesPanel = $state<ReturnType<typeof AdminBadges> | null>(null);
 	let instance = $state<InstanceInfo | null>(null);
 	let server = $state<ServerStatus | null>(null);
 
@@ -238,6 +236,7 @@
 		</div>
 		{#if !denied}
 			<div class="actions">
+				<a class="btn" href="/admin/badges"><Icon name="sparkle" size={16} /> Badges</a>
 				<a class="btn" href="/admin/database"><Icon name="database" size={16} /> Database</a>
 			</div>
 		{/if}
@@ -325,13 +324,13 @@
 								</span>
 							</div>
 							<div class="controls">
-								<button
+								<a
 									class="btn ghost"
 									aria-label="Badges for {user.username}"
-									onclick={() => badgesPanel?.forPerson(user)}
+									href="/admin/badges?person={user.id}"
 								>
 									Badges
-								</button>
+								</a>
 								{#if roleSettable(user)}
 									<Select
 										label="Role for {user.username}"
@@ -385,8 +384,6 @@
 					</div>
 				{/if}
 			</section>
-
-			<AdminBadges bind:this={badgesPanel} {users} />
 
 			<div class="col">
 				<section class="block" id="invite">

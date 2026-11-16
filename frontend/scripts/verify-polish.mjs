@@ -98,7 +98,7 @@ async function signedIn(viewport, extra = {}) {
 	});
 	await page.request.put(`${BASE}/api/settings`, {
 		data: {
-			theme: 'pond-light',
+			theme: 'glass-light',
 			lastSeenVersion: (await (await page.request.get(`${BASE}/api/health`)).json()).version
 		}
 	});
@@ -124,7 +124,7 @@ async function signedIn(viewport, extra = {}) {
 		return value;
 	});
 	check('the label uses the accent colour, not faint grey', color === accent, color);
-	await page.screenshot({ path: join(out, '1-hero-pond-light.png') });
+	await page.screenshot({ path: join(out, '1-hero-glass-light.png') });
 
 	console.log('\n== calendar on desktop ==');
 	await page.request.put(`${BASE}/api/settings`, {
@@ -159,12 +159,12 @@ async function signedIn(viewport, extra = {}) {
 	const sheet = page.getByRole('menu', { name: 'More' });
 	await sheet.waitFor();
 	const items = (await sheet.getByRole('menuitem').allTextContents()).map((t) => t.trim());
-	for (const want of ['Diary', 'Stats', 'Settings', 'Import & export', 'About']) {
+	for (const want of ['Stats', 'Settings', 'Import & export', 'About']) {
 		check(`More offers ${want}`, items.includes(want));
 	}
 	await page.screenshot({ path: join(out, '3-more-sheet-375.png') });
-	await sheet.getByRole('menuitem', { name: 'Diary' }).click();
-	await page.waitForURL(`${BASE}/diary`);
+	await sheet.getByRole('menuitem', { name: 'Stats' }).click();
+	await page.waitForURL(`${BASE}/stats`);
 	check('choosing an item goes there and closes the sheet', (await sheet.count()) === 0);
 	await context.close();
 }
