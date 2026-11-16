@@ -58,6 +58,7 @@ pub fn router(state: AppState) -> Router {
         // Everything below needs a session.
         .route("/search", get(search::search))
         .route("/search/genres", get(search::genres))
+        .route("/search/backdrops/{kind}/{tmdb_id}", get(search::backdrops))
         .route("/discover/trending", get(search::trending))
         .route("/search/more", get(browse::more))
         .route("/studios/{id}", get(browse::studio))

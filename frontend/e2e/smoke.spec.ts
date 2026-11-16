@@ -1551,6 +1551,7 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/invites',
 		'/api/search/more?q=frog',
 		'/api/search/genres',
+		'/api/search/backdrops/movie/550',
 		'/api/t/1/scores',
 		'/api/studios/1',
 		'/api/notifications',

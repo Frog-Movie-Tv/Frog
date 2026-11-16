@@ -756,6 +756,40 @@ pub fn related(v: &Value, key: &str, limit: usize) -> Vec<SearchItem> {
     found
 }
 
+/// A title's wide pictures, for a profile banner: the one TMDB shows first,
+/// then those without words on them, then the rest, best voted first. The
+/// detail only carries the reader's language, none and Japanese
+/// (`include_image_language`), so nothing here is in a language they do not
+/// read but for anime.
+pub fn backdrops(v: &Value, most: usize) -> Vec<String> {
+    let mut found: Vec<(bool, f64, String)> = v
+        .get("images")
+        .and_then(|i| i.get("backdrops"))
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|b| {
+                    let path = str_at(b, "file_path")?;
+                    let worded = b.get("iso_639_1").is_some_and(|l| !l.is_null());
+                    Some((worded, f64_at(b, "vote_average").unwrap_or(0.0), path))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    found.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.total_cmp(&a.1)));
+    let mut out: Vec<String> = str_at(v, "backdrop_path").into_iter().collect();
+    for (_, _, path) in found {
+        if out.len() >= most {
+            break;
+        }
+        if !out.contains(&path) {
+            out.push(path);
+        }
+    }
+    out.truncate(most);
+    out
+}
+
 /// One entry per title, as its provider names it.
 pub fn unique_items(items: Vec<SearchItem>) -> Vec<SearchItem> {
     unique_by(items, |i| (i.kind.clone(), i.tmdb_id, i.anilist_id))
@@ -922,6 +956,30 @@ mod tests {
             2,
             "a film and a show may share an id"
         );
+    }
+
+    #[test]
+    fn backdrops_start_with_the_main_one_then_those_without_words() {
+        let v = json!({
+            "backdrop_path": "/main.jpg",
+            "images": { "backdrops": [
+                { "file_path": "/worded.jpg", "iso_639_1": "en", "vote_average": 9.0 },
+                { "file_path": "/plain-low.jpg", "iso_639_1": null, "vote_average": 4.0 },
+                { "file_path": "/main.jpg", "iso_639_1": null, "vote_average": 5.0 },
+                { "file_path": "/plain-high.jpg", "iso_639_1": null, "vote_average": 7.0 }
+            ]}
+        });
+        assert_eq!(
+            backdrops(&v, 10),
+            [
+                "/main.jpg",
+                "/plain-high.jpg",
+                "/plain-low.jpg",
+                "/worded.jpg"
+            ]
+        );
+        assert_eq!(backdrops(&v, 2), ["/main.jpg", "/plain-high.jpg"]);
+        assert!(backdrops(&json!({}), 10).is_empty());
     }
 
     #[test]

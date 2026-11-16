@@ -24,6 +24,11 @@ In progress.
   searchable and sortable, to make, redraw and give out. A badge made here
   can now earn itself, at a number of films, episodes, hours or any other
   count Frog keeps.
+- Settings → Profile shows your profile as others will see it, in the banner
+  layout you chose, and each layout is drawn with your own banner so the one
+  in use is plain to see.
+- Choose a banner from any film or show: search for it and pick from all of
+  its pictures.
 
 ### Fixes
 

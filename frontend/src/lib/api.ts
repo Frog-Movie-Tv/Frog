@@ -407,6 +407,9 @@ export const api = {
 			signal
 		),
 	searchGenres: () => get<{ genres: string[] }>('/api/search/genres'),
+	/** Any film's or show's wide pictures, for a profile banner. */
+	titleBackdrops: (kind: Kind, tmdbId: number) =>
+		get<{ backdrops: string[] }>(`/api/search/backdrops/${kind}/${tmdbId}`),
 	scores: (id: number) => get<TitleScores>(`/api/t/${id}/scores`),
 	trending: (list: 'trending' | 'top' = 'trending', page = 1) =>
 		get<{ results: SearchItem[]; next_page?: number | null }>(

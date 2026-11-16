@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { api } from '#lib/api';
 	import { conditionText } from '#lib/badge-board';
 	import { backCloses } from '#lib/layers.svelte';
@@ -75,7 +76,19 @@
 		return [...list].sort((a, b) => by(a, b) || a.name.localeCompare(b.name));
 	});
 
-	const count = (n: number) => (n === 1 ? '1 person' : `${n.toLocaleString()} people`);
+	const count = (n: number) =>
+		n === 0 ? 'Nobody yet' : n === 1 ? '1 person' : `${n.toLocaleString()} people`;
+
+	/** A person's badges, the ones they held when it opened first: ticking one
+	    leaves the rows where they are. */
+	const theirs = $derived.by(() => {
+		const id = person?.id;
+		if (id === undefined || !badges.length) return [];
+		return untrack(() => {
+			const holds = (b: AdminBadge) => (b.holders.includes(id) ? 0 : 1);
+			return [...badges].sort((a, b) => holds(a) - holds(b) || a.name.localeCompare(b.name));
+		});
+	});
 	const nameOf = (id: number) => users.find((u) => u.id === id)?.username ?? 'someone';
 
 	/** How a badge is earned, in a few words. */
@@ -312,7 +325,7 @@
 					</li>
 				{/each}
 			{:else if person}
-				{#each badges as badge (badge.id)}
+				{#each theirs as badge (badge.id)}
 					{@const on = badge.holders.includes(person.id)}
 					<li>
 						<label class="choice">
