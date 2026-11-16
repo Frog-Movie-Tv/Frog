@@ -14,6 +14,7 @@
 	import { failure, type Failure } from '#lib/failure';
 	import { year, plural } from '#lib/format';
 	import { titleMenu } from '#lib/menus';
+	import { morph } from '#lib/morph.svelte';
 	import { session } from '#lib/session.svelte';
 	import { moved, sortable } from '#lib/sortable';
 	import { toasts } from '#lib/toast.svelte';
@@ -276,7 +277,13 @@
 						>
 					</form>
 				{:else}
-					<h1>{shelf.name}</h1>
+					<h1
+						style:view-transition-name={morph.key === `shelf${shelf.id}`
+							? `shelf-name-${shelf.id}`
+							: undefined}
+					>
+						{shelf.name}
+					</h1>
 				{/if}
 				<span class="faint sub">
 					{#if shelf.kind === 'smart'}<Icon name="sparkle" size={14} /> Smart shelf ·{:else if watchlist}<Icon
@@ -527,6 +534,67 @@
 		flex-wrap: wrap;
 		gap: 14px;
 		margin-bottom: 22px;
+	}
+
+	/* The heading settles in, then its controls. */
+	.title {
+		animation: settle 460ms var(--spring) backwards;
+	}
+
+	.head .controls {
+		animation: settle 460ms var(--spring) 90ms backwards;
+	}
+
+	@keyframes settle {
+		from {
+			opacity: 0;
+			transform: translateY(10px);
+		}
+	}
+
+	/* A shelf's posters come in a row at a time, from the top left, a little
+	   further than a grid elsewhere does: opening a shelf is the moment. */
+	.sized :global(.grid > *) {
+		animation: -global-shelf-deal 520ms var(--spring) backwards;
+	}
+
+	.sized :global(.grid > *:nth-child(n + 2)) {
+		animation-delay: 30ms;
+	}
+
+	.sized :global(.grid > *:nth-child(n + 3)) {
+		animation-delay: 60ms;
+	}
+
+	.sized :global(.grid > *:nth-child(n + 4)) {
+		animation-delay: 90ms;
+	}
+
+	.sized :global(.grid > *:nth-child(n + 5)) {
+		animation-delay: 120ms;
+	}
+
+	.sized :global(.grid > *:nth-child(n + 6)) {
+		animation-delay: 150ms;
+	}
+
+	.sized :global(.grid > *:nth-child(n + 8)) {
+		animation-delay: 190ms;
+	}
+
+	.sized :global(.grid > *:nth-child(n + 11)) {
+		animation-delay: 230ms;
+	}
+
+	.sized :global(.grid > *:nth-child(n + 15)) {
+		animation-delay: 270ms;
+	}
+
+	@keyframes -global-shelf-deal {
+		from {
+			opacity: 0;
+			transform: translateY(18px) scale(0.94);
+		}
 	}
 
 	.title {

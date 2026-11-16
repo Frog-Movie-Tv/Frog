@@ -34,6 +34,9 @@ In progress.
 - Four themes, Glass, Glass Light, Dark and Light, and a glow behind the page
   in any of nine colours, or none. Pond and Pond Light become Glass and Glass
   Light, and AMOLED becomes Dark with no glow.
+- Shelves come to life: each one deals out its posters as the page opens,
+  fans them wider under the pointer, and carries its name into the shelf as
+  you open it.
 
 ### Fixes
 
