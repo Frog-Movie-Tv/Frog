@@ -334,9 +334,20 @@ pub async fn ensure(state: &AppState, id: &ExternalId) -> AppResult<(i64, Value)
     }
 }
 
-/// A title by Frog's id, with its detail from its primary provider. A title
-/// whose provider no longer has it, or that has no provider, still opens:
-/// with what Frog kept.
+/// A title by Frog's id, with its detail from its primary provider.
+///
+/// What it promises:
+/// - **It fails only for a title Frog does not have** (`NotFound`), or for a
+///   provider id that names another title, which is a fault. A provider that
+///   is slow, down or no longer lists the title never stops it opening.
+/// - **The row is this title's**, as stored, never another's.
+/// - **It never waits for TMDB for a title already stored.** A TMDB detail
+///   past its time is returned as it was and fetched again behind the call.
+/// - **The detail is the provider's own answer, as fresh as Frog has it,
+///   or, when no answer was ever kept, only the name and overview Frog
+///   stored** (`only_kept` says which). That is enough to draw a page and
+///   nothing to write from: anything that stores what the detail says
+///   (credits, seasons, episodes) uses `load_answered` instead.
 pub async fn load(state: &AppState, title_id: i64) -> AppResult<(TitleRow, Value)> {
     let row = get_title(&state.pool, title_id).await?;
     let Some(source) = primary(&state.pool, title_id).await? else {
@@ -385,7 +396,28 @@ pub async fn load(state: &AppState, title_id: i64) -> AppResult<(TitleRow, Value
 
 /// The detail of a title as Frog kept it, for when no provider answers.
 fn kept_detail(row: &TitleRow) -> Value {
-    json!({ "name": row.name, "overview": row.overview })
+    json!({ "name": row.name, "overview": row.overview, KEPT_ONLY: true })
+}
+
+/// Marks a detail that is only what Frog stored, not a provider's answer.
+const KEPT_ONLY: &str = "frog_kept_only";
+
+/// Whether `load` could give only the name and overview Frog stored.
+pub fn only_kept(detail: &Value) -> bool {
+    detail[KEPT_ONLY].as_bool() == Some(true)
+}
+
+/// `load`, for anything that writes what the detail says: a title no
+/// provider answered for is an error here, so a credits or seasons pass
+/// during an outage stops rather than storing "nobody" and "no seasons".
+pub async fn load_answered(state: &AppState, title_id: i64) -> AppResult<(TitleRow, Value)> {
+    let (row, detail) = load(state, title_id).await?;
+    if only_kept(&detail) {
+        return Err(AppError::Other(anyhow::anyhow!(
+            "no provider answered for title {title_id}"
+        )));
+    }
+    Ok((row, detail))
 }
 
 async fn ensure_tmdb(
@@ -876,6 +908,11 @@ pub async fn ensure_episodes(
             &loaded
         }
     };
+    // No provider has answered for it: the episodes Frog has are all there
+    // are for now, and nothing here is a reason to refuse a tick.
+    if only_kept(detail) {
+        return Ok(());
+    }
     let short = seasons_to_list(&models::seasons(detail), &have);
     if short.is_empty() {
         return Ok(());

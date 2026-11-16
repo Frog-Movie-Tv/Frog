@@ -207,7 +207,7 @@ fn what_reads_across_accounts_never_touches_notes() {
 #[test]
 fn the_activity_row_only_reads_who_may_be_seen() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let store = fs::read_to_string(src.join("store.rs"))
+    let store = fs::read_to_string(src.join("store").join("people.rs"))
         .expect("read source")
         .replace("\r", "");
     let shown = store

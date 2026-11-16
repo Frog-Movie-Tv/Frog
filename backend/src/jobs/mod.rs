@@ -1,4 +1,5 @@
-//! Background worker.
+//! Background worker: one table of jobs (`JOBS`), each on a task of its own,
+//! all stopped together at shutdown.
 //!
 //! Deliberately small: expire sessions and sign-in failures, drop stale TMDB cache
 //! rows, and re-pull episodes for shows that are still airing so new episodes
@@ -9,6 +10,9 @@
 
 use crate::clock::Stamp;
 use chrono::Utc;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::catalog;
@@ -46,38 +50,86 @@ const ANNOUNCE_TICK: Duration = Duration::from_secs(60);
 /// again only when something it counts changed or its day turned over.
 const BADGES_TICK: Duration = Duration::from_secs(60);
 
+/// AniList runs on its own short loop: a change made in Frog should reach
+/// AniList within a minute or two, not at the next half-hourly tick.
+const ANILIST_TICK: Duration = Duration::from_secs(30);
+
+/// How one run of a job ends: wait this long and run it again, or stop.
+type Next = Option<Duration>;
+type Run = fn(AppState) -> Pin<Box<dyn Future<Output = Next> + Send>>;
+
+/// One thing the worker does over and over. Each job runs on a task of its
+/// own, so a slow one (a long AniList sync, TMDB taking its time) never holds
+/// up another, and decides after each run how long to wait.
+struct Job {
+    name: &'static str,
+    run: Run,
+}
+
+/// Everything the worker does, in one place.
+const JOBS: [Job; 9] = [
+    Job {
+        name: "housekeeping",
+        run: |s| Box::pin(async move { housekeeping(&s).await }),
+    },
+    Job {
+        name: "credits",
+        run: |s| Box::pin(async move { credits(&s).await }),
+    },
+    Job {
+        name: "anilist",
+        run: |s| Box::pin(async move { sync_anilist(&s).await }),
+    },
+    Job {
+        name: "ops",
+        run: |s| Box::pin(async move { watch_ops(&s).await }),
+    },
+    Job {
+        name: "logos",
+        run: |s| Box::pin(async move { fill_logos(&s).await }),
+    },
+    Job {
+        name: "air times",
+        run: |s| Box::pin(async move { fill_airtimes(&s).await }),
+    },
+    Job {
+        name: "airing",
+        run: |s| Box::pin(async move { build_airing(&s).await }),
+    },
+    Job {
+        name: "notifications",
+        run: |s| Box::pin(async move { announce(&s).await }),
+    },
+    Job {
+        name: "badges",
+        run: |s| Box::pin(async move { give_badges(&s).await }),
+    },
+];
+
 pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         // Give the HTTP server a moment before the first sweep.
         tokio::time::sleep(Duration::from_secs(5)).await;
-        let credits = tokio::spawn(backfill_credits(state.clone()));
-        let _guard = AbortOnDrop(credits);
-        let anilist = tokio::spawn(sync_anilist(state.clone()));
-        let _anilist_guard = AbortOnDrop(anilist);
-        let ops = tokio::spawn(watch_ops(state.clone()));
-        let _ops_guard = AbortOnDrop(ops);
-        let logos = tokio::spawn(fill_logos(state.clone()));
-        let _logos_guard = AbortOnDrop(logos);
-        let airtimes = tokio::spawn(fill_airtimes(state.clone()));
-        let _airtimes_guard = AbortOnDrop(airtimes);
-        let airing = tokio::spawn(build_airing(state.clone()));
-        let _airing_guard = AbortOnDrop(airing);
-        let announce = tokio::spawn(announce(state.clone()));
-        let _announce_guard = AbortOnDrop(announce);
-        let badges = tokio::spawn(give_badges(state.clone()));
-        let _badges_guard = AbortOnDrop(badges);
-        let twins = tokio::spawn({
+        // Dropped with this task at shutdown, which aborts every job.
+        let mut jobs = tokio::task::JoinSet::new();
+        for job in &JOBS {
             let state = state.clone();
-            async move {
-                merge_twins(&state).await;
-            }
+            jobs.spawn(async move {
+                while let Some(wait) = (job.run)(state.clone()).await {
+                    tokio::time::sleep(wait).await;
+                }
+                tracing::debug!(job = job.name, "job stopped");
+            });
+        }
+        // Once at startup.
+        let twins = state.clone();
+        jobs.spawn(async move {
+            merge_twins(&twins).await;
         });
-        let _twins_guard = AbortOnDrop(twins);
-        loop {
-            if let Err(e) = tick(&state).await {
-                tracing::warn!(error = %e, "worker tick failed");
+        while let Some(done) = jobs.join_next().await {
+            if let Err(e) = done {
+                tracing::error!(error = %e, "a worker job ended");
             }
-            tokio::time::sleep(TICK).await;
         }
     })
 }
@@ -88,6 +140,13 @@ const PACK_BATCH: i64 = 500;
 
 /// How long a TMDB answer past its time is kept for when TMDB cannot be reached.
 const STALE_TMDB_DAYS: i64 = 7;
+
+async fn housekeeping(state: &AppState) -> Next {
+    if let Err(e) = tick(state).await {
+        tracing::warn!(error = %e, "worker tick failed");
+    }
+    Some(TICK)
+}
 
 async fn tick(state: &AppState) -> anyhow::Result<()> {
     state.login_failures.sweep();
@@ -139,42 +198,36 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn fill_logos(state: AppState) {
-    loop {
-        crate::fanart::fill_due(&state).await;
-        tokio::time::sleep(LOGO_TICK).await;
+async fn fill_logos(state: &AppState) -> Next {
+    crate::fanart::fill_due(state).await;
+    Some(LOGO_TICK)
+}
+
+async fn fill_airtimes(state: &AppState) -> Next {
+    // Which AniList media is which TMDB show, for anime air times. Kept
+    // fresh by the AniList sync too; this covers an instance without it.
+    let api = crate::anilist::Api::public(state);
+    if let Err(e) = crate::anilist::ensure_map(state, api.client).await {
+        tracing::debug!(error = %e, "anime map not refreshed");
+    }
+    restore_tmdb_days(state).await;
+    let done = crate::airtime::refresh_due(state).await;
+    if done > 0 {
+        tracing::debug!(done, "air times worked out");
+    }
+    // A whole batch means more are waiting, as after the day's list is
+    // built: carry on, paced by the providers themselves.
+    if (done as i64) < crate::airtime::BATCH {
+        Some(AIRTIME_TICK)
+    } else {
+        Some(Duration::from_secs(5))
     }
 }
 
-async fn fill_airtimes(state: AppState) {
-    loop {
-        // Which AniList media is which TMDB show, for anime air times. Kept
-        // fresh by the AniList sync too; this covers an instance without it.
-        let api = crate::anilist::Api::public(&state);
-        if let Err(e) = crate::anilist::ensure_map(&state, api.client).await {
-            tracing::debug!(error = %e, "anime map not refreshed");
-        }
-        restore_tmdb_days(&state).await;
-        let done = crate::airtime::refresh_due(&state).await;
-        if done > 0 {
-            tracing::debug!(done, "air times worked out");
-        }
-        // A whole batch means more are waiting, as after the day's list is
-        // built: carry on, paced by the providers themselves.
-        if (done as i64) < crate::airtime::BATCH {
-            tokio::time::sleep(AIRTIME_TICK).await;
-        } else {
-            tokio::time::sleep(Duration::from_secs(5)).await;
-        }
-    }
-}
-
-async fn build_airing(state: AppState) {
-    loop {
-        crate::airing::refresh_if_due(&state).await;
-        crate::airtime::schedules_if_due(&state).await;
-        tokio::time::sleep(AIRING_TICK).await;
-    }
+async fn build_airing(state: &AppState) -> Next {
+    crate::airing::refresh_if_due(state).await;
+    crate::airtime::schedules_if_due(state).await;
+    Some(AIRING_TICK)
 }
 
 /// Episodes whose day an earlier air-time source wrote over TMDB's: read
@@ -189,7 +242,7 @@ pub async fn restore_tmdb_days(state: &AppState) -> usize {
     .unwrap_or_default();
     let mut done = 0;
     for (title_id,) in rows {
-        match catalog::load(state, title_id).await {
+        match catalog::load_answered(state, title_id).await {
             Ok((_, detail)) => {
                 if let Err(e) = catalog::sync_all_seasons(state, title_id, &detail).await {
                     tracing::debug!(title_id, error = %e, "TMDB days not restored yet");
@@ -222,66 +275,52 @@ pub async fn restore_tmdb_days(state: &AppState) -> usize {
     done
 }
 
-async fn announce(state: AppState) {
-    loop {
-        if let Err(e) = crate::announce::run(&state, Utc::now()).await {
-            tracing::warn!(error = %e, "notifications failed");
-        }
-        tokio::time::sleep(ANNOUNCE_TICK).await;
+async fn announce(state: &AppState) -> Next {
+    if let Err(e) = crate::announce::run(state, Utc::now()).await {
+        tracing::warn!(error = %e, "notifications failed");
     }
+    Some(ANNOUNCE_TICK)
 }
+
+/// The badge catalogue is in the `badge` table: brought there by the
+/// first run of `give_badges`.
+static BADGES_SEEDED: AtomicBool = AtomicBool::new(false);
 
 /// Badges Frog gives on its own (`crate::awards`). The catalogue is brought
-/// into the `badge` table once, then accounts are worked out on their loop.
-async fn give_badges(state: AppState) {
-    if let Err(e) = crate::awards::give::seed(&state.pool).await {
-        tracing::warn!(error = %e, "the automatic badges could not be set up");
-        return;
-    }
-    loop {
-        if let Err(e) = crate::awards::tick(&state).await {
-            tracing::warn!(error = %e, "badges failed");
+/// into the `badge` table first, then accounts are worked out every run.
+async fn give_badges(state: &AppState) -> Next {
+    if !BADGES_SEEDED.load(Ordering::Relaxed) {
+        if let Err(e) = crate::awards::give::seed(&state.pool).await {
+            tracing::warn!(error = %e, "the automatic badges could not be set up");
+            return Some(TICK);
         }
-        tokio::time::sleep(BADGES_TICK).await;
+        BADGES_SEEDED.store(true, Ordering::Relaxed);
     }
+    if let Err(e) = crate::awards::tick(state).await {
+        tracing::warn!(error = %e, "badges failed");
+    }
+    Some(BADGES_TICK)
 }
 
-/// Stops the backfill when the worker itself is aborted at shutdown.
-struct AbortOnDrop(tokio::task::JoinHandle<()>);
-
-impl Drop for AbortOnDrop {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
-}
-
-/// AniList runs on its own short loop: a change made in Frog should reach
-/// AniList within a minute or two, not at the next half-hourly tick.
-async fn sync_anilist(state: AppState) {
-    if state.config.anilist.is_none() {
-        return;
-    }
-    loop {
-        match crate::anilist::due(&state.pool).await {
-            Ok(users) => {
-                for user_id in users {
-                    let _ = crate::anilist::sync_user(&state, user_id).await;
-                }
+async fn sync_anilist(state: &AppState) -> Next {
+    state.config.anilist.as_ref()?;
+    match crate::anilist::due(&state.pool).await {
+        Ok(users) => {
+            for user_id in users {
+                let _ = crate::anilist::sync_user(state, user_id).await;
             }
-            Err(e) => tracing::warn!(error = %e, "could not list AniList accounts"),
         }
-        // Looked at twice a minute; `due` decides who is actually synced.
-        tokio::time::sleep(Duration::from_secs(30)).await;
+        Err(e) => tracing::warn!(error = %e, "could not list AniList accounts"),
     }
+    // Looked at twice a minute; `due` decides who is actually synced.
+    Some(ANILIST_TICK)
 }
 
-async fn watch_ops(state: AppState) {
-    loop {
-        if let Err(e) = report_ops_failures(&state).await {
-            tracing::warn!(error = %e, "could not report server failures");
-        }
-        tokio::time::sleep(OPS_TICK).await;
+async fn watch_ops(state: &AppState) -> Next {
+    if let Err(e) = report_ops_failures(state).await {
+        tracing::warn!(error = %e, "could not report server failures");
     }
+    Some(OPS_TICK)
 }
 
 /// Tell every administrator, once each, about failures the deploy scripts
@@ -360,11 +399,9 @@ pub async fn report_ops_failures(state: &AppState) -> anyhow::Result<Vec<(i64, u
     Ok(told)
 }
 
-async fn backfill_credits(state: AppState) {
-    loop {
-        backfill_credits_once(&state).await;
-        tokio::time::sleep(CREDITS_TICK).await;
-    }
+async fn credits(state: &AppState) -> Next {
+    backfill_credits_once(state).await;
+    Some(CREDITS_TICK)
 }
 
 /// AniList-only films, and series' first seasons, that TMDB has too, from
@@ -456,11 +493,11 @@ pub async fn backfill_credits_once(state: &AppState) -> usize {
 
     let mut done = 0;
     for (title_id,) in rows {
-        // `load` opens a title already stored from the cached detail without
+        // `load_answered` opens a title already stored from the cached detail without
         // storing anything, so the credits are written here from what it
         // returns; that also marks the title, which a title that answered
         // with nobody would otherwise never be.
-        let stored = match catalog::load(state, title_id).await {
+        let stored = match catalog::load_answered(state, title_id).await {
             Ok((_, detail)) => catalog::store_credits(&state.pool, title_id, &detail).await,
             Err(e) => Err(e),
         };
@@ -506,7 +543,7 @@ async fn refresh_airing_shows(state: &AppState) {
 
     for (title_id,) in rows {
         // From whichever provider the show comes from: TMDB, or AniList.
-        match catalog::load(state, title_id).await {
+        match catalog::load_answered(state, title_id).await {
             Ok((_, detail)) => {
                 if let Err(e) = catalog::sync_all_seasons(state, title_id, &detail).await {
                     tracing::warn!(title_id, error = %e, "season refresh failed");
