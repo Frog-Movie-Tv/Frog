@@ -641,6 +641,24 @@ type HeldRow = (
     Option<String>,
 );
 
+/// How many accounts that can sign in hold each badge, and how many such
+/// accounts there are: the badges page's "rare" sort and its "held by" line.
+/// Counts only, never whose.
+pub async fn holders(pool: &SqlitePool) -> AppResult<(std::collections::HashMap<i64, i64>, i64)> {
+    let rows: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT a.badge_id, COUNT(*) FROM badge_award a
+           JOIN app_user u ON u.id = a.user_id
+          WHERE u.disabled = 0
+          GROUP BY a.badge_id",
+    )
+    .fetch_all(pool)
+    .await?;
+    let (accounts,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM app_user WHERE disabled = 0")
+        .fetch_one(pool)
+        .await?;
+    Ok((rows.into_iter().collect(), accounts))
+}
+
 /// The badges one account holds, in its order: every one for the holder
 /// themselves, only the shown ones for anybody else.
 pub async fn held(pool: &SqlitePool, user_id: i64, with_hidden: bool) -> AppResult<Vec<Held>> {
@@ -743,16 +761,14 @@ pub async fn holder_name(pool: &SqlitePool, user_id: i64) -> AppResult<Option<St
     Ok(row.map(|(n,)| n))
 }
 
-/// Whether one account holds a badge where `viewer` may see it: shown, or
-/// the viewer is the holder.
-pub async fn seen(pool: &SqlitePool, user_id: i64, badge_id: i64, viewer: i64) -> AppResult<bool> {
+/// Whether one account holds a badge. Anyone who may see the profile may
+/// see every badge on it: `shown` only says which sit beside the name.
+pub async fn seen(pool: &SqlitePool, user_id: i64, badge_id: i64) -> AppResult<bool> {
     let (seen,): (bool,) = sqlx::query_as(
-        "SELECT EXISTS (SELECT 1 FROM badge_award
-                         WHERE user_id = ? AND badge_id = ? AND (shown = 1 OR user_id = ?))",
+        "SELECT EXISTS (SELECT 1 FROM badge_award WHERE user_id = ? AND badge_id = ?)",
     )
     .bind(user_id)
     .bind(badge_id)
-    .bind(viewer)
     .fetch_one(pool)
     .await?;
     Ok(seen)

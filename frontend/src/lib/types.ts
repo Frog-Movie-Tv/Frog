@@ -627,7 +627,21 @@ export interface HeldBadge {
 	/** Its ladder and step, so only the highest step shows beside a name. */
 	ladder?: string | null;
 	step?: number | null;
+	/** Which part of the badges page it sits in; `given` for one made by hand. */
+	group?: BadgeGroup;
+	/** Earned only by watches recorded as they happen. */
+	moment?: boolean;
+	/** 1 (easy) to 5 (legendary); none for a badge given by hand. */
+	difficulty?: number | null;
+	/** How many steps its ladder has, when it is on one. */
+	steps?: number | null;
+	/** How many people on this Frog hold it (the badges page only). */
+	holders?: number;
 }
+
+/** The parts of the badges page. */
+export type BadgeGroup =
+	'watching' | 'moments' | 'taste' | 'anime' | 'frog' | 'collector' | 'given';
 
 /** A badge Frog gives on its own that someone has still to earn. */
 export interface LockedBadge {
@@ -642,6 +656,10 @@ export interface LockedBadge {
 	step: number | null;
 	/** How far along, for the holder only and only where it counts in steps. */
 	progress: { have: number; need: number } | null;
+	group?: BadgeGroup;
+	difficulty?: number | null;
+	steps?: number | null;
+	holders?: number;
 }
 
 /** Everything there is to earn on one profile. */
@@ -650,6 +668,8 @@ export interface BadgeBoard {
 	locked: LockedBadge[];
 	/** Every badge there is for this account: Frog's own and those given by hand. */
 	total: number;
+	/** How many people can sign in to this Frog, for "held by 2 of 5". */
+	accounts?: number;
 }
 
 /** A badge as Administration lists it. */

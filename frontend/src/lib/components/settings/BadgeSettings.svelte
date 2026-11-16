@@ -1,147 +1,74 @@
 <script lang="ts">
 	import { api } from '#lib/api';
-	import { prettyDate } from '#lib/format';
-	import { moved, sortable } from '#lib/sortable';
-	import { toasts } from '#lib/toast.svelte';
+	import { topSteps } from '#lib/badge-ladder';
+	import { session } from '#lib/session.svelte';
 	import type { HeldBadge } from '#lib/types';
 	import Icon from '../Icon.svelte';
 
+	/* Only a glance: which badges sit beside your name, and the way to the
+	   Badges tab, where every badge is and where they are chosen. */
 	let badges = $state<HeldBadge[]>([]);
 	let loaded = $state(false);
 
-	async function load() {
-		try {
-			badges = (await api.myBadges()).badges;
-		} catch (e) {
-			toasts.error(e);
-		} finally {
-			loaded = true;
-		}
-	}
-	load();
+	api
+		.myBadges()
+		.then((b) => (badges = b.badges))
+		.catch(() => {})
+		.finally(() => (loaded = true));
 
-	async function save() {
-		try {
-			badges = (await api.arrangeBadges(badges.map((b) => ({ id: b.id, shown: b.shown })))).badges;
-		} catch (e) {
-			toasts.error(e);
-			await load();
-		}
-	}
-
-	const shownCount = $derived(badges.filter((b) => b.shown).length);
+	const beside = $derived(topSteps(badges.filter((b) => b.shown)));
+	const href = $derived(`/people/${encodeURIComponent(session.status?.username ?? '')}/badges`);
 </script>
 
 {#if loaded && badges.length}
-	<div class="setting">
-		<div class="setting-top">
+	<a class="setting row" {href}>
+		<span class="setting-top">
 			<span class="setting-tile" aria-hidden="true"><Icon name="sparkle" size={18} /></span>
 			<span class="setting-label">
 				<strong>Badges</strong>
 				<span class="faint">
-					Drag to order them. The first three sit beside your name{shownCount > 3
-						? ', the rest one tap away'
-						: ''}.
+					{badges.length}
+					{badges.length === 1 ? 'badge' : 'badges'} earned.
+					{beside.length
+						? 'Choose which sit beside your name on your Badges tab.'
+						: 'None beside your name yet.'}
 				</span>
 			</span>
-		</div>
-		<ol
-			class="setting-body"
-			use:sortable={{ onmove: (from, to) => (badges = moved(badges, from, to)), onend: save }}
-		>
-			{#each badges as badge (badge.id)}
-				<li data-sort-item class:hidden={!badge.shown}>
-					<button class="handle" data-sort-handle aria-label="Move {badge.name}">
-						<Icon name="grip" size={16} />
-					</button>
-					<img src={badge.small} alt="" width="34" height="34" />
-					<span class="label">
-						<strong>{badge.name}</strong>
-						<span class="faint">Given {prettyDate(badge.awarded_at)}</span>
-					</span>
-					<label class="show">
-						<span class="sr">Show {badge.name} on your profile</span>
-						<input
-							type="checkbox"
-							class="toggle-switch"
-							checked={badge.shown}
-							onchange={(e) => {
-								badge.shown = e.currentTarget.checked;
-								void save();
-							}}
-						/>
-					</label>
-				</li>
-			{/each}
-		</ol>
-	</div>
+			<span class="worn" aria-hidden="true">
+				{#each beside.slice(0, 3) as b (b.id)}
+					<img src={b.small} alt="" width="30" height="30" />
+				{/each}
+			</span>
+			<Icon name="chevron-right" size={18} />
+		</span>
+	</a>
 {/if}
 
 <style>
-	ol {
-		list-style: none;
-		margin-block: 0;
-		padding: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
+	.row {
+		display: block;
+		color: inherit;
+		text-decoration: none;
 	}
 
-	li {
-		display: flex;
+	.row .setting-top {
 		align-items: center;
-		gap: 10px;
-		padding: 6px 8px;
-		border-radius: var(--radius-sm);
-		background: var(--bg-elev);
-		min-width: 0;
 	}
 
-	li:global([data-dragging]) {
-		box-shadow: var(--shadow-3);
+	.row:hover strong {
+		text-decoration: underline;
+		text-underline-offset: 3px;
 	}
 
-	li.hidden img,
-	li.hidden .label {
-		opacity: 0.5;
+	.worn {
+		display: inline-flex;
+		gap: 4px;
+		margin-left: auto;
+		flex: none;
 	}
 
-	.handle {
-		display: grid;
-		place-items: center;
-		width: 30px;
-		height: 30px;
-		border: 0;
-		border-radius: var(--radius-sm);
-		background: none;
-		color: var(--text-dim);
-		cursor: grab;
-		touch-action: none;
-	}
-
-	.label {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-	}
-
-	.label strong,
-	.label .faint {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.label .faint {
-		font-size: 0.8rem;
-	}
-
-	.sr {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-		clip-path: inset(50%);
+	.row :global(svg) {
+		flex: none;
+		color: var(--text-faint);
 	}
 </style>

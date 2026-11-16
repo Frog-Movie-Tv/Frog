@@ -26,6 +26,7 @@
 
 	const links = $derived([
 		{ href: `/people/${encodeURIComponent(name)}`, label: 'Your profile', icon: 'user' },
+		{ href: `/people/${encodeURIComponent(name)}/badges`, label: 'Your badges', icon: 'sparkle' },
 		{ href: '/people', label: 'People', icon: 'users' },
 		{ href: '/settings', label: 'Settings', icon: 'settings' },
 		...(session.status?.is_admin

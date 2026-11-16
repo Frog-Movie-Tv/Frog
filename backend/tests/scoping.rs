@@ -57,7 +57,7 @@ const SCOPED_FRAGMENTS: [&str; 7] = [
 ];
 
 /// Statements that are global on purpose, each with its reason.
-const ALLOWED: [(&str, &str); 12] = [
+const ALLOWED: [(&str, &str); 13] = [
     (
         "SELECT t.id, x.external_id, t.kind FROM title t JOIN title_external x",
         "decides which shared AniList copies are TMDB's titles at start; reads          title_merge only to leave alone a copy somebody took apart again",
@@ -104,6 +104,10 @@ const ALLOWED: [(&str, &str); 12] = [
     (
         "SELECT a.badge_id, a.user_id FROM badge_award a ORDER BY",
         "Administration lists who holds each badge; `badge` itself is shared          like a title, one row however many hold it, and has no owner",
+    ),
+    (
+        "SELECT a.badge_id, COUNT(*) FROM badge_award a",
+        "the badges page says how many people hold each badge; a count per          badge, never whose",
     ),
     (
         "DELETE FROM notification WHERE created_at < ?",

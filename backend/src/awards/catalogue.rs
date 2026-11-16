@@ -37,8 +37,18 @@ pub struct Entry {
     pub name: String,
     pub about: String,
     pub kind: Kind,
+    /// Which part of the badges page it sits in (`GROUPS`).
+    pub group: String,
+    /// How hard it is to earn, 1 (easy) to 5 (legendary), for sorting and
+    /// the page's words. A ladder climbs from 1 at its first step to 5 at its
+    /// last; a single badge goes by the ring it is drawn in.
+    pub difficulty: u8,
     pub step: Option<Step>,
 }
+
+/// The parts of the badges page, in order. A badge given by hand sits in
+/// `given`, which the catalogue never names.
+pub const GROUPS: [&str; 6] = ["watching", "moments", "taste", "anime", "frog", "collector"];
 
 #[derive(Deserialize)]
 struct File {
@@ -50,6 +60,7 @@ struct File {
 struct LadderFile {
     id: String,
     kind: String,
+    group: String,
     steps: Vec<StepFile>,
 }
 
@@ -65,6 +76,8 @@ struct StepFile {
 struct SingleFile {
     key: String,
     kind: String,
+    group: String,
+    ring: String,
     name: String,
     about: String,
 }
@@ -73,6 +86,25 @@ fn kind(word: &str) -> Kind {
     match word {
         "moment" => Kind::Moment,
         _ => Kind::Total,
+    }
+}
+
+/// A ladder's step, from 1 at the bottom to 5 at the top.
+fn climb(index: usize, count: usize) -> u8 {
+    if count < 2 {
+        return 1;
+    }
+    (1 + (4 * index + (count - 1) / 2) / (count - 1)) as u8
+}
+
+/// A single badge's ring, from the commonest to the rarest.
+fn ring_difficulty(ring: &str) -> u8 {
+    match ring {
+        "lily" => 1,
+        "sapphire" => 2,
+        "amethyst" => 3,
+        "aurora" => 4,
+        _ => 2,
     }
 }
 
@@ -97,6 +129,8 @@ pub fn all() -> &'static [Entry] {
                     name: s.name,
                     about: s.about,
                     kind: kind(&ladder.kind),
+                    group: ladder.group.clone(),
+                    difficulty: climb(index, count),
                     step: Some(Step {
                         ladder: ladder.id.clone(),
                         at: s.at,
@@ -113,6 +147,8 @@ pub fn all() -> &'static [Entry] {
                 name: s.name,
                 about: s.about,
                 kind: kind(&s.kind),
+                group: s.group,
+                difficulty: ring_difficulty(&s.ring),
                 step: None,
             });
         }
@@ -168,6 +204,13 @@ mod tests {
                 e.name
             );
             assert!(art(&e.key).is_some(), "no art for {}", e.key);
+            assert!(
+                GROUPS.contains(&e.group.as_str()),
+                "{} in {}",
+                e.key,
+                e.group
+            );
+            assert!((1..=5).contains(&e.difficulty), "{}", e.key);
             assert!(crate::badges::check_name(&e.name).is_ok(), "{}", e.name);
             assert!(
                 crate::badges::check_description(Some(&e.about)).is_ok(),
@@ -175,6 +218,18 @@ mod tests {
                 e.key
             );
         }
+    }
+
+    #[test]
+    fn a_ladder_climbs_from_easy_to_legendary() {
+        let films: Vec<u8> = ladder("films").map(|e| e.difficulty).collect();
+        assert_eq!(films.first(), Some(&1));
+        assert_eq!(films.last(), Some(&5));
+        assert!(films.windows(2).all(|w| w[0] <= w[1]), "{films:?}");
+        assert_eq!(climb(0, 3), 1);
+        assert_eq!(climb(1, 3), 3);
+        assert_eq!(climb(2, 3), 5);
+        assert_eq!(get("triple-bill").unwrap().difficulty, 2);
     }
 
     #[test]

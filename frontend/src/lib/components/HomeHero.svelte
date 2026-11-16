@@ -149,21 +149,46 @@
 		});
 	});
 
-	/** Shown once its picture is there, whether loaded now or long ago. */
+	/** How long a picture takes to fade in, and then a little: past this,
+	    whatever is under it goes whether or not its fade reported back. */
+	const FADE_MS = 900;
+
+	/**
+	 * Shown once its picture is there, whether loaded now or long ago. A
+	 * cached picture waits two frames, so the browser has drawn it hidden
+	 * first and the fade runs: shown in the frame it arrived, it skipped the
+	 * fade, no `transitionend` came, and the picture before it stayed under
+	 * it, showing through its soft lower edge.
+	 */
 	function appear(node: HTMLImageElement, layer: Layer) {
-		const show = () => (layer.shown = true);
-		if (node.complete && node.naturalWidth) requestAnimationFrame(show);
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const show = () => {
+			layer.shown = true;
+			timer = setTimeout(() => drop(layer), FADE_MS + 300);
+		};
+		if (node.complete && node.naturalWidth)
+			requestAnimationFrame(() => requestAnimationFrame(show));
 		else {
 			node.addEventListener('load', show, { once: true });
 			node.addEventListener('error', show, { once: true });
 		}
+		return { destroy: () => clearTimeout(timer) };
+	}
+
+	/** Everything under a picture that has faded in goes. */
+	function drop(layer: Layer) {
+		if (layers.some((l) => l.id < layer.id)) layers = layers.filter((l) => l.id >= layer.id);
 	}
 
 	/** Faded in: what was under it can go. */
 	function settled(layer: Layer, e: TransitionEvent) {
-		if (e.propertyName !== 'opacity' || !layer.shown) return;
-		layers = layers.filter((l) => l.id >= layer.id);
+		if (e.target !== e.currentTarget || e.propertyName !== 'opacity' || !layer.shown) return;
+		drop(layer);
 	}
+
+	/** A picture with a newer one shown over it fades out as well, so nothing of
+	    it lingers in the newer one's soft edge even before it is dropped. */
+	const covered = (layer: Layer) => layers.some((l) => l.id > layer.id && l.shown);
 
 	// --- turning -----------------------------------------------------------
 	let hovered = $state(false);
@@ -333,7 +358,12 @@
 		style:--leave-ms="{still ? 0 : LEAVE_MS}ms"
 	>
 		{#each layers as layer (layer.id)}
-			<div class="backdrop" class:shown={layer.shown} ontransitionend={(e) => settled(layer, e)}>
+			<div
+				class="backdrop"
+				class:shown={layer.shown}
+				class:covered={covered(layer)}
+				ontransitionend={(e) => settled(layer, e)}
+			>
 				<img
 					class:poster={style === 'poster'}
 					src={layer.src}
@@ -543,6 +573,12 @@
 
 	.backdrop.shown {
 		opacity: 1;
+	}
+
+	/* Out once the new one is most of the way in, so the turn never dims. */
+	.backdrop.shown.covered {
+		opacity: 0;
+		transition: opacity 500ms cubic-bezier(0.4, 0, 0.2, 1) 450ms;
 	}
 
 	.backdrop img {

@@ -278,10 +278,9 @@ pub async fn mine(auth: Auth, State(state): State<AppState>) -> AppResult<Json<V
     Ok(Json(json!({ "badges": shaped(&username, &held) })))
 }
 
-/// Everything there is to earn on one profile: the badges held, as the
-/// viewer may see them, then every badge Frog gives on its own that is still
-/// to come, with how far along the holder is when the viewer is the holder.
-/// A badge held out of sight is neither, so it never reads as still to come.
+/// Everything there is to earn on one profile: every badge held, then every
+/// badge Frog gives on its own that is still to come, with how far along the
+/// holder is when the viewer is the holder.
 pub async fn everything(
     auth: Auth,
     State(state): State<AppState>,
@@ -293,12 +292,14 @@ pub async fn everything(
     let own = user_id == auth.user_id();
     let held = badges::held(pool, user_id, true).await?;
     let holding: std::collections::HashSet<i64> = held.iter().map(|b| b.id).collect();
-    let earned: Vec<badges::Held> = held.into_iter().filter(|b| own || b.shown).collect();
+    // Every badge held, whoever looks: `shown` is only what sits beside the name.
+    let earned = held;
     let progress = if own {
         crate::awards::progress(pool, user_id).await?
     } else {
         Default::default()
     };
+    let (counts, accounts) = badges::holders(pool).await?;
     let mut rows = badges::automatic(pool).await?;
     let place = |key: &str| {
         crate::awards::catalogue::all()
@@ -330,6 +331,10 @@ pub async fn everything(
                 "moment": entry.is_some_and(|e| e.kind == crate::awards::catalogue::Kind::Moment),
                 "ladder": step.map(|s| s.ladder.as_str()),
                 "step": step.map(|s| s.index),
+                "group": entry.map_or("given", |e| e.group.as_str()),
+                "holders": counts.get(&b.id).copied().unwrap_or(0),
+                "difficulty": entry.map(|e| e.difficulty),
+                "steps": step.map(|s| crate::awards::catalogue::ladder(&s.ladder).count()),
                 "progress": progress.get(&b.rule).map(|(have, need)| json!({
                     "have": have.floor(),
                     "need": need,
@@ -337,10 +342,16 @@ pub async fn everything(
             })
         })
         .collect();
+    let mut earned = shaped(&username, &earned);
+    for b in &mut earned {
+        let id = b["id"].as_i64().unwrap_or_default();
+        b["holders"] = json!(counts.get(&id).copied().unwrap_or(0));
+    }
     Ok(Json(json!({
-        "earned": shaped(&username, &earned),
+        "earned": earned,
         "locked": locked,
         "total": total,
+        "accounts": accounts,
     })))
 }
 
@@ -366,11 +377,8 @@ pub async fn automatic_picture(
 pub fn shaped(username: &str, held: &[badges::Held]) -> Vec<Value> {
     held.iter()
         .map(|b| {
-            let step = b
-                .rule
-                .as_deref()
-                .and_then(crate::awards::catalogue::get)
-                .and_then(|e| e.step.as_ref());
+            let entry = b.rule.as_deref().and_then(crate::awards::catalogue::get);
+            let step = entry.and_then(|e| e.step.as_ref());
             json!({
                 "id": b.id,
                 "name": b.name,
@@ -385,6 +393,11 @@ pub fn shaped(username: &str, held: &[badges::Held]) -> Vec<Value> {
                 // A ladder's steps, so a profile can show only the highest.
                 "ladder": step.map(|s| s.ladder.as_str()),
                 "step": step.map(|s| s.index),
+                "group": entry.map_or("given", |e| e.group.as_str()),
+                "moment": entry.is_some_and(|e| e.kind == crate::awards::catalogue::Kind::Moment),
+                // A badge given by hand says nothing about how hard it was.
+                "difficulty": entry.map(|e| e.difficulty),
+                "steps": step.map(|s| crate::awards::catalogue::ladder(&s.ladder).count()),
             })
         })
         .collect()

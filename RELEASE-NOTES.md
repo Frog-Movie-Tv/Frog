@@ -13,6 +13,18 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Improvements
+
+- A profile's Badges tab shows every badge as a card: what it asks, how
+  hard it is, how close you are and how many people here hold it. Search,
+  filter by kind, and sort by difficulty, rarity or what is nearest.
+- Choose the badges beside your name from your Badges tab, and drag them
+  into order. Everyone who opens your profile sees every badge you hold.
+
+### Fixes
+
+- Each picture at the top of Home gives way cleanly to the next.
+
 ## [1.8.0] — Chorus Frog — 2026-11-16
 
 Badges you earn by watching, and a Home that shows what is trending.

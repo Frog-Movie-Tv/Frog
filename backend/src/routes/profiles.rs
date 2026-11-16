@@ -322,7 +322,7 @@ pub async fn badge_image(
 ) -> AppResult<Response> {
     let user = visible(&state, &auth, &username).await?;
     let size = Size::parse(&size).ok_or_else(|| AppError::NotFound("no picture".into()))?;
-    if !badges::seen(&state.pool, user.0, id, auth.user_id()).await? {
+    if !badges::seen(&state.pool, user.0, id).await? {
         return Err(AppError::NotFound("no picture".into()));
     }
     let (bytes, version) = badges::picture(&state.pool, id, size)
