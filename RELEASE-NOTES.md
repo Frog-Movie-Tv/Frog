@@ -13,6 +13,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+## [1.9.0] — Reed Frog — 2026-11-16
+
+A few improvements and fixes.
+
 ### Improvements
 
 - A profile's Badges tab shows every badge as a card: what it asks, how
@@ -1188,6 +1192,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.9.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.9.0
 [1.8.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.8.0
 [1.7.2]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.7.2
 [1.7.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.7.1
