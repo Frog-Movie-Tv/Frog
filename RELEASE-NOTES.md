@@ -13,16 +13,20 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
-### New
+## [1.8.0] — Chorus Frog — 2026-11-16
 
-- Badges now arrive on their own: 151 of them, for milestones and for
+Badges you earn by watching, and a Home that shows what is trending.
+
+### Highlights
+
+- **Badges arrive on their own.** 151 of them, for milestones and for
   moments. A triple bill, a 30-day streak, a premiere on its first night, a
   whole season in one sitting, 1,000 films. Only what you watch as it happens
   counts toward the moments; everything already in your library counts
   toward the milestones.
-- A badge shows the day you earned it and what you were watching. Beside
-  your name, only the highest step of each kind shows.
-- Every profile has a Badges tab: what has been earned, and every badge
+- **Every badge has its story.** It shows the day you earned it and what you
+  were watching. Beside your name, only the highest step of each kind shows.
+- **A Badges tab on every profile.** What has been earned, and every badge
   still to come, in grey. On your own, each one shows how close you are.
 
 ### Improvements
@@ -1142,6 +1146,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.8.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.8.0
 [1.7.2]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.7.2
 [1.7.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.7.1
 [1.7.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.7.0

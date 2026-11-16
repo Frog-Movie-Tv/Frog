@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.8.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.7.2...v1.8.0) (2026-11-16)
+
+
+### Features
+
+* **badges:** Frog gives badges on its own, and every profile lists them ([2f30ec7](https://github.com/Frog-Movie-Tv/Frog/commit/2f30ec7f58e839ef3578160eb67288a179d9db99))
+* **badges:** Frog gives badges on its own, and every profile lists them ([0a68344](https://github.com/Frog-Movie-Tv/Frog/commit/0a68344882265a5e91e4be7a942faa1a61f7e12c))
+* **home:** trending titles in the hero, and a smoother hero ([9848a1f](https://github.com/Frog-Movie-Tv/Frog/commit/9848a1fcbff4f834299d2ecd27b5db0caceee835))
+* rotating home hero, removable notifications and the november batch ([bb171e1](https://github.com/Frog-Movie-Tv/Frog/commit/bb171e198c780d9765ffbff976120be0e93e8950))
+* rotating home hero, removable notifications and the november batch ([27008d9](https://github.com/Frog-Movie-Tv/Frog/commit/27008d9578567c73a3a81c8ef557cb0326cebe2a))
+
+
+### Fixes
+
+* **db:** give the banner migration its own number ([1e11f77](https://github.com/Frog-Movie-Tv/Frog/commit/1e11f77b8f84eb8049d8628f46b9b98e009881cd))
+* **deploy:** an update stopped after its pull still starts the new image ([c39370c](https://github.com/Frog-Movie-Tv/Frog/commit/c39370cb3813600a1433fa11d4bf8ea970dfff62))
+* **session:** stay signed in while the server restarts ([5760e3c](https://github.com/Frog-Movie-Tv/Frog/commit/5760e3c3e20e3b7e5a4a1f8e47f2e68663d1b03b))
+* stay signed in while Frog updates, and an update that cannot get stuck ([6bf3556](https://github.com/Frog-Movie-Tv/Frog/commit/6bf35563285cbe32baf6a50417e7d0e2d11df755))
+
+
+### Documentation
+
+* **deploy:** production keeps a 128 MB picture cache ([ecb6dde](https://github.com/Frog-Movie-Tv/Frog/commit/ecb6dde0183e78fef6fb7d220dffdda9e7bb3cf1))
+
 ## [1.7.2](https://github.com/Frog-Movie-Tv/Frog/compare/v1.7.1...v1.7.2) (2026-11-15)
 
 
