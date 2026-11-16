@@ -1,4 +1,4 @@
-import { zoneFor } from './day';
+import { daysFrom, zoneFor } from './day';
 import { settings } from './settings.svelte';
 /**
  * Ratings live as 0..100 in the database no matter how they are shown, so the
@@ -104,23 +104,16 @@ export function prettyDate(date: string | null | undefined): string {
 	return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+/** A moment as calendar days where the viewer is: "today" means today, not the last 24 hours. */
 export function relativeDate(iso: string | null | undefined): string {
 	if (!iso) return '';
-	const then = new Date(iso).getTime();
-	if (Number.isNaN(then)) return '';
-
-	const diff = Date.now() - then;
-	const day = 86_400_000;
-	if (diff < 0) {
-		const days = Math.ceil(-diff / day);
-		if (days === 0) return 'today';
-		if (days === 1) return 'tomorrow';
-		if (days < 30) return `in ${days} days`;
-		return prettyDate(iso);
-	}
-	if (diff < day) return 'today';
-	if (diff < 2 * day) return 'yesterday';
-	if (diff < 30 * day) return `${Math.floor(diff / day)} days ago`;
+	const days = daysFrom(iso);
+	if (days === null) return '';
+	if (days === 0) return 'today';
+	if (days === -1) return 'yesterday';
+	if (days === 1) return 'tomorrow';
+	if (days > 1 && days < 30) return `in ${days} days`;
+	if (days < -1 && days > -30) return `${-days} days ago`;
 	return prettyDate(iso);
 }
 

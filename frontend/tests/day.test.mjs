@@ -42,3 +42,27 @@ test('a zone the browser does not know follows the device', () => {
 	assert.equal(viewerZone(), Intl.DateTimeFormat().resolvedOptions().timeZone);
 	chooseZone(null);
 });
+
+import { daysFrom } from '../src/lib/day.ts';
+
+test('today and yesterday are calendar days here, not 24-hour windows', () => {
+	try {
+		chooseZone('Europe/Brussels');
+		const now = new Date('2026-11-16T18:30:00Z'); // 19:30 on Monday in Brussels
+		// 22:06 on Sunday night is yesterday, though under 24 hours ago.
+		assert.equal(daysFrom('2026-11-15T21:06:50Z', now), -1);
+		// 00:30 on Monday is today.
+		assert.equal(daysFrom('2026-11-15T23:30:00Z', now), 0);
+		assert.equal(daysFrom('2026-11-14T15:38:26Z', now), -2);
+		// A bare date is that day, wherever the viewer is.
+		assert.equal(daysFrom('2026-11-21', now), 5);
+		// Over the clocks going back (25 October), still whole days.
+		assert.equal(daysFrom('2026-10-24T12:00:00Z', new Date('2026-10-26T12:00:00Z')), -2);
+		chooseZone('America/Los_Angeles');
+		assert.equal(daysFrom('2026-11-21', now), 5);
+		assert.equal(daysFrom('2026-11-16T07:00:00Z', now), -1); // 23:00 Sunday there
+		assert.equal(daysFrom('not a date', now), null);
+	} finally {
+		chooseZone(null);
+	}
+});

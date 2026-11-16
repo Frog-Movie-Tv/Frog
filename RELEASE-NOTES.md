@@ -43,6 +43,8 @@ In progress.
 ### Fixes
 
 - Each picture at the top of Home gives way cleanly to the next.
+- Today and yesterday mean the days on your calendar: something watched
+  late last night says yesterday, not today.
 
 ## [1.8.0] — Chorus Frog — 2026-11-16
 
