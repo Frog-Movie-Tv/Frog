@@ -344,7 +344,7 @@ try {
 	});
 	await shoot(browser, {
 		name: 'diary-desktop-glass',
-		path: '/diary',
+		path: '/calendar?view=diary',
 		viewport: DESKTOP,
 		theme: 'glass'
 	});

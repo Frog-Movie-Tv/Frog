@@ -527,6 +527,10 @@ part you are about to touch; change it when the code changes.
   answers items, status counts and genres from one request; a status counts every
   filter but itself, so its number is what choosing it shows. The page keeps its
   last answer in the module, so Back draws at once and the scroll lands.
+- **The diary is a view of the Calendar** (`/calendar?view=diary`, drawn by
+  `DiaryView.svelte`). `/diary` only sends people there, so old links and
+  bookmarks still work, and saved settings that name `/diary` (tab bar,
+  menu order, landing page) read it as `/calendar` as they load.
 - **Shelves have one place on Home**, the Your shelves row. A shelf used to be
   able to add a row of its own, which showed it twice; saved layouts lose those
   rows as they load (`introduceRows`).

@@ -37,6 +37,8 @@ In progress.
 - Shelves come to life: each one deals out its posters as the page opens,
   fans them wider under the pointer, and carries its name into the shelf as
   you open it.
+- Calendar and Diary are one page: switch between Month, Agenda and Diary
+  at the top. Links and bookmarks to the Diary still open it.
 
 ### Fixes
 

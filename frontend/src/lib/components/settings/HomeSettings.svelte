@@ -135,7 +135,6 @@
 					{ value: '/search', label: 'Search' },
 					{ value: '/calendar', label: 'Calendar' },
 					{ value: '/airing', label: 'Airing' },
-					{ value: '/diary', label: 'Diary' },
 					{ value: '/stats', label: 'Stats' }
 				]}
 				onchange={(v) => settings.set('landingPage', v)}

@@ -122,6 +122,7 @@ test('every page names itself in the browser tab', async ({ page }) => {
 		['/calendar', /^Calendar · Frog$/],
 		['/airing', /^Airing · Frog$/],
 		['/diary', /^Diary · Frog$/],
+		['/calendar?view=diary', /^Diary · Frog$/],
 		['/stats', /^Stats · Frog$/],
 		['/settings', /^Settings · Frog$/],
 		['/about', /^About · Frog$/],
@@ -290,7 +291,8 @@ test('calendar and diary load and explain themselves when empty', async ({ page 
 	await expect(page.getByText('Nothing scheduled')).toBeVisible();
 
 	await page.goto('/diary');
-	await expect(page.getByRole('heading', { name: 'Diary', level: 1 })).toBeVisible();
+	await expect(page).toHaveURL(/\/calendar\?view=diary$/);
+	await expect(page.getByRole('button', { name: 'Diary', pressed: true })).toBeVisible();
 	await expect(page.getByText('Nothing watched yet')).toBeVisible();
 });
 
@@ -2150,7 +2152,7 @@ test('a very long name never widens a page on a phone', async ({
 		`/search?q=${LONG.title}`,
 		`/search?q=${LONG.username}`,
 		'/stats',
-		'/diary',
+		'/calendar?view=diary',
 		'/calendar',
 		'/airing',
 		'/import',

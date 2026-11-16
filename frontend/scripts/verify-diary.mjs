@@ -147,7 +147,7 @@ await dialog.waitFor({ state: 'hidden' });
 await page.waitForTimeout(800);
 
 console.log('\n== "I don\'t know" stays out of the diary ==');
-await page.goto(`${BASE}/diary`);
+await page.goto(`${BASE}/calendar?view=diary`);
 await page.waitForTimeout(800);
 check('the diary lists nothing', (await page.getByText('Nothing watched yet').count()) === 1);
 const note = await page.getByText(/without a date are counted/).textContent();
@@ -167,7 +167,7 @@ await dialog.getByRole('button', { name: 'Mark watched' }).click();
 await dialog.waitFor({ state: 'hidden' });
 await page.waitForTimeout(1200);
 
-await page.goto(`${BASE}/diary`);
+await page.goto(`${BASE}/calendar?view=diary`);
 await page.waitForTimeout(800);
 const groups = page.locator('.body').filter({ has: page.locator('.what') });
 const groupCount = await groups.count();

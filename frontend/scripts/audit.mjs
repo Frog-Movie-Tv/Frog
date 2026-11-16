@@ -161,7 +161,7 @@ const ROUTES = [
 	'/search',
 	'/calendar',
 	'/airing',
-	'/diary',
+	'/calendar?view=diary',
 	'/stats',
 	'/stats?year=2026',
 	'/shelves',
