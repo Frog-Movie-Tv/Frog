@@ -4086,6 +4086,70 @@ async fn the_activity_row_shows_someone_with_their_profile_on() {
     assert_eq!(items[0]["did"], json!("watched"));
 }
 
+/// A show watched today and a week ago: Home's row says what today was, and
+/// the Activity page has each day as its own card, page by page.
+#[tokio::test]
+async fn the_activity_row_counts_one_day_and_the_page_has_each_day() {
+    let h = Harness::new().await;
+    let (_, member) = two_accounts(&h).await;
+    let id = user_id(&h, "zjef").await;
+    track(&h, id, 9302, None).await;
+    let now = chrono::Utc::now();
+    for (n, ago) in [(1, 7 * 24), (2, 3), (3, 2)] {
+        sqlx::query(
+            "INSERT INTO episode (id, title_id, season_number, episode_number) VALUES (?, 9302, 1, ?)",
+        )
+        .bind(93020 + n)
+        .bind(n)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, undated)
+             VALUES (?, 9302, ?, ?, 0)",
+        )
+        .bind(id)
+        .bind(93020 + n)
+        .bind((now - chrono::Duration::hours(ago)).to_rfc3339())
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    }
+    sqlx::query("UPDATE title SET kind = 'tv' WHERE id = 9302")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+
+    let items = activity(&h, &member).await;
+    assert_eq!(items.len(), 1, "{items:?}");
+    // Two hours and three hours ago fall on one day only if it is past 03:00
+    // UTC; either way the week-old episode is not counted in.
+    let today = items[0]["episodes"].as_u64().unwrap();
+    assert!(today == 1 || today == 2, "{items:?}");
+
+    let (_, first) = h.get("/api/activity?limit=1", Some(&member)).await;
+    assert_eq!(first["items"].as_array().unwrap().len(), 1, "{first}");
+    let next = first["next"].as_str().expect("there is more").to_string();
+    let mut seen = first["items"][0]["episodes"].as_u64().unwrap();
+    let mut cursor = Some(next);
+    while let Some(before) = cursor {
+        let (_, page) = h
+            .get(
+                &format!(
+                    "/api/activity?limit=1&before={}",
+                    urlencoding::encode(&before)
+                ),
+                Some(&member),
+            )
+            .await;
+        for item in page["items"].as_array().unwrap() {
+            seen += item["episodes"].as_u64().unwrap();
+        }
+        cursor = page["next"].as_str().map(str::to_string);
+    }
+    assert_eq!(seen, 3, "every episode once, over the pages");
+}
+
 #[tokio::test]
 async fn the_activity_row_shows_your_own_watching_too() {
     let h = Harness::new().await;

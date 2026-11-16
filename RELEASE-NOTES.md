@@ -49,6 +49,9 @@ In progress.
   Settings → Connections, saying why, instead of being skipped on every sync.
 - More shows on Airing find their air time, and a new show is looked for
   again sooner.
+- Activity counts what was watched on the day it shows: “2 episodes today”
+  means two today, on Home and on the Activity page alike, and a day is
+  yours, not the server’s.
 
 ## [1.8.0] — Chorus Frog — 2026-11-16
 
