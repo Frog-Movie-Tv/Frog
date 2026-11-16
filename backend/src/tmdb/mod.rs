@@ -21,6 +21,59 @@ pub mod ttl {
     pub const TRENDING_HOURS: i64 = 6;
 }
 
+/// A cached answer as it is kept: gzipped JSON. TMDB's answers were most of
+/// the database (361 MB of 590 on the live server) and shrink four to five
+/// times.
+pub fn pack(body: &Value) -> Vec<u8> {
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    // Writing to memory cannot fail.
+    let _ = serde_json::to_writer(&mut gz, body);
+    gz.finish().unwrap_or_default()
+}
+
+/// A cached answer back: gzipped, or plain JSON text from before answers
+/// were packed.
+pub fn unpack(raw: &[u8]) -> Option<Value> {
+    if raw.starts_with(&[0x1f, 0x8b]) {
+        serde_json::from_reader(flate2::read::GzDecoder::new(raw)).ok()
+    } else {
+        serde_json::from_slice(raw).ok()
+    }
+}
+
+/// Plain-text answers packed, a batch at a time, so an older cache shrinks
+/// without one long write. The pages freed are reused by later writes; the
+/// file itself shrinks only when compacted (`VACUUM`). How many it packed.
+pub async fn pack_older(pool: &SqlitePool, batch: i64) -> AppResult<usize> {
+    let rows: Vec<(String, Vec<u8>)> = sqlx::query_as(
+        "SELECT cache_key, body FROM tmdb_cache WHERE typeof(body) = 'text' LIMIT ?",
+    )
+    .bind(batch)
+    .fetch_all(pool)
+    .await?;
+    let mut packed = 0;
+    for (key, raw) in rows {
+        let body = match unpack(&raw) {
+            Some(body) => pack(&body),
+            // Unreadable as JSON: it would never be served, so it goes.
+            None => {
+                sqlx::query("DELETE FROM tmdb_cache WHERE cache_key = ?")
+                    .bind(&key)
+                    .execute(pool)
+                    .await?;
+                continue;
+            }
+        };
+        sqlx::query("UPDATE tmdb_cache SET body = ? WHERE cache_key = ?")
+            .bind(body)
+            .bind(&key)
+            .execute(pool)
+            .await?;
+        packed += 1;
+    }
+    Ok(packed)
+}
+
 #[derive(Clone)]
 pub struct Tmdb {
     inner: Arc<Inner>,
@@ -77,7 +130,7 @@ impl Tmdb {
     }
 
     async fn cached(&self, key: &str) -> Option<Value> {
-        let row: Option<(String, String)> =
+        let row: Option<(Vec<u8>, String)> =
             sqlx::query_as("SELECT body, expires_at FROM tmdb_cache WHERE cache_key = ?")
                 .bind(key)
                 .fetch_optional(&self.inner.pool)
@@ -92,21 +145,21 @@ impl Tmdb {
         if !fresh {
             return None;
         }
-        serde_json::from_str(&body).ok()
+        unpack(&body)
     }
 
     /// Returns a stale cached body regardless of TTL. Used when TMDB is
     /// unreachable, so a flaky connection degrades to slightly old data instead
     /// of an error page.
     async fn stale(&self, key: &str) -> Option<Value> {
-        let row: Option<(String,)> =
+        let row: Option<(Vec<u8>,)> =
             sqlx::query_as("SELECT body FROM tmdb_cache WHERE cache_key = ?")
                 .bind(key)
                 .fetch_optional(&self.inner.pool)
                 .await
                 .ok()
                 .flatten();
-        serde_json::from_str(&row?.0).ok()
+        unpack(&row?.0)
     }
 
     async fn store(&self, key: &str, body: &Value, ttl: Duration) {
@@ -120,7 +173,7 @@ impl Tmdb {
                 expires_at = excluded.expires_at",
         )
         .bind(key)
-        .bind(body.to_string())
+        .bind(pack(body))
         .bind(now.to_rfc3339())
         .bind((now + ttl).to_rfc3339())
         .execute(&self.inner.pool)

@@ -1454,6 +1454,40 @@ async fn the_worker_backfills_credits_for_older_titles() {
     assert_eq!(n, 1);
 }
 
+/// TMDB's answers are kept gzipped. Ones kept as plain text before still
+/// read, and the worker packs them a batch at a time.
+#[tokio::test]
+async fn cached_answers_are_packed_and_older_ones_still_read() {
+    let h = Harness::with_tmdb_key("test-key").await;
+    cache_film(&h, 23, "Plain Text", "2010", &[(7, "Someone")]).await;
+    let film = h.state.tmdb.movie(23).await.unwrap();
+    assert_eq!(film["title"], json!("Plain Text"));
+
+    assert_eq!(frog::tmdb::pack_older(&h.state.pool, 100).await.unwrap(), 1);
+    assert_eq!(frog::tmdb::pack_older(&h.state.pool, 100).await.unwrap(), 0);
+    let (kind,): (String,) = sqlx::query_as("SELECT typeof(body) FROM tmdb_cache")
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(kind, "blob");
+    assert_eq!(
+        h.state.tmdb.movie(23).await.unwrap(),
+        film,
+        "the same answer"
+    );
+
+    let big = json!({ "cast": vec![json!({ "name": "A name that repeats", "order": 1 }); 200] });
+    let packed = frog::tmdb::pack(&big);
+    assert!(
+        packed.len() * 10 < big.to_string().len(),
+        "{} bytes",
+        packed.len()
+    );
+    assert_eq!(frog::tmdb::unpack(&packed), Some(big));
+    assert_eq!(frog::tmdb::unpack(b"{\"a\":1}"), Some(json!({ "a": 1 })));
+    assert_eq!(frog::tmdb::unpack(b"not json"), None);
+}
+
 /// A title already stored opens from the cached detail without storing it
 /// again; the backfill still writes its credits, and asks only once.
 #[tokio::test]

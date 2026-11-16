@@ -502,8 +502,12 @@ Nothing is open to the internet except 80 and 443, and SSH by key. The machine
   units allow an hour. Production has run with `FROG_IMAGE_CACHE_MB=128` in
   its `.env` since that day (the old file is kept beside it): the posters
   went from 615 MB to 115 MB and, compacted with Frog stopped, the database
-  from 1,098 MB to 535 MB. TMDB's cached answers (347 MB) are most of what
-  is left. Changes to them and to the scripts reach the server
+  from 1,098 MB to 535 MB. TMDB's cached answers (347 MB) were most of what
+  was left; since 1.8.1 they are kept gzipped, about 80 MB, and the worker
+  packs the old ones over half a day. Once Administration's Storage shows
+  the cache smaller, compact the database once with Frog stopped and raise
+  `FROG_IMAGE_CACHE_MB` to 384, which keeps the copies about as large as
+  before while far fewer posters have to be fetched again. Changes to them and to the scripts reach the server
   only by re-running `install.sh` from a checkout.
 - Otherwise: back up, start the new image, wait for `/healthz`, and on failure
   roll back to the previous digest and say so.

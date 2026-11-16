@@ -81,6 +81,10 @@ pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
     })
 }
 
+/// Plain-text TMDB answers packed per tick: the 10,000 on the live server
+/// take about half a day at this pace, each tick a short write.
+const PACK_BATCH: i64 = 500;
+
 /// How long a TMDB answer past its time is kept for when TMDB cannot be reached.
 const STALE_TMDB_DAYS: i64 = 7;
 
@@ -106,6 +110,12 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
         .rows_affected();
     if dropped > 0 {
         tracing::debug!(dropped, "pruned stale TMDB cache rows");
+    }
+    // Answers kept as plain text before they were packed, a batch a tick.
+    match crate::tmdb::pack_older(&state.pool, PACK_BATCH).await {
+        Ok(packed) if packed > 0 => tracing::info!(packed, "packed cached TMDB answers"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, "cached TMDB answers could not be packed"),
     }
 
     // The picture cache to its budget. A failure leaves it as it was until
