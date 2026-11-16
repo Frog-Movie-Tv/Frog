@@ -126,7 +126,8 @@ pub async fn upsert(
         && before.as_ref().map(|e| e.status.as_str()) != Some("completed");
     if kind == "movie" && finished_now {
         let now = chrono::Utc::now().to_rfc3339();
-        store::add_first_film_watch(&state.pool, auth.user_id(), title_id, &now, false).await?;
+        store::add_first_film_watch(&state.pool, auth.user_id(), title_id, &now, false, "tick")
+            .await?;
     }
 
     if let Some(count) = body.progress {

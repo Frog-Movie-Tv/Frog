@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	export type ProfileTab = 'overview' | 'library' | 'ratings' | 'compare';
+	export type ProfileTab = 'overview' | 'library' | 'ratings' | 'badges' | 'compare';
 </script>
 
 <script lang="ts">
@@ -46,6 +46,7 @@
 		{ id: 'overview', label: 'Overview', href: base },
 		{ id: 'library', label: 'Library', href: `${base}/library` },
 		{ id: 'ratings', label: 'Ratings', href: `${base}/ratings` },
+		{ id: 'badges', label: 'Badges', href: `${base}/badges` },
 		...(profile.me ? [] : [{ id: 'compare', label: 'Compare', href: `${base}/compare` }])
 	] as { id: ProfileTab; label: string; href: string }[]);
 </script>

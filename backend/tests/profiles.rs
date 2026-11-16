@@ -684,3 +684,110 @@ async fn every_pin_comes_back_wherever_it_sits_in_the_library() {
         .await;
     assert_eq!(me["pinned"].as_array().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn the_badge_list_shows_what_is_still_to_come() {
+    let h = Harness::new().await;
+    let (owner, member) = two_accounts(&h).await;
+    let member_id = id_of(&h, "zjef").await;
+    frog::awards::give::seed(&h.state.pool).await.unwrap();
+    h.put(
+        "/api/account/profile",
+        json!({ "public": true }),
+        Some(&member),
+    )
+    .await;
+
+    // One automatic badge given and hidden, one made by hand and shown.
+    let (_, all) = h.get("/api/admin/badges", Some(&owner)).await;
+    let automatic = all["badges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|b| b["rule"].is_string())
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    let hand_made = make_badge(&h, &owner, "Albert Heijn").await;
+    for id in [automatic, hand_made] {
+        h.put(
+            &format!("/api/admin/badges/{id}/holders/{member_id}"),
+            json!({}),
+            Some(&owner),
+        )
+        .await;
+    }
+    h.put(
+        "/api/account/badges",
+        json!({ "badges": [{ "id": automatic, "shown": false }, { "id": hand_made, "shown": true }] }),
+        Some(&member),
+    )
+    .await;
+
+    let ids = |list: &Value| -> Vec<i64> {
+        list.as_array()
+            .unwrap()
+            .iter()
+            .map(|b| b["id"].as_i64().unwrap())
+            .collect()
+    };
+
+    // The holder sees both, everything else to come, and how far along.
+    let (code, own) = h.get("/api/profiles/zjef/badges", Some(&member)).await;
+    assert_eq!(code, StatusCode::OK, "{own:?}");
+    assert_eq!(ids(&own["earned"]), [automatic, hand_made]);
+    let locked = ids(&own["locked"]);
+    assert!(!locked.contains(&automatic));
+    assert_eq!(
+        own["total"].as_u64().unwrap() as usize,
+        locked.len() + 2,
+        "every automatic badge plus the one made by hand"
+    );
+    let counted = own["locked"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|b| b["progress"].is_object())
+        .expect("a ladder says how far along");
+    assert_eq!(counted["progress"]["have"], 0.0);
+    assert!(counted["progress"]["need"].as_f64().unwrap() >= 1.0);
+
+    // Someone else sees neither the hidden badge nor how far along anything is.
+    let (code, theirs) = h.get("/api/profiles/zjef/badges", Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(ids(&theirs["earned"]), [hand_made]);
+    assert!(!ids(&theirs["locked"]).contains(&automatic));
+    assert!(theirs["locked"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|b| b["progress"].is_null()));
+
+    // A badge still to come is drawn for anyone signed in; one made by hand
+    // only through somebody holding it.
+    let picture = own["locked"][0]["small"].as_str().unwrap().to_string();
+    let (code, _, _, bytes) = h.send("GET", &picture, None, Some(&owner)).await;
+    assert_eq!(code, StatusCode::OK);
+    assert!(bytes.starts_with(b"\x89PNG"));
+    let (code, _, _, _) = h
+        .send(
+            "GET",
+            &format!("/api/badges/{hand_made}/small"),
+            None,
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+    let (code, _, _, _) = h.send("GET", &picture, None, None).await;
+    assert_eq!(code, StatusCode::UNAUTHORIZED);
+
+    // A private profile has no list for anyone else.
+    h.put(
+        "/api/account/profile",
+        json!({ "public": false }),
+        Some(&member),
+    )
+    .await;
+    let (code, _) = h.get("/api/profiles/zjef/badges", Some(&owner)).await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+}

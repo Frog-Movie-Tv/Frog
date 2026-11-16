@@ -1,0 +1,266 @@
+{
+  "ladders": [
+    {
+      "id": "films",
+      "kind": "total",
+      "steps": [
+        { "at": 1, "key": "films.1", "name": "Frogspawn", "about": "Your first film." },
+        { "at": 10, "key": "films.10", "name": "Tadpole Matinee", "about": "10 films." },
+        { "at": 50, "key": "films.50", "name": "Popcorn Pond", "about": "50 films." },
+        { "at": 100, "key": "films.100", "name": "Front Row Frog", "about": "100 films." },
+        { "at": 250, "key": "films.250", "name": "Cinefrog", "about": "250 films." },
+        { "at": 500, "key": "films.500", "name": "Reel Leaper", "about": "500 films." },
+        { "at": 750, "key": "films.750", "name": "Projection Booth", "about": "750 films." },
+        { "at": 1000, "key": "films.1000", "name": "Lily Pad Premiere", "about": "1,000 films." },
+        { "at": 1500, "key": "films.1500", "name": "Golden Croak", "about": "1,500 films." },
+        { "at": 2500, "key": "films.2500", "name": "Silver Screen Legend", "about": "2,500 films." }
+      ]
+    },
+    {
+      "id": "episodes",
+      "kind": "total",
+      "steps": [
+        { "at": 1, "key": "episodes.1", "name": "Pilot", "about": "Your first episode." },
+        { "at": 100, "key": "episodes.100", "name": "Binge Starter", "about": "100 episodes." },
+        { "at": 250, "key": "episodes.250", "name": "Couch Frog", "about": "250 episodes." },
+        { "at": 500, "key": "episodes.500", "name": "Remote Control", "about": "500 episodes." },
+        { "at": 1000, "key": "episodes.1000", "name": "Couch Potato", "about": "1,000 episodes." },
+        { "at": 2500, "key": "episodes.2500", "name": "Deep Diver", "about": "2,500 episodes." },
+        { "at": 5000, "key": "episodes.5000", "name": "Remote Wizard", "about": "5,000 episodes." },
+        { "at": 7500, "key": "episodes.7500", "name": "Pond Broadcaster", "about": "7,500 episodes." },
+        { "at": 10000, "key": "episodes.10000", "name": "Ten Thousand Croaks", "about": "10,000 episodes.", "label": "10K" }
+      ]
+    },
+    {
+      "id": "hours",
+      "kind": "total",
+      "steps": [
+        { "at": 24, "key": "hours.24", "name": "Day Off", "about": "A whole day of films and shows.", "label": "24h" },
+        { "at": 100, "key": "hours.100", "name": "Moonlit Pond", "about": "100 hours watched.", "label": "100h" },
+        { "at": 250, "key": "hours.250", "name": "Week in the Dark", "about": "250 hours watched.", "label": "250h" },
+        { "at": 500, "key": "hours.500", "name": "Hourglass Frog", "about": "500 hours watched.", "label": "500h" },
+        { "at": 1000, "key": "hours.1000", "name": "Month of Movies", "about": "1,000 hours watched.", "label": "1000h" },
+        { "at": 2500, "key": "hours.2500", "name": "Long Winter", "about": "2,500 hours watched.", "label": "2500h" },
+        { "at": 5000, "key": "hours.5000", "name": "Pond Eternal", "about": "5,000 hours watched.", "label": "5000h" }
+      ]
+    },
+    {
+      "id": "library",
+      "kind": "total",
+      "steps": [
+        { "at": 50, "key": "library.50", "name": "Little Pond", "about": "50 titles in your library." },
+        { "at": 250, "key": "library.250", "name": "Poster Hoarder", "about": "250 titles in your library." },
+        { "at": 500, "key": "library.500", "name": "Collector", "about": "500 titles in your library." },
+        { "at": 750, "key": "library.750", "name": "Pond Archive", "about": "750 titles in your library." },
+        { "at": 1000, "key": "library.1000", "name": "Pond Keeper", "about": "1,000 titles in your library." },
+        { "at": 1500, "key": "library.1500", "name": "Lake Keeper", "about": "1,500 titles in your library." },
+        { "at": 2500, "key": "library.2500", "name": "Great Lake", "about": "2,500 titles in your library." }
+      ]
+    },
+    {
+      "id": "completed",
+      "kind": "total",
+      "steps": [
+        { "at": 1, "key": "completed.1", "name": "Closer", "about": "Your first show finished." },
+        { "at": 10, "key": "completed.10", "name": "Season Finale", "about": "10 shows finished." },
+        { "at": 25, "key": "completed.25", "name": "Finisher", "about": "25 shows finished." },
+        { "at": 50, "key": "completed.50", "name": "Finish Line", "about": "50 shows finished." },
+        { "at": 100, "key": "completed.100", "name": "Checkered Pond", "about": "100 shows finished." },
+        { "at": 250, "key": "completed.250", "name": "Grand Finisher", "about": "250 shows finished." }
+      ]
+    },
+    {
+      "id": "ratings",
+      "kind": "total",
+      "steps": [
+        { "at": 10, "key": "ratings.10", "name": "First Verdict", "about": "10 titles rated." },
+        { "at": 50, "key": "ratings.50", "name": "Critic", "about": "50 titles rated." },
+        { "at": 250, "key": "ratings.250", "name": "Star Gazer", "about": "250 titles rated." },
+        { "at": 500, "key": "ratings.500", "name": "Judge Frog", "about": "500 titles rated." },
+        { "at": 1000, "key": "ratings.1000", "name": "Hall of Stars", "about": "1,000 titles rated." },
+        { "at": 2500, "key": "ratings.2500", "name": "Supreme Critic", "about": "2,500 titles rated." }
+      ]
+    },
+    {
+      "id": "chapters",
+      "kind": "total",
+      "steps": [
+        { "at": 1, "key": "chapters.1", "name": "First Chapter", "about": "Your first manga chapter." },
+        { "at": 100, "key": "chapters.100", "name": "Page Hopper", "about": "100 chapters read." },
+        { "at": 500, "key": "chapters.500", "name": "Page Turner", "about": "500 chapters read." },
+        { "at": 1000, "key": "chapters.1000", "name": "Bookworm Hunter", "about": "1,000 chapters read." },
+        { "at": 2500, "key": "chapters.2500", "name": "Volume Tower", "about": "2,500 chapters read." },
+        { "at": 5000, "key": "chapters.5000", "name": "Library Lily", "about": "5,000 chapters read." }
+      ]
+    },
+    {
+      "id": "manga",
+      "kind": "total",
+      "steps": [
+        { "at": 1, "key": "manga.1", "name": "Final Page", "about": "Your first manga finished." },
+        { "at": 10, "key": "manga.10", "name": "Manga Shelf", "about": "10 manga finished." },
+        { "at": 25, "key": "manga.25", "name": "Ink Frog", "about": "25 manga finished." },
+        { "at": 50, "key": "manga.50", "name": "Manga Sensei", "about": "50 manga finished." }
+      ]
+    },
+    {
+      "id": "streak",
+      "kind": "moment",
+      "steps": [
+        { "at": 3, "key": "streak.3", "name": "Warm Up", "about": "Something watched three days running." },
+        { "at": 7, "key": "streak.7", "name": "Habit", "about": "A week without missing a day." },
+        { "at": 14, "key": "streak.14", "name": "Kindling", "about": "Two weeks without missing a day." },
+        { "at": 30, "key": "streak.30", "name": "Devoted", "about": "A month without missing a day." },
+        { "at": 100, "key": "streak.100", "name": "Unstoppable", "about": "100 days without missing one." },
+        { "at": 365, "key": "streak.365", "name": "Eternal Flame", "about": "A whole year without missing a day." }
+      ]
+    },
+    {
+      "id": "rewatches",
+      "kind": "total",
+      "steps": [
+        { "at": 1, "key": "rewatches.1", "name": "Rewind", "about": "Your first rewatch." },
+        { "at": 10, "key": "rewatches.10", "name": "Déjà Vu", "about": "10 rewatches." },
+        { "at": 50, "key": "rewatches.50", "name": "Loop the Pond", "about": "50 rewatches." }
+      ]
+    },
+    {
+      "id": "extension",
+      "kind": "total",
+      "steps": [
+        { "at": 10, "key": "extension.10", "name": "Auto-pilot", "about": "10 episodes logged by the browser extension." },
+        { "at": 100, "key": "extension.100", "name": "Robo Frog", "about": "100 episodes logged by the browser extension." },
+        { "at": 1000, "key": "extension.1000", "name": "Mission Control", "about": "1,000 episodes logged by the browser extension." }
+      ]
+    },
+    {
+      "id": "favourites",
+      "kind": "total",
+      "steps": [
+        { "at": 5, "key": "favourites.5", "name": "Soft Spot", "about": "5 favourites." },
+        { "at": 25, "key": "favourites.25", "name": "Heartfelt", "about": "25 favourites." },
+        { "at": 100, "key": "favourites.100", "name": "True Love", "about": "100 favourites." }
+      ]
+    },
+    {
+      "id": "years",
+      "kind": "total",
+      "steps": [
+        { "at": 1, "key": "years.1", "name": "Anniversary", "about": "One year on Frog." },
+        { "at": 2, "key": "years.2", "name": "Two Springs", "about": "Two years on Frog." },
+        { "at": 5, "key": "years.5", "name": "Old Toad", "about": "Five years on Frog." }
+      ]
+    },
+    {
+      "id": "together",
+      "kind": "total",
+      "steps": [
+        { "at": 1, "key": "together.1", "name": "Pond Pals", "about": "Something watched with someone." },
+        { "at": 25, "key": "together.25", "name": "Frog Chorus", "about": "25 watches with someone." },
+        { "at": 100, "key": "together.100", "name": "Whole Pond", "about": "100 watches with someone." }
+      ]
+    },
+    {
+      "id": "anime",
+      "kind": "total",
+      "steps": [
+        { "at": 1, "key": "anime.1", "name": "Kero Kero", "about": "Your first anime." },
+        { "at": 10, "key": "anime.10", "name": "Anime Tadpole", "about": "10 anime." },
+        { "at": 25, "key": "anime.25", "name": "Otaku", "about": "25 anime." },
+        { "at": 50, "key": "anime.50", "name": "Sakura Pond", "about": "50 anime." },
+        { "at": 100, "key": "anime.100", "name": "Shōnen Frog", "about": "100 anime." },
+        { "at": 250, "key": "anime.250", "name": "Anime Sage", "about": "250 anime." }
+      ]
+    },
+    {
+      "id": "seasons",
+      "kind": "total",
+      "steps": [
+        { "at": 10, "key": "seasons.10", "name": "Changing Seasons", "about": "10 seasons finished." },
+        { "at": 50, "key": "seasons.50", "name": "Season Hopper", "about": "50 seasons finished." },
+        { "at": 100, "key": "seasons.100", "name": "Hundred Springs", "about": "100 seasons finished." },
+        { "at": 250, "key": "seasons.250", "name": "Evergreen", "about": "250 seasons finished." },
+        { "at": 500, "key": "seasons.500", "name": "Ancient Pond", "about": "500 seasons finished." }
+      ]
+    },
+    {
+      "id": "days",
+      "kind": "total",
+      "steps": [
+        { "at": 30, "key": "days.30", "name": "Regular", "about": "Something watched on 30 different days." },
+        { "at": 100, "key": "days.100", "name": "Pond Regular", "about": "Something watched on 100 different days." },
+        { "at": 365, "key": "days.365", "name": "Year of Croaks", "about": "Something watched on 365 different days." },
+        { "at": 1000, "key": "days.1000", "name": "Thousand Evenings", "about": "Something watched on 1,000 different days.", "label": "1K" }
+      ]
+    },
+    {
+      "id": "notes",
+      "kind": "total",
+      "steps": [
+        { "at": 10, "key": "notes.10", "name": "Field Notes", "about": "Notes on 10 titles." },
+        { "at": 50, "key": "notes.50", "name": "Pond Journal", "about": "Notes on 50 titles." },
+        { "at": 250, "key": "notes.250", "name": "Frog Chronicler", "about": "Notes on 250 titles." }
+      ]
+    }
+  ],
+  "singles": [
+    { "key": "double-feature", "kind": "moment", "ring": "lily", "name": "Double Feature", "about": "Two films in one day." },
+    { "key": "triple-bill", "kind": "moment", "ring": "sapphire", "name": "Triple Bill", "about": "Three films in one day." },
+    { "key": "film-festival", "kind": "moment", "ring": "aurora", "name": "Film Festival", "about": "Five films in one day." },
+    { "key": "marathon", "kind": "moment", "ring": "lily", "name": "Marathon", "about": "Six episodes of one show in a day." },
+    { "key": "ultramarathon", "kind": "moment", "ring": "amethyst", "name": "Ultramarathon", "about": "Twelve episodes of one show in a day." },
+    { "key": "one-sitting", "kind": "moment", "ring": "sapphire", "name": "One Sitting", "about": "A whole season in one day." },
+    { "key": "speedrun", "kind": "moment", "ring": "sapphire", "name": "Speedrun", "about": "A whole show, first episode to last, within a week." },
+    { "key": "metamorphosis", "kind": "moment", "ring": "aurora", "name": "Metamorphosis", "about": "A show of five seasons or more, start to finish, within a month." },
+    { "key": "fly-feast", "kind": "moment", "ring": "aurora", "name": "Fly Feast", "about": "100 episodes in one week." },
+    { "key": "all-nighter", "kind": "moment", "ring": "lily", "name": "All-Nighter", "about": "Something watched between 2 and 5 in the morning." },
+    { "key": "croak-around-the-clock", "kind": "moment", "ring": "aurora", "name": "Croak Around the Clock", "about": "Something watched in every hour of the day." },
+    { "key": "simulcast", "kind": "moment", "ring": "sapphire", "name": "Simulcast", "about": "An anime episode within a day of airing in Japan." },
+    { "key": "cour-keeper", "kind": "moment", "ring": "amethyst", "name": "Cour Keeper", "about": "A whole anime season, each episode within a week of airing." },
+    { "key": "nocturnal", "kind": "moment", "ring": "amethyst", "name": "Nocturnal", "about": "Ten nights watched between 2 and 5 in the morning." },
+    { "key": "tadpole-to-frog", "kind": "moment", "ring": "aurora", "name": "Tadpole to Frog", "about": "A whole show followed as it aired, premiere to finale." },
+    { "key": "weekend-warrior", "kind": "moment", "ring": "sapphire", "name": "Weekend Warrior", "about": "Every Saturday and Sunday of a month." },
+    { "key": "day-one", "kind": "moment", "ring": "lily", "name": "Day One", "about": "An episode on the day it airs." },
+    { "key": "live-tonight", "kind": "moment", "ring": "sapphire", "name": "Live Tonight", "about": "An episode within three hours of airing." },
+    { "key": "season-ticket", "kind": "moment", "ring": "amethyst", "name": "Season Ticket", "about": "Every episode of a season on its air day." },
+    { "key": "premiere-night", "kind": "moment", "ring": "lily", "name": "Premiere Night", "about": "A film in its release week." },
+    { "key": "early-riser", "kind": "moment", "ring": "sapphire", "name": "Early Riser", "about": "On your list before release, watched in its first week." },
+    { "key": "patience", "kind": "moment", "ring": "sapphire", "name": "Patience", "about": "In your library over a year before you watched it." },
+    { "key": "spooky-season", "kind": "moment", "ring": "amethyst", "name": "Spooky Season", "about": "Ten horror titles in one October." },
+    { "key": "summer-blockbuster", "kind": "moment", "ring": "amethyst", "name": "Summer Blockbuster", "about": "Ten films over one July and August." },
+    { "key": "fireworks", "kind": "moment", "ring": "sapphire", "name": "Fireworks", "about": "Something watched on New Year's Eve and New Year's Day." },
+    { "key": "leap-year", "kind": "moment", "ring": "aurora", "name": "Leap Year", "about": "Something watched on 29 February." },
+    { "key": "spring-thaw", "kind": "moment", "ring": "lily", "name": "Spring Thaw", "about": "Back after two months away." },
+
+    { "key": "long-haul", "kind": "total", "ring": "sapphire", "name": "Long Haul", "about": "A finished show of 200 episodes or more." },
+    { "key": "grand-voyage", "kind": "total", "ring": "aurora", "name": "Grand Voyage", "about": "A finished show of 1,000 episodes or more." },
+    { "key": "caught-up", "kind": "total", "ring": "sapphire", "name": "Caught Up", "about": "Up to date on five running shows at once." },
+    { "key": "perfect-ten", "kind": "total", "ring": "sapphire", "name": "Perfect Ten", "about": "Ten perfect scores." },
+    { "key": "deck-clearer", "kind": "total", "ring": "lily", "name": "Deck Clearer", "about": "Everything you have watched, rated: 25 titles at least." },
+    { "key": "tough-crowd", "kind": "total", "ring": "lily", "name": "Tough Crowd", "about": "An average under 6 across 50 ratings." },
+    { "key": "easy-to-please", "kind": "total", "ring": "lily", "name": "Easy to Please", "about": "An average over 8.5 across 50 ratings." },
+    { "key": "hot-take", "kind": "total", "ring": "lily", "name": "Hot Take", "about": "A title rated three points below TMDB." },
+    { "key": "hidden-gem", "kind": "total", "ring": "sapphire", "name": "Hidden Gem", "about": "An 8 or more for a title TMDB rates under 6." },
+    { "key": "genre-hopper", "kind": "total", "ring": "sapphire", "name": "Genre Hopper", "about": "Titles in 15 genres." },
+    { "key": "brave-frog", "kind": "total", "ring": "lily", "name": "Brave Frog", "about": "25 horror titles." },
+    { "key": "laugh-track", "kind": "total", "ring": "lily", "name": "Laugh Track", "about": "50 comedies." },
+    { "key": "documentarian", "kind": "total", "ring": "lily", "name": "Documentarian", "about": "25 documentaries." },
+    { "key": "drawn-in", "kind": "total", "ring": "lily", "name": "Drawn In", "about": "50 animated titles." },
+    { "key": "time-traveller", "kind": "total", "ring": "sapphire", "name": "Time Traveller", "about": "Titles from seven decades." },
+    { "key": "century-leap", "kind": "total", "ring": "aurora", "name": "Century Leap", "about": "Titles from ten decades." },
+    { "key": "silver-screen", "kind": "total", "ring": "lily", "name": "Silver Screen", "about": "A film from before 1960." },
+    { "key": "directors-cut", "kind": "total", "ring": "lily", "name": "Director's Cut", "about": "Five films by one director." },
+    { "key": "fan-club", "kind": "total", "ring": "lily", "name": "Fan Club", "about": "Ten titles with the same actor." },
+    { "key": "studio-loyal", "kind": "total", "ring": "lily", "name": "Studio Loyal", "about": "15 titles from one studio." },
+    { "key": "comfort-show", "kind": "total", "ring": "lily", "name": "Comfort Show", "about": "One title watched three times." },
+    { "key": "curator", "kind": "total", "ring": "lily", "name": "Curator", "about": "Five shelves made." },
+    { "key": "taste-twin", "kind": "total", "ring": "sapphire", "name": "Taste Twin", "about": "A 90% taste match with someone." },
+    { "key": "opposites", "kind": "total", "ring": "lily", "name": "Opposites", "about": "A taste match under 40% with someone." },
+    { "key": "pioneer", "kind": "total", "ring": "sapphire", "name": "Pioneer", "about": "First here to add a title two others added later." },
+    { "key": "king-of-the-pond", "kind": "total", "ring": "aurora", "name": "King of the Pond", "about": "50 badges." },
+    { "key": "anime-film-club", "kind": "total", "ring": "lily", "name": "Anime Film Club", "about": "Ten anime films." },
+    { "key": "summit-frog", "kind": "total", "ring": "amethyst", "name": "Summit Frog", "about": "The top step of any ladder." },
+    { "key": "frog-prince", "kind": "total", "ring": "aurora", "name": "Frog Prince", "about": "Gold or better on five ladders." },
+    { "key": "pond-legend", "kind": "total", "ring": "aurora", "name": "Pond Legend", "about": "100 badges." }
+  ]
+}

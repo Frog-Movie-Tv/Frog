@@ -619,6 +619,37 @@ export interface HeldBadge {
 	small: string;
 	/** 1024 px. */
 	large: string;
+	/** Given by Frog on its own rather than by hand. */
+	automatic?: boolean;
+	/** The day it was earned (YYYY-MM-DD), and the title it was earned with. */
+	earned_on?: string | null;
+	earned_with?: string | null;
+	/** Its ladder and step, so only the highest step shows beside a name. */
+	ladder?: string | null;
+	step?: number | null;
+}
+
+/** A badge Frog gives on its own that someone has still to earn. */
+export interface LockedBadge {
+	id: number;
+	name: string;
+	description: string | null;
+	small: string;
+	large: string;
+	/** Earned only by watches recorded as they happen. */
+	moment: boolean;
+	ladder: string | null;
+	step: number | null;
+	/** How far along, for the holder only and only where it counts in steps. */
+	progress: { have: number; need: number } | null;
+}
+
+/** Everything there is to earn on one profile. */
+export interface BadgeBoard {
+	earned: HeldBadge[];
+	locked: LockedBadge[];
+	/** Every badge there is for this account: Frog's own and those given by hand. */
+	total: number;
 }
 
 /** A badge as Administration lists it. */
@@ -630,6 +661,15 @@ export interface AdminBadge {
 	updated_at: string;
 	/** Account ids of everyone holding it. */
 	holders: number[];
+	/** Set for a badge Frog gives on its own. */
+	rule?: string | null;
+}
+
+/** A badge Frog would give on its own, held back because its name is taken. */
+export interface WaitingBadge {
+	key: string;
+	name: string;
+	description: string;
 }
 
 /** What the badge editor saves: the pictures as base64, finished. */

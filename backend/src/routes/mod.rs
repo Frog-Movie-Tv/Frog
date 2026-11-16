@@ -194,6 +194,8 @@ pub fn router(state: AppState) -> Router {
             "/profiles/{username}/badges/{id}/{size}",
             get(profiles::badge_image),
         )
+        .route("/profiles/{username}/badges", get(badges::everything))
+        .route("/badges/{id}/{size}", get(badges::automatic_picture))
         .route("/invites", get(invites::list).post(invites::create))
         .route("/invites/{id}", delete(invites::revoke))
         .route("/export/library.json", get(transfer::export_json))

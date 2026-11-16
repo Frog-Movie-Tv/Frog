@@ -33,6 +33,21 @@ get busier:
   library to deal (`api.library()`); not timed on a 600-title library for
   1.7 (no TMDB key on the machine it was built on).
 
+Badges Frog gives on its own, left for later:
+
+- **World Tour and Subtitles On badges** (titles from 15 countries, 25 not
+  in English). Frog stores no country or language per title: keep TMDB's
+  `origin_country` and `original_language` on `title` first.
+- **Back From the Dead** (a dropped show picked up again) and **Watchlist
+  Zero** (a watchlist of 20 or more emptied by watching). Frog keeps no
+  history of status changes or of what left a watchlist and why.
+- **A test for a "watched with" copy being judged on the original's time.**
+  `together::add_to_mine` carries the original's `logged_at`; no test drives
+  it end to end yet.
+- **Tune the eligibility numbers on the owners' real libraries** (36 hours,
+  half the runtime, 10 titles a day): run `awards::eligible` over a restored
+  production backup and count what each rule turns away.
+
 ## To check by hand
 
 Nothing automated can stand in for these. An owner tries each and takes it

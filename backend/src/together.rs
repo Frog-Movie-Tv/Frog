@@ -402,6 +402,9 @@ async fn named(pool: &SqlitePool, me: i64, notification: i64) -> AppResult<(i64,
     ))
 }
 
+/// (title, episode, watched_at, undated, logged_at) of a watch being copied.
+type CopiedRow = (i64, Option<i64>, String, bool, Option<String>);
+
 /// Copy the watches someone named you on into your own diary, as your own
 /// rows on the same days, each naming them back. A watch you already have
 /// (same title, episode and moment) is not copied twice. A title not in your
@@ -413,8 +416,8 @@ pub async fn add_to_mine(
     status: Option<&str>,
 ) -> AppResult<i64> {
     let (owner, watches) = named(pool, me, notification).await?;
-    let rows: Vec<(i64, Option<i64>, String, bool)> = sqlx::query_as(
-        "SELECT title_id, episode_id, watched_at, undated FROM watch_event
+    let rows: Vec<CopiedRow> = sqlx::query_as(
+        "SELECT title_id, episode_id, watched_at, undated, logged_at FROM watch_event
           WHERE user_id = ? AND id IN (SELECT value FROM json_each(?))",
     )
     .bind(owner)
@@ -424,7 +427,7 @@ pub async fn add_to_mine(
     let now = Utc::now().to_rfc3339();
     let mut copied = 0;
     let mut titles = Vec::new();
-    for (title_id, episode_id, watched_at, undated) in rows {
+    for (title_id, episode_id, watched_at, undated, logged_at) in rows {
         if crate::store::get_entry(pool, me, title_id).await?.is_none() {
             let patch = crate::store::LibraryPatch {
                 status: Some(status.unwrap_or("watching").to_string()),
@@ -434,11 +437,11 @@ pub async fn add_to_mine(
         }
         let made: Option<(i64,)> = sqlx::query_as(
             "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
-                                      source, undated)
+                                      source, undated, logged_at, logged_how)
              SELECT ?1, ?2, ?3, ?4,
                     EXISTS (SELECT 1 FROM watch_event x WHERE x.user_id = ?1 AND x.title_id = ?2
                              AND x.episode_id IS ?3),
-                    'manual', ?5
+                    'manual', ?5, ?6, 'together'
               WHERE NOT EXISTS (SELECT 1 FROM watch_event x
                                  WHERE x.user_id = ?1 AND x.title_id = ?2
                                    AND x.episode_id IS ?3 AND x.watched_at = ?4)
@@ -449,6 +452,7 @@ pub async fn add_to_mine(
         .bind(episode_id)
         .bind(&watched_at)
         .bind(undated)
+        .bind(&logged_at)
         .fetch_optional(pool)
         .await?;
         if let Some((id,)) = made {

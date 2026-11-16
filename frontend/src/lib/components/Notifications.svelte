@@ -160,7 +160,7 @@
 			label: 'Watched together',
 			hint: 'Off, nobody can say you watched with them'
 		},
-		{ key: 'badges', label: 'Badges', hint: 'When someone gives you one' },
+		{ key: 'badges', label: 'Badges', hint: 'When you earn or are given one' },
 		{ key: 'updates', label: 'Frog updates', hint: 'When Frog gets a new version' }
 	];
 

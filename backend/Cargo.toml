@@ -41,6 +41,8 @@ ring = "0.17"
 base64 = "0.22"
 # Already in the tree through sqlx; folds accents for the library filter.
 unicode-normalization = "0.1"
+# Draws the automatic badges from their SVGs (no text, so no fonts).
+resvg = { version = "0.45", default-features = false }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
