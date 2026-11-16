@@ -15,18 +15,18 @@ In progress.
 
 ## [1.8.0] — Chorus Frog — 2026-11-16
 
-A few improvements and fixes.
+Badges you earn by watching, and a Home that shows what is trending.
 
-### New
+### Highlights
 
-- Badges now arrive on their own: 151 of them, for milestones and for
+- **Badges arrive on their own.** 151 of them, for milestones and for
   moments. A triple bill, a 30-day streak, a premiere on its first night, a
   whole season in one sitting, 1,000 films. Only what you watch as it happens
   counts toward the moments; everything already in your library counts
   toward the milestones.
-- A badge shows the day you earned it and what you were watching. Beside
-  your name, only the highest step of each kind shows.
-- Every profile has a Badges tab: what has been earned, and every badge
+- **Every badge has its story.** It shows the day you earned it and what you
+  were watching. Beside your name, only the highest step of each kind shows.
+- **A Badges tab on every profile.** What has been earned, and every badge
   still to come, in grey. On your own, each one shows how close you are.
 
 ### Improvements
