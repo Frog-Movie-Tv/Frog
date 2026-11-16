@@ -179,6 +179,7 @@ const ROUTES = [
 	'/whats-new',
 	'/reset',
 	'/admin',
+	'/admin/badges',
 	'/admin/database',
 	'/admin/database/title',
 	'/title/tv/95396',
@@ -203,7 +204,10 @@ const ACTIONS = [
 		press: (page) => page.getByRole('button', { name: 'Add to library' })
 	},
 	// The badge editor starts its background-fill worker when it opens.
-	{ route: '/admin', press: (page) => page.getByRole('button', { name: 'New badge' }) }
+	{
+		route: '/admin/badges',
+		press: (page) => page.getByRole('button', { name: 'New badge' }).first()
+	}
 ];
 
 const browser = await chromium.launch();
