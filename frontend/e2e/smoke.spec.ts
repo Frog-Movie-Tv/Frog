@@ -89,6 +89,17 @@ test('once welcomed, an empty home stays home', async ({ page }) => {
 	await expect(page).toHaveURL('/');
 });
 
+test('a server that cannot answer for a moment does not sign you out', async ({ page }) => {
+	await signIn(page);
+	// What the proxy answers while Frog restarts for an update.
+	await page.route('**/api/auth/status', (route) => route.fulfill({ status: 502, body: '' }));
+	await page.goto('/library');
+	await page.waitForLoadState('networkidle');
+	await expect(page).toHaveURL(/\/library$/);
+	await expect(page.getByRole('heading', { name: 'Library', level: 1 })).toBeVisible();
+	await page.unroute('**/api/auth/status');
+});
+
 test('an empty home and library explain themselves instead of showing blank grids', async ({
 	page
 }) => {

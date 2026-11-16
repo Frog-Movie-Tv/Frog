@@ -491,8 +491,20 @@ Nothing is open to the internet except 80 and 443, and SSH by key. The machine
 **pulls**:
 
 - A systemd timer runs `update.sh` every 15 minutes per instance.
-- It compares the running image digest with the tag it follows. Same digest,
-  nothing to do.
+- It compares the digest the container is running with the tag it follows.
+  Same digest, nothing to do. The running one is read from the container, not
+  the tag: on 2026-11-15 the 15-minute limit stopped an update between its
+  pull and its start, which left the tag on 1.7.2 and 1.7.1 running, and a
+  check against the tag called that up to date.
+- Each update copies the database twice (the backup, then the plain
+  snapshot), and the copies grow with the picture cache: 945 MB took about 15
+  minutes on the Always Free machine, with the site slow throughout. The
+  units allow an hour. Production has run with `FROG_IMAGE_CACHE_MB=128` in
+  its `.env` since that day (the old file is kept beside it): the posters
+  went from 615 MB to 115 MB and, compacted with Frog stopped, the database
+  from 1,098 MB to 535 MB. TMDB's cached answers (347 MB) are most of what
+  is left. Changes to them and to the scripts reach the server
+  only by re-running `install.sh` from a checkout.
 - Otherwise: back up, start the new image, wait for `/healthz`, and on failure
   roll back to the previous digest and say so.
 - Migrations run as the server starts, so healthy means migrated and serving.

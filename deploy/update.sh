@@ -27,14 +27,26 @@ record() { ops_record "$VOLUME" "$@"; }
 # The image's own digest, short enough to read in a notification.
 short() { printf '%s' "${1##*:}" | cut -c1-12; }
 
-# The digest actually running, so rollback goes back to a specific image
-# rather than to whatever the old tag points at by then.
-current_digest() {
+# The digest the tag points at, as pulled.
+pulled_digest() {
 	docker inspect --format '{{index .RepoDigests 0}}' \
 		"$(docker compose config --images | head -1)" 2>/dev/null || true
 }
 
-BEFORE="$(current_digest)"
+# The digest the container is actually running, so rollback goes back to a
+# specific image. Read from the container, not the tag: an update stopped
+# after its pull left the tag on the new image and the old one running, and
+# every later run then took itself to be up to date.
+running_digest() {
+	local container image
+	container="$(docker compose ps -q frog 2>/dev/null | head -1)"
+	[ -n "$container" ] || return 0
+	image="$(docker inspect --format '{{.Image}}' "$container" 2>/dev/null)" || return 0
+	docker image inspect --format '{{index .RepoDigests 0}}' "$image" 2>/dev/null || true
+}
+
+BEFORE="$(running_digest)"
+[ -n "$BEFORE" ] || BEFORE="$(pulled_digest)"
 log "$INSTANCE: running $BEFORE"
 
 log "pulling"
@@ -43,7 +55,7 @@ if ! docker compose pull --quiet; then
 	exit 1
 fi
 
-AFTER="$(current_digest)"
+AFTER="$(pulled_digest)"
 if [ -n "$BEFORE" ] && [ "$BEFORE" = "$AFTER" ]; then
 	log "already up to date"
 	exit 0
