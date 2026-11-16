@@ -320,9 +320,13 @@ part you are about to touch; change it when the code changes.
   dailies, soaps, Chinese and Indian streaming). An episode TVmaze gives a
   day and an empty `airtime` takes the show's `schedule.time` in its
   channel's zone (`tvmaze::timed_by_show`), as `air_source` 'tvmaze'; a
-  worldwide streamer has no zone and stays TBA. The Daily Show is linked to
-  TVmaze's Trevor Noah run, which ended in 2022, so it stays TBA: a kept id
-  is never second-guessed.
+  worldwide streamer has no zone and stays TBA. A kept TVmaze id is
+  second-guessed only one way: when TMDB asks about an episode more than
+  60 days after the TVmaze show ended (`airtime::outlived`), the link goes,
+  its id is kept as `tvmaze_rejected` and never taken again, and the show is
+  looked up afresh (by id, by name and year, else as the one running show of
+  that name, else through the day schedules). That is what unsticks The
+  Daily Show, once linked to TVmaze's Trevor Noah run.
   `cargo run --example airtime_check -- <tmdb id> <season> all` prints a
   season's pairing.
   `refresh_due` works every listed or tracked show out every six hours, so

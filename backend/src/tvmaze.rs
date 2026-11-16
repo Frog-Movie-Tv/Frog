@@ -57,6 +57,8 @@ struct RawEpisode {
 pub struct Listing {
     pub zone: Option<Tz>,
     pub episodes: Vec<Episode>,
+    /// The day the show ended, when TVmaze says it has.
+    pub ended: Option<NaiveDate>,
 }
 
 #[derive(Deserialize)]
@@ -122,7 +124,14 @@ pub fn parse_listing(body: &[u8]) -> AppResult<Listing> {
     };
     let mut episodes = episodes_from(raw);
     timed_by_show(&mut episodes, zone, schedule_time(&show));
-    Ok(Listing { zone, episodes })
+    let ended = (show["status"].as_str() == Some("Ended"))
+        .then(|| show["ended"].as_str()?.parse().ok())
+        .flatten();
+    Ok(Listing {
+        zone,
+        episodes,
+        ended,
+    })
 }
 
 /// One line of a day's schedule: the episode, and enough of its show to tell
@@ -448,5 +457,17 @@ mod tests {
             lines[0].episode.at.map(|a| a.stamp()),
             Some("2026-11-17T10:00:00Z".into())
         );
+    }
+
+    #[test]
+    fn a_listing_says_when_its_show_ended() {
+        let body = br#"{ "id": 249, "status": "Ended", "ended": "2022-12-08",
+                         "_embedded": { "episodeswithspecials": [] } }"#;
+        assert_eq!(
+            parse_listing(body).unwrap().ended,
+            NaiveDate::from_ymd_opt(2022, 12, 8)
+        );
+        let running = br#"{ "id": 1, "status": "Running", "ended": null }"#;
+        assert_eq!(parse_listing(running).unwrap().ended, None);
     }
 }

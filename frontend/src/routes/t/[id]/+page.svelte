@@ -686,6 +686,19 @@
 								<Icon name="share" size={17} />
 							</button>
 						{/if}
+						{#if item.kind === 'tv' && item.entry && item.entry.status !== 'completed' && reachable.together && !companions.length}
+							<button
+								class="btn icon"
+								title="Watching with…"
+								aria-label="Watching with…"
+								onclick={async () => {
+									const now = await watchShowWith(item, companions);
+									if (now) companions = now;
+								}}
+							>
+								<Icon name="users" size={17} />
+							</button>
+						{/if}
 						{#if item.entry?.status === 'completed' && item.kind !== 'manga'}
 							<button
 								class="btn icon"

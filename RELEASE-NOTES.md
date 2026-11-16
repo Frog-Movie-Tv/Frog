@@ -38,6 +38,9 @@ In progress.
 - Stats shows who you watched with most.
 - Activity cards say who a title was watched with.
 - A Frog backup brings back who each watch was with.
+- Watching with… from a show's page, before you tick an episode.
+- Select on a person's page adds several of their titles at once, as a
+  studio's page does.
 
 ### Fixes
 
@@ -52,6 +55,8 @@ In progress.
 - A setting that could not be saved says so.
 - A title that was finished before it was started now starts on the day it
   was finished.
+- A show's air times correct themselves when Frog had it matched to the
+  wrong listing.
 
 ## [1.9.0] — Reed Frog — 2026-11-16
 
