@@ -11,6 +11,10 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Golden Frog —
 
+In progress.
+
+## [1.10.0] — Golden Frog — 2026-11-17
+
 Countdowns to the big ones, with what to watch before they land.
 
 ### Highlights
@@ -1260,6 +1264,7 @@ The first release.
 - Person pages that highlight what you have already seen.
 - Runs as a single container, or directly with one script.
 
+[1.10.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.10.0
 [1.9.1]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.9.1
 [1.9.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.9.0
 [1.8.0]: https://github.com/Frog-Movie-Tv/Frog/releases/tag/v1.8.0
