@@ -654,9 +654,6 @@
 												In your library as AniList has it
 											</a>
 										{/if}
-										{#if entry.gone}
-											<span class="note">Removed from your AniList. Kept in Frog as it is.</span>
-										{/if}
 									</span>
 									{#if choosing !== entry.media_id}
 										<div

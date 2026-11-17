@@ -6,7 +6,7 @@
 //! does; moments read only eligible watches (`super::eligible`) on days that
 //! are over, since rule 8 needs the whole day.
 
-use chrono::{Datelike, Duration, NaiveDate, Timelike, Weekday};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Timelike, Utc, Weekday};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -181,12 +181,112 @@ fn firsts<'a>(
 
 pub fn all(f: &Facts, eligible: &HashSet<i64>) -> Tally {
     let mut out = totals(f);
-    let more = moments(f, eligible);
-    for e in more.earned {
-        out.push(e);
+    for more in [moments(f, eligible), status_history(f, eligible)] {
+        for e in more.earned {
+            out.push(e);
+        }
+        out.progress.extend(more.progress);
+        out.reached.extend(more.reached);
     }
-    out.progress.extend(more.progress);
-    out.reached.extend(more.reached);
+    out
+}
+
+// --- status history ------------------------------------------------------------
+
+/// How near a status change a watch recorded as it happened has to be for
+/// that change to be watching, not tidying the library.
+const CHANGE_HOURS: i64 = 36;
+/// How long after a dropped show is picked up again its next watch may come.
+const PICKED_UP_DAYS: i64 = 14;
+/// The watchlist Watchlist Zero asks to be emptied.
+const WATCHLIST_ZERO_FROM: i64 = 20;
+
+/// Back From the Dead and Watchlist Zero, from status changes, which Frog
+/// keeps since 1.9.1, so neither looks further back. Each needs watches
+/// recorded as they happened, so edit mode, an import or a sync moving
+/// titles about earns neither.
+pub fn status_history(f: &Facts, eligible: &HashSet<i64>) -> Tally {
+    let mut out = Tally::default();
+    let ws = finished_days(f, eligible);
+    let near = Duration::hours(CHANGE_HOURS);
+    let watched = |title: i64, from: DateTime<Utc>, to: DateTime<Utc>| {
+        ws.iter()
+            .copied()
+            .find(|w| w.title_id == title && w.watched_at >= from && w.watched_at <= to)
+    };
+    let kind = |title: i64| {
+        f.entries
+            .iter()
+            .find(|e| e.title_id == title)
+            .map(|e| e.kind.as_str())
+    };
+    let onward = |to: Option<&str>| matches!(to, Some("watching" | "completed"));
+
+    // A dropped show taken up again, and an episode of it watched.
+    let back = f
+        .changes
+        .iter()
+        .filter(|c| c.from.as_deref() == Some("dropped") && onward(c.to.as_deref()))
+        .filter(|c| kind(c.title_id) == Some("tv"))
+        .filter_map(|c| {
+            watched(
+                c.title_id,
+                c.at - near,
+                c.at + Duration::days(PICKED_UP_DAYS),
+            )
+        })
+        .min_by_key(|w| (w.watched_at, w.id));
+    if let Some(w) = back {
+        out.push(earned(
+            "back-from-the-dead",
+            f.day(w.watched_at),
+            Some(w.title_id),
+            vec![w.id],
+        ));
+    }
+
+    // The watchlist, worked back from today's to before the first change,
+    // then forward: from 20 or more to none, most of it by watching, the
+    // last one too.
+    let planned = |s: &Option<String>| s.as_deref() == Some("planned");
+    let now = f.entries.iter().filter(|e| e.status == "planned").count() as i64;
+    let ins = f.changes.iter().filter(|c| planned(&c.to)).count() as i64;
+    let outs = f.changes.iter().filter(|c| planned(&c.from)).count() as i64;
+    let mut held = now - ins + outs;
+    let mut peak = held;
+    let (mut left, mut by_watching) = (0, Vec::<&Watch>::new());
+    for c in &f.changes {
+        if planned(&c.to) {
+            held += 1;
+            peak = peak.max(held);
+        }
+        if !planned(&c.from) {
+            continue;
+        }
+        held -= 1;
+        left += 1;
+        let w = onward(c.to.as_deref())
+            .then(|| watched(c.title_id, c.at - near, c.at + near))
+            .flatten();
+        if let Some(w) = w {
+            by_watching.push(w);
+        }
+        if held > 0 {
+            continue;
+        }
+        if let Some(last) =
+            w.filter(|_| peak >= WATCHLIST_ZERO_FROM && by_watching.len() as i64 * 2 > left)
+        {
+            out.push(earned(
+                "watchlist-zero",
+                f.day(last.watched_at),
+                Some(last.title_id),
+                by_watching.iter().map(|w| w.id).collect(),
+            ));
+        }
+        (held, peak, left) = (0, 0, 0);
+        by_watching.clear();
+    }
     out
 }
 
@@ -576,6 +676,29 @@ pub fn totals(f: &Facts) -> Tally {
             }
         }
     }
+    // Where titles come from, and those not made in English.
+    let mut country_seen: BTreeMap<(NaiveDate, i64), &Entry> = BTreeMap::new();
+    for e in &watched_entries {
+        if let Some(i) = item_of(e) {
+            country_seen.insert((i.on, e.title_id), e);
+        }
+    }
+    let mut countries = HashSet::new();
+    for ((on, title), e) in &country_seen {
+        for c in &e.countries {
+            if countries.insert(c) && countries.len() == 15 {
+                once(&mut out, "world-tour", Some(Item::on(*on, Some(*title))));
+            }
+        }
+    }
+    out.count("world-tour", countries.len() as f64, 15.0);
+    let subtitled: Vec<Item> = watched_entries
+        .iter()
+        .filter(|e| !e.language.is_empty() && e.language != "en")
+        .filter_map(|e| item_of(e))
+        .collect();
+    out.count("subtitles-on", subtitled.len() as f64, 25.0);
+    once(&mut out, "subtitles-on", nth(subtitled, 25));
     let mut by_day: Vec<(NaiveDate, i64, i32)> = watched_entries
         .iter()
         .filter_map(|e| Some((item_of(e)?.on, e.title_id, e.release?.year() / 10)))
@@ -1086,4 +1209,122 @@ pub fn meta(held: &HashSet<String>, hand_made: usize, today: NaiveDate) -> Vec<E
         out.push(earned("frog-prince", today, None, Vec::new()));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::awards::facts::Change;
+
+    fn at(s: &str) -> DateTime<Utc> {
+        crate::awards::eligible::parse(s).unwrap()
+    }
+
+    fn facts(entries: Vec<Entry>, watches: Vec<Watch>, changes: Vec<Change>) -> Facts {
+        Facts {
+            tz: chrono_tz::Tz::UTC,
+            now: at("2026-11-30T12:00:00Z"),
+            watches,
+            entries,
+            episodes: Vec::new(),
+            reads: Vec::new(),
+            credits: Vec::new(),
+            shelves: 0,
+            joined: None,
+            tastes: Vec::new(),
+            pioneered: Vec::new(),
+            changes,
+        }
+    }
+
+    fn entry(title_id: i64, kind: &str, status: &str) -> Entry {
+        Entry {
+            title_id,
+            kind: kind.into(),
+            status: status.into(),
+            ..Default::default()
+        }
+    }
+
+    fn watch(id: i64, title_id: i64, when: &str) -> Watch {
+        Watch {
+            id,
+            title_id,
+            episode_id: None,
+            season: None,
+            watched_at: at(when),
+            logged_at: Some(at(when)),
+            how: Some("tick".into()),
+            undated: false,
+            is_rewatch: false,
+            source: "manual".into(),
+            minutes: 100.0,
+            with_someone: false,
+        }
+    }
+
+    fn change(title_id: i64, from: Option<&str>, to: Option<&str>, when: &str) -> Change {
+        Change {
+            title_id,
+            from: from.map(Into::into),
+            to: to.map(Into::into),
+            at: at(when),
+        }
+    }
+
+    fn keys(t: &Tally) -> Vec<(&str, String)> {
+        t.earned
+            .iter()
+            .map(|e| (e.key.as_str(), e.on.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn a_dropped_show_picked_up_and_watched_comes_back_from_the_dead() {
+        let f = facts(
+            vec![entry(1, "tv", "watching")],
+            vec![watch(7, 1, "2026-11-10T20:30:00Z")],
+            vec![change(
+                1,
+                Some("dropped"),
+                Some("watching"),
+                "2026-11-10T20:00:00Z",
+            )],
+        );
+        assert_eq!(
+            keys(&status_history(&f, &HashSet::from([7]))),
+            vec![("back-from-the-dead", "2026-11-10".to_string())]
+        );
+        // A watch marked in bulk, or no watch at all, says nothing.
+        assert!(status_history(&f, &HashSet::new()).earned.is_empty());
+    }
+
+    #[test]
+    fn a_watchlist_of_twenty_watched_down_to_nothing_is_watchlist_zero() {
+        let mut entries = Vec::new();
+        let mut watches = Vec::new();
+        let mut changes = Vec::new();
+        for n in 0..20 {
+            let title = 100 + n;
+            let day = format!("2026-11-{:02}T20:00:00Z", 2 + n);
+            entries.push(entry(title, "movie", "completed"));
+            changes.push(change(title, None, Some("planned"), "2026-11-01T10:00:00Z"));
+            changes.push(change(title, Some("planned"), Some("completed"), &day));
+            watches.push(watch(title, title, &day));
+        }
+        changes.sort_by_key(|c| c.at);
+        let every: HashSet<i64> = watches.iter().map(|w| w.id).collect();
+        let f = facts(entries.clone(), watches.clone(), changes.clone());
+        assert_eq!(
+            keys(&status_history(&f, &every)),
+            vec![("watchlist-zero", "2026-11-21".to_string())]
+        );
+
+        // Emptied by removing the last one instead: not yet.
+        let last = changes.last_mut().unwrap();
+        last.to = None;
+        entries.pop();
+        let f = facts(entries, watches, changes);
+        assert!(status_history(&f, &every).earned.is_empty());
+    }
 }

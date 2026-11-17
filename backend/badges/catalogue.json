@@ -249,6 +249,8 @@
     { "key": "fireworks", "kind": "moment", "group": "moments", "ring": "sapphire", "name": "Fireworks", "about": "Something watched on New Year's Eve and New Year's Day." },
     { "key": "leap-year", "kind": "moment", "group": "moments", "ring": "aurora", "name": "Leap Year", "about": "Something watched on 29 February." },
     { "key": "spring-thaw", "kind": "moment", "group": "moments", "ring": "lily", "name": "Spring Thaw", "about": "Back after two months away." },
+    { "key": "back-from-the-dead", "kind": "moment", "group": "moments", "ring": "sapphire", "name": "Back From the Dead", "about": "A dropped show, picked up again." },
+    { "key": "watchlist-zero", "kind": "moment", "group": "moments", "ring": "amethyst", "name": "Watchlist Zero", "about": "A watchlist of 20 or more, watched down to nothing." },
 
     { "key": "long-haul", "kind": "total", "group": "watching", "ring": "sapphire", "name": "Long Haul", "about": "A finished show of 200 episodes or more." },
     { "key": "grand-voyage", "kind": "total", "group": "watching", "ring": "aurora", "name": "Grand Voyage", "about": "A finished show of 1,000 episodes or more." },
@@ -260,6 +262,8 @@
     { "key": "hot-take", "kind": "total", "group": "taste", "ring": "lily", "name": "Hot Take", "about": "A title rated three points below TMDB." },
     { "key": "hidden-gem", "kind": "total", "group": "taste", "ring": "sapphire", "name": "Hidden Gem", "about": "An 8 or more for a title TMDB rates under 6." },
     { "key": "genre-hopper", "kind": "total", "group": "taste", "ring": "sapphire", "name": "Genre Hopper", "about": "Titles in 15 genres." },
+    { "key": "world-tour", "kind": "total", "group": "taste", "ring": "sapphire", "name": "World Tour", "about": "Titles from 15 countries." },
+    { "key": "subtitles-on", "kind": "total", "group": "taste", "ring": "lily", "name": "Subtitles On", "about": "25 titles not made in English." },
     { "key": "brave-frog", "kind": "total", "group": "taste", "ring": "lily", "name": "Brave Frog", "about": "25 horror titles." },
     { "key": "laugh-track", "kind": "total", "group": "taste", "ring": "lily", "name": "Laugh Track", "about": "50 comedies." },
     { "key": "documentarian", "kind": "total", "group": "taste", "ring": "lily", "name": "Documentarian", "about": "25 documentaries." },

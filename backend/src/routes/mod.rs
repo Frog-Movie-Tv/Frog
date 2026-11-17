@@ -239,7 +239,10 @@ pub fn router(state: AppState) -> Router {
         .route("/ext/me", get(ext::me))
         .route("/ext/resolve", post(ext::resolve))
         .route("/ext/log", post(ext::log))
-        .route("/ext/undo", post(ext::undo));
+        .route("/ext/undo", post(ext::undo))
+        // An address under /api that is no route: a JSON 404, not the app's
+        // page with a 200 that a caller would try to read as an answer.
+        .fallback(no_such_api);
 
     Router::new()
         .nest("/api", api)
@@ -264,9 +267,32 @@ pub fn router(state: AppState) -> Router {
             header::X_CONTENT_TYPE_OPTIONS,
             HeaderValue::from_static("nosniff"),
         ))
+        .layer(axum::middleware::from_fn(cache_hashed))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+async fn no_such_api() -> crate::error::AppError {
+    crate::error::AppError::NotFound("no such address".into())
+}
+
+/// The built app's scripts and styles carry a hash of their contents in
+/// their names (`/_app/immutable/…`), so a browser may keep them for good:
+/// a new release asks for new names.
+async fn cache_hashed(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let hashed = req.uri().path().starts_with("/_app/immutable/");
+    let mut res = next.run(req).await;
+    if hashed && res.status().is_success() {
+        res.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=31536000, immutable"),
+        );
+    }
+    res
 }
 
 async fn robots() -> ([(header::HeaderName, HeaderValue); 1], &'static str) {

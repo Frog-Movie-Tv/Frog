@@ -765,6 +765,14 @@
 					<strong><Score value={totals.mean_rating} /></strong>
 					{#if rated}<span class="faint">{plural(rated, 'rating')}</span>{/if}
 				</div>
+				{#if !picked && stats.most_with}
+					{@const mate = stats.most_with}
+					<a class="tile card" href="/people/{encodeURIComponent(mate.username)}/compare">
+						<span class="eyebrow">Watched most with</span>
+						<strong class="name">{mate.display_name || mate.username}</strong>
+						<span class="faint">{plural(mate.watches, 'watch', 'watches')}</span>
+					</a>
+				{/if}
 			</div>
 
 			<div class="picks" aria-live="polite">
@@ -1278,6 +1286,23 @@
 
 	.tile.pickable.on {
 		box-shadow: inset 0 0 0 2px var(--accent);
+	}
+
+	/* Watched most with: a person, which opens your Compare with them. */
+	a.tile {
+		color: inherit;
+		text-decoration: none;
+		transition: background var(--fast) var(--ease);
+	}
+
+	a.tile:hover {
+		background: var(--bg-hover);
+	}
+
+	.tile strong.name {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.value,

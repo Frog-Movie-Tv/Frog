@@ -16,6 +16,7 @@
 //! Deciding what a run of watches adds up to is `summarise`, on plain values, so
 //! it is tested without a database.
 
+use crate::clock::Stamp;
 use std::collections::HashSet;
 
 use chrono::{DateTime, Duration, NaiveTime, TimeZone, Utc};
@@ -100,7 +101,7 @@ fn end_of_day(at: &str, zone: Tz) -> Option<String> {
     let midnight = zone
         .from_local_datetime(&day.and_time(NaiveTime::MIN))
         .earliest()?;
-    Some(midnight.with_timezone(&Utc).to_rfc3339())
+    Some(midnight.with_timezone(&Utc).stamp())
 }
 
 /// Add up one person's watches, newest first, into a card per title per day
@@ -164,6 +165,61 @@ pub struct Card {
     pub who: store::Shown,
     #[serde(flatten)]
     pub summary: Summary,
+    /// Who they said they watched it with that day, among the people the
+    /// viewer may see, the viewer included (`company`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub with: Vec<store::Shown>,
+    /// Whose card it is, which reaches their data; never sent.
+    #[serde(skip)]
+    pub who_id: i64,
+}
+
+/// Fill each card's `with`: who its person said they watched that title
+/// with on that day, kept to `people`, the accounts the viewer may see
+/// (itself included), so a private profile is never named on a card.
+async fn company(
+    pool: &SqlitePool,
+    cards: &mut [Card],
+    people: &[store::ShownAccount],
+    zone: Tz,
+) -> AppResult<()> {
+    for card in cards.iter_mut() {
+        let Some((from, to)) = day_bounds(&card.summary.at, zone) else {
+            continue;
+        };
+        let named: Vec<(i64,)> = sqlx::query_as(
+            "SELECT DISTINCT x.with_user_id
+               FROM watch_with x
+               JOIN watch_event w ON w.id = x.watch_event_id AND w.user_id = x.user_id
+              WHERE x.user_id = ? AND w.title_id = ? AND w.undated = 0
+                AND w.watched_at >= ? AND w.watched_at < ?
+              ORDER BY x.with_user_id",
+        )
+        .bind(card.who_id)
+        .bind(card.summary.title.id)
+        .bind(&from)
+        .bind(&to)
+        .fetch_all(pool)
+        .await?;
+        card.with = named
+            .into_iter()
+            .filter_map(|(id,)| people.iter().find(|p| p.id == id && id != card.who_id))
+            .map(|p| p.shown.clone())
+            .collect();
+    }
+    Ok(())
+}
+
+/// The moments the day of `at` in `zone` starts and ends.
+fn day_bounds(at: &str, zone: Tz) -> Option<(String, String)> {
+    let day = DateTime::parse_from_rfc3339(at)
+        .ok()?
+        .with_timezone(&zone)
+        .date_naive();
+    let start = zone
+        .from_local_datetime(&day.and_time(NaiveTime::MIN))
+        .earliest()?;
+    Some((start.with_timezone(&Utc).stamp(), end_of_day(at, zone)?))
 }
 
 /// Everyone's cards, newest first, cut to the length of the row.
@@ -271,10 +327,11 @@ async fn people(pool: &SqlitePool, viewer: i64) -> AppResult<Vec<store::ShownAcc
 pub async fn feed(pool: &SqlitePool, viewer: i64) -> AppResult<Vec<Card>> {
     let zone = crate::announce::time_zone(pool, viewer).await;
     let now = Utc::now();
-    let from = (now - Duration::days(WINDOW_DAYS)).to_rfc3339();
-    let to = (now + Duration::seconds(1)).to_rfc3339();
+    let from = (now - Duration::days(WINDOW_DAYS)).stamp();
+    let to = (now + Duration::seconds(1)).stamp();
     let mut cards = Vec::new();
-    for person in people(pool, viewer).await? {
+    let people = people(pool, viewer).await?;
+    for person in &people {
         let watches = watches(pool, person.id, Some(&from), &to, i64::MAX).await?;
         let mut shown = HashSet::new();
         cards.extend(
@@ -284,10 +341,14 @@ pub async fn feed(pool: &SqlitePool, viewer: i64) -> AppResult<Vec<Card>> {
                 .map(|summary| Card {
                     who: person.shown.clone(),
                     summary,
+                    with: Vec::new(),
+                    who_id: person.id,
                 }),
         );
     }
-    Ok(row(cards))
+    let mut cards = row(cards);
+    company(pool, &mut cards, &people, zone).await?;
+    Ok(cards)
 }
 
 /// Watches read at first for one person's page of Activity: a page of 40
@@ -312,7 +373,8 @@ pub async fn everything(
         .and_then(|b| end_of_day(b, zone))
         .unwrap_or_else(|| "9999".into());
     let mut cards = Vec::new();
-    for person in people(pool, viewer).await? {
+    let people = people(pool, viewer).await?;
+    for person in &people {
         let mut want = PAGE_WATCHES;
         loop {
             let watches = watches(pool, person.id, None, &to, want).await?;
@@ -330,6 +392,8 @@ pub async fn everything(
                 cards.extend(found.into_iter().map(|summary| Card {
                     who: person.shown.clone(),
                     summary,
+                    with: Vec::new(),
+                    who_id: person.id,
                 }));
                 break;
             }
@@ -339,6 +403,7 @@ pub async fn everything(
     cards.sort_by(|a, b| b.summary.at.cmp(&a.summary.at));
     let next = (cards.len() > limit).then(|| cards[limit - 1].summary.at.clone());
     cards.truncate(limit);
+    company(pool, &mut cards, &people, zone).await?;
     Ok((cards, next))
 }
 
@@ -483,7 +548,7 @@ mod tests {
         assert_eq!(day_of("2026-11-15T23:30:00Z", brussels), "2026-11-16");
         assert_eq!(
             end_of_day("2026-11-15T22:30:00Z", brussels).as_deref(),
-            Some("2026-11-15T23:00:00+00:00"),
+            Some("2026-11-15T23:00:00Z"),
             "Sunday ends at midnight in Brussels"
         );
     }
@@ -520,6 +585,8 @@ mod tests {
                 },
                 summary: summarise(&[film(n, "Heat", &format!("2026-11-{n:02}"))], Tz::UTC)
                     .remove(0),
+                with: Vec::new(),
+                who_id: 1,
             })
             .collect();
         let kept = row(cards);

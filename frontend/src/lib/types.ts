@@ -424,6 +424,8 @@ export interface FullStats {
 	library: Partial<Record<Status, number>>;
 	/** Manga in the library: whether Stats has a manga half. */
 	manga: number;
+	/** Who you said you watched with most, in the year or all time. */
+	most_with: { username: string; display_name: string | null; watches: number } | null;
 	totals: {
 		films: number;
 		episodes: number;
@@ -491,6 +493,8 @@ export interface ActivityItem {
 	season: number | null;
 	episode: number | null;
 	at: string;
+	/** Who they said they watched it with that day, you included. */
+	with?: { username: string; display_name: string | null; avatar: string | null }[];
 }
 
 /** A recommendation to you not answered yet, as Home's hero shows it. */
@@ -754,7 +758,14 @@ export interface AdminUser {
 export interface InstanceInfo {
 	version: string;
 	database_bytes: number;
-	image_cache_bytes: number;
+	/** Where the database's bytes go, each once; they add up to it. */
+	storage: {
+		yours: number;
+		catalogue: number;
+		caches: number;
+		pictures: number;
+		free: number;
+	};
 	accounts: number;
 	/** Every title this Frog has come to know. */
 	titles?: { all: number; films: number; shows: number; manga: number };
@@ -857,8 +868,6 @@ export interface AniListEntry {
 	} | null;
 	status: string | null;
 	progress: number | null;
-	/** No longer on the AniList list; kept in Frog as it is. */
-	gone?: boolean;
 	/** When Frog next looks for its place. */
 	next_try_at?: string | null;
 	/** In the library as it is on AniList until it is placed. */
@@ -896,6 +905,8 @@ export interface Comparison {
 	}[];
 	only_theirs: (ProfileCard & { status: Status })[];
 	only_mine: (ProfileCard & { status: Status })[];
+	/** Watched together, either of you saying so: newest first. */
+	together: (Pick<ProfileCard, 'id' | 'kind' | 'name' | 'poster_path'> & { days: number })[];
 }
 
 export interface Profile {
@@ -1095,6 +1106,8 @@ export interface AiringItem {
 	air_date: string;
 	/** The moment, UTC, when it is known. */
 	air_at: string | null;
+	/** When its streamer usually puts episodes out, when `air_at` is unknown. */
+	usual_at?: string;
 	/** More episodes of the show that day. */
 	more: number;
 	/** A film's TMDB release type: 2 or 3 in cinemas, 4 digital. */
@@ -1193,7 +1206,15 @@ export interface Actor {
 }
 
 export type NoticeKind =
-	'recommendation' | 'added' | 'episode' | 'film' | 'badge' | 'update' | 'ops' | 'together';
+	| 'recommendation'
+	| 'added'
+	| 'episode'
+	| 'film'
+	| 'badge'
+	| 'update'
+	| 'ops'
+	| 'together'
+	| 'digest';
 
 /** One line on the Notifications page. */
 export interface Notice {
@@ -1246,4 +1267,5 @@ export interface NoticeWants {
 	badges: boolean;
 	updates: boolean;
 	together: boolean;
+	digest: boolean;
 }

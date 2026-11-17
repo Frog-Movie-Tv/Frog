@@ -1,6 +1,7 @@
 //! Studios as Frog keeps them: those credited on titles it holds, and the
 //! logo TMDB has for a studio AniList names (`studio_match`).
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use serde_json::Value;
 use sqlx::SqlitePool;
@@ -57,7 +58,7 @@ pub async fn logo(state: &AppState, name: &str) -> Option<String> {
             .await
             .ok()
             .flatten();
-    let cutoff = (Utc::now() - chrono::Duration::days(RECHECK_DAYS)).to_rfc3339();
+    let cutoff = (Utc::now() - chrono::Duration::days(RECHECK_DAYS)).stamp();
     if let Some((logo, _)) = kept.as_ref().filter(|(_, at)| *at > cutoff) {
         return logo.clone();
     }
@@ -83,7 +84,7 @@ pub async fn logo(state: &AppState, name: &str) -> Option<String> {
     )
     .bind(&key)
     .bind(&logo)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(&state.pool)
     .await;
     if let Err(e) = stored {

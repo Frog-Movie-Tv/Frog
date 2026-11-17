@@ -2,6 +2,7 @@
 //! shares with it: Library's edit mode and "Mark all watched" tick the same
 //! episodes by the same rules.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use serde::Deserialize;
 use sqlx::SqlitePool;
@@ -140,7 +141,7 @@ pub async fn tick_aired(
     ))
     .bind(title_id)
     .bind(mode)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(chosen.as_deref())
     .bind(season)
     .bind(user_id)
@@ -172,7 +173,7 @@ pub async fn tick_aired(
             ))
             .bind(title_id)
             .bind(mode)
-            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().stamp())
             .bind(chosen.as_deref())
             .bind(special)
             .bind(user_id)
@@ -222,7 +223,7 @@ pub async fn mark_watched(
     let pool = &state.pool;
     let chosen = marking.chosen()?;
     let now = Utc::now();
-    let (stamp, today) = (now.to_rfc3339(), now.format("%Y-%m-%d").to_string());
+    let (stamp, today) = (now.stamp(), now.format("%Y-%m-%d").to_string());
     let completed = || LibraryPatch {
         status: Some("completed".into()),
         ..Default::default()

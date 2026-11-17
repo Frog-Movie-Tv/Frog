@@ -17,6 +17,7 @@
 //! time, in batches, and a title is not asked about again for days
 //! (`next_check`). Without a key, MDBList is simply not asked.
 
+use crate::clock::Stamp;
 use std::sync::atomic::Ordering;
 
 use chrono::{DateTime, Duration, NaiveDate, Utc};
@@ -327,7 +328,7 @@ async fn store(
         .bind(&r.source)
         .bind(r.score)
         .bind(r.votes)
-        .bind(now.to_rfc3339())
+        .bind(now.stamp())
         .execute(pool)
         .await?;
     }
@@ -350,8 +351,8 @@ async fn mark_checked(
     )
     .bind(title_id)
     .bind(age_rating)
-    .bind(now.to_rfc3339())
-    .bind(next.to_rfc3339())
+    .bind(now.stamp())
+    .bind(next.stamp())
     .execute(pool)
     .await?;
     Ok(())
@@ -598,7 +599,7 @@ pub async fn refresh_due(state: &AppState) {
           ORDER BY c.next_at IS NOT NULL, c.next_at
           LIMIT ?",
     )
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind((BATCH * BATCHES_PER_PASS) as i64)
     .fetch_all(&state.pool)
     .await
@@ -674,7 +675,7 @@ pub async fn for_page(state: &AppState, title_id: i64) -> AppResult<Value> {
                          WHERE r.title_id = c.title_id AND r.source NOT IN ('tmdb', 'anilist'))
            FROM title_rating_check c WHERE c.title_id = ?",
     )
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(title_id)
     .fetch_optional(&state.pool)
     .await?;

@@ -7,7 +7,6 @@ use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use chrono::Utc;
 use serde_json::{json, Value};
 
 use crate::auth::Auth;
@@ -17,7 +16,6 @@ use crate::profiles::{self, CardRow};
 use crate::routes::badges::{png, shaped};
 use crate::routes::library::{to_map, ListQuery};
 use crate::state::AppState;
-use crate::stats::streaks;
 use crate::store::{self, Page, SharedItem};
 use crate::taste;
 
@@ -140,7 +138,14 @@ pub async fn compare(
     let theirs = taste::library_of(pool, other).await?;
     let compared = taste::compare(&mine, &theirs);
 
-    let mut ids: Vec<i64> = mine.iter().chain(&theirs).map(|h| h.title_id).collect();
+    let together = crate::together::between(pool, auth.user_id(), other).await?;
+
+    let mut ids: Vec<i64> = mine
+        .iter()
+        .chain(&theirs)
+        .map(|h| h.title_id)
+        .chain(together.iter().map(|(id, _)| *id))
+        .collect();
     ids.sort_unstable();
     ids.dedup();
     let titles = profiles::titles_by_id(pool, &ids).await?;
@@ -157,6 +162,10 @@ pub async fn compare(
         })).collect::<Vec<_>>(),
         "only_theirs": compared.only_theirs.iter().map(card).collect::<Vec<_>>(),
         "only_mine": compared.only_mine.iter().map(card).collect::<Vec<_>>(),
+        "together": together.iter().map(|(id, days)| {
+            let (kind, name, poster) = titles.get(id).cloned().unwrap_or_default();
+            json!({ "id": id, "kind": kind, "name": name, "poster_path": poster, "days": days })
+        }).collect::<Vec<_>>(),
     })))
 }
 
@@ -174,9 +183,8 @@ pub async fn get(
         visible(&state, &auth, &username).await?;
     let pool = &state.pool;
     let facts = profiles::facts(pool, user_id, &pins_json).await?;
-    let (films, episodes, shows, minutes) = facts.totals;
-    let (in_library, completed, favourite_count, mean_rating) = facts.library;
-    let (longest, current) = streaks(&facts.days, Utc::now().date_naive());
+    let f = &facts.figures;
+    let (longest, current) = &f.streaks;
     let images = facts.images;
     let image_url = |kind: &str| {
         images
@@ -212,19 +220,19 @@ pub async fn get(
         "banner_height": facts.look.banner_height,
         "badges": shaped(&username, &badges::held(pool, user_id, false).await?),
         "stats": {
-            "films": films,
-            "episodes": episodes,
-            "shows": shows,
+            "films": f.films,
+            "episodes": f.episodes,
+            "shows": f.shows,
             "chapters": facts.chapters,
-            "minutes": minutes.round() as i64,
-            "library": in_library,
-            "completed": completed,
-            "favourites": favourite_count,
-            "mean_rating": mean_rating,
+            "minutes": f.minutes.round() as i64,
+            "library": f.library,
+            "completed": f.completed,
+            "favourites": facts.favourites_count,
+            "mean_rating": f.mean_rating,
             "streak": current.days,
             "longest_streak": longest.days,
         },
-        "genres": facts.genres.into_iter().map(|(name, titles)| json!({ "name": name, "titles": titles })).collect::<Vec<_>>(),
+        "genres": f.genres.iter().map(|(name, titles)| json!({ "name": name, "titles": titles })).collect::<Vec<_>>(),
         "pinned": cards(facts.pinned),
         "watching": watching_cards(pool, user_id, facts.watching).await?,
         "favourites": cards(facts.favourites),

@@ -178,7 +178,7 @@
 		</button>
 
 		<button
-			class="btn icon"
+			class="btn icon remove"
 			disabled={saving}
 			title="Remove from library"
 			aria-label="Remove from library"

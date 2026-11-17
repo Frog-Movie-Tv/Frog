@@ -686,6 +686,19 @@
 								<Icon name="share" size={17} />
 							</button>
 						{/if}
+						{#if item.kind === 'tv' && item.entry && item.entry.status !== 'completed' && reachable.together && !companions.length}
+							<button
+								class="btn icon"
+								title="Watching with…"
+								aria-label="Watching with…"
+								onclick={async () => {
+									const now = await watchShowWith(item, companions);
+									if (now) companions = now;
+								}}
+							>
+								<Icon name="users" size={17} />
+							</button>
+						{/if}
 						{#if item.entry?.status === 'completed' && item.kind !== 'manga'}
 							<button
 								class="btn icon"
@@ -696,6 +709,7 @@
 								<Icon name="repeat" size={16} />
 							</button>
 						{/if}
+						<span class="row-break" aria-hidden="true"></span>
 					</div>
 
 					{#if companions.length}
@@ -1932,6 +1946,39 @@
 			width: 42px;
 			padding: 0;
 		}
+
+		/* Two rows: what the title is to you (its status and your rating),
+		   then every icon, with remove last at the far end. */
+		.actions :global(.track) {
+			display: contents;
+		}
+
+		.actions > :global(*),
+		.actions :global(.track > *) {
+			order: 2;
+		}
+
+		.actions :global(.track > .select),
+		.actions :global(.track > .rating),
+		.actions :global(.track > .btn.primary) {
+			order: 0;
+		}
+
+		.actions .row-break {
+			display: block;
+			order: 1;
+			flex-basis: 100%;
+			height: 0;
+		}
+
+		.actions :global(.track > .remove) {
+			order: 3;
+			margin-left: auto;
+		}
+	}
+
+	.row-break {
+		display: none;
 	}
 
 	.bell.on {

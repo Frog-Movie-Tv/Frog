@@ -278,7 +278,8 @@
 				<span class="kpi-icon" aria-hidden="true"><Icon name="database" size={18} /></span>
 				<span class="eyebrow">Storage</span>
 				<strong>{instance ? size(instance.database_bytes) : '—'}</strong>
-				{#if instance}<span class="faint">and {size(instance.image_cache_bytes)} of artwork</span
+				{#if instance}<span class="faint"
+						>{size(instance.storage.yours)} libraries · {size(instance.storage.pictures)} pictures</span
 					>{/if}
 			</div>
 			<a class="kpi card" href="#server">
@@ -504,10 +505,15 @@
 							<dt>Database</dt>
 							<dd>{instance ? size(instance.database_bytes) : '—'}</dd>
 						</div>
-						<div>
-							<dt>Artwork kept offline</dt>
-							<dd>{instance ? size(instance.image_cache_bytes) : '—'}</dd>
-						</div>
+						{#if instance}
+							{@const st = instance.storage}
+							{#each [['Libraries and history', st.yours], ['Titles and episodes', st.catalogue], ['Kept from TMDB and others', st.caches], ['Pictures', st.pictures], ['Free space', st.free]] as [name, n] (name)}
+								<div class="part">
+									<dt>{name}</dt>
+									<dd>{size(Number(n))}</dd>
+								</div>
+							{/each}
+						{/if}
 						<div>
 							<dt>Updates</dt>
 							<dd><a href="/settings#this-instance">Check in Settings</a></dd>

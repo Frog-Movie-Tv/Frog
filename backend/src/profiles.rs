@@ -5,7 +5,6 @@
 
 use std::collections::HashMap;
 
-use chrono::NaiveDate;
 use serde_json::Value;
 use sqlx::SqlitePool;
 
@@ -161,12 +160,6 @@ pub async fn look(pool: &SqlitePool, user_id: i64) -> AppResult<Look> {
 /// (kind, title id, name, poster_path, rating)
 pub type CardRow = (String, i64, String, Option<String>, Option<f64>);
 
-/// (films, episodes, shows, minutes)
-pub type TotalsRow = (i64, i64, i64, f64);
-
-/// (in library, completed, favourites, mean rating)
-pub type LibraryRow = (i64, i64, i64, Option<f64>);
-
 /// Everything a profile page shows of one account.
 pub struct Facts {
     pub look: Look,
@@ -175,14 +168,14 @@ pub struct Facts {
     pub recent: Vec<CardRow>,
     /// Pinned titles, in the order chosen, skipping any no longer tracked.
     pub pinned: Vec<CardRow>,
-    /// The same figures as the stats page: watches of titles in the library.
-    pub totals: TotalsRow,
-    /// Chapters read, of every manga in the library.
+    /// Films, episodes, the library, genres and streaks, computed by the
+    /// stats page's own definitions (`stats::figures`), so the two agree.
+    pub figures: crate::stats::Figures,
+    /// Chapters read, of every manga in the library: the reading half,
+    /// counted apart as Stats counts it.
     pub chapters: i64,
-    pub library: LibraryRow,
-    pub genres: Vec<(String, i64)>,
-    /// Days with a dated watch, in order, for the streaks.
-    pub days: Vec<NaiveDate>,
+    /// Titles marked favourite, films, shows and manga alike.
+    pub favourites_count: i64,
     /// (kind, updated_at) of each picture uploaded.
     pub images: Vec<(String, String)>,
 }
@@ -223,20 +216,7 @@ pub async fn facts(pool: &SqlitePool, user_id: i64, pins_json: &str) -> AppResul
 
     let pinned = pinned(pool, user_id, pins_json).await?;
 
-    let totals: TotalsRow = sqlx::query_as(
-        "SELECT COALESCE(SUM(w.episode_id IS NULL), 0),
-                COALESCE(SUM(w.episode_id IS NOT NULL), 0),
-                COUNT(DISTINCT CASE WHEN w.episode_id IS NOT NULL THEN w.title_id END),
-                CAST(COALESCE(SUM(COALESCE(e.runtime, t.runtime, 0)), 0) AS REAL)
-           FROM watch_event w
-           JOIN title t ON t.id = w.title_id
-           JOIN library_entry l ON l.title_id = w.title_id AND l.user_id = w.user_id
-           LEFT JOIN episode e ON e.id = w.episode_id
-          WHERE w.user_id = ?",
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await?;
+    let figures = crate::stats::figures(pool, user_id).await?;
     let (chapters,): (i64,) = sqlx::query_as(
         "SELECT COALESCE(SUM(l.progress), 0) FROM library_entry l
            JOIN title t ON t.id = l.title_id
@@ -245,34 +225,11 @@ pub async fn facts(pool: &SqlitePool, user_id: i64, pins_json: &str) -> AppResul
     .bind(user_id)
     .fetch_one(pool)
     .await?;
-    let library: LibraryRow = sqlx::query_as(
-        "SELECT COUNT(*), COALESCE(SUM(status = 'completed'), 0), COALESCE(SUM(favourite), 0),
-                AVG(rating)
-           FROM library_entry WHERE user_id = ?",
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await?;
-    let genres: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT g.value, COUNT(*) FROM library_entry l
-           JOIN title t ON t.id = l.title_id, json_each(t.genres_json) g
-          WHERE l.user_id = ? AND l.status IN ('watching', 'completed')
-          GROUP BY g.value ORDER BY 2 DESC, 1 LIMIT 5",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
-    let days: Vec<(String,)> = sqlx::query_as(
-        "SELECT DISTINCT substr(watched_at, 1, 10) FROM watch_event
-          WHERE user_id = ? AND undated = 0 ORDER BY 1",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
-    let days = days
-        .into_iter()
-        .filter_map(|(d,)| NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok())
-        .collect();
+    let (favourites_count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM library_entry WHERE user_id = ? AND favourite = 1")
+            .bind(user_id)
+            .fetch_one(pool)
+            .await?;
     let images: Vec<(String, String)> =
         sqlx::query_as("SELECT kind, updated_at FROM user_image WHERE user_id = ?")
             .bind(user_id)
@@ -285,11 +242,9 @@ pub async fn facts(pool: &SqlitePool, user_id: i64, pins_json: &str) -> AppResul
         favourites,
         recent,
         pinned,
-        totals,
+        figures,
         chapters,
-        library,
-        genres,
-        days,
+        favourites_count,
         images,
     })
 }

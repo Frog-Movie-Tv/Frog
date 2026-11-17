@@ -2,6 +2,7 @@
 //! it, and writing AniList's side into the library. The decisions come from
 //! `reconcile`; this module only reads and writes.
 
+use crate::clock::Stamp;
 use std::collections::HashSet;
 
 use chrono::Utc;
@@ -137,7 +138,7 @@ pub async fn set_part_rating(
             .bind(season)
             .bind(first_episode)
             .bind(crate::store::whole_rating(r))
-            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().stamp())
             .execute(pool)
             .await?;
         }
@@ -208,10 +209,20 @@ pub async fn forget_place(state: &AppState, user_id: i64, media_id: i64) -> AppR
     unplace(state, user_id, (media_id, episodes), title_id, old, None).await
 }
 
+/// What `apply` did.
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct Applied {
+    /// The title was new to the library, so its status is AniList's outright.
+    pub created: bool,
+    /// Episodes within AniList's progress that could not be ticked yet: not
+    /// out by Frog's reckoning, or not yet listed by TMDB on a show still
+    /// airing. The caller keeps AniList's snapshot short by this many, so the
+    /// next sync applies them again until they land.
+    pub held: i64,
+}
+
 /// Make Frog match AniList for one entry, placed at `target` in the title
-/// `title_id` (which the caller has already put in the catalog). Says
-/// whether the title was new to the library, in which case its status is
-/// AniList's outright.
+/// `title_id` (which the caller has already put in the catalog).
 pub(super) async fn apply(
     state: &AppState,
     user_id: i64,
@@ -220,7 +231,8 @@ pub(super) async fn apply(
     target: Target,
     mode: Mode,
     before: Option<&View>,
-) -> AppResult<bool> {
+) -> AppResult<Applied> {
+    let mut held = 0i64;
     let kind = match target {
         Target::Movie(_) => "movie",
         Target::Show { .. } => "tv",
@@ -300,6 +312,17 @@ pub(super) async fn apply(
                 .filter(|(_, (_, released))| *released)
                 .map(|(i, (id, _))| (*id, i < history))
                 .collect();
+            held = run
+                .iter()
+                .take(upto)
+                .filter(|(_, released)| !released)
+                .count() as i64;
+            // Past what TMDB lists: on a show still airing TMDB adds the
+            // episode later, so it is waited for; on a finished one the two
+            // simply number it differently, and nothing is waited for.
+            if upto > run.len() && remote.media_status.as_deref() == Some("RELEASING") {
+                held += (upto - run.len()) as i64;
+            }
             if upto > run.len() {
                 tracing::info!(
                     media_id = remote.media_id,
@@ -308,7 +331,7 @@ pub(super) async fn apply(
                     "AniList progress is past the episodes TMDB lists"
                 );
             }
-            let now = Utc::now().to_rfc3339();
+            let now = Utc::now().stamp();
             for (id, undated) in &tick {
                 sqlx::query(
                     "INSERT INTO watch_event (user_id, title_id, episode_id, watched_at, is_rewatch,
@@ -343,7 +366,20 @@ pub(super) async fn apply(
             }
         }
     }
-    Ok(existing.is_none())
+    Ok(Applied {
+        created: existing.is_none(),
+        held,
+    })
+}
+
+/// AniList's side as far as Frog has reached it: progress short by what was
+/// held back, so the next sync sees a change and tries again.
+pub(super) fn reached(a: &View, applied: Option<Applied>) -> View {
+    let held = applied.map(|x| x.held).unwrap_or(0);
+    View {
+        progress: (a.progress - held).max(0),
+        ..a.clone()
+    }
 }
 
 /// A film AniList says was seen gets one watch, unless it has one: undated
@@ -364,7 +400,7 @@ pub(super) async fn film_watch(
     )
     .bind(user_id)
     .bind(title_id)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(undated)
     .bind(user_id)
     .bind(title_id)

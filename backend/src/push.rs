@@ -6,6 +6,7 @@
 //! subscribed (RFC 8291, aes128gcm). Everything here is built on `ring`, which
 //! is already in the binary for TLS.
 
+use crate::clock::Stamp;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use base64::Engine;
 use chrono::Utc;
@@ -42,7 +43,7 @@ impl Vapid {
                      ON CONFLICT (id) DO NOTHING",
                 )
                 .bind(doc.as_ref())
-                .bind(Utc::now().to_rfc3339())
+                .bind(Utc::now().stamp())
                 .execute(pool)
                 .await?;
                 let (bytes,): (Vec<u8>,) =
@@ -275,7 +276,7 @@ pub async fn broadcast(
     .bind(user_id)
     .fetch_all(&state.pool)
     .await?;
-    let settling_since = (Utc::now() - chrono::Duration::minutes(SETTLING_MINUTES)).to_rfc3339();
+    let settling_since = (Utc::now() - chrono::Duration::minutes(SETTLING_MINUTES)).stamp();
     let mut out = Broadcast::default();
     if subs.is_empty() {
         return Ok(out);
@@ -290,7 +291,7 @@ pub async fn broadcast(
                     "UPDATE push_subscription SET last_ok_at = ?, failures = 0
                       WHERE user_id = ? AND endpoint = ?",
                 )
-                .bind(Utc::now().to_rfc3339())
+                .bind(Utc::now().stamp())
                 .bind(user_id)
                 .bind(&endpoint)
                 .execute(&state.pool)
@@ -365,7 +366,7 @@ pub async fn subscribe(
     .bind(p256dh)
     .bind(auth)
     .bind(agent)
-    .bind(chrono::Utc::now().to_rfc3339())
+    .bind(chrono::Utc::now().stamp())
     .execute(pool)
     .await?;
     Ok(())

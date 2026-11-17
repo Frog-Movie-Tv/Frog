@@ -11,6 +11,10 @@
 	import Spinner from '#lib/components/Spinner.svelte';
 	import { failure, type Failure } from '#lib/failure';
 	import { prettyDate } from '#lib/format';
+	import { addMany, chooseStatus } from '#lib/add';
+	import Icon from '#lib/components/Icon.svelte';
+	import PickBar from '#lib/components/PickBar.svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import type { PersonDetail, SearchItem } from '#lib/types';
 
 	let person = $state<PersonDetail | null>(null);
@@ -27,9 +31,11 @@
 
 	let token = 0;
 
-	/** A right-click's offer on a credit; the page reads itself again after. */
+	/** A right-click's offer on a credit; the page reads itself again after. None while choosing. */
 	const menuOf = (item: SearchItem) =>
-		titleMenu({ ...item, status: item.in_library }, { onchanged: () => load(id) });
+		selecting
+			? undefined
+			: titleMenu({ ...item, status: item.in_library }, { onchanged: () => load(id) });
 
 	async function load(personId: number) {
 		const mine = ++token;
@@ -60,6 +66,70 @@
 	const seenCount = $derived(
 		(person?.credits ?? []).filter((c) => c.item.in_library !== null).length
 	);
+
+	let selecting = $state(false);
+	let adding = $state(false);
+	const picked = new SvelteSet<string>();
+	const free = $derived(shown.map((c) => c.item).filter((t) => !t.in_library));
+	const chosen = $derived(free.filter((t) => picked.has(titleKey(t))));
+
+	function toggle(item: SearchItem) {
+		const key = titleKey(item);
+		if (picked.has(key)) picked.delete(key);
+		else picked.add(key);
+	}
+
+	function selectAll() {
+		const every = chosen.length === free.length;
+		picked.clear();
+		if (!every) for (const t of free) picked.add(titleKey(t));
+	}
+
+	function stopSelecting() {
+		selecting = false;
+		picked.clear();
+	}
+
+	/** What makes a poster a tick box while choosing. */
+	function pickable(item: SearchItem) {
+		if (!selecting) return {};
+		const held = !!item.in_library;
+		return {
+			role: 'checkbox',
+			'aria-checked': held ? undefined : picked.has(titleKey(item)),
+			'aria-disabled': held ? true : undefined,
+			onclick: (e: MouseEvent) => {
+				e.preventDefault();
+				e.stopPropagation();
+				if (!held) toggle(item);
+			},
+			onkeydown: (e: KeyboardEvent) => {
+				if (e.key !== ' ') return;
+				e.preventDefault();
+				if (!held) toggle(item);
+			}
+		};
+	}
+
+	/** Every ticked title into the library, with the status chosen for all of them. */
+	async function addChosen(e: MouseEvent) {
+		const list = chosen;
+		if (!list.length) return;
+		const naming = list.length === 1 ? list[0].name : `${list.length} titles`;
+		const status = await chooseStatus(
+			{ name: naming, kind: list.every((t) => t.kind === 'movie') ? 'movie' : 'tv' },
+			e.currentTarget as HTMLElement,
+			{ event: e, title: `Add ${naming}` }
+		);
+		if (!status) return;
+		adding = true;
+		try {
+			const done = await addMany(list, status, () => load(id));
+			if (done) picked.clear();
+		} finally {
+			adding = false;
+		}
+	}
 
 	/** Two parts and a count: one voice actor can have dozens in one show. */
 	function roleLine(role: string): string {
@@ -124,11 +194,18 @@
 
 		<div class="section-head">
 			<h2>Filmography</h2>
-			<div class="segmented" role="group" aria-label="Filmography">
-				<button class="chip" class:on={!seenOnly} onclick={() => (seenOnly = false)}>All</button>
-				<button class="chip" class:on={seenOnly} onclick={() => (seenOnly = true)}>
-					In your library {seenCount}
-				</button>
+			<div class="tools">
+				<div class="segmented" role="group" aria-label="Filmography">
+					<button class="chip" class:on={!seenOnly} onclick={() => (seenOnly = false)}>All</button>
+					<button class="chip" class:on={seenOnly} onclick={() => (seenOnly = true)}>
+						In your library {seenCount}
+					</button>
+				</div>
+				{#if free.length && !selecting}
+					<button class="btn ghost small" onclick={() => (selecting = true)}>
+						<Icon name="check" size={14} /> Select
+					</button>
+				{/if}
 			</div>
 		</div>
 
@@ -140,8 +217,13 @@
 		{:else}
 			<Grid>
 				{#each credits as credit (titleKey(credit.item))}
-					<div class="credit" class:seen={credit.item.in_library !== null}>
+					<div class="credit" class:seen={selecting || credit.item.in_library !== null}>
 						<Poster
+							{...pickable(credit.item)}
+							morph={!selecting}
+							selected={selecting && !credit.item.in_library
+								? picked.has(titleKey(credit.item))
+								: undefined}
 							menu={menuOf(credit.item)}
 							kind={credit.item.kind}
 							ref={credit.item}
@@ -163,8 +245,13 @@
 			<div class="appearances">
 				<Rail title="Appearances">
 					{#each appearances as credit (titleKey(credit.item))}
-						<div class="credit" class:seen={credit.item.in_library !== null}>
+						<div class="credit" class:seen={selecting || credit.item.in_library !== null}>
 							<Poster
+								{...pickable(credit.item)}
+								morph={!selecting}
+								selected={selecting && !credit.item.in_library
+									? picked.has(titleKey(credit.item))
+									: undefined}
 								menu={menuOf(credit.item)}
 								kind={credit.item.kind}
 								ref={credit.item}
@@ -181,6 +268,17 @@
 		{/if}
 	{/if}
 </div>
+
+{#if selecting}
+	<PickBar
+		count={chosen.length}
+		selectable={free.length}
+		busy={adding}
+		onselectall={selectAll}
+		onadd={addChosen}
+		ondone={stopSelecting}
+	/>
+{/if}
 
 <style>
 	/* One pane: the portrait, the name as a page's title, the facts as pills. */
@@ -295,5 +393,18 @@
 
 	.appearances {
 		margin-top: 44px;
+	}
+
+	.tools {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		gap: 8px;
+	}
+
+	/* Room under the grid for the bar while choosing. */
+	.page:has(~ :global(.bar)) {
+		padding-bottom: 90px;
 	}
 </style>

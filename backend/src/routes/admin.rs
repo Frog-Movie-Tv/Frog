@@ -1,6 +1,7 @@
 //! Running the instance: who has an account, what they may do, and how the
 //! instance itself is doing. Everything here sits behind `AdminAuth`.
 
+use crate::clock::Stamp;
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::Deserialize;
@@ -154,7 +155,7 @@ pub async fn reset_link(
     Ok(Json(json!({
         "code": code,
         "path": format!("/reset?code={code}"),
-        "expires_at": expires.to_rfc3339(),
+        "expires_at": expires.stamp(),
     })))
 }
 
@@ -209,7 +210,7 @@ pub async fn instance(
     Ok(Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
         "database_bytes": f.database_bytes,
-        "image_cache_bytes": f.image_cache_bytes,
+        "storage": f.storage,
         "accounts": f.accounts,
         "titles": { "all": titles, "films": films, "shows": shows, "manga": manga },
         "last_backup": last_backup(&state.config.database_url),

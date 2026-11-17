@@ -57,6 +57,8 @@ struct RawEpisode {
 pub struct Listing {
     pub zone: Option<Tz>,
     pub episodes: Vec<Episode>,
+    /// The day the show ended, when TVmaze says it has.
+    pub ended: Option<NaiveDate>,
 }
 
 #[derive(Deserialize)]
@@ -122,7 +124,14 @@ pub fn parse_listing(body: &[u8]) -> AppResult<Listing> {
     };
     let mut episodes = episodes_from(raw);
     timed_by_show(&mut episodes, zone, schedule_time(&show));
-    Ok(Listing { zone, episodes })
+    let ended = (show["status"].as_str() == Some("Ended"))
+        .then(|| show["ended"].as_str()?.parse().ok())
+        .flatten();
+    Ok(Listing {
+        zone,
+        episodes,
+        ended,
+    })
 }
 
 /// One line of a day's schedule: the episode, and enough of its show to tell
@@ -328,6 +337,7 @@ pub async fn listing(state: &AppState, show: i64) -> AppResult<Listing> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clock::Stamp;
 
     #[test]
     fn an_empty_airtime_is_no_time_whatever_the_airstamp_says() {
@@ -342,8 +352,8 @@ mod tests {
         let eps = parse_episodes(body).unwrap();
         assert_eq!(eps.len(), 3);
         assert_eq!(
-            eps[0].at.map(|a| a.to_rfc3339()),
-            Some("2026-11-16T02:00:00+00:00".into())
+            eps[0].at.map(|a| a.stamp()),
+            Some("2026-11-16T02:00:00Z".into())
         );
         assert_eq!(eps[1].at, None, "12:00 UTC stand-in is not a time");
         assert_eq!(eps[1].airdate, NaiveDate::from_ymd_opt(2026, 11, 20));
@@ -389,12 +399,12 @@ mod tests {
         let eps = parse_listing(body).unwrap().episodes;
         // 19:30 in New York in November is 00:30 UTC the next day.
         assert_eq!(
-            eps[0].at.map(|a| a.to_rfc3339()),
-            Some("2026-11-17T00:30:00+00:00".into())
+            eps[0].at.map(|a| a.stamp()),
+            Some("2026-11-17T00:30:00Z".into())
         );
         assert_eq!(
-            eps[1].at.map(|a| a.to_rfc3339()),
-            Some("2026-11-18T01:00:00+00:00".into()),
+            eps[1].at.map(|a| a.stamp()),
+            Some("2026-11-18T01:00:00Z".into()),
             "its own time stands"
         );
         assert_eq!(eps[2].at, None, "no day, no time");
@@ -430,8 +440,8 @@ mod tests {
         assert_eq!(lines[0].tvdb_id, None, "0 is no id");
         assert_eq!(lines[0].imdb_id.as_deref(), Some("tt1234567"));
         assert_eq!(
-            lines[0].episode.at.map(|a| a.to_rfc3339()),
-            Some("2026-11-17T20:45:00+00:00".into())
+            lines[0].episode.at.map(|a| a.stamp()),
+            Some("2026-11-17T20:45:00Z".into())
         );
 
         let web = br#"[
@@ -444,8 +454,20 @@ mod tests {
         assert_eq!(lines[0].show, 77);
         assert_eq!(lines[0].tvdb_id, Some(4242));
         assert_eq!(
-            lines[0].episode.at.map(|a| a.to_rfc3339()),
-            Some("2026-11-17T10:00:00+00:00".into())
+            lines[0].episode.at.map(|a| a.stamp()),
+            Some("2026-11-17T10:00:00Z".into())
         );
+    }
+
+    #[test]
+    fn a_listing_says_when_its_show_ended() {
+        let body = br#"{ "id": 249, "status": "Ended", "ended": "2022-12-08",
+                         "_embedded": { "episodeswithspecials": [] } }"#;
+        assert_eq!(
+            parse_listing(body).unwrap().ended,
+            NaiveDate::from_ymd_opt(2022, 12, 8)
+        );
+        let running = br#"{ "id": 1, "status": "Running", "ended": null }"#;
+        assert_eq!(parse_listing(running).unwrap().ended, None);
     }
 }

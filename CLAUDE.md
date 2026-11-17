@@ -53,7 +53,11 @@ when it ships. How things work lives here, under **How things work**.
 backend/            Rust: axum 0.8, sqlx 0.8 (SQLite), tokio
   src/routes/       HTTP only, one module per area: parse, name the account, call, shape
   src/catalog.rs    Frog's titles and their TMDB/AniList/IMDb ids (title_external), episodes
-  src/store.rs      one account's library: entries, progress, up next, moving data between titles
+  src/store/        one account's library: entries, progress, up next (mod), who may be
+                    shown (people), an entry whole (records), moving data between titles (merge)
+  src/clock.rs      the one way a moment is written: YYYY-MM-DDTHH:MM:SSZ
+  src/genres.rs     one genre list for films and shows
+  src/digest.rs     Your week, the Monday note
   src/images.rs     the picture cache and its budget
   src/bulk.rs       one action on many titles; marking aired episodes
   src/release.rs    when an episode is out; what a show's status should be
@@ -116,7 +120,7 @@ RELEASE-NOTES.md        source of truth for release notes (parsed into the app)
   without a database.
 - **A domain that owns tables owns their SQL** (`anilist/records.rs` for
   `anilist_*`, `shelves.rs` for shelves). Library, title and episode reads
-  that more than one area needs go in `store.rs`. **No SQL in a route**: a
+  that more than one area needs go in `store/`. **No SQL in a route**: a
   new area gets a module of its own beside the others (`stats.rs`,
   `timeline.rs`, `profiles.rs`, …).
 - **Providers are reached through their client** (`tmdb`, `anilist::client`,
@@ -320,9 +324,13 @@ part you are about to touch; change it when the code changes.
   dailies, soaps, Chinese and Indian streaming). An episode TVmaze gives a
   day and an empty `airtime` takes the show's `schedule.time` in its
   channel's zone (`tvmaze::timed_by_show`), as `air_source` 'tvmaze'; a
-  worldwide streamer has no zone and stays TBA. The Daily Show is linked to
-  TVmaze's Trevor Noah run, which ended in 2022, so it stays TBA: a kept id
-  is never second-guessed.
+  worldwide streamer has no zone and stays TBA. A kept TVmaze id is
+  second-guessed only one way: when TMDB asks about an episode more than
+  60 days after the TVmaze show ended (`airtime::outlived`), the link goes,
+  its id is kept as `tvmaze_rejected` and never taken again, and the show is
+  looked up afresh (by id, by name and year, else as the one running show of
+  that name, else through the day schedules). That is what unsticks The
+  Daily Show, once linked to TVmaze's Trevor Noah run.
   `cargo run --example airtime_check -- <tmdb id> <season> all` prints a
   season's pairing.
   `refresh_due` works every listed or tracked show out every six hours, so
@@ -379,7 +387,16 @@ part you are about to touch; change it when the code changes.
   progress (`awards::progress`, worked out on request, not stored) shows
   to the holder only. `badge_award.shown` means beside the name and nothing
   else: a badge switched off there still shows on the Badges tab to anyone
-  who may see the profile.
+  who may see the profile. World Tour and Subtitles On read the title's
+  `countries_json` and `original_language`, TMDB's, written on every read
+  and filled for older titles by the worker (`backfill_origins_once`).
+  Back From the Dead and Watchlist Zero read `status_change`, which
+  triggers write for every entry change since 1.9.1, so neither looks
+  further back; both need watches recorded as they happened near the
+  change, so edit mode or an import earns neither. The watchlist is worked
+  back from today's to before the first change. `status_change.title_id`
+  has no foreign key on purpose: a trigger may not name `title`, which
+  `db::rebuild_title` drops and makes again on a new database.
 - **Badges made here can earn themselves** (`awards/custom.rs`,
   `badge.condition`). An administrator picks one of the ladders' counts
   (`custom::COUNTS`) and a number, kept as JSON (`{"count":"films","at":25}`);
@@ -432,7 +449,12 @@ part you are about to touch; change it when the code changes.
   else on TMDB's day. One entry per show or film a day, most popular first, 30 at a
   time; the page groups a day by part of the day in the viewer's zone. There
   is no manga on it: TMDB has none, and the page shows only TMDB's titles.
-  The page never reaches another site.
+  The page never reaches another site. A show with no moment from a streamer whose
+  own shows go live at midnight Pacific (`airing::usual_drop`: Netflix,
+  Prime Video, Disney+, Hulu, Max, Paramount+, Peacock) is placed by that
+  hour and reads "Usually 09:00": a habit, never shown as its time and never
+  announced. Broadcasters and the Chinese and Indian streamers vary show to
+  show and are left out.
 
 - **Ratings** (`backend/src/ratings.rs`) sit in `title_rating` on Frog's own
   title, matched only by provider id. MDBList's free tier is 1,000 requests a
@@ -634,8 +656,12 @@ part you are about to touch; change it when the code changes.
   showed nothing. Removing the heatmap outright reached only 1,250 ms, and
   deferring just moves the work to the middle of a scroll, so it was not
   shipped. Compare against an untouched show before trusting any number here.
-- **Stats count only titles in the library.** Watches of removed titles stay
-  in the database (the diary keeps them) but leave every total.
+- **Removing a title takes its watches** (`store::remove_entries`): the
+  entry, every watch and every episode's notes go together, and Undo puts
+  them back from `EntryRecord`. Decided for 1.9.1 so the library, the diary
+  and Stats never disagree about what was watched. Watches with no entry
+  left from older versions (246 on the live instance) stay in the diary and
+  out of every total: **Stats count only titles in the library.**
 - **Stats credits** live in `title_person`, filled by `store::ensure_title`
   and backfilled by the worker, 25 titles every 2 minutes.
 - **Pictures are made ready in the browser** (`lib/picture.ts`): avatars at 512
@@ -689,6 +715,9 @@ part you are about to touch; change it when the code changes.
   go through `takeBack`, which puts the card back on top once. Saves go out
   in order (`InOrder`). A card's fixes (not watched yet, another status,
   remove) are behind its one "…" button, with S and Delete as keys.
+  Measured on 2026-11-17 with 611 titles (release build, 450 of them copies
+  of real titles without episodes): the whole library answers in 92–117 ms
+  (112 kB) and dealing takes under 1 ms, so reading it whole stays.
 - **New Home rows** reach saved layouts once, through `homeRowsSeen` in
   `lib/settings.svelte.ts`. Add the id to `HOME_ROWS` and to the default list.
 

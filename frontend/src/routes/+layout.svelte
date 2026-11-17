@@ -521,6 +521,18 @@
 	}
 
 	/* The footer: a small matte capsule, centred under the page. */
+	/* The page fills the window, so on a short page the credits sit at the
+	   foot of the column rather than halfway up the screen. */
+	:global(body:has(main.with-chrome)) {
+		display: flex;
+		flex-direction: column;
+		min-height: 100dvh;
+	}
+
+	main.with-chrome {
+		flex: 1 0 auto;
+	}
+
 	.attribution {
 		padding: 32px var(--page-pad) 36px;
 	}

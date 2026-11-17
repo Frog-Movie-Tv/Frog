@@ -6,6 +6,7 @@
 //! that is about one entry is counted and the rest go on; an outage (TMDB or
 //! AniList out of reach) stops the sync, which is tried again later.
 
+use crate::clock::Stamp;
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
@@ -14,7 +15,7 @@ use serde_json::{json, Value};
 
 use super::client::{self, Api, Remote};
 use super::idmap::{ensure_map, remember_media};
-use super::library::{apply, frog_view, settle_show, unplace};
+use super::library::{apply, frog_view, reached, settle_show, unplace};
 use super::local::{adopt_local, next_try, sync_local};
 use super::place::{self, Outcome, Placement, Target, CONFIDENT, RESOLVER};
 use super::reconcile::{Changes, Mode};
@@ -96,7 +97,7 @@ pub struct Summary {
     /// A sync with any is finished, but not complete.
     #[serde(default)]
     pub failed: i64,
-    /// No longer on the AniList list. Kept in Frog as they are.
+    /// Off the AniList list two syncs running, and so taken out of Frog.
     #[serde(default)]
     pub removed: i64,
 }
@@ -154,7 +155,7 @@ pub async fn sync_user(state: &AppState, user_id: i64) -> AppResult<Summary> {
         return Ok(Summary::default());
     };
     let result = sync_inner(state, user_id).await;
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     match &result {
         // Only a sync that finished moves synced_at: it is the checkpoint
         // Settings shows and the worker counts from.
@@ -202,7 +203,7 @@ fn retry_after(failures: i64) -> String {
         rand::thread_rng().gen_range(0.8..1.2)
     };
     let seconds = (minutes * 60.0 * jitter) as i64;
-    (Utc::now() + chrono::Duration::seconds(seconds)).to_rfc3339()
+    (Utc::now() + chrono::Duration::seconds(seconds)).stamp()
 }
 
 /// TMDB out of reach, as opposed to something wrong with one entry: the
@@ -243,7 +244,7 @@ async fn sync_inner(state: &AppState, user_id: i64) -> AppResult<Summary> {
             token: &token,
             user_id,
         },
-        started: Utc::now().to_rfc3339(),
+        started: Utc::now().stamp(),
         summary: Summary {
             entries: remotes.len() as i64,
             ..Default::default()
@@ -252,7 +253,8 @@ async fn sync_inner(state: &AppState, user_id: i64) -> AppResult<Summary> {
         touched: HashSet::new(),
         days: HashMap::new(),
     };
-    run.summary.removed = records::mark_gone(&state.pool, user_id, &remotes, &known).await?;
+    let gone = records::mark_gone(&state.pool, user_id, &remotes, &known).await?;
+    run.summary.removed = forget_gone(state, user_id, &gone).await?;
     for remote in &remotes {
         run.entry(remote, known.get(&remote.media_id)).await?;
     }
@@ -269,6 +271,29 @@ async fn sync_inner(state: &AppState, user_id: i64) -> AppResult<Summary> {
         .await?;
     }
     Ok(run.summary)
+}
+
+/// Entries off the AniList list for two syncs running leave Frog too:
+/// AniList is where the list is kept (streaming sites write to it), so a
+/// title taken off there comes out of the library here, the way the
+/// library's Remove takes it, watches and all. A title another entry still
+/// on the list holds stays. Then the entry is forgotten, so Settings no
+/// longer lists it.
+async fn forget_gone(state: &AppState, user_id: i64, gone: &[i64]) -> AppResult<i64> {
+    let pool = &state.pool;
+    for &media_id in gone {
+        if let Some(title_id) = records::held_only_by(pool, user_id, media_id).await? {
+            crate::store::remove_entries(pool, user_id, &[title_id]).await?;
+            tracing::info!(
+                user_id,
+                media_id,
+                title_id,
+                "removed on AniList, so removed in Frog"
+            );
+        }
+        records::forget(pool, user_id, media_id).await?;
+    }
+    Ok(gone.len() as i64)
 }
 
 /// Where a placed entry goes this sync, and the verdict Settings shows.
@@ -635,8 +660,9 @@ impl Run<'_> {
         // shorter run had cut off.
         let replaced = verdict.confidence >= 0 && prior.is_some_and(|k| k.resolver < RESOLVER);
         let c = Changes::between(snap_al.as_ref(), snap_frog.as_ref(), a, f.as_ref());
+        let mut applied = None;
         if let Some(mode) = c.mode(replaced) {
-            let created = match apply(
+            let done = match apply(
                 state,
                 user_id,
                 remote,
@@ -647,7 +673,7 @@ impl Run<'_> {
             )
             .await
             {
-                Ok(created) => created,
+                Ok(done) => done,
                 Err(e) if is_outage(&e) => return Err(e),
                 Err(e) => {
                     // One entry that cannot be written does not stop the rest;
@@ -657,9 +683,10 @@ impl Run<'_> {
                     return Ok(());
                 }
             };
+            applied = Some(done);
             if kind == "tv" {
                 // New to the library, or changed on AniList: AniList decides.
-                let firm = if created { Mode::Follow } else { mode };
+                let firm = if done.created { Mode::Follow } else { mode };
                 let slot = self.shows.entry(title_id).or_insert(firm);
                 if firm == Mode::Follow {
                     *slot = Mode::Follow;
@@ -688,7 +715,14 @@ impl Run<'_> {
             self.summary.to_frog += 1;
         }
 
-        save_snapshots(pool, user_id, remote.media_id, a, f_now.as_ref()).await
+        save_snapshots(
+            pool,
+            user_id,
+            remote.media_id,
+            &reached(a, applied),
+            f_now.as_ref(),
+        )
+        .await
     }
 
     /// One status per show, once all of its seasons are in. Shows AniList

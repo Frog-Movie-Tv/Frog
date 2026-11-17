@@ -58,6 +58,16 @@
 				</div>
 			</div>
 
+			{#if compared.together.length}
+				<section class="block">
+					<Rail title="Watched together">
+						{#each compared.together.slice(0, 60) as t (t.id)}
+							<Poster kind={t.kind} ref={t} name={t.name} posterPath={t.poster_path} />
+						{/each}
+					</Rail>
+				</section>
+			{/if}
+
 			{#if compared.only_theirs.length}
 				<section class="block">
 					<Rail title="Only {firstName(profile)} has">

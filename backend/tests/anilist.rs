@@ -1,6 +1,7 @@
 //! AniList sync against a stand-in AniList: sign-in, placing seasons by id,
 //! and changes travelling in both directions.
 
+use frog::clock::Stamp;
 use std::sync::{Arc, Mutex};
 
 use axum::body::Body;
@@ -1914,7 +1915,7 @@ async fn a_list_is_read_whole_and_a_failed_read_changes_nothing() {
     assert_eq!(after.0, good.0, "a failure is not a sync");
     assert!(after.1.is_some());
     assert_eq!(after.2, 1);
-    assert!(after.3.unwrap() > chrono::Utc::now().to_rfc3339());
+    assert!(after.3.unwrap() > chrono::Utc::now().stamp());
     assert_eq!(h.watched(95479).await.len(), 7, "nothing taken away");
     assert_eq!(
         count(
@@ -1948,13 +1949,36 @@ async fn a_list_is_read_whole_and_a_failed_read_changes_nothing() {
             .unwrap();
     assert_eq!((failures, error), (0, None));
 
-    // An entry taken off AniList stays in Frog, marked.
+    // An entry taken off AniList is marked at the first sync that misses
+    // it, and taken out of Frog at the second: one odd answer removes
+    // nothing.
     h.fake.lock().unwrap().entries.remove(0);
     let summary = h.sync(1).await;
-    assert_eq!(summary.removed, 1, "{summary:?}");
+    assert_eq!(summary.removed, 0, "{summary:?}");
     assert_eq!(h.watched(95479).await.len(), 7);
     assert!(in_library(&h, &cookie, 95479).await.is_some());
-    assert_eq!(h.entry(&cookie, 113415).await["gone"], json!(true));
+    assert_eq!(
+        h.entry(&cookie, 113415).await,
+        Value::Null,
+        "Settings has nothing to check about it"
+    );
+    let summary = h.sync(1).await;
+    assert_eq!(summary.removed, 1, "{summary:?}");
+    assert!(in_library(&h, &cookie, 95479).await.is_none());
+    assert!(h.watched(95479).await.is_empty());
+    assert_eq!(
+        count(
+            &h,
+            "SELECT COUNT(*) FROM anilist_entry WHERE media_id = 113415"
+        )
+        .await,
+        0,
+        "forgotten, so it is new again if it comes back"
+    );
+    h.fake.lock().unwrap().entries =
+        vec![entry(113415, "JUJUTSU KAISEN", "TV", 24, "CURRENT", 7, 0)];
+    h.sync(1).await;
+    assert_eq!(h.watched(95479).await.len(), 7, "back as AniList has it");
 
     // An answer with no entries at all is not read as everything removed.
     h.fake.lock().unwrap().entries.clear();
@@ -2784,4 +2808,87 @@ async fn a_search_asks_anilist_once_for_manga_and_characters() {
     h.call("GET", "/api/search/more?q=pond", None, Some(&cookie))
         .await;
     assert_eq!(h.fake.lock().unwrap().name_searches, 1);
+}
+
+/// An episode AniList counts as watched before Frog thinks it is out (an
+/// early stream, or TMDB a day behind) is ticked as soon as it is, not
+/// forgotten because AniList's count has not moved since.
+#[tokio::test]
+async fn progress_held_back_lands_once_the_episode_is_out() {
+    let h = Harness::new().await;
+    seed_tmdb(&h).await;
+    h.fake.lock().unwrap().entries =
+        vec![entry(113415, "JUJUTSU KAISEN", "TV", 24, "CURRENT", 7, 0)];
+    h.connected().await;
+    h.sync(1).await;
+    assert_eq!(h.watched(95479).await.len(), 7);
+
+    let show = h.tid("tv", 95479).await;
+    let set_eight = |day: &'static str| {
+        let pool = h.state.pool.clone();
+        async move {
+            sqlx::query(
+                "UPDATE episode SET air_date = ?, air_at = NULL
+                  WHERE title_id = ? AND season_number = 1 AND episode_number = 8",
+            )
+            .bind(day)
+            .bind(show)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+    };
+    set_eight("2099-01-01").await;
+    h.fake.lock().unwrap().entries[0]["progress"] = json!(8);
+    h.sync(1).await;
+    assert_eq!(h.watched(95479).await.len(), 7, "not out yet");
+    h.sync(1).await;
+    assert_eq!(h.watched(95479).await.len(), 7, "still not out");
+
+    set_eight("2021-01-01").await;
+    h.sync(1).await;
+    let seen: Vec<i64> = h.watched(95479).await.into_iter().map(|e| e.1).collect();
+    assert_eq!(seen, (1..=8).collect::<Vec<_>>());
+    let summary = h.sync(1).await;
+    assert_eq!(summary.to_frog, 0, "and then it is settled: {summary:?}");
+}
+
+/// A show AniList keeps as two entries leaves Frog only when both are off
+/// the list.
+#[tokio::test]
+async fn a_show_stays_while_any_of_its_entries_is_on_anilist() {
+    let h = Harness::new().await;
+    seed_tmdb(&h).await;
+    h.fake.lock().unwrap().entries = vec![
+        entry(113415, "JUJUTSU KAISEN", "TV", 24, "COMPLETED", 24, 0),
+        entry(145064, "JUJUTSU KAISEN Season 2", "TV", 23, "CURRENT", 3, 0),
+    ];
+    let cookie = h.connected().await;
+    h.sync(1).await;
+    let placed = count(
+        &h,
+        "SELECT COUNT(*) FROM anilist_entry WHERE user_id = 1 AND state = 'placed'",
+    )
+    .await;
+    assert_eq!(placed, 2, "both seasons are placed in the one show");
+    h.fake.lock().unwrap().entries.remove(0);
+    h.sync(1).await;
+    h.sync(1).await;
+    assert!(
+        in_library(&h, &cookie, 95479).await.is_some(),
+        "the second season still holds it"
+    );
+    h.fake.lock().unwrap().entries.clear();
+    h.fake.lock().unwrap().entries.push(entry(
+        9000,
+        "JUJUTSU KAISEN 0",
+        "MOVIE",
+        1,
+        "PLANNING",
+        0,
+        0,
+    ));
+    h.sync(1).await;
+    h.sync(1).await;
+    assert!(in_library(&h, &cookie, 95479).await.is_none());
 }

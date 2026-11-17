@@ -526,6 +526,14 @@ async fn a_provider_losing_a_title_keeps_the_title_and_its_history() {
     assert_eq!(count(pool, "SELECT COUNT(*) FROM watch_event").await, 1);
     assert_eq!(count(pool, "SELECT COUNT(*) FROM library_entry").await, 1);
     assert_eq!(catalog::get_title(pool, 1).await.unwrap().name, "Kept");
+
+    // It opens with the name Frog stored, and says that is all it is, so
+    // nothing writes credits or seasons from it.
+    let (row, detail) = catalog::load(&state, 1).await.unwrap();
+    assert_eq!(row.name, "Kept");
+    assert_eq!(detail["name"], "Kept");
+    assert!(catalog::only_kept(&detail));
+    assert!(catalog::load_answered(&state, 1).await.is_err());
 }
 
 /// A title made from an AniList entry alone has no genres, and must still say

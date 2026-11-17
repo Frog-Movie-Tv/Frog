@@ -6,6 +6,7 @@
 //! instead of a session, so a token can never change settings, the account,
 //! two-factor, invites or anything an administrator does.
 
+use crate::clock::Stamp;
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use chrono::Utc;
@@ -75,7 +76,7 @@ pub async fn create(pool: &SqlitePool, user_id: i64, name: &str) -> AppResult<(T
     .bind(user_id)
     .bind(&name)
     .bind(auth::token_fingerprint(&raw))
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .fetch_one(pool)
     .await?;
     Ok((token, raw))
@@ -122,7 +123,7 @@ pub async fn identify(pool: &SqlitePool, raw: &str) -> AppResult<Option<(i64, Id
         return Ok(None);
     }
     sqlx::query("UPDATE api_token SET last_used_at = ? WHERE id = ? AND user_id = ?")
-        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().stamp())
         .bind(token_id)
         .bind(user_id)
         .execute(pool)

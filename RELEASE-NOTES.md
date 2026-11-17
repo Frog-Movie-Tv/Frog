@@ -13,6 +13,57 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 In progress.
 
+### Improvements
+
+- Drag your pinned titles into the order your profile shows them.
+- Anything you arrange by dragging lifts under your finger or pointer and
+  follows it, while the rest slide aside to make room: shelves, the titles
+  on a shelf, Home rows, the menu, your pinned titles and the badges beside
+  your name. Esc puts it back.
+- Genres read the same for films and shows everywhere: Science Fiction,
+  Fantasy, Action and Adventure, once each, in Stats, profiles, filters and
+  shelves.
+- Airing lists each part of the day in the order things come out.
+- The Calendar's key shows the chips it explains, and today's date.
+- On a phone, a title's status and rating sit together, with its other
+  actions on the row below.
+- Administration's Storage card shows what is libraries, titles, kept
+  pictures and free space, each once.
+- A badge's notification shows the badge itself.
+- About credits MDBList for scores and fanart.tv for logos.
+- Searching a name you searched before answers at once.
+- Your week: on Monday morning, a note of what you and your people watched
+  and what airs next. Switch it off in Settings → Account → Notifications.
+- Compare with someone shows what you watched together.
+- Stats shows who you watched with most.
+- Activity cards say who a title was watched with.
+- A Frog backup brings back who each watch was with.
+- Watching with… from a show's page, before you tick an episode.
+- Select on a person's page adds several of their titles at once, as a
+  studio's page does.
+- Airing shows when a streamer usually puts its episodes out, for shows
+  with no set time.
+- Four new badges: World Tour, for titles from 15 countries; Subtitles On,
+  for 25 titles not made in English; Back From the Dead, for a dropped show
+  picked up again; and Watchlist Zero, for a watchlist of 20 or more watched
+  down to nothing.
+
+### Fixes
+
+- An episode your AniList counts as watched reaches Frog as soon as it is
+  out, even when you watched it early.
+- A title you take off AniList leaves Frog too, and Connections no longer
+  asks you to look at it.
+- Your profile and Stats show the same figures, and a film watched twice
+  counts as one film.
+- A profile's Badges tab opens faster.
+- The credits at the foot of a short page sit at the bottom.
+- A setting that could not be saved says so.
+- A title that was finished before it was started now starts on the day it
+  was finished.
+- A show's air times correct themselves when Frog had it matched to the
+  wrong listing.
+
 ## [1.9.0] — Reed Frog — 2026-11-16
 
 A few improvements and fixes.

@@ -3,6 +3,7 @@
 //! AniList by `media`. When TMDB places the entry later, `adopt_local`
 //! moves this account's data across.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use sqlx::SqlitePool;
 
@@ -200,7 +201,7 @@ pub(super) async fn sync_local(
                 let history = reconcile::undated_upto(mode, snap_al.as_ref());
                 let after = have.max(i64::try_from(history).unwrap_or(i64::MAX));
                 if progress > after {
-                    let now = Utc::now().to_rfc3339();
+                    let now = Utc::now().stamp();
                     store::record_reads(
                         &state.pool,
                         user_id,
@@ -269,9 +270,10 @@ async fn sync_local_episodes(
         (snap_al, snap_frog)
     };
     let c = Changes::between(snap_al.as_ref(), snap_frog.as_ref(), a, f.as_ref());
+    let mut applied = None;
     match c.mode(false) {
         Some(mode) => {
-            let created = library::apply(
+            let done = library::apply(
                 state,
                 user_id,
                 remote,
@@ -281,7 +283,8 @@ async fn sync_local_episodes(
                 snap_al.as_ref(),
             )
             .await?;
-            let firm = if created { Mode::Follow } else { mode };
+            applied = Some(done);
+            let firm = if done.created { Mode::Follow } else { mode };
             settle_show(state, user_id, title_id, &[(1, 0, a.status.clone())], firm).await?;
         }
         None => release::reconcile(&state.pool, user_id, title_id).await?,
@@ -295,7 +298,14 @@ async fn sync_local_episodes(
     }
     let f_now = view(&state.pool).await?;
 
-    save_snapshots(&state.pool, user_id, remote.media_id, a, f_now.as_ref()).await?;
+    save_snapshots(
+        &state.pool,
+        user_id,
+        remote.media_id,
+        &library::reached(a, applied),
+        f_now.as_ref(),
+    )
+    .await?;
     Ok(f_now != f)
 }
 
@@ -382,5 +392,5 @@ pub(super) async fn adopt_local(
 pub(super) fn next_try(tries: i64, upcoming: bool) -> String {
     let cap = if upcoming { 12 } else { 72 };
     let hours = (1i64 << tries.clamp(0, 7)).min(cap);
-    (Utc::now() + chrono::Duration::hours(hours)).to_rfc3339()
+    (Utc::now() + chrono::Duration::hours(hours)).stamp()
 }

@@ -12,6 +12,7 @@
 //! An episode belongs to the day its moment falls on where the viewer is, or
 //! to TMDB's day when no moment is known (`day`).
 
+use crate::clock::Stamp;
 use std::collections::{HashMap, HashSet};
 use std::time::Duration as Pause;
 
@@ -52,6 +53,34 @@ const RELEASE_TYPES: [i64; 3] = [2, 3, 4];
 
 /// Between two TMDB calls, to stay well under its limit.
 const PACE: Pause = Pause::from_millis(60);
+
+/// Streamers whose own shows go live at midnight Pacific on their day, by
+/// TMDB's network name. Only a habit, so an episode with no known moment
+/// shows it as usual (`Item.usual_at`), never as its time, and nothing is
+/// announced by it. Broadcasters and the Chinese and Indian streamers are
+/// left out: their times vary from show to show.
+const MIDNIGHT_PACIFIC: [&str; 8] = [
+    "Netflix",
+    "Prime Video",
+    "Disney+",
+    "Hulu",
+    "Max",
+    "HBO Max",
+    "Paramount+",
+    "Peacock",
+];
+
+/// When a streamer's episode usually goes live on TMDB's day, as UTC.
+pub fn usual_drop(network: Option<&str>, air_date: &str) -> Option<String> {
+    if !MIDNIGHT_PACIFIC.contains(&network?) {
+        return None;
+    }
+    let day = parse_day(air_date)?;
+    let at = chrono_tz::America::Los_Angeles
+        .from_local_datetime(&day.and_hms_opt(0, 0, 0)?)
+        .earliest()?;
+    Some(airtime::stamp(at.with_timezone(&Utc)))
+}
 
 /// The first and last day of the window around `today`.
 pub fn window(today: NaiveDate) -> (NaiveDate, NaiveDate) {
@@ -207,7 +236,7 @@ pub async fn refresh_if_due(state: &AppState) {
         "INSERT INTO airing_state (id, started_at) VALUES (1, ?)
          ON CONFLICT (id) DO UPDATE SET started_at = excluded.started_at",
     )
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(&state.pool)
     .await;
     match refresh_list(state).await {
@@ -219,7 +248,7 @@ pub async fn refresh_if_due(state: &AppState) {
 /// Read every show TMDB says airs in the window, and keep its episodes there.
 /// Returns how many shows are listed.
 pub async fn refresh_list(state: &AppState) -> AppResult<usize> {
-    let started = Utc::now().to_rfc3339();
+    let started = Utc::now().stamp();
     let (first, last) = window(Utc::now().date_naive());
     let (from, to) = (
         first - Duration::days(MARGIN_DAYS),
@@ -297,11 +326,10 @@ pub async fn refresh_list(state: &AppState) -> AppResult<usize> {
         .execute(&mut *tx)
         .await?;
     sqlx::query(
-        "INSERT INTO airing_state (id, listed_at, shows) VALUES (1, ?, ?)
-         ON CONFLICT (id) DO UPDATE SET listed_at = excluded.listed_at, shows = excluded.shows",
+        "INSERT INTO airing_state (id, listed_at) VALUES (1, ?)
+         ON CONFLICT (id) DO UPDATE SET listed_at = excluded.listed_at",
     )
-    .bind(Utc::now().to_rfc3339())
-    .bind((listed + films) as i64)
+    .bind(Utc::now().stamp())
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -646,6 +674,10 @@ pub struct Item {
     pub air_date: String,
     /// The moment, UTC, when it is known.
     pub air_at: Option<String>,
+    /// When its streamer usually puts episodes out, when `air_at` is not
+    /// known (`usual_drop`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usual_at: Option<String>,
     /// Other episodes of the show on the same day.
     pub more: i64,
     /// A film's TMDB release type: 2 or 3 in cinemas, 4 digital.
@@ -797,6 +829,10 @@ pub async fn day(
     let mut items = Vec::with_capacity(rows.len());
     for row in rows {
         let (id, in_list) = in_catalog(pool, user_id, &row.0, row.1).await?;
+        let usual_at = match (&row.9, row.0.as_str()) {
+            (None, "tv") => usual_drop(row.4.as_deref(), &row.8),
+            _ => None,
+        };
         items.push(Item {
             kind: row.0,
             tmdb_id: row.1,
@@ -809,6 +845,7 @@ pub async fn day(
             episode_name: row.7,
             air_date: row.8,
             air_at: row.9,
+            usual_at,
             more: row.10,
             release_type: row.11,
             in_list,
@@ -861,20 +898,20 @@ pub async fn genres(pool: &SqlitePool) -> AppResult<Vec<String>> {
     Ok(all)
 }
 
-/// When the list was last built, and how many shows it holds.
+/// When the list was last built, and how many shows and films it holds,
+/// counted as they are: a first build still running shows what it has.
 pub async fn status(pool: &SqlitePool) -> AppResult<(Option<String>, i64)> {
-    let row: Option<(Option<String>, i64)> =
-        sqlx::query_as("SELECT listed_at, shows FROM airing_state WHERE id = 1")
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT listed_at FROM airing_state WHERE id = 1")
             .fetch_optional(pool)
             .await?;
-    let (listed, shows) = row.unwrap_or((None, 0));
-    // A first build still running already shows what it has.
+    let listed = row.and_then(|(l,)| l);
     let (kept,): (i64,) = sqlx::query_as(
         "SELECT (SELECT COUNT(*) FROM airing_show) + (SELECT COUNT(*) FROM airing_film)",
     )
     .fetch_one(pool)
     .await?;
-    Ok((listed, shows.max(kept)))
+    Ok((listed, kept))
 }
 
 #[cfg(test)]
@@ -884,6 +921,22 @@ mod tests {
 
     fn d(s: &str) -> NaiveDate {
         NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+    }
+
+    #[test]
+    fn a_streamer_usually_drops_at_midnight_pacific_on_its_day() {
+        // Winter and summer time on the US west coast.
+        assert_eq!(
+            usual_drop(Some("Netflix"), "2026-11-20").as_deref(),
+            Some("2026-11-20T08:00:00Z")
+        );
+        assert_eq!(
+            usual_drop(Some("Hulu"), "2026-07-01").as_deref(),
+            Some("2026-07-01T07:00:00Z")
+        );
+        // A broadcaster's slot is its own, and an unknown network says nothing.
+        assert_eq!(usual_drop(Some("NBC"), "2026-11-20"), None);
+        assert_eq!(usual_drop(None, "2026-11-20"), None);
     }
 
     #[test]

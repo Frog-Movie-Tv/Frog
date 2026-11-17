@@ -13,51 +13,48 @@ use crate::state::AppState;
 use crate::text::{self, Closeness};
 use crate::tmdb::models::{self, SearchItem};
 
-/// TMDB's genres: the name Frog stores, and its id for films and for shows.
-/// TMDB keeps two lists and gives a few genres different ids in each.
-pub const GENRES: [(&str, Option<i64>, Option<i64>); 25] = [
-    ("Action", Some(28), Some(10759)),
-    ("Action & Adventure", None, Some(10759)),
-    ("Adventure", Some(12), Some(10759)),
-    ("Animation", Some(16), Some(16)),
-    ("Comedy", Some(35), Some(35)),
-    ("Crime", Some(80), Some(80)),
-    ("Documentary", Some(99), Some(99)),
-    ("Drama", Some(18), Some(18)),
-    ("Family", Some(10751), Some(10751)),
-    ("Fantasy", Some(14), Some(10765)),
-    ("History", Some(36), None),
-    ("Horror", Some(27), None),
-    ("Kids", None, Some(10762)),
-    ("Music", Some(10402), None),
-    ("Mystery", Some(9648), Some(9648)),
-    ("News", None, Some(10763)),
-    ("Reality", None, Some(10764)),
-    ("Romance", Some(10749), None),
-    ("Sci-Fi & Fantasy", None, Some(10765)),
-    ("Science Fiction", Some(878), Some(10765)),
-    ("Soap", None, Some(10766)),
-    ("Talk", None, Some(10767)),
-    ("Thriller", Some(53), None),
-    ("War", Some(10752), Some(10768)),
-    ("Western", Some(37), Some(37)),
+/// The genres Frog stores (`crate::genres`: the film words for films and
+/// shows alike), with TMDB's ids for each in its film list and its show list.
+/// TMDB keeps two lists, and one show genre can stand for two of these
+/// (Sci-Fi & Fantasy is Science Fiction and Fantasy).
+pub const GENRES: [(&str, &[i64], &[i64]); 24] = [
+    ("Action", &[28], &[10759]),
+    ("Adventure", &[12], &[10759]),
+    ("Animation", &[16], &[16]),
+    ("Comedy", &[35], &[35]),
+    ("Crime", &[80], &[80]),
+    ("Documentary", &[99], &[99]),
+    ("Drama", &[18], &[18]),
+    ("Family", &[10751], &[10751, 10762]),
+    ("Fantasy", &[14], &[10765]),
+    ("History", &[36], &[]),
+    ("Horror", &[27], &[]),
+    ("Music", &[10402], &[]),
+    ("Mystery", &[9648], &[9648]),
+    ("News", &[], &[10763]),
+    ("Politics", &[], &[10768]),
+    ("Reality", &[], &[10764]),
+    ("Romance", &[10749], &[]),
+    ("Science Fiction", &[878], &[10765]),
+    ("Soap", &[], &[10766]),
+    ("Talk", &[], &[10767]),
+    ("Thriller", &[53], &[]),
+    ("TV Movie", &[10770], &[]),
+    ("War", &[10752], &[10768]),
+    ("Western", &[37], &[37]),
 ];
 
 fn genre_ids(name: &str) -> Vec<i64> {
     GENRES
         .iter()
         .find(|g| g.0 == name)
-        .map(|g| [g.1, g.2].into_iter().flatten().collect())
+        .map(|g| g.1.iter().chain(g.2.iter()).copied().collect())
         .unwrap_or_default()
 }
 
-/// The genres to offer, without TMDB's two names for one thing.
+/// The genres to offer: the one vocabulary every title is stored in.
 pub async fn genres(_: Auth) -> Json<Value> {
-    let names: Vec<&str> = GENRES
-        .iter()
-        .map(|g| g.0)
-        .filter(|g| !matches!(*g, "Action & Adventure" | "Sci-Fi & Fantasy"))
-        .collect();
+    let names: Vec<&str> = GENRES.iter().map(|g| g.0).collect();
     Json(json!({ "genres": names }))
 }
 
@@ -180,7 +177,7 @@ impl Filters {
                 GENRES
                     .iter()
                     .find(|x| x.0 == g)
-                    .is_some_and(|x| if kind == "movie" { x.1 } else { x.2 }.is_some())
+                    .is_some_and(|x| !if kind == "movie" { x.1 } else { x.2 }.is_empty())
             })
     }
 
@@ -245,13 +242,19 @@ impl Filters {
         if let Some(min) = self.min_score {
             params.push(("vote_average.gte", format!("{:.1}", min / 10.0)));
         }
-        let ids: Vec<String> = self
+        let mut ids: Vec<String> = Vec::new();
+        for g in self
             .genres
             .iter()
             .filter_map(|g| GENRES.iter().find(|x| x.0 == g))
-            .filter_map(|g| if kind == "movie" { g.1 } else { g.2 })
-            .map(|id| id.to_string())
-            .collect();
+        {
+            for id in if kind == "movie" { g.1 } else { g.2 } {
+                let id = id.to_string();
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
+        }
         if !ids.is_empty() {
             // A pipe is any of them, as on a shelf.
             params.push(("with_genres", ids.join("|")));

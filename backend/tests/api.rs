@@ -3,6 +3,7 @@
 
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
+use frog::clock::Stamp;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use tower::ServiceExt;
@@ -180,6 +181,205 @@ async fn health_is_public_and_reports_the_database() {
     assert_eq!(body["ok"], json!(true));
     assert_eq!(body["tmdb_configured"], json!(false));
     assert_eq!(body["region"], json!("BE"));
+}
+
+#[tokio::test]
+async fn an_unknown_api_address_is_a_json_404_and_hashed_files_are_kept() {
+    let h = Harness::new().await;
+    let (status, body) = h.get("/api/no/such/thing", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(
+        body["error"].is_string(),
+        "a JSON answer, not the app: {body}"
+    );
+
+    let built = h._dir.path().join("static");
+    std::fs::create_dir_all(built.join("_app/immutable")).unwrap();
+    std::fs::write(built.join("index.html"), "<!doctype html>").unwrap();
+    std::fs::write(built.join("_app/immutable/app.abc123.js"), "x").unwrap();
+    async fn cache(h: &Harness, path: &str) -> (StatusCode, Option<String>) {
+        let req = Request::builder().uri(path).body(Body::empty()).unwrap();
+        let res = h.router().oneshot(req).await.unwrap();
+        (
+            res.status(),
+            res.headers()
+                .get(header::CACHE_CONTROL)
+                .map(|v| v.to_str().unwrap().to_string()),
+        )
+    }
+    let (status, kept) = cache(&h, "/_app/immutable/app.abc123.js").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(kept.as_deref(), Some("public, max-age=31536000, immutable"));
+    let (_, page) = cache(&h, "/library").await;
+    assert_eq!(page, None, "the page itself is asked for again");
+}
+
+#[tokio::test]
+async fn every_status_change_is_kept_and_leaves_with_its_account() {
+    let h = Harness::new().await;
+    h.post(
+        "/api/auth/setup",
+        json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+        None,
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES
+            (1, 'tv', 5, 'A Show'), (2, 'movie', 6, 'A Film')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    let pool = &h.state.pool;
+    for sql in [
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, 1, 'dropped', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+                (1, 2, 'planned', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "UPDATE library_entry SET status = 'watching' WHERE user_id = 1 AND title_id = 1",
+        // Only a real change is kept.
+        "UPDATE library_entry SET status = 'watching', notes = 'x' WHERE user_id = 1",
+        "DELETE FROM library_entry WHERE user_id = 1 AND title_id = 1",
+    ] {
+        sqlx::query(sql).execute(pool).await.unwrap();
+    }
+    let kept: Vec<(i64, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT title_id, from_status, to_status FROM status_change
+          WHERE user_id = 1 ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    let s = |v: &str| Some(v.to_string());
+    assert_eq!(
+        kept,
+        vec![
+            (1, None, s("dropped")),
+            (2, None, s("planned")),
+            (1, s("dropped"), s("watching")),
+            (2, s("planned"), s("watching")),
+            (1, s("watching"), None),
+        ]
+    );
+    // A title or an account going takes its entries by cascade, and the
+    // account its history too.
+    sqlx::query("DELETE FROM title WHERE id = 2")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM app_user WHERE id = 1")
+        .execute(pool)
+        .await
+        .unwrap();
+    let (left,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM status_change WHERE user_id = 1")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+}
+
+#[tokio::test]
+async fn an_entry_is_never_finished_before_it_was_started() {
+    let h = Harness::new().await;
+    h.post(
+        "/api/auth/setup",
+        json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+        None,
+    )
+    .await;
+    sqlx::query("INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (1, 'tv', 5, 'A Show')")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    let dates = || async {
+        sqlx::query_as::<_, (Option<String>, Option<String>)>(
+            "SELECT started_at, finished_at FROM library_entry WHERE user_id = 1 AND title_id = 1",
+        )
+        .fetch_one(&h.state.pool)
+        .await
+        .unwrap()
+    };
+    // Written that way by any path, the start moves back to the finish.
+    sqlx::query(
+        "INSERT INTO library_entry (user_id, title_id, status, started_at, finished_at,
+                                    added_at, updated_at)
+         VALUES (1, 1, 'completed', '2026-03-10T20:00:00Z', '2026-02-01T20:00:00Z',
+                 '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(dates().await.0.as_deref(), Some("2026-02-01T20:00:00Z"));
+    sqlx::query("UPDATE library_entry SET finished_at = '2026-01-15T20:00:00Z' WHERE user_id = 1")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(dates().await.0.as_deref(), Some("2026-01-15T20:00:00Z"));
+    // The same day either way round is left alone.
+    sqlx::query(
+        "UPDATE library_entry SET started_at = '2026-01-15T21:00:00Z',
+                                  finished_at = '2026-01-15T20:00:00Z' WHERE user_id = 1",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(dates().await.0.as_deref(), Some("2026-01-15T21:00:00Z"));
+}
+
+#[tokio::test]
+async fn the_weekly_digest_is_written_once_and_names_the_week() {
+    let h = Harness::new().await;
+    h.post(
+        "/api/auth/setup",
+        json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+        None,
+    )
+    .await;
+    // The account is older than the week the digest is about.
+    sqlx::query("UPDATE app_user SET created_at = '2026-01-01T00:00:00Z'")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES (1, 'movie', 7, 'A Film')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    for (at, undated) in [
+        ("2026-11-25T20:00:00Z", 0),
+        // Undated, and the week before: neither counts.
+        ("2026-11-25T20:00:00Z", 1),
+        ("2026-11-20T20:00:00Z", 0),
+    ] {
+        sqlx::query(
+            "INSERT INTO watch_event (user_id, title_id, watched_at, undated, source)
+             VALUES (1, 1, ?, ?, 'manual')",
+        )
+        .bind(at)
+        .bind(undated)
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    }
+    let digests = || async {
+        sqlx::query_as::<_, (String,)>(
+            "SELECT payload FROM notification WHERE user_id = 1 AND kind = 'digest'",
+        )
+        .fetch_all(&h.state.pool)
+        .await
+        .unwrap()
+    };
+    // Monday before nine: not yet.
+    let early = "2026-11-30T08:00:00Z".parse().unwrap();
+    frog::digest::run(&h.state, early).await.unwrap();
+    assert!(digests().await.is_empty());
+    let monday = "2026-11-30T10:00:00Z".parse().unwrap();
+    frog::digest::run(&h.state, monday).await.unwrap();
+    frog::digest::run(&h.state, monday).await.unwrap();
+    let written = digests().await;
+    assert_eq!(written.len(), 1, "once a week");
+    let payload: Value = serde_json::from_str(&written[0].0).unwrap();
+    assert_eq!(payload["body"], json!("You watched 1 film."));
 }
 
 #[tokio::test]
@@ -473,6 +673,8 @@ async fn library_filters_combine_and_each_status_says_what_it_would_show() {
     .await
     .unwrap();
     frog::db::fill_search_names(&h.state.pool).await.unwrap();
+    // Stored before one vocabulary: Arcane's show genre reads as the film's.
+    frog::db::unify_genres(&h.state.pool).await.unwrap();
     sqlx::query(
         "INSERT INTO library_entry (user_id, title_id, status, favourite, added_at, updated_at)
          SELECT u.id, t.id,
@@ -511,7 +713,8 @@ async fn library_filters_combine_and_each_status_says_what_it_would_show() {
     assert_eq!(
         genres,
         json!([
-            "Action & Adventure",
+            "Action",
+            "Adventure",
             "Animation",
             "Crime",
             "Drama",
@@ -544,11 +747,7 @@ async fn library_filters_combine_and_each_status_says_what_it_would_show() {
             vec!["Dark", "Heat", "Severance"],
             json!({ "completed": 2, "planned": 1 }),
         ),
-        (
-            "genre=Action%20%26%20Adventure",
-            vec!["Arcane"],
-            json!({ "watching": 1 }),
-        ),
+        ("genre=Adventure", vec!["Arcane"], json!({ "watching": 1 })),
         (
             "favourite=true",
             vec!["Dark", "Heat"],
@@ -569,14 +768,14 @@ async fn library_filters_combine_and_each_status_says_what_it_would_show() {
         let (names, counts, genres) = ask(query).await;
         assert_eq!(names, expected, "{query}");
         assert_eq!(counts, status_counts, "{query}");
-        assert_eq!(genres.as_array().unwrap().len(), 7, "{query}: genres stay");
+        assert_eq!(genres.as_array().unwrap().len(), 8, "{query}: genres stay");
     }
 
     let (_, body) = h.get("/api/library", Some(&other)).await;
     assert_eq!(body["counts"], json!({ "watching": 1 }), "only your own");
     assert_eq!(
         body["genres"],
-        json!(["Action & Adventure", "Animation"]),
+        json!(["Action", "Adventure", "Animation"]),
         "only your own"
     );
 }
@@ -1323,8 +1522,26 @@ async fn stats_cover_all_time_and_a_single_year() {
     assert_eq!(all["years"], json!([2026, 2025]));
     assert_eq!(
         all["totals"]["films"],
-        json!(4),
-        "undated watches count all time"
+        json!(2),
+        "a film once however often it was watched, undated watches included"
+    );
+    // A profile says what Stats says: one definition of each figure.
+    let (_, me) = h.get("/api/account", Some(&cookie)).await;
+    let (_, profile) = h
+        .get(
+            &format!("/api/profiles/{}", me["username"].as_str().unwrap()),
+            Some(&cookie),
+        )
+        .await;
+    assert_eq!(profile["stats"]["films"], all["totals"]["films"]);
+    assert_eq!(profile["stats"]["minutes"], all["totals"]["minutes"]);
+    assert_eq!(
+        profile["stats"]["mean_rating"],
+        all["totals"]["mean_rating"]
+    );
+    assert_eq!(
+        profile["genres"][0],
+        json!({ "name": "Drama", "titles": 2 })
     );
     assert_eq!(all["totals"]["minutes"], json!(400));
     assert_eq!(all["totals"]["days"], json!(3));
@@ -1354,9 +1571,13 @@ async fn stats_cover_all_time_and_a_single_year() {
 
     let (status, y) = h.get("/api/stats?year=2025", Some(&cookie)).await;
     assert_eq!(status, StatusCode::OK, "{y}");
-    assert_eq!(y["totals"]["films"], json!(2));
+    assert_eq!(y["totals"]["films"], json!(1), "one film, watched twice");
     assert_eq!(y["timeline"].as_array().unwrap().len(), 12);
-    assert_eq!(y["timeline"][11]["films"], json!(2));
+    assert_eq!(
+        y["timeline"][11]["films"],
+        json!(2),
+        "a month shows each watch"
+    );
     assert_eq!(y["people"]["actors"][0]["titles"], json!(1));
     assert_eq!(y["ratings"][6], json!(0), "only titles watched that year");
     assert_eq!(y["decades"], json!([{ "decade": 1990, "titles": 1 }]));
@@ -4046,7 +4267,7 @@ async fn watch(h: &Harness, user: i64, title: i64, undated: bool) {
     )
     .bind(user)
     .bind(title)
-    .bind((chrono::Utc::now() - chrono::Duration::hours(2)).to_rfc3339())
+    .bind((chrono::Utc::now() - chrono::Duration::hours(2)).stamp())
     .bind(undated)
     .execute(&h.state.pool)
     .await
@@ -4110,7 +4331,7 @@ async fn the_activity_row_counts_one_day_and_the_page_has_each_day() {
         )
         .bind(id)
         .bind(93020 + n)
-        .bind((now - chrono::Duration::hours(ago)).to_rfc3339())
+        .bind((now - chrono::Duration::hours(ago)).stamp())
         .execute(&h.state.pool)
         .await
         .unwrap();
@@ -4857,6 +5078,12 @@ async fn administrators_manage_accounts_within_their_rank() {
     assert_eq!(code, StatusCode::OK, "{body}");
     assert_eq!(body["accounts"], json!(3));
     assert!(body["database_bytes"].as_i64().unwrap() > 0);
+    // Each byte of the file in one part, and the parts add up to it.
+    let parts: i64 = ["yours", "catalogue", "caches", "pictures", "free"]
+        .iter()
+        .map(|k| body["storage"][k].as_i64().unwrap())
+        .sum();
+    assert_eq!(parts, body["database_bytes"].as_i64().unwrap(), "{body}");
     assert_eq!(body["last_backup"], Value::Null, "no backup script here");
 }
 
@@ -7538,6 +7765,45 @@ async fn watching_with_someone_tells_them_and_never_writes_for_them() {
             .await
             .unwrap();
     assert_eq!(mine, 3);
+    // A copy is judged for badges on when the owner recorded the watch, not
+    // on when it was copied: added three days late, it still counts.
+    let copies: Vec<(String, String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT c.watched_at, o.logged_at, c.logged_at, c.logged_how
+           FROM watch_event c
+           JOIN watch_event o ON o.user_id = ? AND o.title_id = c.title_id
+                             AND o.episode_id IS c.episode_id AND o.watched_at = c.watched_at
+          WHERE c.user_id = ? AND c.title_id = 2",
+    )
+    .bind(mihai)
+    .bind(zjef)
+    .fetch_all(&h.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(copies.len(), 3);
+    let parse = |at: &str| frog::awards::eligible::parse(at).unwrap();
+    for (watched, original, logged, how) in copies {
+        assert_eq!(logged.as_deref(), Some(original.as_str()));
+        assert_eq!(how.as_deref(), Some(frog::awards::eligible::TOGETHER));
+        let copy = |logged_at: chrono::DateTime<chrono::Utc>| frog::awards::eligible::Logged {
+            id: 0,
+            title_id: 2,
+            watched_at: parse(&watched),
+            logged_at: Some(logged_at),
+            how: how.clone(),
+            undated: false,
+            minutes: 24.0,
+        };
+        let late = parse(&original) + chrono::Duration::days(3);
+        assert!(frog::awards::eligible::recorded_as_it_happened(
+            &copy(parse(&original)),
+            late
+        ));
+        // Stamped with the moment it was copied, it would not have.
+        assert!(!frog::awards::eligible::recorded_as_it_happened(
+            &copy(late),
+            late
+        ));
+    }
     // The owner cannot answer for them.
     let (code, _, _) = h
         .post(&path, json!({ "action": "not_me" }), Some(&owner))
@@ -7565,6 +7831,31 @@ async fn watching_with_someone_tells_them_and_never_writes_for_them() {
         .unwrap();
     assert_eq!(film["watched_with"][0]["with"], json!("zjef"), "{film}");
 
+    // And a backup read back in names them again, without telling them.
+    sqlx::query(
+        "DELETE FROM watch_with WHERE user_id = ?
+            AND watch_event_id IN (SELECT id FROM watch_event WHERE title_id = 1)",
+    )
+    .bind(mihai)
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    let told = together_lines(&h, &guest).await.len();
+    let (code, applied, _) = h
+        .post(
+            "/api/import/apply",
+            json!({ "on_conflict": "overwrite", "items": [{
+                "kind": "movie", "tmdb_id": 11, "status": "completed",
+                "watched_at": film["watches"][0]["watched_at"],
+                "watched_with": film["watched_with"],
+            }]}),
+            Some(&owner),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{applied}");
+    assert_eq!(named_on(&h, mihai, 1).await, 1, "{applied}");
+    assert_eq!(together_lines(&h, &guest).await.len(), told);
+
     // Not me: their name comes off the film, and the line goes.
     let film_line = together_lines(&h, &guest)
         .await
@@ -7576,6 +7867,35 @@ async fn watching_with_someone_tells_them_and_never_writes_for_them() {
         .await;
     assert_eq!(named_on(&h, mihai, 1).await, 0);
     assert_eq!(named_on(&h, mihai, 2).await, 3, "only that line's watches");
+
+    // Their card says who it was with, to whoever may see both.
+    h.send(
+        "PUT",
+        "/api/account/profile",
+        json!({ "public": true }),
+        &owner,
+    )
+    .await;
+    let (_, feed) = h.get("/api/home/activity", Some(&guest)).await;
+    let card = feed["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["title"]["name"] == json!("Together Show") && c["who"]["username"] == "mihai")
+        .unwrap_or_else(|| panic!("{feed}"));
+    assert_eq!(card["with"][0]["username"], json!("zjef"), "{card}");
+    assert!(card.get("who_id").is_none(), "an id is never sent");
+
+    // The pair's list, from either side, and the figure in Stats.
+    assert_eq!(
+        frog::together::between(&h.state.pool, zjef, mihai)
+            .await
+            .unwrap(),
+        vec![(2, 1)]
+    );
+    let (_, stats) = h.get("/api/stats", Some(&owner)).await;
+    assert_eq!(stats["most_with"]["username"], json!("zjef"), "{stats}");
+    assert_eq!(stats["most_with"]["watches"], json!(3));
 
     // Someone who would rather not be named cannot be.
     let (_, mut wants) = h.get("/api/notifications/settings", Some(&guest)).await;

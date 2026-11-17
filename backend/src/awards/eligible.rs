@@ -6,6 +6,7 @@
 //! happened, at a pace someone could have watched it, on a day that was not a
 //! library update. Each rule is here, on plain values, and tested on its own.
 
+use crate::clock::Stamp;
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use chrono_tz::Tz;
 use std::collections::{HashMap, HashSet};
@@ -78,9 +79,9 @@ pub fn carried(logged_at: Option<&str>, how: Option<&str>) -> (Option<String>, S
         (Some(at), Some(how))
             if KNOWN.contains(&how) && at <= now && now - at <= Duration::days(CARRY_DAYS) =>
         {
-            (Some(at.to_rfc3339()), how.to_string())
+            (Some(at.stamp()), how.to_string())
         }
-        (at, _) => (at.map(|a| a.to_rfc3339()), "unknown".to_string()),
+        (at, _) => (at.map(|a| a.stamp()), "unknown".to_string()),
     }
 }
 
@@ -287,7 +288,7 @@ mod tests {
     fn five_films_in_two_minutes_are_one_burst() {
         let films: Vec<Logged> = (0..5)
             .map(|i| {
-                let t = (at("2026-11-20T20:00:00Z") + Duration::seconds(25 * i)).to_rfc3339();
+                let t = (at("2026-11-20T20:00:00Z") + Duration::seconds(25 * i)).stamp();
                 w(i, i, &t, &t, TICK, 110.0)
             })
             .collect();
@@ -415,7 +416,7 @@ mod tests {
     fn many_episodes_of_one_show_is_not_an_update() {
         let x: Vec<Logged> = (0..12)
             .map(|i| {
-                let t = (at("2026-11-20T08:00:00Z") + Duration::minutes(25 * i)).to_rfc3339();
+                let t = (at("2026-11-20T08:00:00Z") + Duration::minutes(25 * i)).stamp();
                 w(i, 7, &t, &t, TICK, 24.0)
             })
             .collect();
@@ -477,9 +478,9 @@ mod tests {
     #[test]
     fn undo_carries_a_recent_record_and_nothing_older() {
         let now = Utc::now();
-        let recent = (now - Duration::hours(3)).to_rfc3339();
+        let recent = (now - Duration::hours(3)).stamp();
         assert_eq!(carried(Some(&recent), Some(TICK)).1, TICK);
-        let old = (now - Duration::days(30)).to_rfc3339();
+        let old = (now - Duration::days(30)).stamp();
         assert_eq!(carried(Some(&old), Some(TICK)).1, "unknown");
         assert_eq!(carried(Some(&recent), Some("made-up")).1, "unknown");
         assert_eq!(carried(None, None), (None, "unknown".to_string()));

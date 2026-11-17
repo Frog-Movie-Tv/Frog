@@ -5,6 +5,7 @@
 
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
+use frog::clock::Stamp;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use tower::ServiceExt;
@@ -583,7 +584,7 @@ async fn logging_is_the_checkmark_and_happens_once() {
         )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    let later = (chrono::Utc::now() + chrono::Duration::days(1)).to_rfc3339();
+    let later = (chrono::Utc::now() + chrono::Duration::days(1)).stamp();
     let (status, _) = h
         .ext(
             "log",

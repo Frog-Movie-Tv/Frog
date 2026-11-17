@@ -268,11 +268,25 @@
 					{/each}
 				</div>
 
+				<!-- Each key is drawn as the grid draws it: a title's chip on a
+				     desktop, its dot on a phone. -->
 				<ul class="legend faint" aria-label="Legend">
-					<li><i class="key ep"></i> Episode</li>
-					<li><i class="key film"></i> Film release</li>
-					<li><Icon name="check" size={13} /> Watched</li>
-					<li><i class="key today-key"></i> Today</li>
+					<li>
+						<span class="mini key-chip"><span class="t">Episode</span></span>
+						<i class="key-dot"></i>
+						<span class="dot-word">Episode</span>
+					</li>
+					<li>
+						<span class="mini film key-chip"><span class="t">Film release</span></span>
+						<i class="key-dot film"></i>
+						<span class="dot-word">Film release</span>
+					</li>
+					<li>
+						<span class="mini seen key-chip"><span class="t">Watched</span></span>
+						<i class="key-dot seen"></i>
+						<span class="dot-word">Watched</span>
+					</li>
+					<li><span class="key-today">{Number(today.slice(8, 10))}</span> Today</li>
 				</ul>
 			</div>
 
@@ -544,31 +558,45 @@
 		gap: 7px;
 	}
 
-	.key {
-		width: 12px;
-		height: 12px;
-		border-radius: 3px;
-		background: var(--bg-elev-2);
-		border: 1px solid var(--line-strong);
+	.legend .mini {
+		font-size: 0.72rem;
+		color: var(--text);
+		padding: 2px 6px;
 	}
 
-	.key.ep {
-		background: var(--accent);
-		border-color: var(--accent);
+	.key-dot {
+		width: 7px;
+		height: 7px;
 		border-radius: 50%;
-		width: 8px;
-		height: 8px;
-	}
-
-	.key.film {
-		border-style: dashed;
-	}
-
-	.key.today-key {
 		background: var(--accent);
-		border-color: var(--accent);
+		border: 1.5px solid var(--accent);
+	}
+
+	.key-dot.film {
+		background: transparent;
+	}
+
+	.key-dot.seen {
+		opacity: 0.55;
+	}
+
+	/* A desktop draws chips, so the chip is the key; a phone draws dots. */
+	.key-dot,
+	.dot-word {
+		display: none;
+	}
+
+	.key-today {
+		display: inline-grid;
+		place-items: center;
+		min-width: 22px;
+		height: 22px;
+		padding: 0 4px;
 		border-radius: var(--radius-pill);
-		width: 16px;
+		background: var(--accent);
+		color: var(--accent-ink);
+		font-weight: 700;
+		font-size: 0.72rem;
 	}
 
 	.day {
@@ -686,6 +714,15 @@
 
 		.dots {
 			display: flex;
+		}
+
+		.key-chip {
+			display: none;
+		}
+
+		.key-dot,
+		.dot-word {
+			display: inline-block;
 		}
 	}
 </style>

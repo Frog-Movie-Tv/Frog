@@ -5,6 +5,7 @@
 //! so the database never holds a working invitation. The code itself is shown
 //! exactly once, when it is made.
 
+use crate::clock::Stamp;
 use axum::extract::{Path, State};
 use axum::Json;
 use chrono::{Duration, Utc};
@@ -61,8 +62,8 @@ pub async fn create(
         &code,
         role,
         auth.user_id(),
-        &now.to_rfc3339(),
-        &expires.to_rfc3339(),
+        &now.stamp(),
+        &expires.stamp(),
     )
     .await?;
 
@@ -70,7 +71,7 @@ pub async fn create(
         "code": code,
         "path": format!("/join?code={code}"),
         "role": role,
-        "expires_at": expires.to_rfc3339(),
+        "expires_at": expires.stamp(),
     })))
 }
 
@@ -80,7 +81,7 @@ pub async fn list(
 ) -> AppResult<Json<Value>> {
     let rows = invites::list(&state.pool).await?;
 
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     let invites: Vec<Value> = rows
         .into_iter()
         .map(

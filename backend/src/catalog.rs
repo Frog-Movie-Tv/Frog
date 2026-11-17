@@ -18,6 +18,7 @@
 //!
 //! `docs/CATALOG-IDENTITY.md` has the reasoning.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -246,7 +247,7 @@ async fn link(
             .bind(id.provider())
             .bind(id.key())
             .bind(primary)
-            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().stamp())
             .execute(&mut *conn)
             .await?;
         }
@@ -260,7 +261,7 @@ pub async fn mark_gone(pool: &SqlitePool, id: &ExternalId) -> AppResult<()> {
         "UPDATE title_external SET gone_at = COALESCE(gone_at, ?)
           WHERE provider = ? AND external_id = ?",
     )
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(id.provider())
     .bind(id.key())
     .execute(pool)
@@ -333,9 +334,20 @@ pub async fn ensure(state: &AppState, id: &ExternalId) -> AppResult<(i64, Value)
     }
 }
 
-/// A title by Frog's id, with its detail from its primary provider. A title
-/// whose provider no longer has it, or that has no provider, still opens:
-/// with what Frog kept.
+/// A title by Frog's id, with its detail from its primary provider.
+///
+/// What it promises:
+/// - **It fails only for a title Frog does not have** (`NotFound`), or for a
+///   provider id that names another title, which is a fault. A provider that
+///   is slow, down or no longer lists the title never stops it opening.
+/// - **The row is this title's**, as stored, never another's.
+/// - **It never waits for TMDB for a title already stored.** A TMDB detail
+///   past its time is returned as it was and fetched again behind the call.
+/// - **The detail is the provider's own answer, as fresh as Frog has it,
+///   or, when no answer was ever kept, only the name and overview Frog
+///   stored** (`only_kept` says which). That is enough to draw a page and
+///   nothing to write from: anything that stores what the detail says
+///   (credits, seasons, episodes) uses `load_answered` instead.
 pub async fn load(state: &AppState, title_id: i64) -> AppResult<(TitleRow, Value)> {
     let row = get_title(&state.pool, title_id).await?;
     let Some(source) = primary(&state.pool, title_id).await? else {
@@ -384,7 +396,28 @@ pub async fn load(state: &AppState, title_id: i64) -> AppResult<(TitleRow, Value
 
 /// The detail of a title as Frog kept it, for when no provider answers.
 fn kept_detail(row: &TitleRow) -> Value {
-    json!({ "name": row.name, "overview": row.overview })
+    json!({ "name": row.name, "overview": row.overview, KEPT_ONLY: true })
+}
+
+/// Marks a detail that is only what Frog stored, not a provider's answer.
+const KEPT_ONLY: &str = "frog_kept_only";
+
+/// Whether `load` could give only the name and overview Frog stored.
+pub fn only_kept(detail: &Value) -> bool {
+    detail[KEPT_ONLY].as_bool() == Some(true)
+}
+
+/// `load`, for anything that writes what the detail says: a title no
+/// provider answered for is an error here, so a credits or seasons pass
+/// during an outage stops rather than storing "nobody" and "no seasons".
+pub async fn load_answered(state: &AppState, title_id: i64) -> AppResult<(TitleRow, Value)> {
+    let (row, detail) = load(state, title_id).await?;
+    if only_kept(&detail) {
+        return Err(AppError::Other(anyhow::anyhow!(
+            "no provider answered for title {title_id}"
+        )));
+    }
+    Ok((row, detail))
 }
 
 async fn ensure_tmdb(
@@ -558,6 +591,7 @@ async fn keep(
     .execute(pool)
     .await?;
 
+    store_origin(pool, title_id, detail).await?;
     ensure_palette(state, title_id, core.poster_path.as_deref()).await;
     // Stats are a nice-to-have on top of the title; never fail the page for them.
     if let Err(e) = store_credits(pool, title_id, detail).await {
@@ -594,7 +628,7 @@ async fn insert_title(pool: &SqlitePool, id: &ExternalId, core: &TitleCore) -> A
     .bind(&core.genres_json)
     .bind(core.tmdb_vote)
     .bind(core.collection_id)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(text::search_name(&core.name, core.original_name.as_deref()))
     .execute(&mut *tx)
     .await?
@@ -607,7 +641,7 @@ async fn insert_title(pool: &SqlitePool, id: &ExternalId, core: &TitleCore) -> A
     .bind(title_id)
     .bind(id.provider())
     .bind(id.key())
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(&mut *tx)
     .await?
     .rows_affected();
@@ -647,7 +681,7 @@ async fn update_title(pool: &SqlitePool, title_id: i64, core: &TitleCore) -> App
     .bind(&core.genres_json)
     .bind(core.tmdb_vote)
     .bind(core.collection_id)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .bind(title_id)
     .execute(pool)
     .await?;
@@ -710,11 +744,54 @@ pub async fn ensure_local_title(pool: &SqlitePool, t: &LocalTitle<'_>) -> AppRes
     // Not read from AniList yet (`ensure` does that when it is opened), and
     // its credits come with that detail rather than the TMDB backfill.
     sqlx::query("UPDATE title SET refreshed_at = NULL, people_synced_at = ? WHERE id = ?")
-        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().stamp())
         .bind(title_id)
         .execute(pool)
         .await?;
     Ok(title_id)
+}
+
+/// A title's origin countries and original language from a TMDB detail:
+/// `origin_country`, else the production countries, for both kinds.
+pub fn origin(detail: &Value) -> (Vec<String>, String) {
+    let codes = |list: &Value, key: Option<&str>| -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for c in list.as_array().into_iter().flatten() {
+            let code = match key {
+                Some(k) => c[k].as_str(),
+                None => c.as_str(),
+            };
+            if let Some(code) = code.filter(|c| c.len() == 2) {
+                let code = code.to_ascii_uppercase();
+                if !out.contains(&code) {
+                    out.push(code);
+                }
+            }
+        }
+        out
+    };
+    let mut countries = codes(&detail["origin_country"], None);
+    if countries.is_empty() {
+        countries = codes(&detail["production_countries"], Some("iso_3166_1"));
+    }
+    let language = detail["original_language"]
+        .as_str()
+        .filter(|l| l.len() == 2)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    (countries, language)
+}
+
+/// Write `origin` onto the title. Empty values mark it as asked.
+pub async fn store_origin(pool: &SqlitePool, title_id: i64, detail: &Value) -> AppResult<()> {
+    let (countries, language) = origin(detail);
+    sqlx::query("UPDATE title SET countries_json = ?, original_language = ? WHERE id = ?")
+        .bind(serde_json::to_string(&countries).unwrap_or_else(|_| "[]".into()))
+        .bind(language)
+        .bind(title_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// Replace the credits stats rank by. Marks the title as synced even when the
@@ -759,7 +836,7 @@ pub async fn store_credits(pool: &SqlitePool, title_id: i64, detail: &Value) -> 
         .await?;
     }
     sqlx::query("UPDATE title SET people_synced_at = ? WHERE id = ?")
-        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().stamp())
         .bind(title_id)
         .execute(&mut *tx)
         .await?;
@@ -875,6 +952,11 @@ pub async fn ensure_episodes(
             &loaded
         }
     };
+    // No provider has answered for it: the episodes Frog has are all there
+    // are for now, and nothing here is a reason to refuse a tick.
+    if only_kept(detail) {
+        return Ok(());
+    }
     let short = seasons_to_list(&models::seasons(detail), &have);
     if short.is_empty() {
         return Ok(());

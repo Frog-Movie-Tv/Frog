@@ -3,6 +3,7 @@
 //! they were recorded set by hand where a test needs a day that is over.
 
 use chrono::{Duration, NaiveDate, Utc};
+use frog::clock::Stamp;
 use std::collections::HashSet;
 
 use frog::awards;
@@ -56,7 +57,7 @@ impl Harness {
              VALUES (?, 'x', 'user', ?, 1) RETURNING id",
         )
         .bind(name)
-        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().stamp())
         .fetch_one(&self.state.pool)
         .await
         .unwrap();
@@ -248,7 +249,7 @@ async fn three_films_at_a_real_pace_are_a_triple_bill_once_the_day_is_over() {
     let now = Utc::now();
     for i in 0..3 {
         let f = h.film(you, &format!("Today {i}")).await;
-        let at = (now - Duration::minutes(10) - Duration::hours(2 * (2 - i))).to_rfc3339();
+        let at = (now - Duration::minutes(10) - Duration::hours(2 * (2 - i))).stamp();
         h.watch(you, f, None, &at, &at, "tick").await;
     }
     h.run(you).await;
@@ -278,7 +279,7 @@ async fn twelve_episodes_at_a_watching_pace_are_a_marathon_and_in_minutes_are_no
     let start = Utc::now().date_naive() - Duration::days(1);
     for (i, e) in eps.iter().enumerate() {
         let at = (start.and_hms_opt(9, 0, 0).unwrap().and_utc() + Duration::minutes(25 * i as i64))
-            .to_rfc3339();
+            .stamp();
         h.watch(me, show, Some(*e), &at, &at, "tick").await;
     }
     h.run(me).await;
@@ -296,7 +297,7 @@ async fn twelve_episodes_at_a_watching_pace_are_a_marathon_and_in_minutes_are_no
     let (show, eps) = h.show(you, "Short Night", 12).await;
     for (i, e) in eps.iter().enumerate() {
         let at = (start.and_hms_opt(9, 0, 0).unwrap().and_utc() + Duration::seconds(25 * i as i64))
-            .to_rfc3339();
+            .stamp();
         h.watch(you, show, Some(*e), &at, &at, "tick").await;
     }
     h.run(you).await;
@@ -386,7 +387,7 @@ async fn the_trigger_tells_a_first_anilist_sync_from_a_later_one() {
         .bind(me)
         .bind(show)
         .bind(e)
-        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().stamp())
         .bind(undated)
         .execute(&h.state.pool)
         .await
@@ -464,7 +465,7 @@ async fn a_badge_goes_in_its_first_day_and_stays_after() {
     }
     h.run(you).await;
     sqlx::query("UPDATE badge_award SET awarded_at = ? WHERE user_id = ?")
-        .bind((Utc::now() - Duration::hours(30)).to_rfc3339())
+        .bind((Utc::now() - Duration::hours(30)).stamp())
         .bind(you)
         .execute(&h.state.pool)
         .await
@@ -489,7 +490,7 @@ async fn remove_then_undo_keeps_the_badge_and_says_nothing_more() {
     for i in 0..2 {
         let f = h.film(me, &format!("Undo {i}")).await;
         titles.push(f);
-        let at = (start - Duration::hours(2 * i)).to_rfc3339();
+        let at = (start - Duration::hours(2 * i)).stamp();
         h.watch(me, f, None, &at, &at, "tick").await;
     }
     let before = frog::bulk::remove(&h.state.pool, me, &titles)

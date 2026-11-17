@@ -13,6 +13,7 @@
 //! episode ticked from then on names them, from the page, a whole season or
 //! the browser extension alike.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -81,7 +82,7 @@ pub async fn set_default(
         .bind(title_id)
         .execute(&mut *tx)
         .await?;
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     for id in &with {
         sqlx::query(
             "INSERT INTO watching_with (user_id, title_id, with_user_id, created_at)
@@ -144,7 +145,7 @@ pub async fn tag(
     if watch_ids.is_empty() || people.is_empty() {
         return Ok(());
     }
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     for &watch in watch_ids {
         for &person in people {
             sqlx::query(
@@ -270,7 +271,7 @@ async fn tell(state: &AppState, owner: i64, person: i64, watch_ids: &[i64]) -> A
                       WHERE id = ? AND user_id = ?",
                 )
                 .bind(payload.to_string())
-                .bind(Utc::now().to_rfc3339())
+                .bind(Utc::now().stamp())
                 .bind(id)
                 .bind(person)
                 .execute(pool)
@@ -424,7 +425,7 @@ pub async fn add_to_mine(
     .bind(json!(watches).to_string())
     .fetch_all(pool)
     .await?;
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     let mut copied = 0;
     let mut titles = Vec::new();
     for (title_id, episode_id, watched_at, undated, logged_at) in rows {
@@ -573,6 +574,126 @@ pub async fn set_on_day(
 }
 
 /// Names for ids, as a people list shows them: only people still here.
+/// The titles two people watched together, either one saying so: newest
+/// first, with how many days they did. Each side's own watches only, so a
+/// copy added to the other's diary is not counted twice.
+pub async fn between(pool: &SqlitePool, a: i64, b: i64) -> AppResult<Vec<(i64, i64)>> {
+    Ok(sqlx::query_as(
+        "SELECT w.title_id, COUNT(DISTINCT substr(w.watched_at, 1, 10))
+           FROM watch_event w
+           JOIN watch_with x ON x.watch_event_id = w.id AND x.user_id = w.user_id
+          WHERE (w.user_id = ?1 AND x.with_user_id = ?2)
+             OR (w.user_id = ?2 AND x.with_user_id = ?1)
+          GROUP BY w.title_id
+          ORDER BY MAX(w.watched_at) DESC",
+    )
+    .bind(a)
+    .bind(b)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Who an account says it watched with most, in a year or all time:
+/// (account, watches), most first. Accounts it can no longer see are left
+/// out by the caller.
+pub async fn most_with(
+    pool: &SqlitePool,
+    user_id: i64,
+    year: Option<&str>,
+) -> AppResult<Vec<(i64, i64)>> {
+    Ok(sqlx::query_as(
+        "SELECT x.with_user_id, COUNT(*)
+           FROM watch_with x
+           JOIN watch_event w ON w.id = x.watch_event_id AND w.user_id = x.user_id
+          WHERE x.user_id = ?1
+            AND (?2 IS NULL OR (w.undated = 0 AND substr(w.watched_at, 1, 4) = ?2))
+          GROUP BY x.with_user_id
+          ORDER BY COUNT(*) DESC, x.with_user_id",
+    )
+    .bind(user_id)
+    .bind(year)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// One "watched with" line of a Frog backup: a watch, by its episode (none
+/// for a film) and moment, and the username it was with.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct Named {
+    pub season: Option<i64>,
+    pub episode: Option<i64>,
+    pub watched_at: Option<String>,
+    pub with: String,
+}
+
+/// Who watches were with, read back from a Frog backup. Only usernames that
+/// are accounts here, and that may still be named (`allowed`), land; each
+/// watch is found by its episode and moment, so a watch the import did not
+/// bring back is passed over. Nobody is told: restoring a backup is not
+/// watching together again. Says how many names landed.
+pub async fn restore_names(
+    pool: &SqlitePool,
+    user_id: i64,
+    title_id: i64,
+    named: &[Named],
+) -> AppResult<u64> {
+    let mut ids = std::collections::HashMap::new();
+    for n in named {
+        if ids.contains_key(&n.with) {
+            continue;
+        }
+        let found: Option<(i64,)> = sqlx::query_as("SELECT id FROM app_user WHERE username = ?")
+            .bind(&n.with)
+            .fetch_optional(pool)
+            .await?;
+        ids.insert(n.with.clone(), found.map(|(id,)| id));
+    }
+    let wanted: Vec<i64> = ids.values().flatten().copied().collect();
+    let may = allowed(pool, user_id, &wanted).await?;
+    let stamp = Utc::now().stamp();
+    let mut landed = 0;
+    for n in named {
+        let Some(with) = ids
+            .get(&n.with)
+            .copied()
+            .flatten()
+            .filter(|id| may.contains(id))
+        else {
+            continue;
+        };
+        let watch: Option<(i64,)> = sqlx::query_as(
+            "SELECT w.id FROM watch_event w
+               LEFT JOIN episode e ON e.id = w.episode_id
+              WHERE w.user_id = ?1 AND w.title_id = ?2
+                AND ((?3 IS NULL AND w.episode_id IS NULL)
+                     OR (e.season_number = ?3 AND e.episode_number = ?4))
+                AND strftime('%Y-%m-%dT%H:%M:%SZ', w.watched_at)
+                    = strftime('%Y-%m-%dT%H:%M:%SZ', ?5)
+              ORDER BY w.id LIMIT 1",
+        )
+        .bind(user_id)
+        .bind(title_id)
+        .bind(n.season)
+        .bind(n.episode)
+        .bind(&n.watched_at)
+        .fetch_optional(pool)
+        .await?;
+        let Some((watch,)) = watch else { continue };
+        landed += sqlx::query(
+            "INSERT OR IGNORE INTO watch_with (watch_event_id, user_id, with_user_id, created_at)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(watch)
+        .bind(user_id)
+        .bind(with)
+        .bind(&stamp)
+        .execute(pool)
+        .await?
+        .rows_affected();
+    }
+    Ok(landed)
+}
+
 pub async fn names(pool: &SqlitePool, ids: &[i64]) -> AppResult<Vec<Value>> {
     if ids.is_empty() {
         return Ok(Vec::new());

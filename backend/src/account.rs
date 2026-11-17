@@ -2,6 +2,7 @@
 //! devices, profile and pictures. What may be written is `routes::account`'s
 //! check; this reads and writes, always for the one account named.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use sqlx::SqlitePool;
 
@@ -71,7 +72,7 @@ pub async fn sessions(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<SessionR
           ORDER BY created_at DESC",
     )
     .bind(user_id)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .fetch_all(pool)
     .await?)
 }
@@ -205,7 +206,7 @@ pub async fn put_image(
     .bind(kind)
     .bind(mime)
     .bind(bytes)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(pool)
     .await?;
     if kind == "banner" {

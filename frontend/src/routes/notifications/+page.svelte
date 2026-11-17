@@ -306,6 +306,13 @@
 					href: titleHref,
 					icon: 'users'
 				};
+			case 'digest':
+				return {
+					text: 'Your week',
+					detail: text('body'),
+					href: '/activity',
+					icon: 'calendar'
+				};
 		}
 		return { text: name, href: titleHref, icon: 'bell' };
 	}
@@ -420,7 +427,9 @@
 							>
 								<svelte:element this={said.href ? 'a' : 'div'} class="notice" href={said.href}>
 									<span class="art">
-										{#if n.title?.poster_path}
+										{#if n.kind === 'badge' && typeof n.payload?.picture === 'string'}
+											<img class="badge-art" src={n.payload.picture} alt="" loading="lazy" />
+										{:else if n.title?.poster_path}
 											<img src={img(n.title.poster_path, 'w92')} alt="" loading="lazy" />
 										{:else if n.actor}
 											<Avatar src={avatarOf(n.actor)} name={personName(n.actor)} size={36} />
@@ -580,6 +589,15 @@
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
+	}
+
+	/* A badge is round artwork on its own: drawn whole, never cropped. */
+	.art:has(.badge-art) {
+		background: none;
+	}
+
+	.art .badge-art {
+		object-fit: contain;
 	}
 
 	.words {

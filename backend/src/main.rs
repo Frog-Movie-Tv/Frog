@@ -1,3 +1,4 @@
+use frog::clock::Stamp;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use frog::{auth, config::Config, db, jobs, reset, routes, state::AppState};
@@ -13,7 +14,13 @@ async fn main() -> anyhow::Result<()> {
             EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "frog=info,tower_http=warn".into()),
         )
-        .with(tracing_subscriber::fmt::layer().compact())
+        // Colour codes only for a person at a terminal: in Docker's log and
+        // the journal they are noise around every line.
+        .with(
+            tracing_subscriber::fmt::layer()
+                .compact()
+                .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout())),
+        )
         .init();
 
     let config = Config::from_env()?;
@@ -32,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
         match reset::issue_for_owner(&pool).await? {
             Some((code, expires)) => println!(
                 "Open this on your Frog within a day, it works once:\n/reset?code={code}\n(until {})",
-                expires.to_rfc3339()
+                expires.stamp()
             ),
             None => println!("This Frog has no owner yet. Open it and set one up."),
         }

@@ -1,5 +1,6 @@
 //! Connecting AniList, and the choices a sync leaves for the person.
 
+use crate::clock::Stamp;
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Redirect};
 use axum::Json;
@@ -30,7 +31,7 @@ pub async fn status(auth: Auth, State(state): State<AppState>) -> AppResult<Json
             .synced_at
             .as_deref()
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-            .map(|t| (t + chrono::Duration::minutes(anilist::sync_minutes())).to_rfc3339());
+            .map(|t| (t + chrono::Duration::minutes(anilist::sync_minutes())).stamp());
         match (link.retry_at.clone(), after_last) {
             (Some(r), Some(a)) => Some(r.max(a)),
             (r, a) => r.or(a),
@@ -106,7 +107,7 @@ async fn finish(auth: &Auth, state: &AppState, q: CallbackQuery) -> AppResult<()
     let api = Api::new(state)?;
     let (token, seconds) = api.exchange(&code).await?;
     let (anilist_id, name) = api.viewer(&token).await?;
-    let expires_at = (Utc::now() + chrono::Duration::seconds(seconds)).to_rfc3339();
+    let expires_at = (Utc::now() + chrono::Duration::seconds(seconds)).stamp();
     records::save_link(
         &state.pool,
         auth.user_id(),
@@ -182,8 +183,6 @@ pub async fn entries(auth: Auth, State(state): State<AppState>) -> AppResult<Jso
                 "manual": r.manual,
                 "media_status": r.media_status,
                 "start_date": r.start_date,
-                // No longer on the AniList list; kept in Frog as it is.
-                "gone": r.gone_at.is_some(),
                 // When Frog looks for its place again.
                 "next_try_at": r.next_try_at,
                 // In the library as it is on AniList, until it is placed.

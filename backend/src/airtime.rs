@@ -28,6 +28,7 @@
 //! for the past week. A show found there keeps its TVmaze id and is worked
 //! out as any other.
 
+use crate::clock::Stamp;
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
@@ -569,10 +570,37 @@ pub async fn resolve(
     if left.is_empty() {
         return Ok(found);
     }
-    let Some(id) = tvmaze_show(state, show).await? else {
+    let Some(mut id) = tvmaze_show(state, show).await? else {
         return Ok(found);
     };
-    let listing = tvmaze::listing(state, id).await?;
+    let mut listing = tvmaze::listing(state, id).await?;
+    // A kept link to a show that ended long before episodes TMDB lists is
+    // the wrong show (The Daily Show once linked to one host's run): let it
+    // go and look again, passing it over.
+    if outlived(listing.ended, wanted) {
+        tracing::info!(
+            tmdb_id = show.tmdb_id,
+            tvmaze_id = id,
+            "TVmaze link let go: show ended"
+        );
+        sqlx::query(
+            "UPDATE airtime_show
+                SET tvmaze_id = NULL, tvmaze_checked_at = NULL, tvmaze_rejected = ?
+              WHERE tmdb_id = ?",
+        )
+        .bind(id)
+        .bind(show.tmdb_id)
+        .execute(&state.pool)
+        .await?;
+        let Some(again) = tvmaze_show(state, show).await? else {
+            return Ok(found);
+        };
+        id = again;
+        listing = tvmaze::listing(state, id).await?;
+        if outlived(listing.ended, wanted) {
+            return Ok(found);
+        }
+    }
     let asked: Vec<Wanted> = left.iter().map(|&i| wanted[i].clone()).collect();
     for (&i, hit) in left.iter().zip(match_tvmaze(&listing.episodes, &asked)) {
         found[i] = match hit {
@@ -691,7 +719,7 @@ async fn searched_media(state: &AppState, show: &Show) -> AppResult<Vec<i64>> {
     )
     .bind(show.tmdb_id)
     .bind(serde_json::to_string(&found)?)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(&state.pool)
     .await?;
     Ok(found)
@@ -852,27 +880,52 @@ async fn anilist_airings(
     Ok(out)
 }
 
-/// The show's TVmaze id: kept, else looked up by TMDB's external ids.
+/// How long after a TVmaze show ended an episode TMDB lists has to be for
+/// the link to be the wrong show, not a late special or a date TMDB has off.
+const OUTLIVED_DAYS: i64 = 60;
+
+/// Whether TMDB asks about an episode well after the linked show ended.
+pub fn outlived(ended: Option<NaiveDate>, wanted: &[Wanted]) -> bool {
+    let Some(ended) = ended else { return false };
+    wanted
+        .iter()
+        .filter_map(|w| w.date)
+        .any(|d| d > ended + Duration::days(OUTLIVED_DAYS))
+}
+
+/// The show's TVmaze id: kept, else looked up by TMDB's external ids. A
+/// show let go as the wrong one (`tvmaze_rejected`) is never taken again.
 async fn tvmaze_show(state: &AppState, show: &Show) -> AppResult<Option<i64>> {
-    let row: Option<(Option<i64>, Option<String>)> =
-        sqlx::query_as("SELECT tvmaze_id, tvmaze_checked_at FROM airtime_show WHERE tmdb_id = ?")
-            .bind(show.tmdb_id)
-            .fetch_optional(&state.pool)
-            .await?;
-    let (kept, checked) = row.unwrap_or((None, None));
+    let row: Option<(Option<i64>, Option<String>, Option<i64>)> = sqlx::query_as(
+        "SELECT tvmaze_id, tvmaze_checked_at, tvmaze_rejected FROM airtime_show
+          WHERE tmdb_id = ?",
+    )
+    .bind(show.tmdb_id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let (kept, checked, rejected) = row.unwrap_or((None, None, None));
     if kept.is_some() {
         return Ok(kept);
     }
     if !older_than(checked.as_deref(), Duration::days(LOOKUP_RETRY_DAYS)) {
         return Ok(None);
     }
-    let mut found = tvmaze::find(state, show.tvdb_id, show.imdb_id.as_deref()).await?;
+    let mut found = tvmaze::find(state, show.tvdb_id, show.imdb_id.as_deref())
+        .await?
+        .filter(|id| Some(*id) != rejected);
     if found.is_none() {
         // TVmaze has many shows under no id TMDB knows: by name and year.
         let names = show_names(show);
         for name in &names {
             let results = tvmaze::search(state, name).await?;
-            found = tvmaze_search_hit(&results, &names, show.first_year);
+            found = tvmaze_search_hit(&results, &names, show.first_year)
+                .filter(|id| Some(*id) != rejected);
+            // After a wrong link, TVmaze may file the show's later run as a
+            // show of its own, with a later first year: the one running show
+            // of that name.
+            if found.is_none() && rejected.is_some() {
+                found = running_hit(&results, &names, rejected);
+            }
             if found.is_some() {
                 break;
             }
@@ -886,7 +939,7 @@ async fn tvmaze_show(state: &AppState, show: &Show) -> AppResult<Option<i64>> {
     )
     .bind(show.tmdb_id)
     .bind(found)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(&state.pool)
     .await?;
     Ok(found)
@@ -938,6 +991,29 @@ fn tvmaze_search_hit(results: &Value, names: &[String], first_year: Option<i32>)
     let exact = within(0);
     let hits = if exact.is_empty() { within(1) } else { exact };
     match hits.as_slice() {
+        [one] => Some(*one),
+        _ => None,
+    }
+}
+
+/// The one show in a TVmaze search answer with one of these names that is
+/// still running, other than the one let go.
+fn running_hit(results: &Value, names: &[String], rejected: Option<i64>) -> Option<i64> {
+    let names: Vec<String> = names.iter().map(|n| squash(n)).collect();
+    let running: Vec<i64> = results
+        .as_array()?
+        .iter()
+        .map(|r| &r["show"])
+        .filter(|s| s["status"].as_str() == Some("Running"))
+        .filter(|s| {
+            s["name"]
+                .as_str()
+                .is_some_and(|n| names.contains(&squash(n)))
+        })
+        .filter_map(|s| s["id"].as_i64())
+        .filter(|id| Some(*id) != rejected)
+        .collect();
+    match running.as_slice() {
         [one] => Some(*one),
         _ => None,
     }
@@ -1160,7 +1236,7 @@ async fn write(
          ON CONFLICT (tmdb_id) DO UPDATE SET times_at = excluded.times_at",
     )
     .bind(tmdb_id)
-    .bind(Utc::now().to_rfc3339())
+    .bind(Utc::now().stamp())
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -1187,7 +1263,7 @@ pub async fn refresh_show(state: &AppState, tmdb_id: i64) -> AppResult<usize> {
 /// it since its times were last worked out. Frog's own first, then by
 /// popularity.
 pub async fn refresh_due(state: &AppState) -> usize {
-    let stale = (Utc::now() - Duration::hours(TIMES_HOURS)).to_rfc3339();
+    let stale = (Utc::now() - Duration::hours(TIMES_HOURS)).stamp();
     let due: Vec<(i64,)> = match sqlx::query_as(
         "SELECT d.tmdb_id FROM (
              SELECT s.tmdb_id AS tmdb_id, s.popularity AS rank, NULL AS since FROM airing_show s
@@ -1308,7 +1384,7 @@ pub async fn schedules_if_due(state: &AppState) {
         return;
     }
     let _ = sqlx::query("UPDATE airing_state SET schedules_at = ? WHERE id = 1")
-        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().stamp())
         .execute(&state.pool)
         .await;
     match find_by_schedule(state, Utc::now().date_naive()).await {
@@ -1383,11 +1459,12 @@ pub async fn find_by_schedule(state: &AppState, today: NaiveDate) -> AppResult<u
                  ON CONFLICT (tmdb_id) DO UPDATE SET
                     tvmaze_id = excluded.tvmaze_id,
                     tvmaze_checked_at = excluded.tvmaze_checked_at
-                  WHERE airtime_show.tvmaze_id IS NULL",
+                  WHERE airtime_show.tvmaze_id IS NULL
+                    AND airtime_show.tvmaze_rejected IS NOT excluded.tvmaze_id",
             )
             .bind(tmdb_id)
             .bind(id)
-            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().stamp())
             .execute(&state.pool)
             .await?;
             mark_due(&state.pool, tmdb_id).await?;
@@ -1547,7 +1624,11 @@ mod tests {
     }
 
     fn listing(zone: Option<chrono_tz::Tz>, episodes: Vec<tvmaze::Episode>) -> tvmaze::Listing {
-        tvmaze::Listing { zone, episodes }
+        tvmaze::Listing {
+            zone,
+            episodes,
+            ended: None,
+        }
     }
 
     /// Running Man as TVmaze last listed it: Sundays at 18:10 in Seoul.
@@ -2002,5 +2083,38 @@ mod tests {
         )];
         assert_eq!(schedule_match(&hormiguero(), &tonight, &lines), None);
         assert_eq!(schedule_match(&hormiguero(), &tonight, &[]), None);
+    }
+
+    #[test]
+    fn a_link_to_a_show_that_ended_long_before_is_let_go() {
+        let ended = NaiveDate::from_ymd_opt(2022, 12, 8);
+        let on = |d: &str| Wanted {
+            season: 30,
+            episode: 1,
+            date: Some(d.parse().unwrap()),
+            name: None,
+        };
+        assert!(outlived(ended, &[on("2026-11-17")]));
+        // A late special, or a date TMDB has a little off, keeps it.
+        assert!(!outlived(ended, &[on("2023-01-20")]));
+        assert!(!outlived(None, &[on("2026-11-17")]));
+    }
+
+    #[test]
+    fn after_a_wrong_link_the_one_running_show_of_that_name_is_taken() {
+        let results = serde_json::json!([
+            { "show": { "id": 249, "name": "The Daily Show", "status": "Ended" } },
+            { "show": { "id": 70000, "name": "The Daily Show", "status": "Running" } },
+            { "show": { "id": 70001, "name": "The Daily Show Podcast", "status": "Running" } }
+        ]);
+        let names = vec!["The Daily Show".to_string()];
+        assert_eq!(running_hit(&results, &names, Some(249)), Some(70000));
+        // Never the one let go, and two running is no answer.
+        assert_eq!(running_hit(&results, &names, Some(70000)), None);
+        let two = serde_json::json!([
+            { "show": { "id": 1, "name": "The Daily Show", "status": "Running" } },
+            { "show": { "id": 2, "name": "The Daily Show", "status": "Running" } }
+        ]);
+        assert_eq!(running_hit(&two, &names, Some(249)), None);
     }
 }

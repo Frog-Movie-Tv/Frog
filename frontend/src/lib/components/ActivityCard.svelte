@@ -3,6 +3,7 @@
 	import { img } from '#lib/api';
 	import { relativeDate } from '#lib/format';
 	import { titleHref } from '#lib/titles';
+	import { session } from '#lib/session.svelte';
 	import Avatar from './Avatar.svelte';
 	import type { ActivityItem } from '#lib/types';
 
@@ -14,6 +15,19 @@
 
 	const name = $derived(item.who.display_name || item.who.username);
 	const poster = $derived(img(item.title.poster_path, 'w185'));
+
+	/** "With Sam", "With you and Ana": who they watched it with that day. */
+	const company = $derived.by(() => {
+		const me = session.status?.username;
+		const names = (item.with ?? []).map((p) =>
+			p.username === me ? 'you' : p.display_name || p.username
+		);
+		// You first, as people say it.
+		names.sort((a, b) => Number(b === 'you') - Number(a === 'you'));
+		if (!names.length) return '';
+		const last = names.pop()!;
+		return `With ${names.length ? `${names.join(', ')} and ${last}` : last}`;
+	});
 </script>
 
 <a class="card" href={titleHref(item.title)}>
@@ -26,6 +40,7 @@
 			<strong>{name}</strong>
 		</span>
 		<span class="line">{activityLine(item)}</span>
+		{#if company}<span class="faint with">{company}</span>{/if}
 		<span class="faint when">
 			{relativeDate(item.at)}
 		</span>
@@ -103,5 +118,12 @@
 	.when {
 		margin-top: auto;
 		font-size: 0.76rem;
+	}
+
+	.with {
+		font-size: 0.76rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 </style>

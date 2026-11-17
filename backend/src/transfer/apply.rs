@@ -3,6 +3,7 @@
 //! tracked; watches are only ever added, never moved or removed, though an
 //! undated one from an earlier import takes the day a later import gives.
 
+use crate::clock::Stamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -91,6 +92,9 @@ pub struct ApplyItem {
     /// all).
     #[serde(default)]
     pub film_watches: Vec<FilmWatch>,
+    /// Who watches were with, by username (a Frog backup).
+    #[serde(default)]
+    pub watched_with: Vec<crate::together::Named>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -297,6 +301,10 @@ async fn apply_one(
         }
     }
 
+    if !item.watched_with.is_empty() {
+        crate::together::restore_names(pool, user_id, title_id, &item.watched_with).await?;
+    }
+
     if kind == "tv" {
         // A row with nothing to tick still has a show behind it. Without its
         // episodes it has no next one, and only TMDB's count to go by.
@@ -400,7 +408,7 @@ async fn film_watches(
         )
         .bind(user_id)
         .bind(title_id)
-        .bind(chrono::Utc::now().to_rfc3339())
+        .bind(chrono::Utc::now().stamp())
         .execute(&state.pool)
         .await?;
     }
@@ -485,7 +493,7 @@ async fn tick_season(
     ))
     .bind(user_id)
     .bind(title_id)
-    .bind(chrono::Utc::now().to_rfc3339())
+    .bind(chrono::Utc::now().stamp())
     .bind(season)
     .bind(after)
     .bind(upto)
@@ -526,7 +534,7 @@ async fn tick_episodes(
     for e in episodes {
         let (at, undated) = match e.watched_at.as_deref() {
             Some(at) => (at.to_string(), 0),
-            None => (chrono::Utc::now().to_rfc3339(), 1),
+            None => (chrono::Utc::now().stamp(), 1),
         };
         if undated == 0 {
             sqlx::query(

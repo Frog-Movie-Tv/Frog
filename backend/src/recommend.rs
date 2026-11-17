@@ -6,6 +6,7 @@
 //! afresh, rather than adding a second. Each recommendation is the
 //! recipient's to answer: added, or dismissed, and undone back to neither.
 
+use crate::clock::Stamp;
 use chrono::Utc;
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
@@ -114,7 +115,7 @@ pub async fn send(
     .bind(from)
     .fetch_one(pool)
     .await?;
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     let mut told = 0;
     let mut seen = std::collections::HashSet::new();
     for &to_user in to {
@@ -329,7 +330,7 @@ pub async fn answer(
     let Some((from, title_id)) = row else {
         return Err(AppError::NotFound("no such recommendation".into()));
     };
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now().stamp();
     sqlx::query(
         "UPDATE recommendation SET answered = ?, answered_at = ?, seen_at = COALESCE(seen_at, ?)
           WHERE id = ? AND to_user_id = ?",

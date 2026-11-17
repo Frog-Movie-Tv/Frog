@@ -659,8 +659,6 @@
 		background: none;
 		color: inherit;
 		text-align: inherit;
-		cursor: grab;
-		touch-action: none;
 		border-radius: var(--radius-sm);
 	}
 
@@ -695,14 +693,10 @@
 		white-space: nowrap;
 	}
 
-	.arrange :global([data-dragging] .handle) {
-		outline: 2px solid var(--accent);
-		outline-offset: 3px;
-		opacity: 0.85;
-	}
-
-	:global([data-sorting]) .handle {
-		cursor: grabbing;
+	.arrange :global([data-dragging] .cover) {
+		box-shadow:
+			0 0 0 2px var(--accent),
+			var(--shadow-3);
 	}
 
 	.remove {

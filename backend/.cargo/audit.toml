@@ -1,0 +1,12 @@
+# Advisories `cargo audit` reports that do not reach Frog, or cannot be
+# fixed yet. Each one says why; take it off when the reason goes.
+[advisories]
+ignore = [
+    # rsa, through sqlx's MySQL driver: listed in Cargo.lock by sqlx's
+    # macros, never built (Frog enables only "sqlite"; `cargo tree -i rsa`
+    # prints nothing).
+    "RUSTSEC-2023-0071",
+    # The SQLite that libsqlite3-sys bundles. sqlx 0.8 pins 0.30; the fix
+    # needs sqlx 0.9, which is on ROADMAP.md.
+    "RUSTSEC-2026-0459",
+]

@@ -45,6 +45,35 @@ jobs:
         working-directory: backend
         run: cargo test --locked
 
+  # Known vulnerabilities in what ships: the server's crates and the
+  # packages the app and the extension carry. Build-only tooling is left
+  # out of npm's (`--omit=dev`); it never reaches anyone.
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Crates
+        working-directory: backend
+        run: cargo audit
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Web app
+        working-directory: frontend
+        run: npm audit --omit=dev
+
+      - name: Extension
+        working-directory: extension
+        run: npm audit --omit=dev
+
   frontend:
     name: SvelteKit
     runs-on: ubuntu-latest

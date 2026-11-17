@@ -799,6 +799,31 @@ textarea.input {
 	}
 }
 
+/* Drag to reorder (lib/sortable.ts). The lifted item follows the pointer by
+   an inline transform, so nothing here may set or transition `transform` on
+   it; a page draws the lift (an outline, a shadow) on what is inside. */
+[data-sort-handle] {
+	cursor: grab;
+	/* The handle owns the gesture; without this a touch drag scrolls. */
+	touch-action: none;
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+}
+
+[data-sorting],
+[data-sorting] * {
+	cursor: grabbing !important;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+[data-dragging] {
+	position: relative;
+	z-index: 20;
+	will-change: transform;
+}
+
 /* --- page transitions ----------------------------------------------------- */
 
 @view-transition {

@@ -258,6 +258,7 @@ pub async fn award(
         return Err(AppError::NotFound("no such account".into()));
     };
     if badges::award(&state.pool, id, user_id, me.user_id()).await? {
+        let picture = badges::held_picture(&state.pool, user_id, &username, id).await?;
         let payload = json!({
             "title": "A new badge",
             "body": match &badge.description {
@@ -266,6 +267,7 @@ pub async fn award(
             },
             "url": format!("/people/{}", urlencoding::encode(&username)),
             "tag": format!("frog-badge-{id}"),
+            "icon": picture,
         });
         crate::inbox::tell(
             &state,
@@ -273,7 +275,12 @@ pub async fn award(
             &crate::inbox::Event {
                 kind: crate::inbox::BADGE,
                 actor_id: None,
-                payload: json!({ "badge_id": id, "name": badge.name, "username": username }),
+                payload: json!({
+                    "badge_id": id,
+                    "name": badge.name,
+                    "username": username,
+                    "picture": picture,
+                }),
                 ref_key: Some(format!("badge:{id}:{}", chrono::Utc::now().timestamp())),
                 ..Default::default()
             },
