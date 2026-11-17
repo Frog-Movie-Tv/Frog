@@ -1916,6 +1916,64 @@ export const SCENES = {
 		]);
 		return out;
 	},
+	'back-from-the-dead': () => {
+		let out = glow(512, 480, 340, '#c9a8ff', 0.26);
+		out += shadow(512, 812, 260, 18);
+		// A dusty old television, the show it was left on, switched back on.
+		out += at(
+			600,
+			590,
+			1.18,
+			6,
+			tv(380, 290, { screen: at(0, 0, 1.9, 0, peek({ eyes: 'happy' })) })
+		);
+		out += at(
+			300,
+			640,
+			1,
+			-8,
+			path('M-80 150 L-80 -40 Q-80 -130 0 -130 Q80 -130 80 -40 L80 150 Z', '#9fb3a6')
+		);
+		out += at(
+			300,
+			640,
+			1,
+			-8,
+			path('M-62 150 L-62 -34 Q-62 -110 0 -110 Q62 -110 62 -34 L62 150 Z', '#b8c8bd')
+		);
+		out += at(300, 640, 1, -8, line('M-30 -50 L30 -50 M0 -80 L0 -10', '#7f948a', 12));
+		out += at(300, 640, 1, -8, line('M-20 40 L4 70 L-12 96', '#7f948a', 6));
+		out += at(330, 330, 0.9, -20, loopArrow(70, '#c9a8ff'));
+		out += sparkles([
+			[760, 320, 22],
+			[820, 420, 14],
+			[440, 250, 16]
+		]);
+		return out;
+	},
+	'watchlist-zero': () => {
+		let out = glow(512, 480, 340, '#8af0b4', 0.26);
+		out += shadow(512, 830, 230, 18);
+		// A clipboard, every line ticked off.
+		out += at(512, 560, 1, -4, rect(-190, -250, 380, 500, 30, '#8a5a2b'));
+		out += at(512, 560, 1, -4, rect(-160, -210, 320, 440, 14, C.paper));
+		out += at(512, 560, 1, -4, rect(-70, -276, 140, 60, 18, '#9fb3a6'));
+		for (const y of [-130, -40, 50, 140])
+			out += at(
+				512,
+				560,
+				1,
+				-4,
+				at(-90, y, 0.42, 0, check('#4ea85f')) + line(`M-30 ${y} L120 ${y}`, '#b9b2a0', 12)
+			);
+		out += putFrog(700, 360, 2.4, { eyes: 'happy', mouth: 'open', arms: 'up' }, 8);
+		out += sparkles([
+			[300, 300, 20],
+			[250, 420, 12],
+			[790, 600, 16]
+		]);
+		return out;
+	},
 	'spring-thaw': () => {
 		let out = glow(512, 360, 320, '#fff3c4', 0.3);
 		out += at(700, 260, 1, 0, sun(60, '#ffd25e'));

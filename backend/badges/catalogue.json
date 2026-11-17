@@ -249,6 +249,8 @@
     { "key": "fireworks", "kind": "moment", "group": "moments", "ring": "sapphire", "name": "Fireworks", "about": "Something watched on New Year's Eve and New Year's Day." },
     { "key": "leap-year", "kind": "moment", "group": "moments", "ring": "aurora", "name": "Leap Year", "about": "Something watched on 29 February." },
     { "key": "spring-thaw", "kind": "moment", "group": "moments", "ring": "lily", "name": "Spring Thaw", "about": "Back after two months away." },
+    { "key": "back-from-the-dead", "kind": "moment", "group": "moments", "ring": "sapphire", "name": "Back From the Dead", "about": "A dropped show, picked up again." },
+    { "key": "watchlist-zero", "kind": "moment", "group": "moments", "ring": "amethyst", "name": "Watchlist Zero", "about": "A watchlist of 20 or more, watched down to nothing." },
 
     { "key": "long-haul", "kind": "total", "group": "watching", "ring": "sapphire", "name": "Long Haul", "about": "A finished show of 200 episodes or more." },
     { "key": "grand-voyage", "kind": "total", "group": "watching", "ring": "aurora", "name": "Grand Voyage", "about": "A finished show of 1,000 episodes or more." },

@@ -75,6 +75,7 @@ async fn fingerprint(pool: &SqlitePool, user_id: i64, today: &str) -> AppResult<
                              FROM season_rating WHERE user_id = ?1)
                 || '|' || (SELECT COUNT(*) FROM shelf WHERE user_id = ?1)
                 || '|' || (SELECT COUNT(*) FROM watch_with WHERE user_id = ?1)
+                || '|' || (SELECT COUNT(*) FROM status_change WHERE user_id = ?1)
                 || '|' || (SELECT COUNT(*) FROM badge_award WHERE user_id = ?1)
                 || '|' || (SELECT COUNT(*) || ':' || COALESCE(MAX(updated_at), '')
                              FROM badge WHERE condition IS NOT NULL)",

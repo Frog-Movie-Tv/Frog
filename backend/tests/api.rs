@@ -215,6 +215,69 @@ async fn an_unknown_api_address_is_a_json_404_and_hashed_files_are_kept() {
 }
 
 #[tokio::test]
+async fn every_status_change_is_kept_and_leaves_with_its_account() {
+    let h = Harness::new().await;
+    h.post(
+        "/api/auth/setup",
+        json!({ "username": "mihai", "password": "a-long-enough-pass" }),
+        None,
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO title_seed (id, kind, tmdb_id, name) VALUES
+            (1, 'tv', 5, 'A Show'), (2, 'movie', 6, 'A Film')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    let pool = &h.state.pool;
+    for sql in [
+        "INSERT INTO library_entry (user_id, title_id, status, added_at, updated_at)
+         VALUES (1, 1, 'dropped', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+                (1, 2, 'planned', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        "UPDATE library_entry SET status = 'watching' WHERE user_id = 1 AND title_id = 1",
+        // Only a real change is kept.
+        "UPDATE library_entry SET status = 'watching', notes = 'x' WHERE user_id = 1",
+        "DELETE FROM library_entry WHERE user_id = 1 AND title_id = 1",
+    ] {
+        sqlx::query(sql).execute(pool).await.unwrap();
+    }
+    let kept: Vec<(i64, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT title_id, from_status, to_status FROM status_change
+          WHERE user_id = 1 ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    let s = |v: &str| Some(v.to_string());
+    assert_eq!(
+        kept,
+        vec![
+            (1, None, s("dropped")),
+            (2, None, s("planned")),
+            (1, s("dropped"), s("watching")),
+            (2, s("planned"), s("watching")),
+            (1, s("watching"), None),
+        ]
+    );
+    // A title or an account going takes its entries by cascade, and the
+    // account its history too.
+    sqlx::query("DELETE FROM title WHERE id = 2")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM app_user WHERE id = 1")
+        .execute(pool)
+        .await
+        .unwrap();
+    let (left,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM status_change WHERE user_id = 1")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+}
+
+#[tokio::test]
 async fn an_entry_is_never_finished_before_it_was_started() {
     let h = Harness::new().await;
     h.post(

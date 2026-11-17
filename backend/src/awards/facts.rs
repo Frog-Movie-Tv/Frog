@@ -62,6 +62,16 @@ pub struct Episode {
     pub released: bool,
 }
 
+/// A library entry's status changing (`status_change`): `from` is None when
+/// it was added, `to` when it was removed.
+#[derive(Debug, Clone)]
+pub struct Change {
+    pub title_id: i64,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub at: DateTime<Utc>,
+}
+
 /// One person, director or studio on a title in the library.
 #[derive(Debug, Clone)]
 pub struct Credit {
@@ -87,6 +97,8 @@ pub struct Facts {
     /// Titles this account was first here to add, with the day the second
     /// account that may be compared added it after.
     pub pioneered: Vec<(i64, NaiveDate)>,
+    /// Every status change since they were kept (1.9.1), oldest first.
+    pub changes: Vec<Change>,
 }
 
 impl Facts {
@@ -364,6 +376,25 @@ pub async fn read(pool: &SqlitePool, user_id: i64, tz: Tz, now: DateTime<Utc>) -
     }
     let pioneered = pioneered(pool, user_id, &others, tz).await?;
 
+    let changes: Vec<(i64, Option<String>, Option<String>, String)> = sqlx::query_as(
+        "SELECT title_id, from_status, to_status, at FROM status_change
+          WHERE user_id = ? ORDER BY at, id",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    let changes = changes
+        .into_iter()
+        .filter_map(|(title_id, from, to, at)| {
+            Some(Change {
+                title_id,
+                from,
+                to,
+                at: eligible::parse(&at)?,
+            })
+        })
+        .collect();
+
     Ok(Facts {
         tz,
         now,
@@ -376,6 +407,7 @@ pub async fn read(pool: &SqlitePool, user_id: i64, tz: Tz, now: DateTime<Utc>) -
         joined: joined.and_then(|(at,)| eligible::parse(&at)),
         tastes,
         pioneered,
+        changes,
     })
 }
 

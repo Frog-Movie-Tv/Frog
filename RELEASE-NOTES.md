@@ -43,8 +43,10 @@ In progress.
   studio's page does.
 - Airing shows when a streamer usually puts its episodes out, for shows
   with no set time.
-- Two new badges: World Tour, for titles from 15 countries, and Subtitles
-  On, for 25 titles not made in English.
+- Four new badges: World Tour, for titles from 15 countries; Subtitles On,
+  for 25 titles not made in English; Back From the Dead, for a dropped show
+  picked up again; and Watchlist Zero, for a watchlist of 20 or more watched
+  down to nothing.
 
 ### Fixes
 
