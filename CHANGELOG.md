@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.9.1](https://github.com/Frog-Movie-Tv/Frog/compare/v1.9.0...v1.9.1) (2026-11-17)
+
+
+### Features
+
+* **badges:** Back From the Dead and Watchlist Zero ([bfcf661](https://github.com/Frog-Movie-Tv/Frog/commit/bfcf6616f80205cb515b537b6d53bcbba9a0f02f))
+* **drag:** what is dragged follows the pointer, and pinned titles reorder ([a960273](https://github.com/Frog-Movie-Tv/Frog/commit/a96027307e041edd724c42d2a52578733ff95737))
+* one set of figures, one genre list, and the data tidied ([2d8c1a1](https://github.com/Frog-Movie-Tv/Frog/commit/2d8c1a15feb8bb58c2a03520e463cb126e6917b3))
+* select on a person's page, watching with from a show, and a wrong TVmaze match let go ([9e84a4d](https://github.com/Frog-Movie-Tv/Frog/commit/9e84a4da48bb90753a8dfcbc953f137158173e88))
+* usual drop hours on Airing, World Tour and Subtitles On badges ([619a951](https://github.com/Frog-Movie-Tv/Frog/commit/619a9515e05110da25d24b37c44192021346dc2e))
+* your week, watched together, and who it was with on Activity ([615ae4e](https://github.com/Frog-Movie-Tv/Frog/commit/615ae4ea18083089af001820a643512ee1539fd9))
+
+
+### Fixes
+
+* Airing in time order, a clearer Calendar key, title actions on phones ([75dc1e6](https://github.com/Frog-Movie-Tv/Frog/commit/75dc1e622d496c81d91bb473f3d24d6e2563859d))
+* AniList removals, dragging that follows the pointer, and the roadmap batch ([649ce1f](https://github.com/Frog-Movie-Tv/Frog/commit/649ce1ff8cd3fa3747a42c4e97a083fff7408563))
+* **anilist:** titles taken off AniList leave Frog, and held episodes land ([0f331f7](https://github.com/Frog-Movie-Tv/Frog/commit/0f331f7f68a057b3f76524b2d46b282b774f7804))
+* **settings:** a refused save is said, and a slow load undoes nothing ([6c00685](https://github.com/Frog-Movie-Tv/Frog/commit/6c00685f942757dc455641d901e9fbe2f95d405d))
+
+
+### Internal
+
+* store split in three, one worker scheduler, load says what it gives ([d976712](https://github.com/Frog-Movie-Tv/Frog/commit/d976712cf51e0123cfb19db527fe2d35af5d00a6))
+
+
+### Documentation
+
+* Rate your library measured on 611 titles ([035931c](https://github.com/Frog-Movie-Tv/Frog/commit/035931c40fc337d77a43102d5c3d8d9008c0cd7f))
+* store split, clock, genres, digest, origins and status history; roadmap without the hand checks ([f02a44f](https://github.com/Frog-Movie-Tv/Frog/commit/f02a44fd89d9665f73522b37cb4fff34e15ebd03))
+
+
+### Chores
+
+* release 1.9.1 ([c5e856f](https://github.com/Frog-Movie-Tv/Frog/commit/c5e856f3df8c3c2d1f29aa861aadbca2b02dea33))
+
 ## [1.9.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.8.0...v1.9.0) (2026-11-16)
 
 
