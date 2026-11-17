@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.9.1...v1.10.0) (2026-11-17)
+
+
+### Features
+
+* **events:** countdowns to big releases, with what to watch first ([1ed921a](https://github.com/Frog-Movie-Tv/Frog/commit/1ed921a9a56168fb682c08313f9eddb3a2be6061))
+* **events:** countdowns to big releases, with what to watch first ([ebb5a3e](https://github.com/Frog-Movie-Tv/Frog/commit/ebb5a3e18a262f2a2f86aa9169cb1afd2968825f))
+
 ## [1.9.1](https://github.com/Frog-Movie-Tv/Frog/compare/v1.9.0...v1.9.1) (2026-11-17)
 
 
