@@ -715,6 +715,9 @@ part you are about to touch; change it when the code changes.
   go through `takeBack`, which puts the card back on top once. Saves go out
   in order (`InOrder`). A card's fixes (not watched yet, another status,
   remove) are behind its one "…" button, with S and Delete as keys.
+  Measured on 2026-11-17 with 611 titles (release build, 450 of them copies
+  of real titles without episodes): the whole library answers in 92–117 ms
+  (112 kB) and dealing takes under 1 ms, so reading it whole stays.
 - **New Home rows** reach saved layouts once, through `homeRowsSeen` in
   `lib/settings.svelte.ts`. Add the id to `HOME_ROWS` and to the default list.
 
