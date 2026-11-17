@@ -48,7 +48,15 @@ pub struct Entry {
 
 /// The parts of the badges page, in order. A badge given by hand sits in
 /// `given`, which the catalogue never names.
-pub const GROUPS: [&str; 6] = ["watching", "moments", "taste", "anime", "frog", "collector"];
+pub const GROUPS: [&str; 7] = [
+    "watching",
+    "moments",
+    "taste",
+    "anime",
+    "frog",
+    "collector",
+    "events",
+];
 
 #[derive(Deserialize)]
 struct File {
@@ -152,6 +160,29 @@ pub fn all() -> &'static [Entry] {
                 step: None,
             });
         }
+        // Each event's two, drawn with the event (`crate::events::pack`).
+        for p in crate::events::pack::all() {
+            if let Some(w) = &p.badges.ready {
+                out.push(Entry {
+                    key: crate::events::pack::ready_key(&p.slug),
+                    name: w.name.clone(),
+                    about: w.about.clone(),
+                    kind: Kind::Total,
+                    group: "events".into(),
+                    difficulty: 3,
+                    step: None,
+                });
+            }
+            out.push(Entry {
+                key: crate::events::pack::opening_key(&p.slug),
+                name: p.badges.opening.name.clone(),
+                about: p.badges.opening.about.clone(),
+                kind: Kind::Moment,
+                group: "events".into(),
+                difficulty: 2,
+                step: None,
+            });
+        }
         out
     })
 }
@@ -174,6 +205,7 @@ pub fn art(key: &str) -> Option<&'static str> {
         .get_or_init(|| serde_json::from_str(ART).expect("badges/art.json"))
         .get(key)
         .map(String::as_str)
+        .or_else(|| crate::events::pack::art(key))
 }
 
 /// What a badge row was last brought up to: its words and its picture. A

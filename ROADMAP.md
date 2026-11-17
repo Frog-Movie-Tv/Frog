@@ -19,6 +19,20 @@ Owner steps; nothing in a release does them.
 
 ## To build
 
+- **Ship Events as 1.10.0 Golden Frog before 1 December**, so Doomsday's
+  countdown is on Home with two weeks to go (it shows from 1 November and
+  opens 16 December here). Its pull request is open from `feat/events`;
+  once it merges and the release goes out, delete `PROMPT-EVENTS.md`.
+- **Check the premiere in Safari's engine and on a real phone.**
+  `node scripts/verify-premiere.mjs --webkit` needs
+  `npx playwright install webkit` first. Chrome held 17.1 ms at the 95th
+  percentile on desktop and on an emulated Pixel 7; a real Pixel 7's figure
+  is still to measure.
+- **An event without a catch-up list has never been drawn.** Its page
+  (About, trailer, cast, "On everyone's watchlist") and its hero's Add to
+  watchlist only show with a pack that has `"catch_up": false`; make one
+  with `/event` and look at it before relying on it.
+
 - **Estimated days for undated history**, so the diary, streaks and badges
   see all of it. Needs a decision first: badges about a moment count only
   watches with a real date recorded as they happened, on purpose, so an

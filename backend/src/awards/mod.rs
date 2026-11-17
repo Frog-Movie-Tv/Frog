@@ -16,11 +16,13 @@
 //! - `give`: giving, the grace day, taking back, the notification.
 //! - `custom`: badges made here that are earned by reaching a count.
 //! - `art`: pictures drawn from the SVGs, never stored.
+//! - `events`: the two badges each event gives.
 
 pub mod art;
 pub mod catalogue;
 pub mod custom;
 pub mod eligible;
+pub mod events;
 pub mod facts;
 pub mod give;
 pub mod rules;
@@ -62,7 +64,12 @@ fn keep(user_id: i64, mark: String, map: Progress) {
 /// the catalogue: when this is what the last run saw, nothing can have
 /// changed. Other accounts (taste, Pioneer) are only looked at again when the
 /// day turns over.
-async fn fingerprint(pool: &SqlitePool, user_id: i64, today: &str) -> AppResult<String> {
+async fn fingerprint(
+    pool: &SqlitePool,
+    user_id: i64,
+    today: &str,
+    tz: chrono_tz::Tz,
+) -> AppResult<String> {
     let (counted,): (String,) = sqlx::query_as(
         "SELECT (SELECT COUNT(*) || ':' || COALESCE(MAX(id), 0) || ':'
                         || COALESCE(TOTAL(julianday(watched_at)), 0)
@@ -83,8 +90,9 @@ async fn fingerprint(pool: &SqlitePool, user_id: i64, today: &str) -> AppResult<
     .bind(user_id)
     .fetch_one(pool)
     .await?;
+    let events = events::mark(pool, tz, Utc::now()).await?;
     Ok(format!(
-        "{today}|{}|{}|{counted}",
+        "{today}|{}|{}|{counted}|{events}",
         rules::RULE_VERSION,
         catalogue::all().len()
     ))
@@ -97,7 +105,7 @@ pub async fn run(state: &AppState, user_id: i64, force: bool) -> AppResult<give:
     let tz = crate::announce::time_zone(pool, user_id).await;
     let now = Utc::now();
     let today = eligible::day(now, tz);
-    let mark = fingerprint(pool, user_id, &today.to_string()).await?;
+    let mark = fingerprint(pool, user_id, &today.to_string(), tz).await?;
     let seen: Option<(String,)> =
         sqlx::query_as("SELECT value FROM app_setting WHERE user_id = ? AND key = ?")
             .bind(user_id)
@@ -111,6 +119,9 @@ pub async fn run(state: &AppState, user_id: i64, force: bool) -> AppResult<give:
     let facts = facts::read(pool, user_id, tz, now).await?;
     let ok = eligible::eligible(&facts.logged(), tz, now);
     let mut tally = rules::all(&facts, &ok);
+    let (from_events, along) = events::earned(pool, user_id, &facts, &ok).await?;
+    tally.earned.extend(from_events);
+    tally.progress.extend(along);
     if !force && unchanged {
         // Nothing to give: only the progress was missing (a restart).
         let map = progress_of(pool, user_id, &tally).await?;
@@ -130,7 +141,7 @@ pub async fn run(state: &AppState, user_id: i64, force: bool) -> AppResult<give:
     let settled = give::settle(state, user_id, earned, today, now).await?;
     give::settle_custom(state, user_id, made_here, now).await?;
     // Awards change the count it was taken from; mark what is there now.
-    let mark = fingerprint(pool, user_id, &today.to_string()).await?;
+    let mark = fingerprint(pool, user_id, &today.to_string(), tz).await?;
     let map = progress_of(pool, user_id, &tally).await?;
     keep(user_id, mark.clone(), map);
     sqlx::query(
@@ -154,13 +165,16 @@ pub async fn run(state: &AppState, user_id: i64, force: bool) -> AppResult<give:
 pub async fn progress(pool: &SqlitePool, user_id: i64) -> AppResult<Progress> {
     let tz = crate::announce::time_zone(pool, user_id).await;
     let now = Utc::now();
-    let mark = fingerprint(pool, user_id, &eligible::day(now, tz).to_string()).await?;
+    let mark = fingerprint(pool, user_id, &eligible::day(now, tz).to_string(), tz).await?;
     if let Some(map) = cached(user_id, &mark) {
         return Ok(map);
     }
     let facts = facts::read(pool, user_id, tz, now).await?;
     let ok = eligible::eligible(&facts.logged(), tz, now);
-    let tally = rules::all(&facts, &ok);
+    let mut tally = rules::all(&facts, &ok);
+    tally
+        .progress
+        .extend(events::earned(pool, user_id, &facts, &ok).await?.1);
     let map = progress_of(pool, user_id, &tally).await?;
     keep(user_id, mark, map.clone());
     Ok(map)

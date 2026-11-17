@@ -312,6 +312,11 @@
 				{@render row(entry, true)}
 			{/each}
 		</ul>
+		<a class="events-link" href="/events">
+			<Icon name="ticket" size={16} />
+			Countdowns to the big releases
+			<Icon name="chevron-right" size={14} />
+		</a>
 	{/if}
 </div>
 
@@ -622,6 +627,17 @@
 
 	/* Grouped rows with hairlines between them, as a list of the same kind
 	   of thing is everywhere else. */
+	.events-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		margin-top: 18px;
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: var(--accent);
+		text-decoration: none;
+	}
+
 	.agenda {
 		list-style: none;
 		margin: 0;

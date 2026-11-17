@@ -67,7 +67,7 @@ struct Job {
 }
 
 /// Everything the worker does, in one place.
-const JOBS: [Job; 9] = [
+const JOBS: [Job; 10] = [
     Job {
         name: "housekeeping",
         run: |s| Box::pin(async move { housekeeping(&s).await }),
@@ -103,6 +103,10 @@ const JOBS: [Job; 9] = [
     Job {
         name: "badges",
         run: |s| Box::pin(async move { give_badges(&s).await }),
+    },
+    Job {
+        name: "events",
+        run: |s| Box::pin(async move { events(&s).await }),
     },
 ];
 
@@ -303,6 +307,17 @@ async fn give_badges(state: &AppState) -> Next {
         tracing::warn!(error = %e, "badges failed");
     }
     Some(BADGES_TICK)
+}
+
+/// Events: packs into the database, the day each opens, and the three
+/// notifications as zero comes (`crate::events::sync`).
+const EVENTS_TICK: Duration = Duration::from_secs(60);
+
+async fn events(state: &AppState) -> Next {
+    if let Err(e) = crate::events::sync::tick(state).await {
+        tracing::warn!(error = %e, "events failed");
+    }
+    Some(EVENTS_TICK)
 }
 
 async fn sync_anilist(state: &AppState) -> Next {

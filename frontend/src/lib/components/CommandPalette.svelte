@@ -133,6 +133,7 @@
 			icon: 'book',
 			run: () => goto('/activity?view=diary')
 		},
+		{ id: 'p-events', group: GO, label: 'Events', icon: 'ticket', run: () => goto('/events') },
 		{ id: 'p-stats', group: GO, label: 'Stats', icon: 'chart', run: () => goto('/stats') },
 		{ id: 'p-set', group: GO, label: 'Settings', icon: 'settings', run: () => goto('/settings') },
 		{ id: 'p-imp', group: GO, label: 'Import', icon: 'upload', run: () => goto('/import') },

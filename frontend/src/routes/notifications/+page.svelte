@@ -306,6 +306,13 @@
 					href: titleHref,
 					icon: 'users'
 				};
+			case 'event':
+				return {
+					text: text('text') ?? name,
+					detail: text('body'),
+					href: text('slug') ? `/events/${encodeURIComponent(text('slug')!)}` : titleHref,
+					icon: 'ticket'
+				};
 			case 'digest':
 				return {
 					text: 'Your week',

@@ -9,9 +9,22 @@ people working on Frog.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Upcoming — Reed Frog —
+## Upcoming — Golden Frog —
 
-In progress.
+Countdowns to the big ones, with what to watch before they land.
+
+### Highlights
+
+- **Events.** A countdown to Avengers: Doomsday takes the top of Home, with
+  every film and show to see first in watch order, the essentials marked, and
+  how many minutes a day gets you there.
+- **Who's ready.** The event's page lists everything, filters it down to
+  what is left, and shows how far everyone you follow has got.
+- **Opening night.** When the countdown reaches zero, it opens with a moment
+  of its own, once, wherever you open Frog first.
+- **Two badges for each event.** Ready, for every essential seen before it
+  opens, and Opening Night, for seeing it in its first three days.
+- Not for you? Hide it from Home and it goes quiet. It stays on Events.
 
 ## [1.9.1] — Reed Frog — 2026-11-17
 

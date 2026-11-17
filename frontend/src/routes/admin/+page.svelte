@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { api, ApiError } from '#lib/api';
+	import AdminEvents from '#lib/components/AdminEvents.svelte';
 	import Empty from '#lib/components/Empty.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import Select from '#lib/components/Select.svelte';
@@ -474,6 +475,11 @@
 							</details>
 						{/if}
 					{/if}
+				</section>
+
+				<section class="block" id="events">
+					<h2>Events</h2>
+					<AdminEvents />
 				</section>
 			</div>
 			<div class="col">

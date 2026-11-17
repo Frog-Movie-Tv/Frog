@@ -7,6 +7,10 @@
 	import ActivityCard from '#lib/components/ActivityCard.svelte';
 	import ContinueCard from '#lib/components/ContinueCard.svelte';
 	import Empty from '#lib/components/Empty.svelte';
+	import EventCard from '#lib/components/EventCard.svelte';
+	import EventHero from '#lib/components/EventHero.svelte';
+	import Premiere from '#lib/components/Premiere.svelte';
+	import { isOut, shouldPlay } from '#lib/events';
 	import HomeHero, { slidesOf } from '#lib/components/HomeHero.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import LoadFailed from '#lib/components/LoadFailed.svelte';
@@ -23,6 +27,7 @@
 	import type {
 		ActivityItem,
 		BecauseRow,
+		EventSummary,
 		FeaturedTitle,
 		HomeData,
 		LibraryItem,
@@ -104,6 +109,40 @@
 	const menuOfFound = (item: SearchItem) =>
 		titleMenu({ ...item, status: item.in_library }, { onchanged: load });
 
+	// --- events ------------------------------------------------------------
+	/** Hidden from the hero just now: gone before Home reads itself again. */
+	let hiddenNow = $state<string[]>([]);
+	const events = $derived((data?.events ?? []).filter((e) => !hiddenNow.includes(e.slug)));
+	/** The rows under the hero: what is left to watch before each one. */
+	const befores = $derived(
+		events.filter(
+			(e) =>
+				e.catch_up &&
+				e.before.length > 0 &&
+				(!isOut(e, Date.now()) || (e.readiness && !e.readiness.ready))
+		)
+	);
+	let premiere = $state<EventSummary | null>(null);
+	let heroBody = $state<HTMLElement | null>(null);
+	/** Played here already, whatever the server's copy says until it is read again. */
+	const played: string[] = [];
+
+	function playIfDue(e: EventSummary) {
+		if (premiere || played.includes(e.slug) || !shouldPlay(e, Date.now())) return;
+		played.push(e.slug);
+		premiere = e;
+	}
+
+	// The first open after zero plays it; so does the countdown reaching it.
+	$effect(() => {
+		for (const e of events) untrack(() => playIfDue(e));
+	});
+
+	function premiered() {
+		premiere = null;
+		void load();
+	}
+
 	const hero = $derived(data?.hero ?? null);
 	const heroStyle = $derived(settings.current.heroStyle);
 	/** Recommendations answered from the hero, out of it at once. */
@@ -124,9 +163,12 @@
 	const putBack = $derived(rotating || heroStyle === 'off');
 	const heroItem = $derived(putBack ? null : (hero?.item ?? null));
 
-	const isEmpty = $derived(
+	/** Nothing tracked yet: a new account is welcomed instead. */
+	const untracked = $derived(
 		!!data && !data.hero && !data.continue.length && !data.recent.length && !data.favourites.length
 	);
+	// A live event is something to show even with nothing tracked.
+	const isEmpty = $derived(untracked && !events.length);
 
 	// Empty, and staying here: decided only once the account's own settings
 	// say it was welcomed, so a new account never sees Home flash empty on its
@@ -137,7 +179,7 @@
 	// It waits for the account's own settings, which load alongside Home, and
 	// anyone who already tracks something never sees it.
 	$effect(() => {
-		if (isEmpty && settings.loaded && !settings.current.onboarded) {
+		if (untracked && settings.loaded && !settings.current.onboarded) {
 			void goto('/welcome', { replace: true });
 		}
 	});
@@ -202,7 +244,18 @@
 	{/if}
 {:else if data}
 	<div class="home">
-		{#if heroStyle !== 'off' && slides.length}
+		{#if events.length}
+			<!-- An event takes the hero while it lasts, whatever the hero's setting:
+			     it is the one thing on Home with a date, and Hide is right there. -->
+			<EventHero
+				{events}
+				bind:body={heroBody}
+				waiting={!!premiere}
+				onhide={(slug) => (hiddenNow = [...hiddenNow, slug])}
+				onchanged={load}
+				onzero={(e) => playIfDue({ ...e, phase: 'premiered' })}
+			/>
+		{:else if heroStyle !== 'off' && slides.length}
 			<HomeHero
 				{slides}
 				style={heroStyle}
@@ -213,6 +266,17 @@
 		{/if}
 
 		<div class="page rows">
+			{#each befores as e (e.slug)}
+				{#snippet eventLink()}
+					<span class="row-note">{e.left} left · in watch order</span>
+					<a class="see-all hit" href="/events/{e.slug}">Event page</a>
+				{/snippet}
+				<Rail title="Before {e.name}" action={eventLink} width="150px">
+					{#each e.before as entry, i (`${i}:${entry.item.id}`)}
+						<EventCard {entry} n={i + 1} />
+					{/each}
+				</Rail>
+			{/each}
 			{#each rows as row (row)}
 				{#if row === 'shelves'}
 					{#snippet allShelves()}<a class="see-all hit" href="/shelves">All shelves</a>{/snippet}
@@ -330,7 +394,16 @@
 	</div>
 {/if}
 
+{#if premiere}
+	<Premiere event={premiere} target={heroBody} ondone={premiered} />
+{/if}
+
 <style>
+	.row-note {
+		font-size: 0.86rem;
+		color: var(--text-dim);
+	}
+
 	.see-all {
 		color: var(--accent);
 		font-size: 0.86rem;

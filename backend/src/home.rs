@@ -160,6 +160,7 @@ pub async fn home(state: &AppState, me: i64) -> AppResult<Value> {
     Ok(json!({
         "hero": hero,
         "hero_row": hero_row,
+        "events": crate::events::view::for_home(pool, me, &facts).await?,
         "recommended": recommended,
         "continue": continuing
             .iter()

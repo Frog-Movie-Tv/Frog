@@ -6,6 +6,7 @@ pub mod auth;
 pub mod badges;
 pub mod browse;
 pub mod episodes;
+pub mod events;
 pub mod ext;
 pub mod home;
 pub mod images;
@@ -176,6 +177,16 @@ pub fn router(state: AppState) -> Router {
             "/admin/badges/{id}/holders/{user_id}",
             put(badges::award).delete(badges::revoke),
         )
+        .route("/events", get(events::list))
+        .route("/events/{slug}", get(events::page))
+        .route(
+            "/events/{slug}/hidden",
+            put(events::hide).delete(events::show),
+        )
+        .route("/events/{slug}/seen", post(events::seen))
+        .route("/admin/events", get(events::admin_list))
+        .route("/admin/events/{slug}/state", put(events::set_state))
+        .route("/admin/events/{slug}/pin", put(events::set_pin))
         .route("/admin/instance", get(admin::instance))
         .route("/admin/server", get(admin::server))
         .route("/admin/db/tables", get(admin::db_tables))

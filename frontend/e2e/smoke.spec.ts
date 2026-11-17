@@ -1597,6 +1597,9 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/notifications/unread',
 		'/api/notifications/settings',
 		'/api/people/choosable',
+		'/api/events',
+		'/api/events/avengers-doomsday',
+		'/api/admin/events',
 		'/img/w342/nope.jpg'
 	]) {
 		const res = await request.get(path);
@@ -1631,7 +1634,8 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/notifications/read',
 		'/api/notifications/restore',
 		'/api/t/1/recommend',
-		'/api/recommendations/1/answer'
+		'/api/recommendations/1/answer',
+		'/api/events/avengers-doomsday/seen'
 	]) {
 		const res = await request.post(path, { data: {} });
 		expect(res.status(), `POST ${path} should be 401`).toBe(401);
@@ -1645,7 +1649,10 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/admin/badges/1/holders/1',
 		'/api/admin/badges/1/condition',
 		'/api/account/badges',
-		'/api/account/device'
+		'/api/account/device',
+		'/api/events/avengers-doomsday/hidden',
+		'/api/admin/events/avengers-doomsday/state',
+		'/api/admin/events/avengers-doomsday/pin'
 	]) {
 		const res = await request.put(path, { data: { rating: 80 } });
 		expect(res.status(), `PUT ${path} should be 401`).toBe(401);
@@ -1665,7 +1672,8 @@ test('images and the API stay behind the auth wall', async ({ request }) => {
 		'/api/admin/badges/1/holders/1',
 		'/api/account/tokens/1',
 		'/api/notifications',
-		'/api/notifications/1'
+		'/api/notifications/1',
+		'/api/events/avengers-doomsday/hidden'
 	]) {
 		const res = await request.delete(path, { data: {} });
 		expect(res.status(), `DELETE ${path} should be 401`).toBe(401);

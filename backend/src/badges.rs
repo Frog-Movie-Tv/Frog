@@ -862,6 +862,24 @@ pub async fn holder_name(pool: &SqlitePool, user_id: i64) -> AppResult<Option<St
     Ok(row.map(|(n,)| n))
 }
 
+/// A catalogue badge by its key, and whether this account holds it:
+/// (id, name, description, held).
+pub async fn by_rule(
+    pool: &SqlitePool,
+    user_id: i64,
+    rule: &str,
+) -> AppResult<Option<(i64, String, Option<String>, bool)>> {
+    Ok(sqlx::query_as(
+        "SELECT b.id, b.name, b.description,
+                EXISTS (SELECT 1 FROM badge_award a WHERE a.badge_id = b.id AND a.user_id = ?)
+           FROM badge b WHERE b.rule = ?",
+    )
+    .bind(user_id)
+    .bind(rule)
+    .fetch_optional(pool)
+    .await?)
+}
+
 /// Whether one account holds a badge. Anyone who may see the profile may
 /// see every badge on it: `shown` only says which sit beside the name.
 pub async fn seen(pool: &SqlitePool, user_id: i64, badge_id: i64) -> AppResult<bool> {

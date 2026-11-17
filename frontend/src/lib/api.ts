@@ -24,6 +24,8 @@ import type {
 	StudioDetail,
 	AuthStatus,
 	BecauseRow,
+	EventPage,
+	EventSummary,
 	HomeData,
 	ImportSummary,
 	Account,
@@ -432,6 +434,22 @@ export const api = {
 			`/api/t/${titleId}/more${qs({ page })}`
 		),
 	activity: () => get<{ items: ActivityItem[] }>('/api/home/activity'),
+
+	events: () => get<{ events: EventSummary[] }>('/api/events'),
+	event: (slug: string) => get<EventPage>(`/api/events/${encodeURIComponent(slug)}`),
+	/** Off Home and no reminders; the page stays. */
+	hideEvent: (slug: string) =>
+		send<{ hidden: boolean }>('PUT', `/api/events/${encodeURIComponent(slug)}/hidden`, {}),
+	showEvent: (slug: string) =>
+		send<{ hidden: boolean }>('DELETE', `/api/events/${encodeURIComponent(slug)}/hidden`),
+	/** The premiere started here; `first` is false when another device played it. */
+	eventSeen: (slug: string) =>
+		send<{ first: boolean }>('POST', `/api/events/${encodeURIComponent(slug)}/seen`, {}),
+	adminEvents: () => get<{ events: EventSummary[] }>('/api/admin/events'),
+	setEventOn: (slug: string, on: boolean) =>
+		send<{ on: boolean }>('PUT', `/api/admin/events/${encodeURIComponent(slug)}/state`, { on }),
+	pinEvent: (slug: string, at: string | null) =>
+		send<{ pinned: boolean }>('PUT', `/api/admin/events/${encodeURIComponent(slug)}/pin`, { at }),
 	/** Everyone's activity, all of it, a page before `before` at a time. */
 	allActivity: (before?: string | null) =>
 		get<{ items: ActivityItem[]; next: string | null }>(
