@@ -28,7 +28,8 @@ Countdowns to the big ones, with what to watch before they land.
   of its own, once, wherever you open Frog first.
 - **Two badges for each event.** Ready, for every essential seen before it
   opens, and Opening Night, for seeing it in its first three days.
-- Not for you? Hide it from Home and it goes quiet. It stays on Events.
+- **Yours to hide.** Not for you? Hide it from Home and it goes quiet. It
+  stays on Events.
 
 ## [1.9.1] — Reed Frog — 2026-11-17
 
