@@ -1,14 +1,16 @@
 /**
  * Draws every automatic badge from `backend/badges/catalogue.json` and writes
  * their SVGs to `backend/badges/art.json`, which the server turns into the
- * round PNGs a badge is stored as. `--sheet <file>` also writes a page with
- * every badge on it, for looking them over.
+ * round PNGs a badge is stored as. Each event's two badges are drawn too,
+ * into its pack (`backend/events/{slug}/ready.svg`, `opening.svg`), from
+ * scenes under their keys (`event.{slug}.ready`). `--sheet <file>` also
+ * writes a page with every badge on it, for looking them over.
  *
  *   npm run badges
  *   npm run badges -- --sheet ../badge-drafts/sheet.html
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -32,6 +34,37 @@ export function entries() {
 		}
 	}
 	for (const single of catalogue.singles) out.push({ ...single, number: null });
+	for (const e of events()) out.push(e);
+	return out;
+}
+
+/** Each event's badges, with the file each is written to. */
+function events() {
+	const dir = join(root, 'backend', 'events');
+	if (!existsSync(dir)) return [];
+	const out = [];
+	for (const slug of readdirSync(dir)) {
+		const file = join(dir, slug, 'event.json');
+		if (!existsSync(file)) continue;
+		const pack = JSON.parse(readFileSync(file, 'utf8'));
+		const words = [
+			['ready', pack.badges.ready, 'jade'],
+			['opening', pack.badges.opening, 'gold']
+		];
+		for (const [which, w, ring] of words) {
+			if (!w) continue;
+			out.push({
+				key: `event.${slug}.${which}`,
+				name: w.name,
+				about: w.about,
+				kind: which === 'ready' ? 'total' : 'moment',
+				ladder: 'events',
+				ring,
+				number: null,
+				file: join(dir, slug, `${which}.svg`)
+			});
+		}
+	}
 	return out;
 }
 
@@ -43,7 +76,9 @@ for (const e of entries()) {
 		missing.push(e.key);
 		continue;
 	}
-	art[e.key] = badge({ ring: e.ring, scene, number: e.number, note: `${e.name}: ${e.about}` });
+	const svg = badge({ ring: e.ring, scene, number: e.number, note: `${e.name}: ${e.about}` });
+	if (e.file) writeFileSync(e.file, svg + '\n');
+	art[e.key] = svg;
 }
 if (missing.length) {
 	console.error(`No scene for: ${missing.join(', ')}`);
@@ -55,7 +90,13 @@ if (extra.length) {
 	process.exit(1);
 }
 
-writeFileSync(join(root, 'backend', 'badges', 'art.json'), JSON.stringify(art, null, 0) + '\n');
+// The events' own are in their packs, not in the catalogue's file.
+const ownArt = Object.fromEntries(
+	entries()
+		.filter((e) => !e.file)
+		.map((e) => [e.key, art[e.key]])
+);
+writeFileSync(join(root, 'backend', 'badges', 'art.json'), JSON.stringify(ownArt, null, 0) + '\n');
 console.log(`${Object.keys(art).length} badges drawn`);
 
 const sheetAt = process.argv.indexOf('--sheet');

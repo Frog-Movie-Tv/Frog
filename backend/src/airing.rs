@@ -176,7 +176,13 @@ pub fn film_release(
     from: NaiveDate,
     to: NaiveDate,
 ) -> Option<(NaiveDate, i64)> {
-    let inside = |d: NaiveDate| d >= from && d <= to;
+    film_opens(detail, region).filter(|(d, _)| *d >= from && *d <= to)
+}
+
+/// A film's release here, whenever it is: the region's first cinema or
+/// digital release, else the primary release day, counted as in cinemas.
+/// An event's countdown follows it (`crate::events::sync`).
+pub fn film_opens(detail: &Value, region: &str) -> Option<(NaiveDate, i64)> {
     let here = detail["release_dates"]["results"]
         .as_array()
         .into_iter()
@@ -193,14 +199,12 @@ pub fn film_release(
                 })
                 .min()
         });
-    match here {
-        Some((day, kind)) => inside(day).then_some((day, kind)),
-        None => detail["release_date"]
+    here.or_else(|| {
+        detail["release_date"]
             .as_str()
             .and_then(parse_day)
-            .filter(|d| inside(*d))
-            .map(|d| (d, 3)),
-    }
+            .map(|d| (d, 3))
+    })
 }
 
 /// Build the list again when a day has passed since the last one, and no

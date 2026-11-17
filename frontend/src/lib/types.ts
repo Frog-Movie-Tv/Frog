@@ -526,6 +526,95 @@ export interface HomeData {
 	recent: LibraryItem[];
 	favourites: LibraryItem[];
 	shelves: Shelf[];
+	/** Countdowns live or just out, not hidden, nearest first. */
+	events?: HomeEvent[];
+}
+
+/** Where an event is, for whoever is looking. */
+export type EventPhase = 'scheduled' | 'live' | 'premiered' | 'past';
+
+/** How far one account is with an event's catch-up list. */
+export interface EventReadiness {
+	essentials_seen: number;
+	essentials: number;
+	optional_seen: number;
+	optional: number;
+	/** Minutes of essentials still to watch. */
+	minutes_left: number;
+	per_day: number | null;
+	/** The first essential not seen yet. */
+	next: { title_id: number; name: string; code: string | null } | null;
+	ready: boolean;
+	/** Every essential seen, each before zero. */
+	ready_by_zero: boolean;
+}
+
+/** One title on an event's list. */
+export interface EventListItem {
+	item: LibraryItem;
+	group: string;
+	essential: boolean;
+	note: string | null;
+	/** For a show: the seasons that count. */
+	seasons: [number, number] | null;
+	standing: {
+		seen: boolean;
+		watched: number;
+		total: number;
+		minutes_left: number;
+		/** "S2E3" */
+		next: string | null;
+	};
+}
+
+/** An event as the Events list and the hero have it. */
+export interface EventSummary {
+	slug: string;
+	/** What it is called in a sentence: "Before Doomsday". */
+	name: string;
+	opens: 'cinemas' | 'streaming' | 'season';
+	season: number | null;
+	title: LibraryItem;
+	/** The day it opens here, YYYY-MM-DD. */
+	day: string;
+	/** The moment it opens for this account. */
+	zero: string;
+	shows_from: string;
+	ends_at: string;
+	pinned: boolean;
+	phase: EventPhase;
+	hidden: boolean;
+	/** The premiere has played for this account. */
+	seen: boolean;
+	catch_up: boolean;
+	accent: Palette;
+	readiness: EventReadiness | null;
+	/** The badge for every essential seen in time, for the premiere to land. */
+	ready_badge: { name: string; picture: string } | null;
+	/** Titles on the list not seen yet. */
+	left: number;
+	/** Switched on by an administrator. */
+	on?: boolean;
+}
+
+export interface HomeEvent extends EventSummary {
+	before: EventListItem[];
+}
+
+export interface EventPerson {
+	who: { username: string; display_name: string | null; avatar: string | null };
+	me: boolean;
+	essentials_seen?: number;
+	essentials?: number;
+	ready?: boolean;
+	/** Without a catch-up list: where it sits in their library. */
+	status?: Status | null;
+}
+
+export interface EventPage extends EventSummary {
+	groups: { name: string; titles: EventListItem[] }[];
+	people: EventPerson[];
+	badges: { key: string; name: string; about: string | null; held: boolean; picture: string }[];
 }
 
 export interface MatchResult {
@@ -656,7 +745,7 @@ export interface HeldBadge {
 
 /** The parts of the badges page. */
 export type BadgeGroup =
-	'watching' | 'moments' | 'taste' | 'anime' | 'frog' | 'collector' | 'custom' | 'given';
+	'watching' | 'moments' | 'taste' | 'anime' | 'events' | 'frog' | 'collector' | 'custom' | 'given';
 
 /** What earns a badge made here on its own: a count reaching a number. */
 export interface BadgeCondition {
@@ -1214,7 +1303,8 @@ export type NoticeKind =
 	| 'update'
 	| 'ops'
 	| 'together'
-	| 'digest';
+	| 'digest'
+	| 'event';
 
 /** One line on the Notifications page. */
 export interface Notice {
@@ -1268,4 +1358,5 @@ export interface NoticeWants {
 	updates: boolean;
 	together: boolean;
 	digest: boolean;
+	events: boolean;
 }

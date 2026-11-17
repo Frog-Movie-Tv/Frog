@@ -39,6 +39,8 @@ pub const OPS: &str = "ops";
 pub const TOGETHER: &str = "together";
 /// The weekly digest (`crate::digest`).
 pub const DIGEST: &str = "digest";
+/// A countdown: a week to go, the day before, and out (`crate::events`).
+pub const EVENT: &str = "event";
 
 /// The kinds an account can switch off, each covering push and the page.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -53,6 +55,8 @@ pub struct Wants {
     pub together: bool,
     /// Monday's line about the week.
     pub digest: bool,
+    /// Countdowns to the big ones.
+    pub events: bool,
 }
 
 impl Default for Wants {
@@ -64,6 +68,7 @@ impl Default for Wants {
             updates: true,
             together: true,
             digest: true,
+            events: true,
         }
     }
 }
@@ -78,6 +83,7 @@ impl Wants {
             UPDATE => self.updates,
             TOGETHER => self.together,
             DIGEST => self.digest,
+            EVENT => self.events,
             _ => true,
         }
     }

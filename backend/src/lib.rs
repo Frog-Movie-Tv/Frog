@@ -17,6 +17,7 @@ pub mod db;
 pub mod dbview;
 pub mod digest;
 pub mod error;
+pub mod events;
 pub mod extension;
 pub mod fanart;
 pub mod franchise;

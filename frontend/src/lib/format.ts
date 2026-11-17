@@ -1,4 +1,5 @@
 import { daysFrom, zoneFor } from './day';
+import { runtime } from './duration';
 import { settings } from './settings.svelte';
 /**
  * Ratings live as 0..100 in the database no matter how they are shown, so the
@@ -76,13 +77,7 @@ export function formatScore(value: number | null, format: ScoreFormat): string {
 	}
 }
 
-export function runtime(minutes: number | null | undefined): string {
-	if (!minutes || minutes <= 0) return '';
-	const h = Math.floor(minutes / 60);
-	const m = minutes % 60;
-	if (!h) return `${m}m`;
-	return m ? `${h}h ${m}m` : `${h}h`;
-}
+export { runtime };
 
 /** Big totals read better as days and hours than as 143,220 minutes. */
 export function longRuntime(minutes: number): string {

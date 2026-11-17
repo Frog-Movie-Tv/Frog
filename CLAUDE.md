@@ -71,10 +71,12 @@ backend/            Rust: axum 0.8, sqlx 0.8 (SQLite), tokio
   src/tvmaze.rs     TVmaze client: a show's episodes and their airstamps
   src/airtime.rs    the moment a TMDB episode airs, from AniList or TVmaze
   src/airing.rs     the Airing page: every show on TMDB this week, by popularity
+  src/events/       countdowns: the pure rules (mod), packs, records, the worker (sync), views
   src/announce.rs   notifications: what is due for whom, and what it says
   src/tmdb/         TMDB client, cache, and the JSON → view mapping
   src/auth.rs       sessions, roles, the Auth and AdminAuth extractors
   src/jobs/         background worker (sessions, caches, shows, AniList, ops)
+  events/           one pack per event: event.json and its two badge SVGs
   migrations/       timestamped .sql files, embedded at compile time
   tests/            api, anilist, catalog, images, transfer, scoping, migrations;
                     common/ has the fixtures (title_seed, title_id)
@@ -161,7 +163,7 @@ In Git Bash, put cargo on PATH first: `export PATH="$HOME/.cargo/bin:$PATH"`.
 
 Ports: the owner's instance uses 8080. E2E uses 8098/8099, the extension's
 e2e 8071 (a stand-in Frog) and 8072 (fixture pages), audit 8095,
-screenshots 8096, pwa-check 8094, and the verify scripts 8083–8093 and 8097 —
+screenshots 8096, pwa-check 8094, and the verify scripts 8081, 8083–8093 and 8097 —
 each with its own throwaway database.
 
 ## Gotchas that have already cost time
@@ -438,6 +440,38 @@ part you are about to touch; change it when the code changes.
   an undo puts a watch back as a new row; `WatchRecord.with` carries the
   names through undo. Off in Settings (`Wants::together`) takes an account
   out of everyone's picker.
+- **Events** (`backend/src/events/`, `backend/events/{slug}/`,
+  `frontend/src/lib/premieres/`, `/event` skill). A countdown to a big
+  release with what to watch first. Every event is a pack Claude makes with
+  `/event`: `event.json` (the title, the list in watch order with essentials
+  and notes, `catch_up`, the accent, the two badges' words) and the two badge
+  SVGs drawn by `npm run badges`, compiled in through `pack!` in
+  `events/pack.rs`, plus a premiere of its own in `premieres/{slug}.ts`.
+  Administration → Events only switches one off for everyone, pins its
+  moment and previews the premiere. Zero is midnight on the release day
+  where each person is (01:00 where a zone skips midnight), unless a moment
+  is pinned; the day follows TMDB's for `FROG_REGION` (`airing::film_opens`),
+  checked every six hours, so Belgium's 16 December wins over the US 18th.
+  It is on Home from `shows_from_days` before (45) to `ends_after_days`
+  after (14): `EventHero` takes the featured carousel's place whatever the
+  hero setting, with a Before row under it, and two on one day share it as
+  slides. Hide from Home is per account and also quiets that event's
+  notifications (a week to go, the day before, out: ref_key
+  `event:{slug}:{milestone}:{user}`, each sent only in its first hours so a
+  late start never sends an old one). Readiness counts a film seen with any
+  watch, a show by its released regular episodes in the pack's seasons;
+  "before zero" reads `COALESCE(logged_at, watched_at)`. The premiere plays
+  in the open tab at zero or on the first open after it, once per account
+  (`event_seen`, written as it starts), never when hidden, past, or when its
+  pictures miss 3 s. Ready for {name} is a total given at zero to whoever
+  saw every essential before it; Opening Night is a moment (`eligible`) from
+  a watch of the title in the three days from zero, so a bulk mark never
+  earns it. Both are catalogue badges in the Events group, drawn from the
+  pack's own SVGs (`events::pack::art`), not `art.json`. `verify-premiere`
+  (port 8081, real TMDB pictures) checks every beat, skip, a hidden tab,
+  reduced motion and frame times: on 2026-11-17 in Chrome both desktop and
+  an emulated Pixel 7 held 17.1 ms at the 95th percentile, the 60 Hz frame.
+
 - **Airing** (`airing.rs`, `routes/airing.rs`, the Calendar's Airing view). Once a day the
   worker reads TMDB's `/discover/movie` for films released in `FROG_REGION`
   in the window (last week to four weeks ahead; 25 pages, in cinemas or
@@ -531,7 +565,8 @@ part you are about to touch; change it when the code changes.
   `verify-trailer` (the trailer behind a title, frame by frame against
   YouTube's own player; `--webkit` for Safari's engine), `verify-accounts` (invites,
   isolation, devices, switching off), `verify-pull` (pull to refresh with
-  real touch input), plus `npm run pwa-check` and
+  real touch input), `verify-premiere` (an event's premiere frame by frame;
+  `--slug=`, `--webkit`), plus `npm run pwa-check` and
   `npm run audit`. The ones that reach TMDB need a valid key; with a bad one
   every TMDB page answers 502.
 - **Web Push in tests:** headless Chrome throws away displayed notifications,

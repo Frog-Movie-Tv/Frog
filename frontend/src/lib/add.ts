@@ -214,3 +214,30 @@ export async function addMany(titles: Pickable[], status: Status, changed?: () =
 	await changed?.();
 	return { added, skipped };
 }
+
+/**
+ * "I've seen it": a film marked watched as its own page does, asking when.
+ * Not in the library yet, it goes in as Completed; in it, the watch is added
+ * and Undo takes exactly that back.
+ */
+export async function seenIt(
+	t: Addable & { id: number },
+	inLibrary: boolean,
+	changed?: () => unknown
+): Promise<boolean> {
+	if (!inLibrary) return !!(await addAs(t, 'completed', changed));
+	const answer = await whenWatched.ask(t.name, 'Marked as watched', { film: t.kind === 'movie' });
+	if (!answer) return false;
+	try {
+		const { before } = await api.bulk({ action: 'watched', title_ids: [t.id], ...answer });
+		toasts.undoable(`Marked ${t.name} watched`, async () => {
+			await api.bulk({ action: 'unmark', entries: before });
+			await changed?.();
+		});
+		await changed?.();
+		return true;
+	} catch (e) {
+		toasts.error(e);
+		return false;
+	}
+}

@@ -162,6 +162,7 @@
 		},
 		{ key: 'digest', label: 'Your week', hint: 'Monday morning: what you watched, what airs' },
 		{ key: 'badges', label: 'Badges', hint: 'When you earn or are given one' },
+		{ key: 'events', label: 'Events', hint: 'A week before, the day before, and when it is out' },
 		{ key: 'updates', label: 'Frog updates', hint: 'When Frog gets a new version' }
 	];
 

@@ -35,6 +35,7 @@ export const GROUPS: { id: BadgeGroup; label: string; about: string }[] = [
 	{ id: 'moments', label: 'Moments', about: 'Only what you log as it happens counts.' },
 	{ id: 'taste', label: 'Taste', about: 'What you watch and how you rate it.' },
 	{ id: 'anime', label: 'Anime and manga', about: 'Episodes, films and chapters.' },
+	{ id: 'events', label: 'Events', about: 'Ready before the big ones, and there when they open.' },
 	{ id: 'frog', label: 'Your Frog', about: 'Your library, your shelves and your people.' },
 	{ id: 'collector', label: 'Collector', about: 'Badges for badges.' },
 	{ id: 'custom', label: 'Made on this Frog', about: 'Made here, earned like any other.' },

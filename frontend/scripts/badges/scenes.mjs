@@ -3059,6 +3059,93 @@ export const SCENES = {
 			[760, 560, 16]
 		]);
 		return out;
+	},
+
+	// events: each event's two, drawn with it (backend/events/{slug}) ------------
+	'event.avengers-doomsday.ready': () => {
+		let out = sky('#06120c', '#0f2a1c');
+		// A sigil of our own: rings and ticks turning around the clock.
+		out += glow(512, 470, 380, '#5dff9b', 0.32);
+		for (const [r, w, o] of [
+			[360, 6, 0.55],
+			[300, 3, 0.4]
+		])
+			out += circle(512, 470, r, 'none', { stroke: '#8ef0b4', sw: w, opacity: o });
+		for (let i = 0; i < 24; i++) {
+			const a = ((i * 15 - 90) * Math.PI) / 180;
+			const r1 = i % 2 ? 312 : 300;
+			out += line(
+				`M${f(512 + Math.cos(a) * r1)} ${f(470 + Math.sin(a) * r1)} L${f(512 + Math.cos(a) * 356)} ${f(470 + Math.sin(a) * 356)}`,
+				'#8ef0b4',
+				i % 2 ? 4 : 8,
+				{ opacity: 0.55 }
+			);
+		}
+		out += at(
+			512,
+			330,
+			1,
+			0,
+			clock(150, { face: '#d9ffe8', rim: '#16614a', hand: '#16614a', h: 0, m: 0 })
+		);
+		out += shadow(512, 812, 190, 18);
+		out += putFrog(512, 560, 3.7, {
+			arms: 'up',
+			eyes: 'happy',
+			mouth: 'grin',
+			wear: ['glasses3d']
+		});
+		out += at(760, 650, 1, 18, ticket(190, 92, { color: '#8ef0b4' }));
+		out += at(264, 650, 1, -18, ticket(190, 92, { color: '#5dff9b' }));
+		out += sparkles(
+			[
+				[300, 240, 26],
+				[724, 230, 22],
+				[812, 470, 16],
+				[214, 470, 18]
+			],
+			'#d9ffe8'
+		);
+		return out;
+	},
+	'event.avengers-doomsday.opening': () => {
+		let out = sky('#06120c', '#112b20');
+		// The screen, lit green, with the light coming off it.
+		out +=
+			rect(212, 170, 600, 300, 26, '#0b1f15') +
+			rect(
+				232,
+				190,
+				560,
+				260,
+				18,
+				radial('dd-screen', [
+					[0, '#c8ffdc'],
+					[0.45, '#5dff9b'],
+					[1, '#16614a']
+				])
+			);
+		out += glow(512, 320, 360, '#5dff9b', 0.3);
+		out += path('M232 450 L120 900 L904 900 L792 450 Z', '#5dff9b', { opacity: 0.1 });
+		const s = seat({ color: '#2f7d46' });
+		out += at(512, 690, 1.05, 0, s.back);
+		out += putFrog(512, 560, 4.1, {
+			arms: 'hold',
+			eyes: 'starry',
+			mouth: 'open',
+			wear: ['glasses3d']
+		});
+		out += at(512, 720, 0.17, 0, popcorn({ id: 'dd-pop', band: false }));
+		out += at(512, 690, 1.05, 0, s.front);
+		out += sparkles(
+			[
+				[290, 220, 22],
+				[740, 250, 26],
+				[512, 150, 18]
+			],
+			'#e6fff0'
+		);
+		return out;
 	}
 };
 

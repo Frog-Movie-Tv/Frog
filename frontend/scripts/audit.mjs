@@ -182,6 +182,8 @@ const ROUTES = [
 	'/admin/badges',
 	'/admin/database',
 	'/admin/database/title',
+	'/events',
+	'/events/avengers-doomsday',
 	'/title/tv/95396',
 	'/title/movie/157336',
 	'/person/73457'
@@ -202,6 +204,11 @@ const ACTIONS = [
 	{
 		route: '/title/movie/603',
 		press: (page) => page.getByRole('button', { name: 'Add to library' })
+	},
+	// The premiere draws on a canvas and loads its pictures when it starts.
+	{
+		route: '/admin#events',
+		press: (page) => page.getByRole('button', { name: 'Preview premiere' })
 	},
 	// The badge editor starts its background-fill worker when it opens.
 	{

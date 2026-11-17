@@ -1,0 +1,72 @@
+{
+  "slug": "avengers-doomsday",
+  "name": "Doomsday",
+  "target": { "kind": "movie", "tmdb": 1003596 },
+  "follows_release": true,
+  "day": "2026-12-16",
+  "opens": "cinemas",
+  "shows_from_days": 45,
+  "ends_after_days": 14,
+  "catch_up": true,
+  "accent": "#5dff9b",
+  "badges": {
+    "ready": {
+      "name": "Ready for Doomsday",
+      "about": "Every essential seen before Avengers: Doomsday opened."
+    },
+    "opening": {
+      "name": "Opening Night: Doomsday",
+      "about": "Saw Avengers: Doomsday in its first three days."
+    }
+  },
+  "groups": [
+    {
+      "name": "The Infinity Saga",
+      "titles": [
+        {
+          "kind": "movie",
+          "tmdb": 24428,
+          "essential": true,
+          "note": "Where the team begins"
+        },
+        { "kind": "movie", "tmdb": 99861, "essential": false },
+        {
+          "kind": "movie",
+          "tmdb": 271110,
+          "essential": true,
+          "note": "Why they split"
+        },
+        { "kind": "movie", "tmdb": 299536, "essential": true },
+        { "kind": "movie", "tmdb": 299534, "essential": true }
+      ]
+    },
+    {
+      "name": "The Multiverse Saga",
+      "titles": [
+        { "kind": "tv", "tmdb": 85271, "seasons": [1, 1], "essential": true },
+        { "kind": "tv", "tmdb": 84958, "seasons": [1, 2], "essential": true },
+        { "kind": "movie", "tmdb": 634649, "essential": true },
+        { "kind": "movie", "tmdb": 453395, "essential": true },
+        { "kind": "movie", "tmdb": 533535, "essential": true },
+        { "kind": "movie", "tmdb": 822119, "essential": true },
+        { "kind": "movie", "tmdb": 986056, "essential": true },
+        {
+          "kind": "movie",
+          "tmdb": 617126,
+          "essential": true,
+          "note": "Who's new"
+        }
+      ]
+    },
+    {
+      "name": "The mutants",
+      "titles": [
+        { "kind": "movie", "tmdb": 36657, "essential": false },
+        { "kind": "movie", "tmdb": 36658, "essential": false },
+        { "kind": "movie", "tmdb": 127585, "essential": false },
+        { "kind": "movie", "tmdb": 263115, "essential": false },
+        { "kind": "tv", "tmdb": 138502, "seasons": [1, 1], "essential": false }
+      ]
+    }
+  ]
+}
