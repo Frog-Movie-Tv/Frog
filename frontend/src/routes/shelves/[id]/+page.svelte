@@ -1,12 +1,15 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { address } from '#lib/address';
 	import { api, frogId, img, SEARCH_PAUSE } from '#lib/api';
+	import { lastShelf, readShelf } from '#lib/bookcase';
+	import { sortItems, type ItemSort } from '#lib/books';
+	import BookRows from '#lib/components/BookRows.svelte';
 	import Empty from '#lib/components/Empty.svelte';
-	import Grid from '#lib/components/Grid.svelte';
 	import Icon from '#lib/components/Icon.svelte';
-	import Poster from '#lib/components/Poster.svelte';
-	import Select from '#lib/components/Select.svelte';
+	import WatchlistTally from '#lib/components/WatchlistTally.svelte';
 	import { settings } from '#lib/settings.svelte';
 	import ShelfFromList from '#lib/components/ShelfFromList.svelte';
 	import ShelfRules from '#lib/components/ShelfRules.svelte';
@@ -18,29 +21,17 @@
 	import { session } from '#lib/session.svelte';
 	import { moved, sortable } from '#lib/sortable';
 	import { toasts } from '#lib/toast.svelte';
-	import type { LibraryItem, SearchItem, Shelf, ShelfRules as Rules } from '#lib/types';
+	import type { Length, LibraryItem, SearchItem, Shelf, ShelfRules as Rules } from '#lib/types';
 
 	const id = $derived(Number(page.params.id));
 
-	/** This shelf's own poster size, over the one in Settings. */
-	const SIZES = [
-		{ value: '', label: 'Posters as in Settings' },
-		{ value: '104', label: 'Small posters' },
-		{ value: '150', label: 'Medium posters' },
-		{ value: '196', label: 'Large posters' }
-	];
-	const ownSize = $derived(settings.current.shelfPosterSize?.[String(id)] ?? null);
-
-	function pickSize(value: string) {
-		const sizes = { ...settings.current.shelfPosterSize };
-		if (value) sizes[String(id)] = Number(value);
-		else delete sizes[String(id)];
-		settings.set('shelfPosterSize', sizes);
-	}
-
-	let shelf = $state<Shelf | null>(null);
-	let items = $state<LibraryItem[]>([]);
-	let loading = $state(true);
+	// Opened from the bookcase, the shelf was read as the pointer came near:
+	// it draws at once, so the zoom has its books to land on.
+	const kept = lastShelf(Number(page.params.id));
+	let shelf = $state<Shelf | null>(kept?.shelf ?? null);
+	let items = $state<LibraryItem[]>(kept?.items ?? []);
+	let lengths = $state<Record<string, Length>>(kept?.lengths ?? {});
+	let loading = $state(!kept);
 	let error = $state<Failure | null>(null);
 	let editing = $state(false);
 	/** Adding a pasted list, in its order. */
@@ -51,9 +42,10 @@
 
 	async function load() {
 		try {
-			const r = await api.shelf(id);
+			const r = await readShelf(id);
 			shelf = r.shelf;
 			items = r.items;
+			lengths = r.lengths;
 			error = null;
 			// A shelf's card can send you here to rename it, or to add to it.
 			const asked = page.url.searchParams;
@@ -73,6 +65,49 @@
 		if (!session.authenticated || !id) return;
 		void load();
 	});
+
+	/** The order to show it in lives in the address, so Back from a title keeps it. */
+	const SORTS: { value: ItemSort; label: string }[] = [
+		{ value: 'order', label: 'Your order' },
+		{ value: 'year', label: 'Year' }
+	];
+	const sorts = $derived(
+		shelf?.kind === 'watchlist'
+			? [
+					...SORTS,
+					{ value: 'short' as const, label: 'Shortest first' },
+					{ value: 'long' as const, label: 'Longest first' }
+				]
+			: [...SORTS, { value: 'name' as const, label: 'Name' }]
+	);
+	const wanted = $derived(address().searchParams);
+	const sortBy = $derived(sorts.find((s) => s.value === wanted.get('sort'))?.value ?? 'order');
+	const oldest = $derived(wanted.get('oldest') === '1');
+	const shown = $derived(sortItems(items, sortBy, lengths, oldest));
+
+	function sortTo(by: ItemSort) {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- built and read here, never state
+		const params = new URLSearchParams(untrack(() => address().search));
+		// Year again turns it round: newest first, then oldest.
+		const flip = by === 'year' && sortBy === 'year';
+		if (by === 'order') params.delete('sort');
+		else params.set('sort', by);
+		if (flip && !oldest) params.set('oldest', '1');
+		else params.delete('oldest');
+		const search = params.size ? `?${params}` : '';
+		void goto(`/shelves/${id}${search}`, { shallow: true, replace: true, state: page.state });
+	}
+
+	let phone = $state(false);
+	$effect(() => {
+		const query = matchMedia('(max-width: 720px)');
+		phone = query.matches;
+		const changed = () => (phone = query.matches);
+		query.addEventListener('change', changed);
+		return () => query.removeEventListener('change', changed);
+	});
+	/** Three-quarters on a phone, as the size in Settings does. */
+	const size = $derived(Math.round(settings.current.posterSize * (phone ? 0.79 : 1)));
 
 	async function saveOrder() {
 		try {
@@ -240,7 +275,7 @@
 	>
 </svelte:head>
 
-<div class="page">
+<div class="page" style:--glow={shelf?.accent ?? undefined}>
 	<a class="back faint" href="/shelves"><Icon name="chevron-left" size={16} /> Shelves</a>
 
 	{#if loading}
@@ -318,14 +353,6 @@
 							{#if editing}<Icon name="check" size={16} /> Done{:else}<Icon name="grip" size={16} /> Edit{/if}
 						</button>
 					{/if}
-				{/if}
-				{#if items.length && !editing}
-					<Select
-						label="Poster size"
-						value={ownSize ? String(ownSize) : ''}
-						options={SIZES}
-						onchange={pickSize}
-					/>
 				{/if}
 				<button class="btn ghost icon" aria-label="Rename" title="Rename" onclick={startRename}>
 					<Icon name="pencil" size={16} />
@@ -489,29 +516,35 @@
 				{/each}
 			</ol>
 		{:else}
-			<div class="sized" class:own={ownSize !== null} style:--shelf-size="{ownSize ?? 0}px">
-				<Grid>
-					{#each items as item (item.id)}
-						<Poster
-							morph
-							menu={titleMenu(
-								{ ...item, status: item.entry?.status ?? null, favourite: item.entry?.favourite },
-								{ shelf: { ...shelf, remove: () => remove(item) }, onchanged: load }
-							)}
-							kind={item.kind}
-							ref={item}
-							name={item.name}
-							posterPath={item.poster_path}
-							year={year(item.release_date)}
-							status={item.entry?.status ?? null}
-							rating={item.entry?.rating ?? null}
-							watched={item.watched_episodes}
-							total={item.total_episodes}
-							rewatches={item.rewatches}
-							together={item.watched_with}
-						/>
+			{#if watchlist && !adding}
+				<WatchlistTally {items} {lengths} />
+			{/if}
+			{#if items.length > 1}
+				<div class="segmented order" role="group" aria-label="Order">
+					{#each sorts as s (s.value)}
+						<button class:on={sortBy === s.value} onclick={() => sortTo(s.value)}>
+							{s.label}
+							{#if s.value === 'year' && sortBy === 'year'}
+								<Icon name={oldest ? 'arrow-up' : 'arrow-down'} size={13} />
+							{/if}
+						</button>
 					{/each}
-				</Grid>
+				</div>
+			{/if}
+			<div class="case">
+				<BookRows
+					items={shown}
+					{lengths}
+					{watchlist}
+					sheen={shelf.kind === 'smart'}
+					{size}
+					named={morph.key === `shelf${shelf.id}`}
+					menuFor={(item) =>
+						titleMenu(
+							{ ...item, status: item.entry?.status ?? null, favourite: item.entry?.favourite },
+							{ shelf: { ...shelf!, remove: () => remove(item) }, onchanged: load }
+						)}
+				/>
 			</div>
 		{/if}
 	{/if}
@@ -549,51 +582,6 @@
 		from {
 			opacity: 0;
 			transform: translateY(10px);
-		}
-	}
-
-	/* A shelf's posters come in a row at a time, from the top left, a little
-	   further than a grid elsewhere does: opening a shelf is the moment. */
-	.sized :global(.grid > *) {
-		animation: -global-shelf-deal 520ms var(--spring) backwards;
-	}
-
-	.sized :global(.grid > *:nth-child(n + 2)) {
-		animation-delay: 30ms;
-	}
-
-	.sized :global(.grid > *:nth-child(n + 3)) {
-		animation-delay: 60ms;
-	}
-
-	.sized :global(.grid > *:nth-child(n + 4)) {
-		animation-delay: 90ms;
-	}
-
-	.sized :global(.grid > *:nth-child(n + 5)) {
-		animation-delay: 120ms;
-	}
-
-	.sized :global(.grid > *:nth-child(n + 6)) {
-		animation-delay: 150ms;
-	}
-
-	.sized :global(.grid > *:nth-child(n + 8)) {
-		animation-delay: 190ms;
-	}
-
-	.sized :global(.grid > *:nth-child(n + 11)) {
-		animation-delay: 230ms;
-	}
-
-	.sized :global(.grid > *:nth-child(n + 15)) {
-		animation-delay: 270ms;
-	}
-
-	@keyframes -global-shelf-deal {
-		from {
-			opacity: 0;
-			transform: translateY(18px) scale(0.94);
 		}
 	}
 
@@ -790,15 +778,28 @@
 		padding: 4px 2px;
 	}
 
-	/* A shelf with a size of its own: its columns, three-quarters of it on a
-	   phone, as the size in Settings does. */
-	.sized.own {
-		--poster-min: var(--shelf-size);
+	/* The bookcase the shelf's titles stand in, as on the Shelves page. */
+	.case {
+		padding: 0 30px 26px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-lg);
+		background: linear-gradient(180deg, var(--shine), transparent 30%), var(--bg-elev);
+		box-shadow:
+			var(--shadow-3),
+			inset 0 1px 0 var(--shine);
+		backdrop-filter: var(--frost);
+		-webkit-backdrop-filter: var(--frost);
+		overflow: hidden;
+	}
+
+	.order {
+		margin-bottom: 16px;
 	}
 
 	@media (max-width: 720px) {
-		.sized.own {
-			--poster-min: calc(var(--shelf-size) * 0.79);
+		.case {
+			padding: 0 12px 18px;
+			border-radius: var(--radius);
 		}
 	}
 </style>

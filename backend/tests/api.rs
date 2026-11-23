@@ -2120,6 +2120,60 @@ async fn a_shelf_counts_the_episodes_of_a_title_outside_the_library() {
     assert_eq!(outside["watched_episodes"], json!(1));
 }
 
+/// A watchlist says how long each title is and how much is left: a film until
+/// it is seen, a show by what is out and unwatched, the shelf by its sum.
+#[tokio::test]
+async fn a_watchlist_counts_the_time_left() {
+    let h = Harness::new().await;
+    let cookie = shelf_library(&h).await;
+    sqlx::query(
+        "UPDATE title SET runtime = CASE id WHEN 1 THEN 45 WHEN 2 THEN 30 WHEN 4 THEN 120 ELSE 100 END",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE episode SET air_date = '2020-01-01'")
+        .execute(&h.state.pool)
+        .await
+        .unwrap();
+    // One more episode of Untouched, not out yet: it counts in its length only.
+    sqlx::query(
+        "INSERT INTO episode (id, title_id, season_number, episode_number, air_date)
+         VALUES (6, 2, 1, 2, '2999-01-01')",
+    )
+    .execute(&h.state.pool)
+    .await
+    .unwrap();
+
+    let (_, body, _) = h
+        .post(
+            "/api/shelves",
+            json!({ "name": "Tonight", "kind": "watchlist", "title_ids": [1, 2, 4, 5] }),
+            Some(&cookie),
+        )
+        .await;
+    let id = body["shelf"]["id"].as_i64().unwrap();
+
+    let (status, body) = h.get(&format!("/api/shelves/{id}"), Some(&cookie)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let lengths = &body["lengths"];
+    assert_eq!(lengths["1"]["total"], json!(90));
+    assert_eq!(lengths["1"]["left"], json!(45));
+    assert_eq!(lengths["1"]["episodes_left"], json!(1));
+    assert_eq!(lengths["2"]["total"], json!(60));
+    assert_eq!(lengths["2"]["left"], json!(30));
+    assert_eq!(lengths["4"]["left"], json!(0));
+    assert_eq!(lengths["4"]["watched"], json!(true));
+    assert_eq!(lengths["5"]["left"], json!(100));
+
+    let (_, list) = h.get("/api/shelves", Some(&cookie)).await;
+    let shelf = &list["shelves"][0];
+    assert_eq!(shelf["minutes"], json!({ "total": 370, "left": 175 }));
+    assert_eq!(shelf["books"][0]["name"], json!("Half Watched"));
+    assert_eq!(shelf["books"][0]["minutes"], json!(90));
+    assert_eq!(shelf["books"][0]["year"], json!("2019"));
+}
+
 /// A watchlist holds titles without putting them in the library, and stays a
 /// watchlist through a delete and its undo.
 #[tokio::test]

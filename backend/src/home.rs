@@ -143,7 +143,7 @@ pub async fn home(state: &AppState, me: i64) -> AppResult<Value> {
         });
 
     let this_week = airing_this_week(pool, me, &facts).await?;
-    let shelves = crate::shelves::summaries(pool, me).await?;
+    let shelves = crate::shelves::summaries(pool, me, false).await?;
     let recommended = recommended(pool, me, &facts).await?;
     // Which row the hero was taken out of: when the hero shows other things,
     // the page puts it back there.

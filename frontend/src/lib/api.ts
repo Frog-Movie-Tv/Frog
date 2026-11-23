@@ -43,6 +43,7 @@ import type {
 	MatchResult,
 	Kind,
 	FeaturedTitle,
+	Length,
 	LibraryItem,
 	SharedLibrary,
 	PersonDetail,
@@ -473,7 +474,10 @@ export const api = {
 		),
 	stats: () => get<Stats>('/api/library/stats'),
 	shelves: () => get<{ shelves: Shelf[] }>('/api/shelves'),
-	shelf: (id: number) => get<{ shelf: Shelf; items: LibraryItem[] }>(`/api/shelves/${id}`),
+	shelf: (id: number) =>
+		get<{ shelf: Shelf; items: LibraryItem[]; lengths: Record<string, Length> }>(
+			`/api/shelves/${id}`
+		),
 	createShelf: (body: {
 		name: string;
 		kind: Shelf['kind'];

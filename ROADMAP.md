@@ -19,6 +19,11 @@ Owner steps; nothing in a release does them.
 
 ## To build
 
+- **Feel the bookcase's zoom on a real phone.** The zoom into a shelf and
+  out again was checked in the browser pane, which slows animation, so its
+  smoothness on a real Android phone and in Safari is still to see, as is
+  dragging a shelf by touch.
+
 - **Ship Events as 1.10.0 Golden Frog before 1 December**, so Doomsday's
   countdown is on Home with two weeks to go (it shows from 1 November and
   opens 16 December here). Its pull request is open from `feat/events`;

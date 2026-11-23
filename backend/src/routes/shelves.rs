@@ -14,7 +14,7 @@ use crate::state::AppState;
 use crate::store;
 
 pub async fn list(auth: Auth, State(state): State<AppState>) -> AppResult<Json<Value>> {
-    let shelves = shelves::summaries(&state.pool, auth.user_id()).await?;
+    let shelves = shelves::summaries(&state.pool, auth.user_id(), true).await?;
     Ok(Json(json!({ "shelves": shelves })))
 }
 
@@ -26,8 +26,11 @@ pub async fn get(
     let row = shelves::find(&state.pool, auth.user_id(), id).await?;
     let titles = titles_of(&state.pool, auth.user_id(), &row).await?;
     let shelf = summary(&row, &titles);
+    let lengths = shelves::lengths(&state.pool, auth.user_id(), &titles).await?;
     let items = store::build_items(&state.pool, auth.user_id(), titles).await?;
-    Ok(Json(json!({ "shelf": shelf, "items": items })))
+    Ok(Json(
+        json!({ "shelf": shelf, "items": items, "lengths": lengths }),
+    ))
 }
 
 fn clean_name(name: &str) -> AppResult<String> {
