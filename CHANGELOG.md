@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.1](https://github.com/Frog-Movie-Tv/Frog/compare/v1.10.0...v1.10.1) (2026-11-23)
+
+
+### Features
+
+* **shelves:** a bookcase, with time left on watchlists ([1e064d4](https://github.com/Frog-Movie-Tv/Frog/commit/1e064d419ac175c06a8e4b3625f26a9bea01456b))
+* **shelves:** a bookcase, with time left on watchlists ([c282b47](https://github.com/Frog-Movie-Tv/Frog/commit/c282b47ca46cf3eb588d4745335fa64f5289a98e))
+
 ## [1.10.0](https://github.com/Frog-Movie-Tv/Frog/compare/v1.9.1...v1.10.0) (2026-11-17)
 
 
