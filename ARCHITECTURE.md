@@ -495,6 +495,18 @@ pure SPA. The Rust server owns routing and falls back to `index.html`.
   searches everything rather than the library. Any hand-picked shelf takes a
   pasted list (`lib/import/list.ts` reads it into import rows, the import's
   matcher finds them, `ShelfFromList` adds them in order).
+- **Shelves are drawn as a bookcase.** `/api/shelves` sends each shelf's
+  first 48 titles as `books` and its `minutes` (`shelves::bookcase`); Home's
+  row asks without them. `shelves::lengths` works out each title's
+  `Length` (whole, left, episodes left) in two queries for the account:
+  released episodes from the list, else TMDB's count × runtime, nothing left
+  once watched or Completed. `lib/books.ts` decides what stands face out,
+  each spine's width from that length, and the sort orders; `ShelfRow` draws
+  a shelf there, `BookRows` the titles inside one, `WatchlistTally` the time
+  left. `lib/bookcase.ts` keeps the last answers per account and reads a
+  shelf on hover, so both ends of the zoom (`html[data-zoom]` in `app.css`,
+  set in the layout's `onNavigate`) draw at once; only the opened shelf's
+  books carry `view-transition-name`.
 - **Search follows typing.** Titles are asked `SEARCH_PAUSE` (60 ms) after a
   key; manga, characters, people and studios (`/api/search/more`) once typing
   pauses (`MORE_PAUSE`, 350 ms), because they reach AniList, which Frog asks

@@ -120,8 +120,6 @@ export interface Settings {
 	goKeys?: Record<string, string>;
 	/** A title's trailer plays without sound behind its page. */
 	trailerAutoplay?: boolean;
-	/** A shelf's own poster size, by shelf id, over `posterSize`. */
-	shelfPosterSize?: Record<string, number>;
 }
 
 /** The letter after G for each page, until changed in Settings. */

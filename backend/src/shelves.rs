@@ -6,7 +6,10 @@
 //! it as a kind of its own. Every statement on `shelf` and `shelf_item` is
 //! here, and every one names the account; `routes::shelves` is HTTP only.
 
+use std::collections::{HashMap, HashSet};
+
 use crate::clock::Stamp;
+use crate::palette::Palette;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -244,6 +247,12 @@ pub async fn titles_of(
 }
 
 pub fn summary(row: &ShelfRow, titles: &[TitleRow]) -> Value {
+    // The shelf's colour, from the first poster that has one.
+    let accent = titles
+        .iter()
+        .find_map(|t| t.accent_json.as_deref())
+        .and_then(|raw| serde_json::from_str::<Palette>(raw).ok())
+        .map(|p| p.accent);
     json!({
         "id": row.0,
         "name": row.1,
@@ -252,11 +261,52 @@ pub fn summary(row: &ShelfRow, titles: &[TitleRow]) -> Value {
         "position": row.4,
         "count": titles.len(),
         "posters": titles.iter().filter_map(|t| t.poster_path.clone()).take(4).collect::<Vec<_>>(),
+        "accent": accent,
     })
 }
 
-/// One account's shelves, in their order, with a count and a cover each.
-pub async fn summaries(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Value>> {
+/// How many titles the Shelves page can stand on one shelf: a few face out,
+/// the rest by their spines. Past this it shows a number, not more books.
+const BOOKS: usize = 48;
+
+/// The summary as the Shelves page draws it: the titles that stand on the
+/// shelf, how long each is, and how much of the shelf is left to watch.
+pub fn bookcase(row: &ShelfRow, titles: &[TitleRow], lengths: &HashMap<i64, Length>) -> Value {
+    let mut out = summary(row, titles);
+    let books: Vec<Value> = titles
+        .iter()
+        .take(BOOKS)
+        .map(|t| {
+            let length = lengths.get(&t.id).copied().unwrap_or_default();
+            json!({
+                "id": t.id,
+                "kind": t.kind,
+                "name": t.name,
+                "poster_path": t.poster_path,
+                "year": t.release_date.as_deref().and_then(|d| d.get(..4)),
+                "minutes": length.total,
+                "left": length.left,
+            })
+        })
+        .collect();
+    let total: i64 = titles
+        .iter()
+        .filter_map(|t| lengths.get(&t.id))
+        .map(|l| l.total)
+        .sum();
+    let left: i64 = titles
+        .iter()
+        .filter_map(|t| lengths.get(&t.id))
+        .map(|l| l.left)
+        .sum();
+    out["books"] = json!(books);
+    out["minutes"] = json!({ "total": total, "left": left });
+    out
+}
+
+/// One account's shelves, in their order, with a count and a cover each, and,
+/// for the Shelves page (`books`), what stands on each and how long it is.
+pub async fn summaries(pool: &SqlitePool, user_id: i64, books: bool) -> AppResult<Vec<Value>> {
     let rows: Vec<ShelfRow> = sqlx::query_as(
         "SELECT id, name, kind, rules_json, position, watchlist
            FROM shelf WHERE user_id = ? ORDER BY position, id",
@@ -267,9 +317,159 @@ pub async fn summaries(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<Value>>
     let mut shelves = Vec::with_capacity(rows.len());
     for row in &rows {
         let titles = titles_of(pool, user_id, row).await?;
-        shelves.push(summary(row, &titles));
+        if books {
+            let lengths = lengths(pool, user_id, &titles).await?;
+            shelves.push(bookcase(row, &titles, &lengths));
+        } else {
+            shelves.push(summary(row, &titles));
+        }
     }
     Ok(shelves)
+}
+
+/// How long a title is, and how much of it this account has still to watch,
+/// in minutes. Specials do not count, as in progress everywhere else.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
+pub struct Length {
+    pub total: i64,
+    pub left: i64,
+    /// Episodes out and not watched; 0 for a film.
+    pub episodes_left: i64,
+    /// Seen, for a film; caught up on what is out, for a show.
+    pub watched: bool,
+}
+
+/// A show's listed episodes, as one account stands with them.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Episodes {
+    pub count: i64,
+    pub minutes: i64,
+    /// Out and not watched yet.
+    pub due: i64,
+    pub due_minutes: i64,
+    pub watched: i64,
+}
+
+/// What a title comes to: a film is its runtime until it is seen; a show is
+/// what is out and unwatched. A show whose episodes Frog has not listed yet
+/// (a watchlist holds titles outside the library) goes by TMDB's count and
+/// runtime. Completed means nothing is left, whatever was ticked. A manga has
+/// chapters, not minutes, so it adds nothing.
+pub fn length_of(
+    kind: &str,
+    runtime: Option<i64>,
+    episode_count: Option<i64>,
+    episodes: Option<Episodes>,
+    seen: bool,
+) -> Length {
+    let runtime = runtime.unwrap_or(0).max(0);
+    match kind {
+        "movie" => Length {
+            total: runtime,
+            left: if seen { 0 } else { runtime },
+            episodes_left: 0,
+            watched: seen,
+        },
+        "tv" => match episodes.filter(|e| e.count > 0) {
+            Some(e) => Length {
+                total: e.minutes,
+                left: if seen { 0 } else { e.due_minutes },
+                episodes_left: if seen { 0 } else { e.due },
+                watched: seen || (e.due == 0 && e.watched > 0),
+            },
+            None => {
+                let count = episode_count.unwrap_or(0).max(0);
+                let total = count * runtime;
+                Length {
+                    total,
+                    left: if seen { 0 } else { total },
+                    episodes_left: if seen { 0 } else { count },
+                    watched: seen,
+                }
+            }
+        },
+        _ => Length::default(),
+    }
+}
+
+/// The length of each of these titles for this account, by title id.
+pub async fn lengths(
+    pool: &SqlitePool,
+    user_id: i64,
+    titles: &[TitleRow],
+) -> AppResult<HashMap<i64, Length>> {
+    if titles.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let ids = serde_json::to_string(&titles.iter().map(|t| t.id).collect::<Vec<_>>())
+        .unwrap_or_else(|_| "[]".into());
+    // (title, episodes, minutes, due, due minutes, watched)
+    type EpisodeRow = (i64, i64, i64, i64, i64, i64);
+    let episodes: Vec<EpisodeRow> = sqlx::query_as(concat!(
+        "SELECT x.title_id, COUNT(*), COALESCE(SUM(x.minutes), 0),
+                COALESCE(SUM(x.released AND NOT x.seen), 0),
+                COALESCE(SUM(CASE WHEN x.released AND NOT x.seen THEN x.minutes ELSE 0 END), 0),
+                COALESCE(SUM(x.seen), 0)
+           FROM (SELECT e.title_id, COALESCE(e.runtime, t.runtime, 0) AS minutes,
+                        ",
+        crate::released!(),
+        " AS released,
+                        EXISTS (SELECT 1 FROM watch_event w
+                                 WHERE w.user_id = ?1 AND w.episode_id = e.id) AS seen
+                   FROM episode e JOIN title t ON t.id = e.title_id
+                  WHERE e.season_number > 0
+                    AND e.title_id IN (SELECT value FROM json_each(?2))) x
+          GROUP BY x.title_id"
+    ))
+    .bind(user_id)
+    .bind(&ids)
+    .fetch_all(pool)
+    .await?;
+    let episodes: HashMap<i64, Episodes> = episodes
+        .into_iter()
+        .map(|(id, count, minutes, due, due_minutes, watched)| {
+            (
+                id,
+                Episodes {
+                    count,
+                    minutes,
+                    due,
+                    due_minutes,
+                    watched,
+                },
+            )
+        })
+        .collect();
+    // A film watched at all, or anything this account calls completed.
+    let seen: Vec<(i64,)> = sqlx::query_as(
+        "SELECT w.title_id FROM watch_event w
+          WHERE w.user_id = ?1 AND w.episode_id IS NULL
+            AND w.title_id IN (SELECT value FROM json_each(?2))
+         UNION
+         SELECT l.title_id FROM library_entry l
+          WHERE l.user_id = ?1 AND l.status = 'completed'
+            AND l.title_id IN (SELECT value FROM json_each(?2))",
+    )
+    .bind(user_id)
+    .bind(&ids)
+    .fetch_all(pool)
+    .await?;
+    let seen: HashSet<i64> = seen.into_iter().map(|(id,)| id).collect();
+    Ok(titles
+        .iter()
+        .map(|t| {
+            (
+                t.id,
+                length_of(
+                    &t.kind,
+                    t.runtime,
+                    t.episode_count,
+                    episodes.get(&t.id).copied(),
+                    seen.contains(&t.id),
+                ),
+            )
+        })
+        .collect())
 }
 
 /// A new shelf, last in the account's order; a hand-picked one may start with
@@ -444,4 +644,74 @@ pub async fn holding(
     .bind(user_id)
     .fetch_all(pool)
     .await?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn eps(count: i64, minutes: i64, due: i64, due_minutes: i64, watched: i64) -> Option<Episodes> {
+        Some(Episodes {
+            count,
+            minutes,
+            due,
+            due_minutes,
+            watched,
+        })
+    }
+
+    #[test]
+    fn a_film_is_its_runtime_until_it_is_seen() {
+        assert_eq!(length_of("movie", Some(169), None, None, false).left, 169);
+        let seen = length_of("movie", Some(169), None, None, true);
+        assert_eq!((seen.total, seen.left, seen.watched), (169, 0, true));
+        assert_eq!(
+            length_of("movie", None, None, None, false),
+            Length::default()
+        );
+    }
+
+    #[test]
+    fn a_show_is_what_is_out_and_unwatched() {
+        // 39 episodes of 45 minutes, 14 watched, all out.
+        let l = length_of("tv", Some(45), Some(39), eps(39, 1755, 25, 1125, 14), false);
+        assert_eq!(
+            (l.total, l.left, l.episodes_left, l.watched),
+            (1755, 1125, 25, false)
+        );
+        // Caught up on what is out: watched, though more is coming.
+        let caught = length_of("tv", Some(24), Some(24), eps(24, 576, 0, 0, 12), false);
+        assert!(caught.watched);
+        assert_eq!(caught.left, 0);
+        // Nothing out yet is not watched.
+        assert!(!length_of("tv", Some(24), Some(12), eps(12, 288, 0, 0, 0), false).watched);
+    }
+
+    #[test]
+    fn a_show_without_its_episodes_goes_by_tmdb() {
+        let l = length_of("tv", Some(44), Some(49), None, false);
+        assert_eq!((l.total, l.left, l.episodes_left), (2156, 2156, 49));
+        // An empty listing is no listing.
+        assert_eq!(
+            length_of("tv", Some(44), Some(49), eps(0, 0, 0, 0, 0), false).total,
+            2156
+        );
+    }
+
+    #[test]
+    fn completed_leaves_nothing() {
+        let l = length_of("tv", Some(24), Some(12), eps(12, 288, 3, 72, 9), true);
+        assert_eq!(
+            (l.total, l.left, l.episodes_left, l.watched),
+            (288, 0, 0, true)
+        );
+    }
+
+    #[test]
+    fn a_manga_has_no_minutes() {
+        assert_eq!(
+            length_of("manga", None, Some(120), None, false),
+            Length::default()
+        );
+    }
 }

@@ -600,6 +600,18 @@ part you are about to touch; change it when the code changes.
 - **Shelves have one place on Home**, the Your shelves row. A shelf used to be
   able to add a row of its own, which showed it twice; saved layouts lose those
   rows as they load (`introduceRows`).
+- **Shelves are a bookcase** (`shelves::bookcase`, `lib/books.ts`,
+  ARCHITECTURE.md). Time left is `shelves::lengths`: a show's released,
+  unwatched episodes from the list, TMDB's count × runtime when none are
+  listed, a film's runtime until a watch or Completed; a title not out yet
+  has none. A spine's width follows the whole length on a log scale, 13 to
+  42 px, so a series reads thicker than a film without One Piece taking the
+  shelf. Opening a shelf zooms in from the row clicked (`--zoom-x`/`--zoom-y`
+  on `<html>`, `data-zoom` for the transition's length): its data comes from
+  `lib/bookcase.ts`, read on hover, because a zoom into a spinner shows
+  nothing. Only that shelf's books are named for the view transition; naming
+  every poster on the page made each navigation slow. A shelf's sort and the
+  bookcase's filter live in the address.
 - **Administration → Database is read only and keeps secrets back**
   (`backend/src/dbview.rs`). A new column named with hash, secret, token,
   key, p256dh or auth fails `tests/dbview.rs` until it goes in `HIDDEN` or,

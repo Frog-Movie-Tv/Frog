@@ -104,11 +104,26 @@
 		// A step on the same page (a filter, a menu opening) is not a new page.
 		if (navigation.from?.url.pathname === navigation.to?.url.pathname) return;
 
+		// Into a shelf the bookcase zooms in on it; out of one it zooms back
+		// out (app.css). Every other page crossfades.
+		const shelf = /^\/shelves\/\d+$/;
+		const from = navigation.from?.url.pathname ?? '';
+		const to = navigation.to?.url.pathname ?? '';
+		const zoom =
+			from === '/shelves' && shelf.test(to)
+				? 'in'
+				: shelf.test(from) && to === '/shelves'
+					? 'out'
+					: '';
+
 		return new Promise((resolve) => {
 			// A page that draws no frames (in the background, or busy) would
 			// never start the transition, and the navigation would wait on it.
 			if (document.hidden) return resolve();
 			const fallback = setTimeout(resolve, 600);
+			const root = document.documentElement;
+			if (zoom) root.dataset.zoom = zoom;
+			else delete root.dataset.zoom;
 			try {
 				const transition = document.startViewTransition(async () => {
 					clearTimeout(fallback);
@@ -123,7 +138,11 @@
 				});
 				// Interrupting one navigation with another rejects these; that is
 				// normal and must not surface as an uncaught error.
-				transition.finished.catch(() => {});
+				transition.finished
+					.catch(() => {})
+					.finally(() => {
+						if (root.dataset.zoom === zoom) delete root.dataset.zoom;
+					});
 				transition.ready.catch(() => {});
 			} catch {
 				resolve();

@@ -849,6 +849,72 @@ textarea.input {
 	}
 }
 
+/* Opening a shelf: the bookcase zooms in on it and blurs away while its books
+   fly to their places on the shelf's page (each is named `book-{id}` at both
+   ends, so the browser moves them). Back runs it the other way, from the same
+   shelf: `--zoom-x` and `--zoom-y` are where it stands, set by ShelfRow. The
+   bar stays where it is. */
+html[data-zoom] header.bar {
+	view-transition-name: frog-bar;
+}
+html[data-zoom] nav.tabs {
+	view-transition-name: frog-tabs;
+}
+html[data-zoom] ::view-transition-old(root),
+html[data-zoom] ::view-transition-new(root) {
+	transform-origin: var(--zoom-x, 50%) var(--zoom-y, 35%);
+}
+html[data-zoom='in'] ::view-transition-old(root) {
+	animation: zoom-into 560ms cubic-bezier(0.55, 0, 0.35, 1) both;
+}
+html[data-zoom='in'] ::view-transition-new(root) {
+	animation: zoom-arrive 520ms cubic-bezier(0.2, 0.85, 0.25, 1) 180ms both;
+}
+html[data-zoom='out'] ::view-transition-old(root) {
+	animation: zoom-leave 260ms ease-in both;
+}
+html[data-zoom='out'] ::view-transition-new(root) {
+	animation: zoom-back 620ms cubic-bezier(0.2, 0.85, 0.25, 1) 60ms both;
+}
+html[data-zoom] ::view-transition-group(*) {
+	animation-duration: 640ms;
+	animation-timing-function: cubic-bezier(0.2, 0.85, 0.25, 1);
+}
+html[data-zoom] ::view-transition-group(root) {
+	animation-duration: 0s;
+}
+@keyframes zoom-into {
+	55% {
+		transform: scale(1.45);
+		opacity: 1;
+		filter: blur(0);
+	}
+	to {
+		transform: scale(2);
+		opacity: 0;
+		filter: blur(6px);
+	}
+}
+@keyframes zoom-arrive {
+	from {
+		opacity: 0;
+		transform: translateY(14px);
+	}
+}
+@keyframes zoom-leave {
+	to {
+		opacity: 0;
+		transform: scale(0.97);
+	}
+}
+@keyframes zoom-back {
+	from {
+		opacity: 0;
+		transform: scale(1.5);
+		filter: blur(8px);
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
 	*,
 	*::before,
@@ -857,7 +923,9 @@ textarea.input {
 		transition-duration: 0.01ms !important;
 	}
 	::view-transition-old(root),
-	::view-transition-new(root) {
+	::view-transition-new(root),
+	html[data-zoom] ::view-transition-old(root),
+	html[data-zoom] ::view-transition-new(root) {
 		animation: none;
 	}
 }

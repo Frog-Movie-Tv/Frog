@@ -389,6 +389,33 @@ export interface Shelf {
 	count: number;
 	/** Up to four, for the cover. */
 	posters: string[];
+	/** The Shelves page only: what stands on it, in its order, up to 48. */
+	books?: Book[];
+	/** The Shelves page only: the whole shelf, and what is left of it to watch. */
+	minutes?: { total: number; left: number };
+	/** The first poster's colour, for the shelf's light. */
+	accent?: string | null;
+}
+
+/** A title standing on a shelf, as the Shelves page draws it. */
+export interface Book {
+	id: number;
+	kind: Kind;
+	name: string;
+	poster_path: string | null;
+	year: string | null;
+	/** Its whole length: a film's runtime, every episode of a show. */
+	minutes: number;
+	/** What is left of it to watch. */
+	left: number;
+}
+
+/** How long a title on a shelf is, and how much is left, in minutes. */
+export interface Length {
+	total: number;
+	left: number;
+	episodes_left: number;
+	watched: boolean;
 }
 
 /** A title ranked on the stats page. */

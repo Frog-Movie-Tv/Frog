@@ -38,6 +38,8 @@
 		menu?: MenuSource;
 		/** Who it was watched with, said under its name. */
 		together?: Mate[];
+		/** The picture alone, for a shelf whose edge carries the words. */
+		bare?: boolean;
 	}
 
 	let {
@@ -58,6 +60,7 @@
 		rewatches = 0,
 		menu,
 		together = [],
+		bare = false,
 		...rest
 	}: Props = $props();
 
@@ -145,29 +148,31 @@
 		{/if}
 	</div>
 
-	<div class="meta">
-		<span class="name">{name}</span>
-		{#if year && show.showYear}<span class="year">{year}</span>{/if}
-		<!-- Where it stands in your library, in words under its name, so
+	{#if !bare}
+		<div class="meta">
+			<span class="name">{name}</span>
+			{#if year && show.showYear}<span class="year">{year}</span>{/if}
+			<!-- Where it stands in your library, in words under its name, so
 		     nothing covers the picture. The dot keeps the status's colour. -->
-		{#if status && show.showBadge}
-			<span class="state" data-status={status}>
-				<i aria-hidden="true"></i>{statusLabel(status, kind)}
-				{#if rewatches > 0}
-					<span
-						class="again"
-						title={rewatches === 1 ? 'Watched again' : `Watched again ${rewatches} times`}
-						>· <Icon name="repeat" size={11} />{rewatches}×</span
-					>
-				{/if}
-			</span>
-		{/if}
-		{#if together.length}
-			<span class="with" title={withLine(together)}>
-				<Icon name="users" size={11} />{withLine(together)}
-			</span>
-		{/if}
-	</div>
+			{#if status && show.showBadge}
+				<span class="state" data-status={status}>
+					<i aria-hidden="true"></i>{statusLabel(status, kind)}
+					{#if rewatches > 0}
+						<span
+							class="again"
+							title={rewatches === 1 ? 'Watched again' : `Watched again ${rewatches} times`}
+							>· <Icon name="repeat" size={11} />{rewatches}×</span
+						>
+					{/if}
+				</span>
+			{/if}
+			{#if together.length}
+				<span class="with" title={withLine(together)}>
+					<Icon name="users" size={11} />{withLine(together)}
+				</span>
+			{/if}
+		</div>
+	{/if}
 </a>
 
 <style>

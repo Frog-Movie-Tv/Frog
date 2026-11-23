@@ -11,7 +11,21 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## Upcoming — Golden Frog —
 
-In progress.
+Your shelves, as a bookcase.
+
+### Highlights
+
+- **A bookcase.** Your shelves stand in a bookcase: covers face out, the rest
+  by their spines, each as thick as the title is long. Show one kind at a
+  time.
+- **Time left.** A watchlist says how long it has to go, on the bookcase and
+  for every title on it, and the day you'd finish at one, two or three hours
+  a day.
+- **Step inside.** Opening a shelf zooms into it, and Back zooms out again.
+- **By year.** Sort a shelf by year, newest or oldest first, and a watchlist
+  by shortest or longest.
+- **Arrange.** Drag shelves into place, or move them with the keyboard, and
+  the rest slide aside.
 
 ## [1.10.0] — Golden Frog — 2026-11-17
 
